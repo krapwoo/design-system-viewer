@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Local agent configuration
+.claude/
+
+# Dependencies and build output (native-preview has its own, more detailed .gitignore)
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+.env*.local
