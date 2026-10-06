@@ -1,0 +1,108 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio Matrix — flexible layouts</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#181818;background:#f6f6f4}
+button,input{font:inherit}
+.app{height:100vh;display:grid;grid-template-columns:264px minmax(0,1fr)}
+.nav{background:#fff;border-right:1px solid #ddd;padding:24px 18px;overflow:auto}
+.brand{font-weight:800;font-size:17px}.sub{font-size:12px;color:#666;margin:2px 0 20px}
+.search{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:9px;background:#fafafa}
+.group{font-size:10px;font-weight:800;letter-spacing:.1em;margin:22px 8px 7px;text-transform:uppercase}
+.item{width:100%;min-height:44px;border:0;background:none;text-align:left;padding:8px 10px;border-radius:8px;color:#666;cursor:pointer}
+.item:hover,.item:focus-visible{background:#f1f3f8;outline:3px solid #c9d7ff}
+.item.active{background:#e9efff;color:#174dc6;font-weight:700}
+.mocknote{margin-top:24px;font-size:12px;color:#666;padding:10px;border:1px dashed #ddd;border-radius:8px}
+.main{padding:28px 32px;overflow:auto}
+.crumb{font-size:12px;color:#666}
+.titlebar{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin:14px 0 24px}
+.titlebar h1{font-size:28px;margin:0 0 5px}.desc{color:#666;max-width:700px}
+.pager{display:flex;gap:6px}
+.iconbtn{width:44px;height:44px;border:1px solid #d7d7d7;border-radius:9px;background:white;cursor:pointer}
+.iconbtn:disabled{background:#f6f6f4;color:#999;cursor:default}
+.block{margin-bottom:28px}
+.label{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.label strong{font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.label span{font-size:12px;color:#666}
+/* Grid: two axes */
+.matrix-wrap{overflow:auto;border:1px solid #d7d7d7;border-radius:14px;background:white}
+.matrix{display:grid;width:100%}
+.cell{min-height:150px;padding:16px;border-right:1px solid #e4e4e4;border-bottom:1px solid #e4e4e4;display:flex;align-items:center;justify-content:center}
+.cell.lastcol{border-right:0}.cell.lastrow{border-bottom:0}
+.head{min-height:auto;background:#fafafa;font-size:11px;font-weight:800;letter-spacing:.04em;justify-content:flex-start}
+.rowhead{justify-content:flex-start;background:#fafafa;font-weight:700}
+/* List: one axis, wrapping inside ONE shared card (same chrome as the grid) */
+.list{display:grid;gap:1px;background:#e4e4e4;border:1px solid #d7d7d7;border-radius:14px;overflow:hidden}
+.tile{background:white;display:flex;flex-direction:column}
+.tile .cap{padding:16px;background:#fafafa;border-bottom:1px solid #e4e4e4;font-size:11px;font-weight:800;letter-spacing:.04em}
+.tile .spec{flex:1;min-height:150px;padding:16px;display:flex;align-items:center;justify-content:center}
+.tile.fill .spec{align-items:stretch;flex-direction:column;justify-content:center}
+.tile.filler .cap{color:transparent}
+/* Preview */
+.preview{background:white;border:1px solid #d7d7d7;border-radius:14px;padding:24px}
+/* Reference */
+.reference{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px;background:white;border:1px solid #ddd;border-radius:12px;padding:20px}
+.reference h2{font-size:13px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em}
+.reference p{color:#666;margin:0}
+.fact{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #eee;padding:9px 0}.fact span{color:#666;text-align:right}
+/* Stand-in specimens (placeholders for the real components) */
+.btn{padding:11px 18px;border-radius:9px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+.btn.primary{background:#1459e7;color:#fff}.btn.secondary{background:#fff;border-color:#bbb}.btn.tertiary{background:#ecece8}
+.btn.white{background:#fff;color:#111}.btn.ghost{background:none;color:#1459e7;padding:4px 6px}
+.btn.disabled{opacity:.45}.btn.sm{padding:6px 12px;font-size:13px}.btn.md{padding:8px 14px}
+.btn.full{width:100%}
+.dark{background:#181818;border-radius:10px;padding:14px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700}
+.b-neutral{background:#ececec;color:#333}.b-info{background:#e3edff;color:#1747b0}.b-positive{background:#e1f5e8;color:#16683a}.b-warning{background:#fff1d6;color:#7a4b00}.b-negative{background:#fde4e4;color:#a11d1d}
+.sw{width:44px;height:26px;border-radius:13px;background:#cfcfcf;position:relative}.sw::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.sw.on{background:#1459e7}.sw.on::after{left:21px}.sw.dis{opacity:.45}
+.swrow{display:flex;align-items:center;gap:12px}
+.banner{border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start}
+.banner b{display:block}.banner small{color:inherit;opacity:.85}
+.n-neutral{background:#f0f0ee}.n-info{background:#e8f0ff}.n-positive{background:#e6f6ec}.n-warning{background:#fff4dd}.n-negative{background:#fde8e8}
+.banner .act{margin-left:auto;font-weight:700;color:#1459e7;white-space:nowrap}
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px}
+.swatch .chip{height:56px;border-radius:10px;border:1px solid #0000000f}.swatch div{font-size:12px;margin-top:6px}.swatch span{font-size:11px;color:#666}
+</style></head><body><div class="app"><aside class="nav" id="nav"></aside><main class="main" id="main"></main></div>
+<script>
+const B=(v,o={})=>{const cls=['btn',v,o.state==='disabled'?'disabled':'',o.size||'',o.full?'full':''].join(' ');const label=o.state==='loading'?'◌ Continue':(o.label||'Continue');const el=`<span class="${cls}">${label}</span>`;return v==='white'?`<div class="dark">${el}</div>`:el};
+const BD=(v,icon)=>{const ic='●';const t=v[0].toUpperCase()+v.slice(1);const inner=icon==='leading'?`${ic} ${t}`:icon==='trailing'?`${t} ${ic}`:icon==='only'?ic:t;return `<span class="badge b-${v}">${inner}</span>`};
+const BN=(v,extra='')=>`<div class="banner n-${v}"><div><b>${v==='neutral'?'Service change':v==='info'?'Planned work':v==='positive'?'Back to normal':v==='warning'?'Delays expected':'Line suspended'}</b><small>Trains run every 12 min this weekend.</small></div>${extra}</div>`;
+const SW=(on,dis,label)=>{const s=`<span class="sw ${on?'on':''} ${dis?'dis':''}"></span>`;return label?`<span class="swrow">${s}<span>Notify me</span></span>`:s};
+const variants=['primary','secondary','tertiary','white','ghost'];
+const tones=['neutral','info','positive','warning','negative'];
+const cap=s=>s[0].toUpperCase()+s.slice(1);
+const pages=[
+ {id:'Button',group:'Actions',desc:'The primary tap target. Five visual weights, three sizes, optional icons, loading and icon-only modes.',
+  blocks:[
+   {kind:'grid',title:'Variant × State',note:'Two props that combine freely',size:'regular',rowLabel:'Variant',rows:variants.map(cap),cols:['Default','Disabled','Loading'],
+    cell:(r,c)=>B(variants[r],{state:['default','disabled','loading'][c]})},
+   {kind:'list',title:'Other configurations',note:'Shown once each, at the default variant',size:'compact',items:[['With icon',B('primary',{label:'＋ Add stop'})],['Trailing icon',B('primary',{label:'Continue ›'})],['Icon-only',B('primary',{label:'＋'})],['Medium size',B('primary',{size:'md'})],['Small size',B('primary',{size:'sm'})],['Full width',B('primary',{full:true,label:'Confirm trip'}),true]]}],
+  guidance:'An action — something happens on tap. For a chip that keeps a selected state, use Pill.',role:'button',src:'native/components/Button'},
+ {id:'Badge',group:'Surfaces',desc:'A read-only status label in five semantic tones, with optional icons.',
+  blocks:[{kind:'grid',title:'Tone × Icon',note:'Small specimens use narrower columns',size:'compact',rowLabel:'Tone',rows:tones.map(cap),cols:['Label only','Leading icon','Trailing icon','Icon-only'],
+    cell:(r,c)=>BD(tones[r],[null,'leading','trailing','only'][c])}],
+  guidance:'Read-only status next to other content. If it responds to taps, use Pill.',role:'text',src:'native/components/Badge'},
+ {id:'Switch',group:'Controls',desc:'An on/off setting that takes effect immediately.',
+  blocks:[{kind:'list',title:'States',note:'One axis only — one card, cells wrap to fit the width',size:'compact',items:[['Off',SW(false)],['On',SW(true)],['With label',SW(true,false,true)],['Disabled',SW(false,true)]]}],
+  guidance:'Use Switch when toggling does something right away; use Checkbox when a later Save acts on it.',role:'switch',src:'native/components/Switch'},
+ {id:'Banner',group:'Surfaces',desc:'A persistent, in-flow message about the current screen, in five tones.',
+  blocks:[
+   {kind:'list',title:'Variants',note:'Wide components use phone-width cells (402px), so a 5 × 5 grid is split into two cards',size:'wide',items:tones.map(t=>[cap(t),BN(t),true])},
+   {kind:'list',title:'Configurations',note:'Shown at the Info tone',size:'wide',items:[['Tappable',BN('info','<span class="act">›</span>'),true],['Collapsible (expanded)',BN('info','<span class="act">⌃</span>'),true],['Collapsible (collapsed)','<div class="banner n-info"><b>Planned work</b><span class="act">⌄</span></div>',true],['With action',BN('info','<span class="act">Details</span>'),true],['With link',BN('info','<span class="act">Learn more</span>'),true]]}],
+  guidance:'A standing fact about the screen. For a transient message after an action, use Toast.',role:'none (container)',src:'native/components/Banner'},
+ {id:'Colors',group:'Tokens',desc:'Semantic color roles and the raw palette.',
+  blocks:[{kind:'preview',title:'Tokens',html:`<div class="swatches">${[['surface.white','#FFFFFF'],['surface.muted','#F5F5F5'],['text.regular','#171717'],['text.muted','#666666'],['emphasis.info','#2563EB'],['emphasis.positive','#16A34A'],['emphasis.warning','#D97706'],['emphasis.negative','#DC2626'],['border.light','#E5E5E5'],['shade.dark','#404040']].map(([n,h])=>`<div class="swatch"><div class="chip" style="background:${h}"></div><div>${n}</div><span>${h}</span></div>`).join('')}</div>`}],
+  token:true,src:'tokens/semantic.ts'}];
+const MIN={compact:160,regular:240,wide:402};
+let current=0;
+function renderNav(){const groups=[...new Set(pages.map(p=>p.group))];document.getElementById('nav').innerHTML=`<div class="brand">Native App DS Template</div><div class="sub">Component Catalog</div><input class="search" placeholder="Filter components…" aria-label="Filter components">`+groups.map(g=>`<div class="group">${g}</div>`+pages.map((p,i)=>p.group===g?`<button class="item ${i===current?'active':''}" data-i="${i}">${p.id}</button>`:'').join('')).join('')+`<div class="mocknote">Mockup: 5 representative pages of 47.</div>`;document.querySelectorAll('.item').forEach(b=>b.onclick=()=>{current=+b.dataset.i;render()})}
+function grid(b){const min=MIN[b.size];const cols=b.cols.length;let h=`<div class="matrix-wrap"><div class="matrix" style="grid-template-columns:120px repeat(${cols},minmax(${min}px,402px))"><div class="cell head">${b.rowLabel}</div>`+b.cols.map((c,ci)=>`<div class="cell head ${ci===cols-1?'lastcol':''}">${c}</div>`).join('');b.rows.forEach((r,ri)=>{const last=ri===b.rows.length-1?'lastrow':'';h+=`<div class="cell rowhead ${last}">${r}</div>`+b.cols.map((c,ci)=>`<div class="cell ${last} ${ci===cols-1?'lastcol':''}">${b.cell(ri,ci)}</div>`).join('')});return h+'</div></div>'}
+function list(b){const min=MIN[b.size];const max=402;const data=encodeURIComponent(JSON.stringify(b.items.map(i=>[i[0],i[1],!!i[2]])));return `<div class="list" data-min="${min}" data-max="${max}" data-wide="${b.size==='wide'}" data-items="${data}"></div>`}
+function layoutLists(){document.querySelectorAll('.list').forEach(el=>{const items=JSON.parse(decodeURIComponent(el.dataset.items));const min=+el.dataset.min,max=+el.dataset.max,wide=el.dataset.wide==='true';const avail=el.parentElement.clientWidth;const colW=wide?max:min;const maxCols=Math.max(1,Math.min(items.length,Math.floor((avail+1)/(colW+1))));const rows=Math.ceil(items.length/maxCols);const cols=Math.ceil(items.length/rows);const filler=(cols-items.length%cols)%cols;el.style.gridTemplateColumns=wide?`repeat(${cols},${max}px)`:`repeat(${cols},minmax(${min}px,${max}px))`;el.style.width=wide?'max-content':(cols*(max+1)<avail?'max-content':'100%');el.innerHTML=items.map(([n,html,fill])=>`<div class="tile ${fill?'fill':''}"><div class="cap">${n}</div><div class="spec">${html}</div></div>`).join('')+Array.from({length:filler},()=>`<div class="tile filler" aria-hidden="true"><div class="cap">.</div><div class="spec"></div></div>`).join('')})}
+addEventListener('resize',layoutLists);
+function render(){const p=pages[current];renderNav();const blocks=p.blocks.map(b=>`<section class="block"><div class="label"><strong>${b.title}</strong><span>${b.note||''}</span></div>${b.kind==='grid'?grid(b):b.kind==='list'?list(b):`<div class="preview">${b.html}</div>`}</section>`).join('');
+const ref=p.token?'':`<section class="reference"><div><h2>Guidance</h2><p>${p.guidance}</p></div><div><h2>Quick reference</h2><div class="fact"><b>Role</b><span>${p.role}</span></div><div class="fact"><b>Source</b><span>${p.src}</span></div></div></section>`;
+document.getElementById('main').innerHTML=`<div class="crumb">Native App DS Template / ${p.group}</div><div class="titlebar"><div><h1>${p.id}</h1><div class="desc">${p.desc}</div></div><div class="pager"><button class="iconbtn" id="prev" aria-label="Previous page" ${current===0?'disabled':''}>←</button><button class="iconbtn" id="next" aria-label="Next page" ${current===pages.length-1?'disabled':''}>→</button></div></div>${blocks}${ref}`;
+document.getElementById('prev').onclick=()=>{if(current>0){current--;render()}};document.getElementById('next').onclick=()=>{if(current<pages.length-1){current++;render()}};document.getElementById('main').scrollTop=0;layoutLists()}
+render();
+</script></body></html>
