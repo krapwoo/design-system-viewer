@@ -115,7 +115,8 @@ Everything else (`description`, `whenToUse`, `a11y`, `variants`, `states`, `comp
 | Requirement | Check |
 |---|---|
 | Expo SDK 57 or later | Required |
-| `react-native-web`, `react-dom`, `@expo/metro-runtime` | Required (Expo web) |
+| `react-native-web`, `react-dom` | Required (Expo web) |
+| `@expo/metro-runtime` | Not required: Expo 57 web works without it (verified in the 0.1 spike and in `native-preview`); preflight only warns when it is missing |
 | `react-native-svg`, `react-native-safe-area-context` | Required for the starter kit; installed with `expo install` by the new-project path |
 | `@krapwoo/ds-viewer` as a local devDependency | Required; `dev` refuses to run from the npx cache because pages import from the package and a second React would load |
 | Node 20.19 or later | Required for the CLI |
