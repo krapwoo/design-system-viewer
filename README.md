@@ -78,21 +78,22 @@ either behind a dev-only route in your Expo app):
   `SectionBlock`, `PropsTable`, `VariantGroup`, `TokenRow`, `DividedStack`) plus its own
   Colors/Spacing/Type Scale token pages (`native/catalog/tokens.ts` — `CATALOG_*`, independent of
   the host app's DS tokens) — a catalog of the catalog tool itself, useful when you're extending the
-  framework rather than the DS. `SectionBlock` renders one of two fixed layouts: a component section
-  (title, description, file path, then three 512px columns — Variants, States, and a combined
-  Props+Accessibility column — in that order, every time, even for a section with nothing to put in
-  one of them, which shows a plain sentence like "No additional states documented." instead of just
-  omitting the column) or a `tokenGallery` section (a single "Tokens" column only — Colors/Spacing/
-  Type Scale below are raw token data, not a component with its own states/props/accessibility to
-  document, so those columns are skipped entirely rather than padded with "nothing to show" text).
-  Whichever column is tallest sets the row's height, and every other column's card stretches to
-  match, so every column's bottom edge lands flush; the same gap value is used both between columns
-  and between Props and Accessibility within the third. Every individual variant/state item is
-  captioned with its own `name` (e.g. "Primary", "Icon-only") so it's clear which value each instance
-  demonstrates. `VariantGroup`/`DividedStack` aren't used by either layout (each slot gets its own
-  card, so there's no in-card divider to draw) — they're still exported building blocks for a
-  `render()` that needs an inline sub-heading or a divided list, like `ColorsGallery`'s own two
-  swatch groups.
+  framework rather than the DS.
+
+Each catalog shows **one page at a time**: a persistent, searchable sidebar and the selected page.
+On web the page is kept in the URL fragment (`#Button`), so refresh, deep links, and back/forward
+work. Desktop and laptop screens only. `SectionBlock` renders one page: breadcrumb, title,
+description, previous/next, then the specimens in one of three layouts, then always-visible
+**Guidance**, **Quick reference** (source path, accessibility), and **Props**:
+- **Grid** — two props that combine freely, from an explicit `comparison` (e.g. Button's
+  Variant × State).
+- **List** — one axis, in one shared card whose cells wrap into balanced rows.
+- **Preview** — free-form `render()` content and token galleries, full width.
+
+Grid columns and list cells are at most 402px wide with 16px padding. A page's `specimenSize`
+(`compact` 160px, `regular` 240px, `wide` 402px) sets the minimum width; full-width (`itemsFill`)
+slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`, never from
+the host app's tokens.
 
 ```tsx
 import { CatalogExample } from '@ds/native/catalog/CatalogExample';
@@ -114,25 +115,31 @@ Copy the shape of an existing pair, e.g. `native/components/Button/` or `native/
 - `index.ts` — re-export.
 
 Then add a `SectionDef` for it (id, path, description, props, a11y, and its content) to
-`native/catalog/CatalogExample.tsx`, and to `native/components/index.ts`. `SectionBlock` always shows
-four sections — Variants, States, Props, Accessibility — so give it whichever of these two fields
+`native/catalog/CatalogExample.tsx`, and to `native/components/index.ts`. `SectionBlock` shows the
+specimens first, then Guidance, Quick reference, and Props. Give it whichever of these fields
 actually apply:
+- `comparison: { rowLabel, columnLabel, rows, columns, cells, size? }` — when two props genuinely
+  combine. Author every row × column cell with a real instance, or an `unavailableReason` when that
+  combination does not exist. Never multiply `variants` by `states` to fill it. Keep the column axis
+  within what fits a 1280px laptop: 5 compact, 3 regular, or 2 wide columns. `states` items whose
+  key matches a row or column key are not repeated below the grid.
+- `specimenSize: 'compact' | 'regular' | 'wide'` — the page's specimen width class.
 - `variants: { desc?, align?, itemsFill?, items: [{ key, name, node }] }` — one item per prop enum
   value (e.g. every `variant`). If the component has no `variant`-like prop at all, still include one
   item named `"Default"` showing its plain look — the Variants column should never be empty.
 - `states: { desc?, align?, itemsFill?, items: [{ key, name, node }] }` — one item per meaningfully
   distinct boolean state (`loading`, `disabled`, icon-only, …). Fine to omit if there are none.
 
-Every item's `name` is shown as a small caption under it (e.g. `"Primary"`, `"Icon-only"`) — use the
-actual variant/state value, not a generic label. Omitting `states` shows "No additional states
-documented." — don't invent items just to fill the column. Set `itemsFill: true` on a slot whose
+Every item's `name` is shown as its cell caption (e.g. `"Primary"`, `"Icon-only"`) — use the
+actual variant/state value, not a generic label. Omitting `states` shows "No additional states or
+configurations documented." — don't invent items just to fill it. Set `itemsFill: true` on a slot whose
 items are wide, block-level components (Banner, Card, Toast, InputField) rather than small ones meant
 to sit centered (Button, Badge, Pill). Reach for `render()` instead of `variants` only when the
 content isn't a simple list of instances (a live demo with local state, a wrapping grid); its output
-fills the Variants column as-is. For a token-gallery section with no component API at all (raw token
+renders in a full-width Preview card. For a token-gallery section with no component API at all (raw token
 data, not a component — see `ColorsGallery`/`SpacingGallery`/`TypographyGallery`), set
-`tokenGallery: true` instead of `props`/`a11y`/`states` — `SectionBlock` then renders a single
-"Tokens" column around `render()`'s output and skips States/Props/Accessibility entirely.
+`tokenGallery: true` instead of `props`/`a11y`/`states` — `SectionBlock` then renders `render()`'s
+output under a "Tokens" label and skips the reference details entirely.
 
 ## What's included
 

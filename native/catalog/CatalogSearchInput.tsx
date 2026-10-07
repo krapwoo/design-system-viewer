@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './tokens';
+import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS, CATALOG_LAYOUT } from './tokens';
 
 /**
  * Plain search input for filtering the catalog's own sidebar nav. Deliberately built from bare
@@ -17,16 +17,19 @@ export function CatalogSearchInput({
   onChangeText: (text: string) => void;
   placeholder: string;
 }) {
-  // Focus darkens the box border — react-native-web resets the browser's default input focus ring,
-  // so the box has to draw its own indicator.
+  // Focus draws the catalog focus ring — react-native-web resets the browser's default input focus
+  // ring, so the box has to draw its own indicator.
   const [focused, setFocused] = useState(false);
   const [clearFocused, setClearFocused] = useState(false);
   // Hover via onHoverIn/Out, not the style callback's `hovered` — same reasoning as NavItem: this
   // project's Pressable types (targeting native) don't expose that field, though RNW fires the events.
   const [clearHovered, setClearHovered] = useState(false);
+  // Clearing unmounts the clear button that has focus; return focus to the field it cleared.
+  const inputRef = useRef<TextInput>(null);
   return (
     <View style={[styles.box, focused && styles.boxFocused]}>
       <TextInput
+        ref={inputRef}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -39,18 +42,21 @@ export function CatalogSearchInput({
       />
       {value.length > 0 && (
         <Pressable
-          onPress={() => onChangeText('')}
+          onPress={() => {
+            onChangeText('');
+            inputRef.current?.focus();
+          }}
           onFocus={() => setClearFocused(true)}
           onBlur={() => setClearFocused(false)}
           onHoverIn={() => setClearHovered(true)}
           onHoverOut={() => setClearHovered(false)}
-          hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Clear filter"
-          // Press/hover/focus all show the same highlight the sidebar's NavItems use.
+          // Press/hover show the sidebar's highlight; keyboard focus shows the catalog focus ring.
           style={({ pressed }) => [
             styles.clearButton,
-            (pressed || clearHovered || clearFocused) && styles.clearButtonActive,
+            (pressed || clearHovered) && styles.clearButtonActive,
+            clearFocused && styles.focusRing,
           ]}
         >
           <Text style={styles.clear}>×</Text>
@@ -63,13 +69,18 @@ export function CatalogSearchInput({
 const styles = StyleSheet.create({
   box: {
     flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.xs,
-    borderWidth: 1, borderColor: CATALOG_COLOR.border, borderRadius: CATALOG_RADIUS.sm,
-    paddingHorizontal: 10, height: 36, marginBottom: CATALOG_SPACE.sm,
-    backgroundColor: CATALOG_COLOR.surface,
+    borderWidth: 1, borderColor: CATALOG_COLOR.borderHairline, borderRadius: CATALOG_RADIUS.control,
+    paddingLeft: 10, height: CATALOG_LAYOUT.controlSize, marginBottom: CATALOG_SPACE.sm,
+    backgroundColor: CATALOG_COLOR.surfaceMuted,
   },
-  boxFocused: { borderColor: CATALOG_COLOR.text },
+  boxFocused: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
   input: { flex: 1, fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.text, padding: 0 },
-  clearButton: { borderRadius: CATALOG_RADIUS.sm },
+  // A full 44×44 target: react-native-web does not honor hitSlop for pointer or keyboard.
+  clearButton: {
+    width: CATALOG_LAYOUT.controlSize, height: CATALOG_LAYOUT.controlSize,
+    alignItems: 'center', justifyContent: 'center', borderRadius: CATALOG_RADIUS.control,
+  },
+  focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
   clearButtonActive: { backgroundColor: CATALOG_COLOR.surfacePressed },
   clear: { fontSize: CATALOG_TYPE.lg, color: CATALOG_COLOR.textMuted, paddingHorizontal: 2 },
 });

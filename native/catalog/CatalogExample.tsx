@@ -7,7 +7,7 @@
  * `variants` list — one item per variant/state, laid out by SectionBlock itself — or a freeform
  * `render()` for content that isn't a simple list, e.g. token galleries) plus a `NavGroup[]` (how
  * those sections bucket in the sidebar), then hands both to a single `<CatalogShell />`, which owns
- * all the layout, scrolling, filtering, and scroll-spy.
+ * navigation, filtering, and showing one selected page at a time.
  *
  * Everything the catalog documents comes from `../components`; every token value it renders as data
  * comes from `../../tokens`. The framework itself (CatalogShell, SectionBlock, PropsTable, …) knows
@@ -107,7 +107,9 @@ import { PhoneFrame } from './PhoneFrame';
 import { SpacingScaleGallery } from './SpacingScaleGallery';
 import { TypeScaleGallery } from './TypeScaleGallery';
 import { buildComponentManifest } from './manifest';
-import type { NavGroup, SectionDef } from './types';
+import type { ComparisonDef, NavGroup, SectionDef } from './types';
+import type { ButtonVariant } from '../components/Button';
+import type { BadgeVariant } from '../components/Badge';
 
 // Layout chrome for the live examples. Uses the real DS spacing scale for gaps; the components being
 // documented bring their own token-driven styling. Defined up top (not near its call sites further
@@ -217,9 +219,146 @@ const demo = StyleSheet.create({
   manifestText: { ...DS_TYPOGRAPHY.bodyXs, fontFamily: 'Menlo', color: DS_SEMANTIC.text.regular },
 });
 
+// ── Grid comparisons ────────────────────────────────────────────────────────────────────────────
+// Each grid cell is a real instance with exactly the props its row and column name. Never build
+// these by multiplying `variants` with `states` — those are pre-rendered nodes and cannot combine.
+
+function grid(
+  rowLabel: string,
+  columnLabel: string,
+  rows: { key: string; label: string }[],
+  columns: { key: string; label: string }[],
+  cell: (row: string, column: string) => React.ReactNode,
+  size?: ComparisonDef['size'],
+): ComparisonDef {
+  return {
+    rowLabel,
+    columnLabel,
+    rows,
+    columns,
+    cells: rows.flatMap((row) => columns.map((column) => ({ rowKey: row.key, columnKey: column.key, node: cell(row.key, column.key) }))),
+    size,
+  };
+}
+
+// Button: Variant × State. `white` keeps the dark backdrop its variant requires.
+const BUTTON_COMPARISON = grid(
+  'Variant',
+  'State',
+  [
+    { key: 'primary', label: 'Primary' },
+    { key: 'secondary', label: 'Secondary' },
+    { key: 'tertiary', label: 'Tertiary' },
+    { key: 'white', label: 'White' },
+    { key: 'ghost', label: 'Ghost' },
+  ],
+  [
+    { key: 'default', label: 'Default' },
+    { key: 'disabled', label: 'Disabled' },
+    { key: 'loading', label: 'Loading' },
+  ],
+  (row, column) => {
+    const button = (
+      <Button
+        label="Continue"
+        variant={row as ButtonVariant}
+        disabled={column === 'disabled'}
+        loading={column === 'loading'}
+        onPress={() => {}}
+      />
+    );
+    return row === 'white' ? <View style={demo.darkBackdrop}>{button}</View> : button;
+  },
+);
+
+// Badge: Tone × Icon layout. One icon per tone, matching the Variants examples.
+const BADGE_TONES: { key: BadgeVariant; label: string; text: string; icon: React.ComponentProps<typeof Badge>['leadingIcon'] }[] = [
+  { key: 'neutral', label: 'Neutral', text: 'Local', icon: 'pin' },
+  { key: 'info', label: 'Info', text: 'Notice', icon: 'info-circle' },
+  { key: 'positive', label: 'Positive', text: 'On time', icon: 'circle-check' },
+  { key: 'warning', label: 'Warning', text: 'Delayed', icon: 'triangle-alert' },
+  { key: 'negative', label: 'Negative', text: 'Suspended', icon: 'circle-slash' },
+];
+const BADGE_COMPARISON = grid(
+  'Tone',
+  'Icon',
+  BADGE_TONES.map(({ key, label }) => ({ key, label })),
+  [
+    { key: 'label-only', label: 'Label only' },
+    { key: 'leading-icon', label: 'Leading icon' },
+    { key: 'trailing-icon', label: 'Trailing icon' },
+    { key: 'icon-only', label: 'Icon-only' },
+  ],
+  (row, column) => {
+    const tone = BADGE_TONES.find((t) => t.key === row)!;
+    if (column === 'icon-only') return <Badge variant={tone.key} leadingIcon={tone.icon} accessibilityLabel={tone.text} />;
+    return (
+      <Badge
+        variant={tone.key}
+        label={tone.text}
+        leadingIcon={column === 'leading-icon' ? tone.icon : undefined}
+        trailingIcon={column === 'trailing-icon' ? tone.icon : undefined}
+      />
+    );
+  },
+  'compact',
+);
+
+// Avatar: content Kind × Size (Avatar's `size` is continuous; 24 / 40 default / 64 is the sweep).
+const AVATAR_COMPARISON = grid(
+  'Kind',
+  'Size',
+  [
+    { key: 'image', label: 'Image' },
+    { key: 'icon', label: 'Icon' },
+    { key: 'initials', label: 'Initials fallback' },
+  ],
+  [
+    { key: 'small', label: 'Small · 24' },
+    { key: 'medium', label: 'Medium · 40 (default)' },
+    { key: 'large', label: 'Large · 64' },
+  ],
+  (row, column) => {
+    const size = column === 'small' ? 24 : column === 'large' ? 64 : 40;
+    if (row === 'image') return <Avatar imageUrl="https://i.pravatar.cc/100" accessibilityLabel="Jordan Lee" size={size} />;
+    if (row === 'icon') return <Avatar iconName="users" accessibilityLabel="Guest" size={size} />;
+    return <Avatar initials="JL" accessibilityLabel="Jordan Lee" size={size} />;
+  },
+  'compact',
+);
+
+// Pill: Selection × State.
+const PILL_COMPARISON = grid(
+  'Selection',
+  'State',
+  [
+    { key: 'selected', label: 'Selected' },
+    { key: 'not-selected', label: 'Not selected' },
+  ],
+  [
+    { key: 'icon-text', label: 'Icon + Text' },
+    { key: 'icon-only', label: 'Icon-only' },
+    { key: 'disabled', label: 'Disabled' },
+    { key: 'loading', label: 'Loading' },
+  ],
+  (row, column) => (
+    <Pill
+      label="Home"
+      variant={row === 'selected' ? 'selected' : 'not_selected'}
+      iconName="home"
+      showText={column !== 'icon-only'}
+      accessibilityLabel="Home"
+      disabled={column === 'disabled'}
+      loading={column === 'loading'}
+      onPress={() => {}}
+    />
+  ),
+  'compact',
+);
+
 // ─── Section-id union ─────────────────────────────────────────────────────────
 // One string literal per documented section. Threaded through CatalogShell/CatalogSidebar as `TId`
-// so the sidebar nav + scroll-spy stay typed to this exact set.
+// so the sidebar nav and page navigation stay typed to this exact set.
 type SectionId =
   | 'Button'
   | 'ButtonGroup'
@@ -996,6 +1135,7 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'Button',
     path: 'native/components/Button',
+    comparison: BUTTON_COMPARISON,
     description:
       'The primary tap target. Five visual weights, three sizes, optional leading/trailing icon, plus loading and icon-only modes.',
     whenToUse: 'An action — something happens on tap. For a tappable chip that just flips a persistent selected state, use Pill instead.',
@@ -1064,6 +1204,8 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'Pill',
     path: 'native/components/Pill',
+    specimenSize: 'compact',
+    comparison: PILL_COMPARISON,
     description: 'A compact selectable chip — selected/unselected states with an optional leading icon.',
     whenToUse: "A selection toggle, not an action — tapping it flips a persistent selected state. If tapping it should instead make something happen, use Button.",
     a11y: 'Pressable with accessibilityLabel; an icon-only pill (showText={false}) needs an explicit accessibilityLabel so it is announced.',
@@ -1398,6 +1540,8 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'Badge',
     path: 'native/components/Badge',
+    specimenSize: 'compact',
+    comparison: BADGE_COMPARISON,
     description: 'A small status chip — five semantic variants, with optional leading/trailing icons or icon-only.',
     whenToUse: "Read-only and inline, not tappable — for one row's data point. For a tappable chip with a selected state, use Pill; for a message about the whole screen, use Toast or Banner.",
     a11y: 'A plain View with text; the label carries the meaning, so avoid encoding status by color alone.',
@@ -1440,6 +1584,8 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'Avatar',
     path: 'native/components/Avatar',
+    specimenSize: 'compact',
+    comparison: AVATAR_COMPARISON,
     description: 'A circular image, or an initials fallback on a solid fill when there\'s no image (or it fails to load).',
     a11y: 'Renders with accessibilityRole="image"; pass accessibilityLabel for a meaningful name, otherwise it falls back to the initials text.',
     props: [
@@ -1649,6 +1795,7 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'Switch',
     path: 'native/components/Switch',
+    specimenSize: 'compact',
     description: 'A boolean on/off toggle. The thumb slides and the track crossfades colour, sharing SegmentedToggle/UnderlineTabs\' own slide-animation hook for a consistent motion feel.',
     whenToUse: 'A setting that takes effect immediately, no separate save step. For recording a fact a future action (like a form submit) will act on, use Checkbox; for one-of-many exclusive selection, use Radio.',
     a11y: 'Renders a Pressable with accessibilityRole="switch" and accessibilityState.checked — pass accessibilityLabel to say what it controls.',
@@ -1676,6 +1823,7 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'Checkbox',
     path: 'native/components/Checkbox',
+    specimenSize: 'compact',
     description: 'A square selection control — the box fills with the accent colour and a checkmark when checked.',
     whenToUse: 'An independent on/off fact about this one item — any number can be checked at once. For a setting that takes effect immediately, use Switch; for one-of-many exclusive selection, use Radio.',
     a11y: 'Renders a Pressable with accessibilityRole="checkbox" and accessibilityState.checked; the optional label doubles as its accessibilityLabel.',
@@ -1700,6 +1848,7 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'Radio',
     path: 'native/components/Radio',
+    specimenSize: 'compact',
     description: 'A single circular selection control — a filled dot appears in the ring when selected. A group of mutually-exclusive Radios is just multiple instances sharing one selected value in the consumer.',
     whenToUse: 'One selection from a mutually-exclusive set — checking one should un-check another. For an independent on/off fact, use Checkbox; for a setting that takes effect immediately, use Switch.',
     a11y: 'Renders a Pressable with accessibilityRole="radio" and accessibilityState.selected; the optional label doubles as its accessibilityLabel.',
@@ -2769,7 +2918,7 @@ const nav: NavGroup<SectionId>[] = [
 
 /**
  * The whole design-system catalog for this template, ready to drop into an Expo app (e.g. render it
- * from a dev-only route). CatalogShell owns layout, scrolling, filtering, and scroll-spy — this file
+ * from a dev-only route). CatalogShell owns navigation, filtering, and the one-page layout — this file
  * only supplies the data.
  */
 export function CatalogExample() {

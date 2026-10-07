@@ -16,6 +16,9 @@ export { CatalogShell } from './CatalogShell';
 export { CatalogSidebar } from './CatalogSidebar';
 export { CatalogSearchInput } from './CatalogSearchInput';
 export { SectionBlock } from './SectionBlock';
+export { ComparisonGrid } from './ComparisonGrid';
+export { ComparisonList } from './ComparisonList';
+export { ReferenceDetails } from './ReferenceDetails';
 export { PropsTable } from './PropsTable';
 export { VariantGroup } from './VariantGroup';
 export { TokenRow } from './TokenRow';
@@ -26,7 +29,7 @@ export { SpacingScaleGallery } from './SpacingScaleGallery';
 export { TypeScaleGallery } from './TypeScaleGallery';
 export { buildComponentManifest } from './manifest';
 export type { ComponentManifestEntry, ManifestExample } from './manifest';
-export type { PropDef, SectionDef, NavGroup } from './types';
+export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem } from './types';
 export {
   CATALOG_TYPE,
   CATALOG_TYPE_USE,
@@ -34,4 +37,6 @@ export {
   CATALOG_SPACE_USE,
   CATALOG_RADIUS,
   CATALOG_COLOR,
+  CATALOG_LAYOUT,
+  CATALOG_MAX_CONTENT_WIDTH,
 } from './tokens';

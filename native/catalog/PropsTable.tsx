@@ -3,9 +3,9 @@ import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
 import type { PropDef } from './types';
 
 /** Renders a component's real prop interface as a table: each row holds name + type in a fixed-width
- *  first column, with the description (and default, if any) in a second column beside it — the Props
- *  column is wide enough now (see SectionBlock's `columnWide`) for this side-by-side layout to read
- *  comfortably instead of squeezing a description under a name/type pair. */
+ *  first column, with the description (and default, if any) in a second column beside it. It spans
+ *  the full width of the reference panel (ReferenceDetails), so the side-by-side layout reads
+ *  comfortably. */
 export function PropsTable({ props }: { props: PropDef[] }) {
   return (
     <View style={styles.table}>
@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: CATALOG_SPACE.md,
     paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: CATALOG_COLOR.borderHairline,
+    borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border,
   },
   rowFirst: { paddingTop: 0 },
   rowLast: { borderBottomWidth: 0, paddingBottom: 0 },

@@ -1,26 +1,27 @@
 /**
- * Catalog-only design tokens.
+ * Catalog-only design tokens — the visual system of the catalog interface itself.
  *
- * Deliberately independent of any host app's design-system tokens (e.g. Metro's DS_SEMANTIC /
- * DS_PALETTE / DS_SPACING) — the catalog is a tool for *documenting* a design system, not a
- * consumer of it. Keeping its own chrome on its own tokens means:
- *   1. A change to the host app's tokens never accidentally changes how the catalog looks.
- *   2. This whole `catalog/` folder can be copied into a different app's repo and used to
- *      document THAT app's components without dragging in Metro-specific values.
+ * Deliberately independent of any host app's design-system tokens (DS_SEMANTIC / DS_PALETTE /
+ * DS_SPACING): the catalog documents a design system, it does not consume one. Keeping its chrome
+ * on its own tokens means a change to the host app's tokens never restyles the catalog, and this
+ * folder can be copied into another app's repo unchanged.
  *
- * Every catalog-chrome font size (headings, labels, prop tables, nav, notes) should draw from
- * CATALOG_TYPE. The one exception is intentional: a section that renders a host app's own
- * typography tokens as *data* (e.g. a "Typography" token page) should render those at their real
- * sizes, since the point there is to show the actual values, not the catalog's chrome.
+ * Values match the approved Studio Matrix references
+ * (docs/design/2026-10-06-catalog-studio-matrix-*.html), with one deliberate exception:
+ * `textMuted` stays #666666 because the references' #777777 fails WCAG AA contrast.
  */
 
 export const CATALOG_TYPE = {
   xs: 10,
+  tableHeader: 11,
   sm: 12,
+  panelHeading: 13,
   md: 14,
   lg: 16,
+  brand: 17,
   xl: 20,
   '2xl': 24,
+  pageTitle: 28,
   '3xl': 32,
   '4xl': 40,
 } as const;
@@ -37,68 +38,85 @@ export const CATALOG_SPACE = {
 
 export const CATALOG_RADIUS = {
   sm: 8,
+  control: 9,
   md: 12,
+  card: 14,
 } as const;
 
-/** A regular max website content width — shared by `CatalogShell`'s page container and
- *  `SectionBlock`'s own column row, so the two can't drift apart (a page container narrower than
- *  this would just clip SectionBlock's row; a SectionBlock row wider than this would look
- *  inconsistent with everything else on the page). */
+/** Exact chrome measurements from the approved references that are not spacing-scale steps. */
+export const CATALOG_LAYOUT = {
+  sidebarWidth: 264,
+  sidebarPaddingTop: 24,
+  sidebarPaddingX: 18,
+  mainPaddingTop: 28,
+  mainPaddingX: 32,
+  controlSize: 44,
+  focusRingWidth: 3,
+  navItemPaddingY: 8,
+  navItemPaddingX: 10,
+  panelPadding: 20,
+  factPaddingY: 9,
+  blockLabelGap: 14,
+  blockGap: 28,
+} as const;
+
+/** Max width of the main content column. */
 export const CATALOG_MAX_CONTENT_WIDTH = 1200;
 
-/** When to reach for each catalog-chrome type size — grounded in how the framework's own eleven
- *  files actually use them (not aspirational). Rendered in the Design System DS Catalog's Type
+/** When to reach for each catalog-chrome type size. Rendered in the framework catalog's Type
  *  Scale page. */
 export const CATALOG_TYPE_USE: Record<keyof typeof CATALOG_TYPE, string> = {
-  xs: "Smallest chrome text — an uppercase block label, a prop's type annotation, a sidebar group label.",
-  sm: "Default chrome body size — prop names/descriptions, sidebar nav labels, a section's file-path chip, a note's body.",
-  md: "Slightly larger body text — the search input's typed text, the page subtitle line.",
-  lg: 'Prominent chrome text — the sidebar logo, the search-clear (×) glyph.',
-  xl: 'Reserved — no current consumer; a step between lg and the section title if one is ever needed.',
-  '2xl': "A section's own component title — the heading above each documented component.",
-  '3xl': "The catalog's page title — the big heading at the top (e.g. \"Component Catalog\").",
-  '4xl': 'Reserved — no current consumer; the next step up from the page title if a bigger heading is ever needed.',
+  xs: 'Sidebar group labels (uppercase); a prop\'s type annotation.',
+  tableHeader: 'Grid column headers and list cell captions (uppercase).',
+  sm: 'Breadcrumb, catalog caption, block labels, prop names and descriptions.',
+  panelHeading: 'Reference-panel headings: Guidance, Quick reference, Props (uppercase).',
+  md: 'Default body text: descriptions, nav links, grid row headers, quick-reference rows, the filter field.',
+  lg: 'Pager arrows and the filter field\'s clear (×) glyph.',
+  brand: 'The app name at the top of the sidebar.',
+  xl: 'Reserved — no current consumer.',
+  '2xl': 'Reserved — no current consumer.',
+  pageTitle: 'The selected page\'s title.',
+  '3xl': 'Reserved — no current consumer.',
+  '4xl': 'Reserved — no current consumer.',
 };
 
-/** When to reach for each catalog-chrome spacing step — same grounding approach as
- *  CATALOG_TYPE_USE. Rendered in the Design System DS Catalog's Spacing page. */
+/** When to reach for each catalog-chrome spacing step. Rendered in the framework catalog's
+ *  Spacing page. */
 export const CATALOG_SPACE_USE: Record<keyof typeof CATALOG_SPACE, string> = {
-  xs: "Tight gap — e.g. TokenRow's own internal gap between a token's rendered value and its use-note.",
-  sm: "Small gap/padding — e.g. a section's description bottom margin, a block label's bottom margin.",
-  md: "Medium padding — e.g. a card's own internal gap between its contents, TokenRow's divider bottom padding.",
-  lg: "The default — a section's card padding, the sidebar's horizontal content padding, and the gap between rows in a token-scale gallery (SpacingScaleGallery/TypeScaleGallery).",
-  xl: 'Gap between individual examples inside a Variants/States card, and DividedStack\'s default divider gap.',
-  '2xl': "Gap between a section's major columns (Variants, States, Props+Accessibility), and between Props and Accessibility within that shared column.",
-  '3xl': 'Reserved — no current consumer in the framework chrome.',
+  xs: 'Tight gap — e.g. between a token\'s rendered value and its use-note.',
+  sm: 'Small gap — below the filter field; between the Props heading and its table.',
+  md: 'Medium gap — between a card\'s contents; token-row divider padding.',
+  lg: 'Grid and list cell padding (16px); row gap in scale galleries.',
+  xl: 'Preview-card padding; gap between reference-panel sections.',
+  '2xl': 'Gap between the reference panel\'s Guidance and Quick reference columns.',
+  '3xl': 'Bottom padding of the main column.',
 };
 
-// Neutral greyscale + one accent, used only for the catalog's own chrome (sidebar, headings,
-// prop tables, cards). Not meant to represent the host design system's palette.
-//
-// Two text tiers, not five: `text` covers both headings and primary content (the former separate
-// `ink`/`text` values were visually indistinguishable — #000000 vs #171717 — so one token does both
-// jobs). `textMuted` covers everything secondary — captions, type annotations, empty-state copy — down
-// to its floor. A former third `textFaint` step (#9c9c9c) was dropped: at ≈2.75:1 on this file's white/
-// surfaceMuted backgrounds it failed WCAG AA everywhere it was actually used for real text, and there's
-// no meaningfully-lighter grey that both reads as "fainter" and still clears 4.5:1 on white.
 export const CATALOG_COLOR = {
-  text: '#000000',
-  // #666666, not the previous #737373 — muted chrome text sits on every one of this file's surfaces,
-  // and #737373 failed WCAG AA on two of them (≈4.35:1 on pageBackground, ≈4.09:1 on chip; the bar
-  // for this 10-14px text is 4.5:1). #666666 clears it on all four (white ≈5.7:1, surfaceMuted
-  // ≈5.5:1, pageBackground ≈5.3:1, chip ≈5.0:1).
+  text: '#181818',
+  // #666666, not the references' #777777: #777 is 4.14–4.48:1 on this file's surfaces (WCAG AA
+  // needs 4.5:1); #666 is 5.3–5.7:1.
   textMuted: '#666666',
-  border: 'rgba(0,0,0,0.08)',
-  borderHairline: 'rgba(0,0,0,0.1)',
+  /** Dividers inside grids, lists, props tables, token rows. */
+  border: '#e4e4e4',
+  /** Sidebar edge, reference card, filter field. */
+  borderHairline: '#dddddd',
+  /** Grid, list, and preview cards; pager buttons. */
+  borderStrong: '#d7d7d7',
+  /** Quick-reference row dividers. */
+  borderSubtle: '#eeeeee',
   surface: '#ffffff',
+  /** Table headers, row headers, cell captions, filter field. */
   surfaceMuted: '#fafafa',
-  surfacePressed: '#f0f0f0',
-  // The page backdrop behind the (white) sidebar and (surfaceMuted) content cards — one step darker
-  // than both, so the whole page reads as a distinct layer under everything else on it.
-  pageBackground: '#f5f5f5',
-  // Fill for a small inline tag/chip of static text (e.g. a section's file-path chip) — darker than
-  // surfacePressed since it's a permanent label, not a hover/press feedback state.
+  /** Hover and pressed feedback on nav rows and buttons. */
+  surfacePressed: '#f1f3f8',
+  pageBackground: '#f6f6f4',
   chip: '#eeeeee',
-  accent: '#2563eb',
+  /** Active nav label, prop types, scale bars. */
+  accent: '#174dc6',
+  /** Active nav row background. */
+  accentSubtle: '#e9efff',
+  /** 3px keyboard focus ring on every catalog control. */
+  focusRing: '#c9d7ff',
   code: 'Menlo',
 } as const;
