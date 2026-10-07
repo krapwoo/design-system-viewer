@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan (revision 2). Implementation is **not authorized**.
+**Status:** Part A (Tasks 0–9, revision 2) implemented and committed locally as `2c485d1`. Part B (Tasks 10–15, revision 3) is planned; its implementation is **not authorized**.
 
 **Goal:** Replace the catalog's long scrolling document with one selected page at a time. Each page shows its specimens as a grid, a list, or a preview, then always-visible reference details. The whole catalog interface adopts the approved visual system.
 
@@ -2604,3 +2604,1596 @@ git commit -m "docs(catalog): record Studio Matrix verification evidence"
 3. Pushing or opening a pull request.
 4. Merging.
 5. Publishing or deploying the catalog.
+
+
+---
+
+# Part B — Revision 3: adaptive layout (Tasks 10–15)
+
+**Goal:** Grouped rows for variant-specific configurations, phone-width component previews, automatic side-by-side placement, a separate two-column Props box, and a source path on token pages.
+
+**Base:** `feat/catalog-studio-matrix` at `2c485d1` (Part A complete).
+
+**Spec:** revision 3 of `docs/superpowers/specs/2026-10-06-catalog-studio-matrix-design.md`.
+**Reference:** `docs/design/2026-10-06-catalog-studio-matrix-adaptive-reference.html` — SHA-256 `46908ada7315c2a46d44a33c2296b73d1dd4aa209892a2ad3ed55072597b8b23` (★ options are approved; the control bar and amber notes are mockup-only).
+
+## Part B constraints
+
+- Everything in Global Constraints still applies.
+- Component previews: each frame at most 402px; token galleries, recipes, the manifest, and the framework catalog stay full width.
+- Placement: side by side only when it saves at least 120px; only a list may move beside a first block that hugs its content; heights are recorded only while stacked.
+- Props box: two columns, filled across first, only for 4+ props with at least 360px per column.
+- Grouping is authored data (`group` on `states` items); never inferred from names.
+
+## Part B rehearsal (already exercised)
+
+All Part B code was applied to a scratch copy of `2c485d1` and run:
+
+- Unit tests: 21 of 21 pass (17 existing tests, with the page-plan test rewritten, plus 4 new).
+- `tsc` error codes unchanged from the baseline.
+- Rendered: Loading grouped rows, 277px cells at 1280, 338px at 1600, 240px with in-card scrolling at 1100, specimens centred; SegmentedToggle frames 402 and 320 with no empty block; Dropdown side by side at 1280 and 1600, stacked at 1100; Switch, Banner, Button stacked; Button Props in two columns filled across first; Colors shows only Quick reference; the framework catalog keeps full-width previews. No document-level horizontal scroll.
+- Defects found and fixed in this code: placement never triggered because blocks report their height before the container reports its width (the container handler cleared the heights); grouped rows inherited the 402px wide minimum and scrolled; Loading's circle spinners were stretched left because the whole states slot was full-width.
+
+## Part B file structure
+
+| File | Action | Responsibility |
+|---|---|---|
+| `native/catalog/comparison.ts` | Rewrite | Adds grouped rows, preview widths, empty-block omission, `choosePlacement`, `propsColumns`. |
+| `native/catalog/__tests__/comparison.test.ts` | Rewrite | Page-plan test updated; 4 new tests. |
+| `native/catalog/types.ts` | Modify | `VariantExample.group`, `PreviewWidths`, `SectionDef.previewWidths`. |
+| `native/catalog/ComparisonGroups.tsx` | Create | Grouped rows renderer. |
+| `native/catalog/PropsTable.tsx` | Modify | `columns` prop; stacked two-column cells. |
+| `native/catalog/ReferenceDetails.tsx` | Rewrite | Separate Props box; token-page Quick reference. |
+| `native/catalog/SectionBlock.tsx` | Rewrite | Grouped blocks, preview frames, measured placement. |
+| `native/catalog/CatalogShell.tsx` | Modify | `defaultPreviewWidths` prop. |
+| `native/catalog/index.ts`, `tokens.ts` | Modify | Exports; one spacing-use note. |
+| `native/catalog/CatalogExample.tsx` | Modify | Loading `group`/`fill`; SegmentedToggle and UnderlineTabs `previewWidths`. |
+| `native/catalog/CatalogFrameworkExample.tsx` | Modify | `defaultPreviewWidths="full"`. |
+| `README.md` | Modify | Four layouts, placement, Props box, new fields. |
+
+---
+
+### Task 10: Layout contract for revision 3
+
+**Files:**
+- Rewrite: `native/catalog/__tests__/comparison.test.ts`
+- Rewrite: `native/catalog/comparison.ts`
+- Modify: `native/catalog/types.ts`
+
+**Interfaces:**
+- Produces: `PREVIEW_MAX_WIDTH`, `PLACEMENT_MIN_SAVING`, `PROPS_MIN_COLUMN_WIDTH`, `PROPS_COLUMN_GAP`, `ListGroup`, `PresentationBlock` (adds `grouped`; `preview` gains `widths`), `PresentationOptions`, `presentationBlocks(def, options?)`, `PlacementBlock`, `choosePlacement({ available, gap, first, second }) → 'side' | 'stacked'`, `propsColumns(count, width) → 1 | 2`. Types: `PreviewWidths`, `VariantExample.group`, `SectionDef.previewWidths`.
+
+- [ ] **Step 1: Replace the test** — `native/catalog/__tests__/comparison.test.ts`:
+
+```ts
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  COLUMN_MIN_WIDTH,
+  MATRIX_LAYOUT,
+  cellKey,
+  gridColumnLimit,
+  gridWidthBounds,
+  indexCells,
+  listGeometry,
+  PREVIEW_MAX_WIDTH,
+  PROPS_MIN_COLUMN_WIDTH,
+  choosePlacement,
+  presentationBlocks,
+  propsColumns,
+  remainingStates,
+  validateComparison,
+} from '../comparison.ts';
+import { CATALOG_SPACE } from '../tokens.ts';
+
+const valid = {
+  rowLabel: 'Variant',
+  columnLabel: 'State',
+  rows: [{ key: 'primary', label: 'Primary' }, { key: 'ghost', label: 'Ghost' }],
+  columns: [{ key: 'default', label: 'Default' }, { key: 'disabled', label: 'Disabled' }],
+  cells: [
+    { rowKey: 'primary', columnKey: 'default', node: 'P' },
+    { rowKey: 'primary', columnKey: 'disabled', node: 'P-d' },
+    { rowKey: 'ghost', columnKey: 'default', node: 'G' },
+    { rowKey: 'ghost', columnKey: 'disabled', unavailableReason: 'Ghost has no disabled look' },
+  ],
+};
+
+test('layout constants match the approved design', () => {
+  assert.equal(MATRIX_LAYOUT.columnMaxWidth, 402);
+  assert.equal(MATRIX_LAYOUT.rowHeaderWidth, 120);
+  assert.equal(MATRIX_LAYOUT.rowMinHeight, 150);
+  assert.equal(MATRIX_LAYOUT.cellPadding, 16);
+  assert.equal(MATRIX_LAYOUT.cellPadding, CATALOG_SPACE.lg);
+  assert.equal(MATRIX_LAYOUT.laptopContentWidth, 1280 - 264 - 2 * 32);
+  assert.deepEqual(COLUMN_MIN_WIDTH, { compact: 160, regular: 240, wide: 402 });
+});
+
+test('gridColumnLimit derives how many columns fit a 1280px laptop', () => {
+  assert.equal(gridColumnLimit('compact'), 5);
+  assert.equal(gridColumnLimit('regular'), 3);
+  assert.equal(gridColumnLimit('wide'), 2);
+});
+
+test('gridWidthBounds depends on column count and specimen size', () => {
+  assert.deepEqual(gridWidthBounds(3, 'regular'), { minWidth: 840, maxWidth: 1326 });
+  assert.deepEqual(gridWidthBounds(4, 'compact'), { minWidth: 760, maxWidth: 1728 });
+});
+
+test('listGeometry balances rows inside one card', () => {
+  // Button "Other configurations": 6 regular items on a 1280px laptop -> 3 × 2, no blanks.
+  assert.deepEqual(listGeometry(6, 952, 'regular'), { columns: 3, rows: 2, fillers: 0, cellWidth: 316, containerWidth: 950 });
+  // Switch states: 4 compact items -> one row.
+  assert.deepEqual(listGeometry(4, 952, 'compact'), { columns: 4, rows: 1, fillers: 0, cellWidth: 237, containerWidth: 950 });
+  // Banner variants: 5 wide items -> 2 phone-width columns, 3 rows, one blank.
+  assert.deepEqual(listGeometry(5, 952, 'wide'), { columns: 2, rows: 3, fillers: 1, cellWidth: 402, containerWidth: 806 });
+  // Never wider than 402 per cell, even with room to spare.
+  assert.deepEqual(listGeometry(2, 1600, 'compact'), { columns: 2, rows: 1, fillers: 0, cellWidth: 402, containerWidth: 806 });
+  // Narrow container falls back to one column, never below the size minimum.
+  assert.deepEqual(listGeometry(3, 200, 'regular'), { columns: 1, rows: 3, fillers: 0, cellWidth: 240, containerWidth: 242 });
+  assert.deepEqual(listGeometry(0, 952, 'regular'), { columns: 0, rows: 0, fillers: 0, cellWidth: 0, containerWidth: 0 });
+});
+
+test('a complete comparison validates cleanly and indexes every cell', () => {
+  assert.deepEqual(validateComparison(valid), []);
+  const index = indexCells(valid);
+  assert.equal(index.size, 4);
+  assert.equal(index.get(cellKey('ghost', 'default'))?.node, 'G');
+});
+
+test('validateComparison reports structural and fit problems', () => {
+  assert.deepEqual(validateComparison({ ...valid, rows: [], cells: [] }), [
+    'Comparison needs at least one row and one column.',
+  ]);
+  const wide = {
+    ...valid,
+    size: 'wide',
+    columns: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }, { key: 'c', label: 'C' }],
+    cells: ['primary', 'ghost'].flatMap((r) => ['a', 'b', 'c'].map((c) => ({ rowKey: r, columnKey: c, node: 'x' }))),
+  };
+  assert.deepEqual(validateComparison(wide), [
+    'Grid has 3 columns; at most 2 wide columns fit a 1280px laptop. Swap the axes or use two lists.',
+  ]);
+  const broken = {
+    ...valid,
+    rows: [...valid.rows, { key: 'primary', label: 'Dup' }],
+    cells: [
+      { rowKey: 'primary', columnKey: 'default', node: 'P' },
+      { rowKey: 'primary', columnKey: 'default', node: 'P again' },
+      { rowKey: 'nope', columnKey: 'default', node: 'X' },
+      { rowKey: 'ghost', columnKey: 'nope', node: 'X' },
+      { rowKey: 'ghost', columnKey: 'default', node: 'G', unavailableReason: 'both' },
+      { rowKey: 'ghost', columnKey: 'disabled' },
+    ],
+  };
+  assert.deepEqual(validateComparison(broken), [
+    'Duplicate row key "primary".',
+    'Duplicate cell for row "primary" and column "default".',
+    'Cell references undeclared row "nope".',
+    'Cell references undeclared column "nope".',
+    'Cell for row "ghost" and column "default" must provide exactly one of node or unavailableReason.',
+    'Cell for row "ghost" and column "disabled" must provide exactly one of node or unavailableReason.',
+    'Missing cell for row "primary" and column "disabled".',
+  ]);
+});
+
+test('remainingStates drops states already shown as grid rows or columns', () => {
+  const states = { items: [{ key: 'disabled', name: 'Disabled', node: 'd' }, { key: 'icon-only', name: 'Icon-only', node: 'i' }] };
+  assert.equal(remainingStates(undefined, valid), undefined);
+  assert.equal(remainingStates(states, undefined), states);
+  assert.deepEqual(remainingStates(states, valid)?.items.map((item) => item.key), ['icon-only']);
+  assert.equal(remainingStates({ items: [states.items[0]] }, valid), undefined);
+});
+
+test('presentationBlocks plans grid, list, grouped, preview, and empty blocks', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = { items: [{ key: 'a', name: 'A', node: 'a' }] };
+  const wideVariants = { itemsFill: true, items: [{ key: 'a', name: 'A', node: 'a' }] };
+  const states = { items: [{ key: 'disabled', name: 'Disabled', node: 'd' }, { key: 'icon', name: 'Icon', node: 'i', fill: true }] };
+  const render = () => 'r';
+  const summary = (def) => presentationBlocks(def).map((b) => [b.kind, b.title, b.size ?? null]);
+
+  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, render }), [{ kind: 'preview', title: 'Tokens', widths: 'full' }]);
+  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, fullWidthLabel: 'Palette', render }), [{ kind: 'preview', title: 'Palette', widths: 'full' }]);
+  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true }), [{ kind: 'empty', title: 'Tokens', message: 'Nothing to preview.' }]);
+
+  assert.deepEqual(summary({ ...base, variants, states, comparison: valid }), [
+    ['grid', 'Variant × State', 'regular'],
+    ['list', 'Other configurations', 'regular'],
+  ]);
+  assert.deepEqual(summary({ ...base, specimenSize: 'compact', comparison: valid }), [['grid', 'Variant × State', 'compact']]);
+  assert.deepEqual(summary({ ...base, comparison: { ...valid, size: 'wide' }, specimenSize: 'compact' }), [['grid', 'Variant × State', 'wide']]);
+  // A lone block no longer carries an empty "No additional states" sibling.
+  assert.deepEqual(summary({ ...base, variants }), [['list', 'Variants', 'regular']]);
+  assert.deepEqual(summary({ ...base, variants: wideVariants, states }), [
+    ['list', 'Variants', 'wide'],
+    ['list', 'States / configurations', 'regular'],
+  ]);
+  assert.deepEqual(summary({ ...base, variants, specimenSize: 'compact' }), [['list', 'Variants', 'compact']]);
+  assert.deepEqual(summary({ ...base, render }), [['preview', 'Preview', null]]);
+  // Nothing documented at all: one truthful empty block.
+  assert.deepEqual(presentationBlocks(base), [{ kind: 'empty', title: 'Examples', message: 'No examples documented.' }]);
+  assert.deepEqual(summary({ ...base, render, hide: { states: true } }), [['preview', 'Preview', null]]);
+  assert.deepEqual(summary({ ...base, variants, states, hide: { variants: true } }), [['list', 'States / configurations', 'regular']]);
+  assert.deepEqual(presentationBlocks({ ...base, hide: { variants: true, states: true } }), []);
+  assert.deepEqual(summary({ ...base, comparison: valid, states: { items: [states.items[0]] } }), [['grid', 'Variant × State', 'regular']]);
+
+  const list = presentationBlocks({ ...base, variants: wideVariants })[0];
+  assert.deepEqual(list.items, [{ key: 'a', label: 'A', node: 'a', fill: true }]);
+});
+
+test('component previews are phone width by default; token galleries stay full width', () => {
+  const base = { id: 'X', path: 'p', description: 'd', render: () => 'r' };
+  assert.equal(PREVIEW_MAX_WIDTH, 402);
+  assert.deepEqual(presentationBlocks(base)[0], { kind: 'preview', title: 'Preview', widths: [402] });
+  assert.deepEqual(presentationBlocks({ ...base, previewWidths: [402, 320] })[0].widths, [402, 320]);
+  assert.deepEqual(presentationBlocks(base, { defaultPreviewWidths: 'full' })[0].widths, 'full');
+  assert.deepEqual(presentationBlocks({ ...base, previewWidths: [402] }, { defaultPreviewWidths: 'full' })[0].widths, [402]);
+  assert.deepEqual(presentationBlocks({ ...base, previewWidths: [500] })[0].widths, [402], 'never wider than a phone');
+});
+
+test('states that name their variant become grouped rows', () => {
+  const base = { id: 'Loading', path: 'p', description: 'd' };
+  const variants = { itemsFill: true, items: [{ key: 'circle', name: 'Circle', node: 'c' }, { key: 'linear', name: 'Linear', node: 'l' }, { key: 'dots', name: 'Dots', node: 'd' }] };
+  const states = { itemsFill: true, items: [
+    { key: 'small', name: 'Small', node: 's', group: 'circle' },
+    { key: 'medium', name: 'Medium', node: 'm', group: 'circle' },
+    { key: 'thin', name: 'Thin', node: 't', group: 'linear' },
+    { key: 'accent', name: 'Accent colour', node: 'x' },
+    { key: 'stray', name: 'Stray', node: 'y', group: 'nope' },
+  ] };
+  const blocks = presentationBlocks({ ...base, variants, states });
+  assert.deepEqual(blocks.map((b) => [b.kind, b.title, b.size ?? null]), [
+    ['grouped', 'Variant × configuration', 'regular'],
+    ['list', 'Other configurations', 'wide'],
+  ]);
+  assert.deepEqual(blocks[0].groups.map((g) => [g.key, g.label, g.items.map((i) => i.key)]), [
+    ['circle', 'Circle', ['small', 'medium']],
+    ['linear', 'Linear', ['thin']],
+    ['dots', 'Dots', ['dots']],
+  ]);
+  assert.deepEqual(blocks[1].items.map((i) => i.key), ['accent', 'stray']);
+  // A comparison grid takes precedence over grouping.
+  assert.equal(presentationBlocks({ ...base, variants, states, comparison: valid })[0].kind, 'grid');
+  // hide.states keeps the plain Variants list.
+  assert.deepEqual(presentationBlocks({ ...base, variants, states, hide: { states: true } }).map((b) => b.kind), ['list']);
+});
+
+test('choosePlacement keeps the shorter arrangement and prefers stacking', () => {
+  const second = { kind: 'list', itemCount: 3, size: 'wide', height: 600 };
+  // Dropdown at 1280: one 402px variant (≈600 tall) beside three wide states.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second: { ...second, height: 640 } }), 'side');
+  // Same page at 1100: only 340px beside it, narrower than a 402px cell.
+  assert.equal(choosePlacement({ available: 772, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second }), 'stacked');
+  // A first block that fills the width (grid, grouped, preview) never shares the row.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'grid', width: 952, height: 500 }, second }), 'stacked');
+  // Switch at 1280: beside a 402px variant, four compact states wrap to two rows — no real saving.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 4, size: 'compact', height: 230 } }), 'stacked');
+  // Two single-row blocks that both fit save a full row and go side by side.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 1, size: 'wide', height: 230 } }), 'side');
+  // Only lists reflow predictably beside another block.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second: { kind: 'grid', itemCount: 3, size: 'wide', height: 640 } }), 'stacked');
+});
+
+test('propsColumns uses two columns only for 4+ props with room', () => {
+  assert.equal(PROPS_MIN_COLUMN_WIDTH, 360);
+  assert.equal(propsColumns(9, 910), 2);
+  assert.equal(propsColumns(3, 910), 1);
+  assert.equal(propsColumns(9, 730), 1);
+  assert.equal(propsColumns(4, 752), 2);
+  assert.equal(propsColumns(0, 910), 1);
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `cd native-preview && npm run test:catalog`
+Expected: FAIL — `SyntaxError: The requested module '../comparison.ts' does not provide an export named 'PREVIEW_MAX_WIDTH'`.
+
+- [ ] **Step 3: Replace `native/catalog/comparison.ts`**
+
+```ts
+/**
+ * Pure page-layout logic for catalog specimens — no React or React Native runtime imports, so it
+ * runs under Node's test runner. A page shows its specimens in one of four layouts:
+ *   • grid    — two props that combine freely (rows × columns table);
+ *   • grouped — one row per variant holding that variant's own configurations;
+ *   • list    — one axis, in ONE shared card whose cells wrap into balanced rows;
+ *   • preview — free-form content: component demos at phone width, token galleries at full width.
+ * It also decides whether two blocks sit side by side (choosePlacement) and how many columns the
+ * Props box uses (propsColumns). ComparisonGrid, ComparisonGroups, and ComparisonList render it.
+ */
+import type { ComparisonDef, PreviewWidths, SectionDef, SpecimenSize, VariantSlot } from './types';
+
+/** Approved geometry. `cellPadding` equals CATALOG_SPACE.lg (asserted in tests). The laptop
+ *  content width is a 1280px viewport minus the 264px sidebar and 32px side padding. */
+export const MATRIX_LAYOUT = {
+  rowHeaderWidth: 120,
+  columnMaxWidth: 402,
+  cellPadding: 16,
+  rowMinHeight: 150,
+  laptopContentWidth: 952,
+} as const;
+
+/** Component previews never render wider than a phone. */
+export const PREVIEW_MAX_WIDTH = 402;
+
+/** Two blocks share a row only when that saves at least this much page height. */
+export const PLACEMENT_MIN_SAVING = 120;
+
+/** A Props column is never narrower than this; below it the Props box uses one column. */
+export const PROPS_MIN_COLUMN_WIDTH = 360;
+
+/** Gap between the two Props columns (CATALOG_SPACE['2xl']). */
+export const PROPS_COLUMN_GAP = 32;
+
+/** Smallest column or cell width per specimen size. Wide specimens are fixed at phone width. */
+export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402 };
+
+/** How many grid columns fit beside the row header on a 1280px laptop without scrolling. */
+export function gridColumnLimit(size: SpecimenSize): number {
+  return Math.floor((MATRIX_LAYOUT.laptopContentWidth - MATRIX_LAYOUT.rowHeaderWidth) / COLUMN_MIN_WIDTH[size]);
+}
+
+export function gridWidthBounds(columnCount: number, size: SpecimenSize): { minWidth: number; maxWidth: number } {
+  const n = Math.max(0, columnCount);
+  return {
+    minWidth: MATRIX_LAYOUT.rowHeaderWidth + n * COLUMN_MIN_WIDTH[size],
+    maxWidth: MATRIX_LAYOUT.rowHeaderWidth + n * MATRIX_LAYOUT.columnMaxWidth,
+  };
+}
+
+export interface ListGeometry {
+  columns: number;
+  rows: number;
+  fillers: number;
+  cellWidth: number;
+  containerWidth: number;
+}
+
+/** Balanced wrapping for a one-axis list inside a single bordered card (1px outer border). Each
+ *  cell's 1px divider sits inside its own width, so no cell is ever wider than 402px. Uses as few
+ *  rows as fit, then spreads items evenly across them so a short last row leaves as little empty
+ *  space as possible. `fillers` blank cells complete the last row. */
+export function listGeometry(itemCount: number, availableWidth: number, size: SpecimenSize): ListGeometry {
+  if (itemCount <= 0) return { columns: 0, rows: 0, fillers: 0, cellWidth: 0, containerWidth: 0 };
+  const inner = Math.max(0, availableWidth - 2);
+  const min = COLUMN_MIN_WIDTH[size];
+  const maxColumns = Math.max(1, Math.min(itemCount, Math.floor(inner / min)));
+  const rows = Math.ceil(itemCount / maxColumns);
+  const columns = Math.ceil(itemCount / rows);
+  const fitted = Math.floor(inner / columns);
+  const cellWidth = size === 'wide' ? MATRIX_LAYOUT.columnMaxWidth : Math.max(min, Math.min(MATRIX_LAYOUT.columnMaxWidth, fitted));
+  return {
+    columns,
+    rows,
+    fillers: rows * columns - itemCount,
+    cellWidth,
+    containerWidth: columns * cellWidth + 2,
+  };
+}
+
+export function cellKey(rowKey: string, columnKey: string): string {
+  return `${rowKey}\u0000${columnKey}`;
+}
+
+export function indexCells(def: ComparisonDef): Map<string, ComparisonDef['cells'][number]> {
+  const index = new Map<string, ComparisonDef['cells'][number]>();
+  for (const cell of def.cells) {
+    const key = cellKey(cell.rowKey, cell.columnKey);
+    if (!index.has(key)) index.set(key, cell);
+  }
+  return index;
+}
+
+/** Human-readable problems in a stable order: axis duplicates, column fit, each cell in
+ *  declaration order, then missing coordinates in row-major order. Empty when valid. */
+export function validateComparison(def: ComparisonDef): string[] {
+  if (def.rows.length === 0 || def.columns.length === 0) {
+    return ['Comparison needs at least one row and one column.'];
+  }
+  const issues: string[] = [];
+  const rowKeys = new Set<string>();
+  for (const row of def.rows) {
+    if (rowKeys.has(row.key)) issues.push(`Duplicate row key "${row.key}".`);
+    rowKeys.add(row.key);
+  }
+  const columnKeys = new Set<string>();
+  for (const column of def.columns) {
+    if (columnKeys.has(column.key)) issues.push(`Duplicate column key "${column.key}".`);
+    columnKeys.add(column.key);
+  }
+  const size = def.size ?? 'regular';
+  const limit = gridColumnLimit(size);
+  if (columnKeys.size > limit) {
+    issues.push(`Grid has ${columnKeys.size} columns; at most ${limit} ${size} columns fit a 1280px laptop. Swap the axes or use two lists.`);
+  }
+  const seen = new Set<string>();
+  for (const cell of def.cells) {
+    const key = cellKey(cell.rowKey, cell.columnKey);
+    if (seen.has(key)) {
+      issues.push(`Duplicate cell for row "${cell.rowKey}" and column "${cell.columnKey}".`);
+      continue;
+    }
+    seen.add(key);
+    if (!rowKeys.has(cell.rowKey)) {
+      issues.push(`Cell references undeclared row "${cell.rowKey}".`);
+      continue;
+    }
+    if (!columnKeys.has(cell.columnKey)) {
+      issues.push(`Cell references undeclared column "${cell.columnKey}".`);
+      continue;
+    }
+    const hasNode = cell.node !== undefined;
+    const hasReason = typeof cell.unavailableReason === 'string' && cell.unavailableReason.length > 0;
+    if (hasNode === hasReason) {
+      issues.push(`Cell for row "${cell.rowKey}" and column "${cell.columnKey}" must provide exactly one of node or unavailableReason.`);
+    }
+  }
+  for (const rowKey of rowKeys) {
+    for (const columnKey of columnKeys) {
+      if (!seen.has(cellKey(rowKey, columnKey))) {
+        issues.push(`Missing cell for row "${rowKey}" and column "${columnKey}".`);
+      }
+    }
+  }
+  return issues;
+}
+
+/** `states` minus items whose key is already a grid row or column. */
+export function remainingStates(states: VariantSlot | undefined, comparison: ComparisonDef | undefined): VariantSlot | undefined {
+  if (!states) return undefined;
+  if (!comparison) return states;
+  const covered = new Set([...comparison.rows.map((row) => row.key), ...comparison.columns.map((column) => column.key)]);
+  const items = states.items.filter((item) => !covered.has(item.key));
+  return items.length > 0 ? { ...states, items } : undefined;
+}
+
+export interface ListItem {
+  key: string;
+  label: string;
+  node: unknown;
+  fill?: boolean;
+}
+
+export interface ListGroup {
+  key: string;
+  label: string;
+  items: ListItem[];
+}
+
+export type PresentationBlock =
+  | { kind: 'grid'; title: string; size: SpecimenSize; comparison: ComparisonDef }
+  | { kind: 'grouped'; title: string; size: SpecimenSize; groups: ListGroup[] }
+  | { kind: 'list'; title: string; size: SpecimenSize; items: ListItem[] }
+  | { kind: 'preview'; title: string; widths: PreviewWidths }
+  | { kind: 'empty'; title: string; message: string };
+
+export interface PresentationOptions {
+  /** Preview widths for component pages that do not set `previewWidths`. Default: one phone width. */
+  defaultPreviewWidths?: PreviewWidths;
+}
+
+/** Specimen size for a one-axis slot: the section's explicit size, else wide for full-width
+ *  (itemsFill) slots, else regular. */
+export function slotSize<TId extends string>(def: SectionDef<TId>, slot: VariantSlot): SpecimenSize {
+  return def.specimenSize ?? (slot.itemsFill ? 'wide' : 'regular');
+}
+
+function slotItems(slot: VariantSlot): ListItem[] {
+  return slot.items.map((item) => ({ key: item.key, label: item.name, node: item.node, fill: item.fill || slot.itemsFill }));
+}
+
+/** Preview widths, each capped at phone width. 'full' is kept for catalog chrome and token pages. */
+function previewWidths(requested: PreviewWidths | undefined, fallback: PreviewWidths | undefined): PreviewWidths {
+  const widths = requested ?? fallback ?? [PREVIEW_MAX_WIDTH];
+  return widths === 'full' ? 'full' : widths.map((w) => Math.min(w, PREVIEW_MAX_WIDTH));
+}
+
+/** Grouped rows when at least one state names a variant through `group`. Every variant gets a row:
+ *  its grouped states, or the variant's own example when it has none. States without a matching
+ *  group are returned as leftovers for "Other configurations". */
+function groupStates(variants: VariantSlot, states: VariantSlot): { groups: ListGroup[]; leftovers: VariantSlot | undefined } | undefined {
+  const variantKeys = new Set(variants.items.map((v) => v.key));
+  if (!states.items.some((s) => s.group !== undefined && variantKeys.has(s.group))) return undefined;
+  const fill = (item: VariantSlot['items'][number], slot: VariantSlot) => item.fill || slot.itemsFill;
+  const groups = variants.items.map((variant) => {
+    const own = states.items.filter((s) => s.group === variant.key);
+    const items = own.length > 0
+      ? own.map((s) => ({ key: s.key, label: s.name, node: s.node, fill: fill(s, states) }))
+      : [{ key: variant.key, label: variant.name, node: variant.node, fill: fill(variant, variants) }];
+    return { key: variant.key, label: variant.name, items };
+  });
+  const rest = states.items.filter((s) => s.group === undefined || !variantKeys.has(s.group));
+  return { groups, leftovers: rest.length > 0 ? { ...states, items: rest } : undefined };
+}
+
+/** The visual blocks of one page, in reading order. Reference details are not included. A page
+ *  never shows an empty block next to a real one; with nothing documented at all it shows one
+ *  "No examples documented." block. */
+export function presentationBlocks<TId extends string>(def: SectionDef<TId>, options: PresentationOptions = {}): PresentationBlock[] {
+  if (def.tokenGallery) {
+    const title = def.fullWidthLabel ?? 'Tokens';
+    return [def.render ? { kind: 'preview', title, widths: 'full' } : { kind: 'empty', title, message: 'Nothing to preview.' }];
+  }
+  const hide = def.hide ?? {};
+  const blocks: PresentationBlock[] = [];
+  let states = hide.states ? undefined : remainingStates(def.states, def.comparison);
+
+  if (!hide.variants) {
+    const grouped = !def.comparison && def.variants && states ? groupStates(def.variants, states) : undefined;
+    if (def.comparison) {
+      blocks.push({
+        kind: 'grid',
+        title: `${def.comparison.rowLabel} × ${def.comparison.columnLabel}`,
+        size: def.comparison.size ?? def.specimenSize ?? 'regular',
+        comparison: def.comparison,
+      });
+    } else if (grouped && def.variants && def.states) {
+      // Grouped rows place several cells beside a row header, so full-width (itemsFill) slots do
+      // not force 402px cells here; a cell's own `fill` still stretches its specimen.
+      blocks.push({ kind: 'grouped', title: 'Variant × configuration', size: def.specimenSize ?? 'regular', groups: grouped.groups });
+      states = grouped.leftovers;
+    } else if (def.variants) {
+      blocks.push({ kind: 'list', title: 'Variants', size: slotSize(def, def.variants), items: slotItems(def.variants) });
+    } else if (def.render) {
+      blocks.push({ kind: 'preview', title: 'Preview', widths: previewWidths(def.previewWidths, options.defaultPreviewWidths) });
+    }
+  }
+
+  if (states) {
+    const secondary = blocks.length > 0 && blocks[0].kind !== 'list';
+    blocks.push({
+      kind: 'list',
+      title: secondary ? 'Other configurations' : 'States / configurations',
+      size: slotSize(def, states),
+      items: slotItems(states),
+    });
+  }
+
+  if (blocks.length === 0 && !(hide.variants && hide.states)) {
+    blocks.push({ kind: 'empty', title: 'Examples', message: 'No examples documented.' });
+  }
+  return blocks;
+}
+
+export interface PlacementBlock {
+  kind: PresentationBlock['kind'];
+  /** Rendered width of the block's card (lists hug their columns; everything else fills). */
+  width?: number;
+  /** Measured height of the whole block, label included, while stacked. */
+  height: number;
+  /** For a list: item count and specimen size, so its side-by-side height can be predicted. */
+  itemCount?: number;
+  size?: SpecimenSize;
+}
+
+/** Side by side or stacked, for a page with exactly two blocks. Tries both and keeps the shorter;
+ *  stays stacked unless side by side saves at least PLACEMENT_MIN_SAVING. Only a list can move
+ *  beside a first block that hugs its content, and only when its cells keep their minimum width. */
+export function choosePlacement({ available, gap, first, second }: { available: number; gap: number; first: PlacementBlock; second: PlacementBlock }): 'side' | 'stacked' {
+  if (second.kind !== 'list' || !second.itemCount || !second.size) return 'stacked';
+  const firstWidth = first.width ?? available;
+  if (firstWidth > available * 0.7) return 'stacked';
+  const room = available - firstWidth - gap;
+  const minCell = second.size === 'wide' ? MATRIX_LAYOUT.columnMaxWidth : COLUMN_MIN_WIDTH[second.size];
+  if (room < minCell + 2) return 'stacked';
+  const stackedRows = listGeometry(second.itemCount, available, second.size).rows;
+  const sideRows = listGeometry(second.itemCount, room, second.size).rows;
+  const rowHeight = second.height / Math.max(1, stackedRows);
+  const sideHeight = Math.max(first.height, sideRows * rowHeight);
+  const stackedHeight = first.height + gap + second.height;
+  return sideHeight <= stackedHeight - PLACEMENT_MIN_SAVING ? 'side' : 'stacked';
+}
+
+/** Props box columns: two, filled across first, for 4+ props when each column keeps its minimum. */
+export function propsColumns(count: number, width: number): 1 | 2 {
+  return count >= 4 && width >= 2 * PROPS_MIN_COLUMN_WIDTH + PROPS_COLUMN_GAP ? 2 : 1;
+}
+```
+
+- [ ] **Step 4: Update `native/catalog/types.ts`**
+
+```diff
+--- a/native/catalog/types.ts
++++ b/native/catalog/types.ts
+@@ -35,6 +35,10 @@
+    *  any enum value from `SectionDef.props` that no tagged item covers — the mechanical version of
+    *  the completeness policy documented on `states` below. */
+   props?: Record<string, unknown>;
++  /** In `states` only: the `variants` item key this configuration belongs to (e.g. a size that
++   *  exists only for the circle variant). When any state names a variant, the page shows one row
++   *  per variant with its own configurations instead of separate Variants and States lists. */
++  group?: string;
+ }
+
+ /** The content of the "Variants" or "States / Configurations" column — every value of a single prop's
+@@ -53,6 +57,10 @@
+  *  402px, phone width). Sets grid column and list cell widths. */
+ export type SpecimenSize = 'compact' | 'regular' | 'wide';
+
++/** Widths for a component preview: one or more phone widths (each capped at 402px), or 'full' for
++ *  content that is not a phone component (catalog chrome, token galleries). */
++export type PreviewWidths = readonly number[] | 'full';
++
+ /** One row or column heading in a grid. */
+ export interface ComparisonAxisItem {
+   key: string;
+@@ -160,6 +168,9 @@
+   /** Width class for this page's specimens. Without it, full-width (`itemsFill`) slots are 'wide'
+    *  and everything else is 'regular'. */
+   specimenSize?: SpecimenSize;
++  /** Widths for this page's `render()` preview, e.g. `[402, 320]` to add a small-phone example.
++   *  Defaults to the catalog's default (CatalogShell `defaultPreviewWidths`), else `[402]`. */
++  previewWidths?: PreviewWidths;
+   /** Remove specific parts of the page instead of showing an empty-state sentence ("No additional
+    *  states or configurations documented.", etc.) — for sections with no meaningful states, props,
+    *  or accessibility story (e.g. a framework's own building-block pages). `variants` removes the
+```
+
+- [ ] **Step 5: Run the tests and confirm they pass**
+
+Run: `cd native-preview && npm run test:catalog`
+Expected: `# pass 21`, `# fail 0`.
+
+- [ ] **Step 6: Commit (only with commit authority)**
+
+```bash
+git add native/catalog/comparison.ts native/catalog/__tests__/comparison.test.ts native/catalog/types.ts
+git commit -m "feat(catalog): plan grouped rows, phone-width previews, placement, and props columns"
+```
+
+---
+
+### Task 11: `ComparisonGroups`
+
+**Files:**
+- Create: `native/catalog/ComparisonGroups.tsx`
+
+**Interfaces:**
+- Consumes: `ListGroup`, `COLUMN_MIN_WIDTH`, `MATRIX_LAYOUT` (Task 10).
+- Produces: `ComparisonGroups({ groups, size, label })`.
+
+- [ ] **Step 1: Create `native/catalog/ComparisonGroups.tsx`**
+
+```tsx
+import React from 'react';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
+import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
+import type { SpecimenSize } from './types';
+
+/**
+ * Grouped rows: one row per variant, headed by the variant's name, holding that variant's own
+ * configurations. Each cell keeps its own caption because the rows do not share column meanings
+ * (a circle's size is not a bar's thickness). Each row is its own labeled list. Shorter rows end
+ * in blank cells; a card wider than its container scrolls horizontally inside itself.
+ */
+export function ComparisonGroups({ groups, size, label }: { groups: ListGroup[]; size: SpecimenSize; label: string }) {
+  const columns = Math.max(1, ...groups.map((g) => g.items.length));
+  const min = COLUMN_MIN_WIDTH[size];
+  const minWidth = MATRIX_LAYOUT.rowHeaderWidth + columns * min + 2;
+  return (
+    <View>
+      <ScrollView horizontal style={styles.scroller} contentContainerStyle={styles.scrollContent}>
+        <View style={[styles.card, { minWidth }]}>
+          {groups.map((group, gi) => (
+            <View key={group.key} style={[styles.row, gi === groups.length - 1 && styles.lastRow]}>
+              <View style={styles.rowHeader}>
+                <Text style={styles.rowHeaderText}>{group.label}</Text>
+              </View>
+              <View role="list" aria-label={`${label}: ${group.label}`} style={styles.cells}>
+                {Array.from({ length: columns }, (_, ci) => {
+                  const item = group.items[ci];
+                  const last = ci === columns - 1;
+                  if (!item) {
+                    return <View key={`blank-${ci}`} aria-hidden style={[styles.cell, { minWidth: min }, last && styles.lastColumn]} />;
+                  }
+                  return (
+                    <View key={item.key} role="listitem" style={[styles.cell, { minWidth: min }, last && styles.lastColumn]}>
+                      <View style={styles.caption}>
+                        <Text style={styles.captionText}>{item.label}</Text>
+                      </View>
+                      <View style={styles.specimen}>
+                        <View style={item.fill ? styles.fill : styles.center}>{item.node as React.ReactNode}</View>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  scroller: { flexGrow: 0 },
+  scrollContent: { flexGrow: 1 },
+  card: {
+    width: '100%',
+    backgroundColor: CATALOG_COLOR.surface,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.borderStrong,
+    borderRadius: CATALOG_RADIUS.card,
+    overflow: 'hidden',
+  },
+  row: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },
+  lastRow: { borderBottomWidth: 0 },
+  rowHeader: {
+    width: MATRIX_LAYOUT.rowHeaderWidth,
+    flexShrink: 0,
+    justifyContent: 'center',
+    padding: MATRIX_LAYOUT.cellPadding,
+    backgroundColor: CATALOG_COLOR.surfaceMuted,
+    borderRightWidth: 1,
+    borderRightColor: CATALOG_COLOR.border,
+  },
+  rowHeaderText: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
+  cells: { flex: 1, flexDirection: 'row' },
+  cell: { flex: 1, maxWidth: MATRIX_LAYOUT.columnMaxWidth, borderRightWidth: 1, borderRightColor: CATALOG_COLOR.border },
+  lastColumn: { borderRightWidth: 0 },
+  caption: {
+    padding: MATRIX_LAYOUT.cellPadding,
+    backgroundColor: CATALOG_COLOR.surfaceMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: CATALOG_COLOR.border,
+  },
+  captionText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
+  specimen: {
+    flexGrow: 1,
+    minHeight: MATRIX_LAYOUT.rowMinHeight,
+    padding: MATRIX_LAYOUT.cellPadding,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  center: { alignItems: 'center' },
+  fill: { alignSelf: 'stretch' },
+});
+```
+
+- [ ] **Step 2: Confirm no new typecheck error codes**
+
+```bash
+cd native-preview
+npx tsc --noEmit -p . 2>&1 | grep "^../native/catalog" | grep -o "error TS[0-9]*" | sort -u
+```
+
+Expected: a subset of `TS2307 TS2322 TS2875 TS7006 TS7031`.
+
+---
+
+### Task 12: Props box and token-page reference
+
+**Files:**
+- Modify: `native/catalog/PropsTable.tsx`
+- Rewrite: `native/catalog/ReferenceDetails.tsx`
+
+**Interfaces:**
+- Consumes: `propsColumns`, `PROPS_COLUMN_GAP` (Task 10).
+- Produces: `PropsTable({ props, columns? })`; `ReferenceDetails({ def })` now also renders for token galleries.
+
+- [ ] **Step 1: Update `native/catalog/PropsTable.tsx`**
+
+```diff
+--- a/native/catalog/PropsTable.tsx
++++ b/native/catalog/PropsTable.tsx
+@@ -1,13 +1,52 @@
+ import { View, Text, StyleSheet } from 'react-native';
+ import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
++import { PROPS_COLUMN_GAP } from './comparison';
+ import type { PropDef } from './types';
+
+-/** Renders a component's real prop interface as a table: each row holds name + type in a fixed-width
+- *  first column, with the description (and default, if any) in a second column beside it. It spans
+- *  the full width of the reference panel (ReferenceDetails), so the side-by-side layout reads
+- *  comfortably. */
+-export function PropsTable({ props }: { props: PropDef[] }) {
++/** One prop, stacked: name and type on one line, then description and default. Used by the
++ *  two-column layout, where a side-by-side name column would wrap long union types. */
++function PropCell({ prop, divider }: { prop: PropDef; divider: boolean }) {
+   return (
++    <View style={[styles.cell, divider && styles.cellDivider]}>
++      <View style={styles.cellHead}>
++        <Text style={styles.name}>
++          {prop.name}
++          <Text style={styles.optionalMark}>{prop.required ? '' : '?'}</Text>
++        </Text>
++        <Text style={styles.type}>{prop.type}</Text>
++      </View>
++      <Text style={styles.desc}>{prop.desc}</Text>
++      {prop.default != null && (
++        <Text style={styles.default}>
++          Default: <Text style={styles.defaultVal}>{prop.default}</Text>
++        </Text>
++      )}
++    </View>
++  );
++}
++
++/** Renders a component's real prop interface. One column: each row holds name + type in a
++ *  fixed-width first column with the description beside it. Two columns (`columns={2}`, chosen by
++ *  ReferenceDetails through `propsColumns`): props fill across first, each stacked, so reading and
++ *  focus order stay the declared order. */
++export function PropsTable({ props, columns = 1 }: { props: PropDef[]; columns?: 1 | 2 }) {
++  if (columns === 2) {
++    const rows: PropDef[][] = [];
++    for (let i = 0; i < props.length; i += 2) rows.push(props.slice(i, i + 2));
++    return (
++      <View style={styles.table}>
++        {rows.map((row, ri) => (
++          <View key={row[0].name} style={styles.gridRow}>
++            {row.map((prop, ci) => (
++              <PropCell key={prop.name} prop={prop} divider={ri * 2 + ci + 2 < props.length} />
++            ))}
++            {row.length === 1 && <View style={styles.cell} />}
++          </View>
++        ))}
++      </View>
++    );
++  }
++  return (
+     <View style={styles.table}>
+       {props.map((prop, i) => (
+         <View
+@@ -55,4 +94,8 @@
+   desc: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, lineHeight: 17 },
+   default: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted },
+   defaultVal: { fontFamily: CATALOG_COLOR.code, color: CATALOG_COLOR.textMuted },
++  gridRow: { flexDirection: 'row', gap: PROPS_COLUMN_GAP },
++  cell: { flex: 1, minWidth: 0, paddingVertical: CATALOG_SPACE.md, gap: 4 },
++  cellDivider: { borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },
++  cellHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 10, rowGap: 2 },
+ });
+```
+
+- [ ] **Step 2: Replace `native/catalog/ReferenceDetails.tsx`**
+
+```tsx
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { PropsTable } from './PropsTable';
+import { propsColumns } from './comparison';
+import type { SectionDef } from './types';
+
+// react-native-web reads `aria-level`; React Native's prop types do not declare it.
+const HEADING_LEVEL_2 = { 'aria-level': 2 } as Record<string, unknown>;
+
+function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <View style={styles.fact}>
+      <Text style={styles.factLabel}>{label}</Text>
+      <Text style={[styles.factValue, mono && styles.mono]}>{value}</Text>
+    </View>
+  );
+}
+
+/** Props in their own full-width box. Two columns, filled across first, when there are 4+ props and
+ *  each column keeps PROPS_MIN_COLUMN_WIDTH; otherwise one column. */
+function PropsBox<TId extends string>({ def }: { def: SectionDef<TId> }) {
+  const [width, setWidth] = useState(0);
+  const onLayout = (event: LayoutChangeEvent) => {
+    const next = Math.round(event.nativeEvent.layout.width);
+    if (next > 0 && next !== width) setWidth(next);
+  };
+  const props = def.props ?? [];
+  return (
+    <View style={styles.card}>
+      <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Props</Text>
+      <View onLayout={onLayout}>
+        {props.length > 0 ? (
+          <PropsTable props={props} columns={propsColumns(props.length, width)} />
+        ) : (
+          <Text style={styles.empty}>This component takes no props.</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Always-visible reference below a page's specimens: a card with Guidance and Quick reference
+ * (source path, accessibility), then Props in their own box. Token galleries show only Quick
+ * reference with the source path. No collapse control by design.
+ */
+export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<TId> }) {
+  const hide = def.hide ?? {};
+  if (def.tokenGallery) {
+    return (
+      <View style={styles.card}>
+        <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
+        <Fact label="Source" value={def.path} mono />
+      </View>
+    );
+  }
+  return (
+    <View style={styles.stack}>
+      <View style={styles.card}>
+        <View style={styles.columns}>
+          <View style={styles.column}>
+            <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Guidance</Text>
+            <Text style={styles.body}>{def.whenToUse ?? 'No usage guidance documented.'}</Text>
+          </View>
+          <View style={styles.column}>
+            <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
+            <Fact label="Source" value={def.path} mono />
+            {!hide.accessibility && <Fact label="Accessibility" value={def.a11y ?? 'No accessibility notes documented.'} />}
+          </View>
+        </View>
+      </View>
+      {!hide.props && <PropsBox def={def} />}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  stack: { gap: CATALOG_LAYOUT.blockGap },
+  card: {
+    backgroundColor: CATALOG_COLOR.surface,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.borderHairline,
+    borderRadius: CATALOG_RADIUS.md,
+    padding: CATALOG_LAYOUT.panelPadding,
+  },
+  columns: { flexDirection: 'row', gap: CATALOG_SPACE['2xl'] },
+  column: { flex: 1 },
+  heading: {
+    fontSize: CATALOG_TYPE.panelHeading,
+    fontWeight: '700',
+    letterSpacing: 0.52,
+    textTransform: 'uppercase',
+    color: CATALOG_COLOR.text,
+    marginBottom: 10,
+  },
+  body: { fontSize: CATALOG_TYPE.md, lineHeight: 20, color: CATALOG_COLOR.textMuted },
+  fact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: CATALOG_SPACE.lg,
+    paddingVertical: CATALOG_LAYOUT.factPaddingY,
+    borderBottomWidth: 1,
+    borderBottomColor: CATALOG_COLOR.borderSubtle,
+  },
+  factLabel: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
+  factValue: { flex: 1, fontSize: CATALOG_TYPE.md, lineHeight: 20, textAlign: 'right', color: CATALOG_COLOR.textMuted },
+  mono: { fontFamily: CATALOG_COLOR.code },
+  empty: { fontSize: CATALOG_TYPE.sm, fontStyle: 'italic', color: CATALOG_COLOR.textMuted },
+});
+```
+
+- [ ] **Step 3: Confirm no new typecheck error codes** (Task 11 Step 2).
+
+---
+
+### Task 13: Page placement, previews, and catalog default
+
+**Files:**
+- Rewrite: `native/catalog/SectionBlock.tsx`
+- Modify: `native/catalog/CatalogShell.tsx`, `native/catalog/index.ts`, `native/catalog/tokens.ts`
+
+**Interfaces:**
+- Consumes: Tasks 10–12.
+- Produces: `SectionBlock` gains `defaultPreviewWidths?: PreviewWidths`; `CatalogShell` gains `defaultPreviewWidths?: PreviewWidths` (default `[402]`).
+
+Placement lives in `Blocks` (inside `SectionBlock.tsx`): record each block's height only while stacked; never clear recorded heights when the container width first arrives (blocks report before the container); a width change returns to stacked; an effect decides with `choosePlacement` once both heights and the width are known.
+
+- [ ] **Step 1: Replace `native/catalog/SectionBlock.tsx`**
+
+```tsx
+import React, { useEffect, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { ComparisonGrid } from './ComparisonGrid';
+import { ComparisonGroups } from './ComparisonGroups';
+import { ComparisonList } from './ComparisonList';
+import { ReferenceDetails } from './ReferenceDetails';
+import { choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
+import type { PreviewWidths, SectionDef } from './types';
+
+// Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
+// else (string, boolean, IconName, () => void, …) has no fixed enum to sweep and is skipped.
+const STRING_LITERAL_RE = /'([^']+)'/g;
+
+/** Opt-in completeness check (rule 4 of the policy documented on `SectionDef.states`): once a
+ *  section has at least one `VariantExample.props`-tagged item, warn about any enum value from
+ *  `def.props` that no tagged item (across Variants + States) actually demonstrates. Sections that
+ *  haven't started tagging are skipped entirely — annotating is gradual, not all-or-nothing. */
+function checkCompleteness<TId extends string>(def: SectionDef<TId>): void {
+  if (!def.props) return;
+  const items = [...(def.variants?.items ?? []), ...(def.states?.items ?? [])];
+  const tagged = items.filter((item) => item.props);
+  if (tagged.length === 0) return;
+
+  for (const prop of def.props) {
+    const literals = prop.type.match(STRING_LITERAL_RE);
+    if (!literals || literals.length < 2) continue; // not a multi-value enum
+    const values = literals.map((s) => s.slice(1, -1));
+    const covered = new Set(
+      tagged
+        .map((item) => item.props?.[prop.name])
+        .filter((v): v is string => typeof v === 'string'),
+    );
+    const missing = values.filter((v) => !covered.has(v));
+    if (missing.length > 0) {
+      console.warn(
+        `[Catalog] ${def.id}: prop "${prop.name}" has no tagged example for value(s) ${missing.map((v) => `"${v}"`).join(', ')} — ` +
+          `add { props: { ${prop.name}: '${missing[0]}' } } to whichever VariantExample already demonstrates it, or add a new one.`,
+      );
+    }
+  }
+}
+
+export interface SectionPager<TId extends string> {
+  previousId: TId | null;
+  nextId: TId | null;
+  onNavigate: (id: TId) => void;
+}
+
+function PagerButton<TId extends string>({
+  direction,
+  targetId,
+  onNavigate,
+}: {
+  direction: 'previous' | 'next';
+  targetId: TId | null;
+  onNavigate: (id: TId) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const disabled = targetId == null;
+  const label = disabled
+    ? direction === 'previous' ? 'No previous page' : 'No next page'
+    : `${direction === 'previous' ? 'Previous' : 'Next'}: ${targetId}`;
+  return (
+    <Pressable
+      onPress={() => {
+        if (targetId != null) onNavigate(targetId);
+      }}
+      disabled={disabled}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [
+        styles.pagerButton,
+        !disabled && (pressed || hovered) && styles.pagerButtonActive,
+        focused && styles.focusRing,
+        disabled && styles.pagerButtonDisabled,
+      ]}
+    >
+      <Text style={[styles.pagerGlyph, disabled && styles.pagerGlyphDisabled]}>{direction === 'previous' ? '←' : '→'}</Text>
+    </Pressable>
+  );
+}
+
+/** Caption above each frame when a preview shows more than one width. */
+function frameLabel(width: number): string {
+  if (width >= 402) return `${width} · Default phone`;
+  if (width <= 360) return `${width} · Small phone`;
+  return `${width}px`;
+}
+
+/** A component preview: one frame per width (each at most phone width), or full width for catalog
+ *  chrome and token galleries. Every frame is its own live instance with its own state. */
+function Preview({ render, widths }: { render: () => React.ReactNode; widths: PreviewWidths }) {
+  if (widths === 'full') return <View style={styles.previewCard}>{render()}</View>;
+  return (
+    <View style={styles.previewCard}>
+      <View style={styles.frames}>
+        {widths.map((width, i) => (
+          <View key={`${width}-${i}`} style={[styles.frame, { width }]}>
+            {widths.length > 1 && <Text style={styles.frameLabel}>{frameLabel(width)}</Text>}
+            {render()}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function BlockContent<TId extends string>({ block, def }: { block: PresentationBlock; def: SectionDef<TId> }) {
+  switch (block.kind) {
+    case 'grid':
+      return <ComparisonGrid def={block.comparison} size={block.size} sectionId={def.id} />;
+    case 'grouped':
+      return <ComparisonGroups groups={block.groups} size={block.size} label={def.id} />;
+    case 'list':
+      return <ComparisonList items={block.items} size={block.size} label={`${def.id}: ${block.title}`} />;
+    case 'preview':
+      return def.render ? <Preview render={def.render} widths={block.widths} /> : null;
+    default:
+      return (
+        <View style={styles.previewCard}>
+          <Text style={styles.emptyText}>{block.message}</Text>
+        </View>
+      );
+  }
+}
+
+/** Width a block's card occupies: lists hug their columns; everything else fills the row. */
+function blockWidth(block: PresentationBlock, available: number): number {
+  return block.kind === 'list' ? listGeometry(block.items.length, available, block.size).containerWidth : available;
+}
+
+/**
+ * The page's specimen blocks, stacked or side by side. Starts stacked, records each block's stacked
+ * height, then moves to side by side only when choosePlacement says it saves real height. Heights
+ * are never recorded while side by side, so the decision never feeds on its own result; a width
+ * change returns to stacked and decides again.
+ */
+function Blocks<TId extends string>({ blocks, def }: { blocks: PresentationBlock[]; def: SectionDef<TId> }) {
+  const [available, setAvailable] = useState(0);
+  const [heights, setHeights] = useState<number[]>([]);
+  const [placement, setPlacement] = useState<'side' | 'stacked'>('stacked');
+
+  const onContainerLayout = (event: LayoutChangeEvent) => {
+    const width = Math.round(event.nativeEvent.layout.width);
+    if (width <= 0 || width === available) return;
+    // Keep recorded heights: they are only taken while stacked, and blocks often report before the
+    // container does. A new width returns to stacked so the decision is made again.
+    setAvailable(width);
+    setPlacement('stacked');
+  };
+  const onBlockLayout = (index: number) => (event: LayoutChangeEvent) => {
+    if (placement !== 'stacked' || blocks.length !== 2) return;
+    const height = Math.round(event.nativeEvent.layout.height);
+    setHeights((prev: number[]) => {
+      if (prev[index] === height) return prev;
+      const next = [...prev];
+      next[index] = height;
+      return next;
+    });
+  };
+
+  // Decide once both stacked heights are known for the current width.
+  useEffect(() => {
+    if (placement !== 'stacked' || blocks.length !== 2 || available <= 0 || !heights[0] || !heights[1]) return;
+    const [first, second] = blocks;
+    const decision = choosePlacement({
+      available,
+      gap: CATALOG_LAYOUT.blockGap,
+      first: { kind: first.kind, width: blockWidth(first, available), height: heights[0] },
+      second: second.kind === 'list'
+        ? { kind: 'list', height: heights[1], itemCount: second.items.length, size: second.size }
+        : { kind: second.kind, height: heights[1] },
+    });
+    if (decision === 'side') setPlacement('side');
+  }, [available, blocks, heights, placement]);
+
+  const side = placement === 'side';
+  return (
+    <View onLayout={onContainerLayout} style={[styles.blocks, side && styles.blocksSide]}>
+      {blocks.map((block, i) => (
+        <View
+          key={block.title}
+          onLayout={onBlockLayout(i)}
+          style={side ? (i === 0 ? { width: blockWidth(block, available), flexShrink: 0 } : styles.blockFill) : undefined}
+        >
+          <Text style={styles.blockLabel}>{block.title}</Text>
+          <BlockContent block={block} def={def} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One catalog page: breadcrumb, title, description, previous/next, then one or two specimen
+ * blocks (grid, grouped rows, list, or preview), stacked or side by side, then always-visible
+ * reference details (Quick reference only for token galleries). Works standalone without a pager
+ * inside a host page, as the framework catalog's own SectionBlock demo does.
+ */
+export function SectionBlock<TId extends string>({
+  def,
+  groupLabel,
+  breadcrumbRoot,
+  pager,
+  headingRef,
+  headingLevel = 1,
+  defaultPreviewWidths,
+}: {
+  def: SectionDef<TId>;
+  groupLabel?: string;
+  breadcrumbRoot?: string;
+  pager?: SectionPager<TId>;
+  headingRef?: React.Ref<View>;
+  headingLevel?: 1 | 2;
+  /** Preview widths for pages without `previewWidths` (CatalogShell passes its catalog default). */
+  defaultPreviewWidths?: PreviewWidths;
+}) {
+  checkCompleteness(def);
+  const blocks = presentationBlocks(def, { defaultPreviewWidths });
+  // react-native-web reads `aria-level`; React Native's prop types do not declare it.
+  const headingLevelProps = { 'aria-level': headingLevel } as Record<string, unknown>;
+
+  return (
+    <View>
+      {groupLabel && (
+        <Text style={styles.breadcrumb}>{breadcrumbRoot ? `${breadcrumbRoot} / ${groupLabel}` : groupLabel}</Text>
+      )}
+      <View style={styles.titlebar}>
+        <View style={styles.titleText}>
+          {/* The focus target is the heading itself, so assistive tech announces its role and level. */}
+          <View ref={headingRef} tabIndex={-1} role="heading" {...headingLevelProps} style={styles.headingTarget}>
+            <Text style={styles.title}>{def.id}</Text>
+          </View>
+          <Text style={styles.desc}>{def.description}</Text>
+        </View>
+        {pager && (
+          <View style={styles.pager}>
+            <PagerButton direction="previous" targetId={pager.previousId} onNavigate={pager.onNavigate} />
+            <PagerButton direction="next" targetId={pager.nextId} onNavigate={pager.onNavigate} />
+          </View>
+        )}
+      </View>
+
+      {blocks.length > 0 && <Blocks blocks={blocks} def={def} />}
+
+      <ReferenceDetails def={def} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  breadcrumb: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  titlebar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: CATALOG_SPACE.xl,
+    marginTop: 14,
+    marginBottom: CATALOG_SPACE.xl,
+  },
+  titleText: { flex: 1 },
+  headingTarget: { alignSelf: 'flex-start' },
+  title: { fontSize: CATALOG_TYPE.pageTitle, fontWeight: '700', color: CATALOG_COLOR.text, marginBottom: 5 },
+  desc: { fontSize: CATALOG_TYPE.md, lineHeight: 20, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
+  pager: { flexDirection: 'row', gap: 6, flexShrink: 0 },
+  pagerButton: {
+    width: CATALOG_LAYOUT.controlSize,
+    height: CATALOG_LAYOUT.controlSize,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: CATALOG_RADIUS.control,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.borderStrong,
+    backgroundColor: CATALOG_COLOR.surface,
+  },
+  pagerButtonActive: { backgroundColor: CATALOG_COLOR.surfacePressed },
+  pagerButtonDisabled: { backgroundColor: CATALOG_COLOR.pageBackground },
+  focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
+  pagerGlyph: { fontSize: CATALOG_TYPE.lg, color: CATALOG_COLOR.text },
+  pagerGlyphDisabled: { color: CATALOG_COLOR.textMuted },
+  blocks: { gap: CATALOG_LAYOUT.blockGap, marginBottom: CATALOG_LAYOUT.blockGap },
+  blocksSide: { flexDirection: 'row', alignItems: 'flex-start' },
+  blockFill: { flex: 1, minWidth: 0 },
+  frames: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.xl, alignItems: 'flex-start' },
+  frame: { maxWidth: '100%', gap: CATALOG_SPACE.sm },
+  frameLabel: {
+    fontSize: CATALOG_TYPE.tableHeader,
+    fontWeight: '800',
+    letterSpacing: 0.44,
+    textTransform: 'uppercase',
+    color: CATALOG_COLOR.textMuted,
+  },
+  blockLabel: {
+    fontSize: CATALOG_TYPE.sm,
+    fontWeight: '700',
+    letterSpacing: 0.72,
+    textTransform: 'uppercase',
+    color: CATALOG_COLOR.text,
+    marginBottom: CATALOG_LAYOUT.blockLabelGap,
+  },
+  previewCard: {
+    backgroundColor: CATALOG_COLOR.surface,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.borderStrong,
+    borderRadius: CATALOG_RADIUS.card,
+    padding: CATALOG_SPACE.xl,
+    gap: CATALOG_SPACE.md,
+  },
+  emptyText: { fontSize: CATALOG_TYPE.sm, fontStyle: 'italic', color: CATALOG_COLOR.textMuted },
+});
+```
+
+- [ ] **Step 2: Update `native/catalog/CatalogShell.tsx`**
+
+```diff
+--- a/native/catalog/CatalogShell.tsx
++++ b/native/catalog/CatalogShell.tsx
+@@ -5,7 +5,7 @@
+ import { CatalogSidebar } from './CatalogSidebar';
+ import { SectionBlock } from './SectionBlock';
+ import { groupLabelFor, hashForId, idFromHash, neighbors, orderedIds } from './catalogNavigation';
+-import type { NavGroup, SectionDef } from './types';
++import type { NavGroup, PreviewWidths, SectionDef } from './types';
+
+ function isWeb(): boolean {
+   return Platform.OS === 'web' && typeof window !== 'undefined';
+@@ -47,6 +47,7 @@
+   title,
+   groups,
+   sections,
++  defaultPreviewWidths,
+ }: {
+   /** Short product/app name — the sidebar logo and the breadcrumb root. */
+   appName: string;
+@@ -54,6 +55,9 @@
+   title: string;
+   groups: NavGroup<TId>[];
+   sections: SectionDef<TId>[];
++  /** Preview widths for component pages without their own `previewWidths`. Default: `[402]`
++   *  (phone width). Pass 'full' for a catalog whose previews are not phone components. */
++  defaultPreviewWidths?: PreviewWidths;
+ }) {
+   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
+   const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
+@@ -134,6 +138,7 @@
+                 onNavigate: select,
+               }}
+               headingRef={headingRef}
++              defaultPreviewWidths={defaultPreviewWidths}
+             />
+           ) : (
+             <Text style={styles.empty}>No catalog pages are available.</Text>
+```
+
+- [ ] **Step 3: Update `native/catalog/index.ts` and `native/catalog/tokens.ts`**
+
+```diff
+--- a/native/catalog/index.ts
++++ b/native/catalog/index.ts
+@@ -17,6 +17,7 @@
+ export { CatalogSearchInput } from './CatalogSearchInput';
+ export { SectionBlock } from './SectionBlock';
+ export { ComparisonGrid } from './ComparisonGrid';
++export { ComparisonGroups } from './ComparisonGroups';
+ export { ComparisonList } from './ComparisonList';
+ export { ReferenceDetails } from './ReferenceDetails';
+ export { PropsTable } from './PropsTable';
+@@ -29,7 +30,7 @@
+ export { TypeScaleGallery } from './TypeScaleGallery';
+ export { buildComponentManifest } from './manifest';
+ export type { ComponentManifestEntry, ManifestExample } from './manifest';
+-export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem } from './types';
++export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, PreviewWidths } from './types';
+ export {
+   CATALOG_TYPE,
+   CATALOG_TYPE_USE,
+```
+
+```diff
+--- a/native/catalog/tokens.ts
++++ b/native/catalog/tokens.ts
+@@ -84,7 +84,7 @@
+  *  Spacing page. */
+ export const CATALOG_SPACE_USE: Record<keyof typeof CATALOG_SPACE, string> = {
+   xs: 'Tight gap — e.g. between a token\'s rendered value and its use-note.',
+-  sm: 'Small gap — below the filter field; between the Props heading and its table.',
++  sm: 'Small gap — below the filter field; between a preview frame\'s label and its demo.',
+   md: 'Medium gap — between a card\'s contents; token-row divider padding.',
+   lg: 'Grid and list cell padding (16px); row gap in scale galleries.',
+   xl: 'Preview-card padding; gap between reference-panel sections.',
+```
+
+- [ ] **Step 4: Tests and typecheck delta** — `npm run test:catalog` (expected `# pass 21`) and Task 11 Step 2.
+
+- [ ] **Step 5: Commit (only with commit authority)**
+
+```bash
+git add native/catalog/ComparisonGroups.tsx native/catalog/PropsTable.tsx native/catalog/ReferenceDetails.tsx native/catalog/SectionBlock.tsx native/catalog/CatalogShell.tsx native/catalog/index.ts native/catalog/tokens.ts
+git commit -m "feat(catalog): grouped rows, phone-width previews, automatic placement, props box"
+```
+
+---
+
+### Task 14: Content and README
+
+**Files:**
+- Modify: `native/catalog/CatalogExample.tsx`, `native/catalog/CatalogFrameworkExample.tsx`, `README.md`
+
+Content changes: Loading's six size states gain `group` (`circle` / `linear`); the states slot loses `itemsFill` and the three linear states gain `fill: true`, so circles stay centred. SegmentedToggle and UnderlineTabs gain `previewWidths: [402, 320]`. The framework catalog passes `defaultPreviewWidths="full"`.
+
+- [ ] **Step 1: Apply the `CatalogExample.tsx` change**
+
+```diff
+--- a/native/catalog/CatalogExample.tsx
++++ b/native/catalog/CatalogExample.tsx
+@@ -1872,6 +1872,8 @@
+   {
+     id: 'SegmentedToggle',
+     path: 'native/components/SegmentedToggle',
++    // Phone width plus a small phone, where long labels truncate.
++    previewWidths: [402, 320],
+     description: 'A row of mutually-exclusive options on a recessed track, with a white thumb that slides to the selected segment. Two or more options.',
+     whenToUse: 'A filled, heavier-weight control for a primary, prominent choice on the screen. For quieter secondary navigation, use UnderlineTabs.',
+     a11y: 'The row is accessibilityRole="tablist"; each segment is a "tab" with accessibilityState.selected reflecting the current value.',
+@@ -1885,6 +1887,8 @@
+   {
+     id: 'UnderlineTabs',
+     path: 'native/components/UnderlineTabs',
++    // Phone width plus a small phone, where long labels truncate.
++    previewWidths: [402, 320],
+     description: 'A quieter tab switcher — left-aligned labels over a hairline rule, with a sliding underline indicator. Same options/value/onChange API as SegmentedToggle.',
+     whenToUse: "Quiet, secondary navigation within a screen that already has a clear primary focus. For a prominent, primary choice, use SegmentedToggle.",
+     a11y: 'Each tab is a Pressable label; the underline is a visual indicator only, so selection is also conveyed by the active label weight.',
+@@ -2042,18 +2046,17 @@
+       ],
+     },
+     // `size` (circle) and `height` (linear) are continuous numbers, not enums — small/medium/large
+-    // and thin/default/thick are explicit, labeled sweeps across each, rather than a single "bigger"
+-    // example. "Medium"/"Default" repeat the same 20px/4px values already used unsized in Variants
+-    // above, labeled here so States / Configurations reads as the full range on its own.
++    // and thin/default/thick are explicit, labeled sweeps across each. Each sweep names its variant
++    // through `group`, so the page shows one row per variant; Accent colour applies to both and
++    // stays in "Other configurations".
+     states: {
+-      itemsFill: true,
+       items: [
+-        { key: 'small-circle', name: 'Small circle', node: <Loading variant="circle" size={14} /> },
+-        { key: 'medium-circle', name: 'Medium circle (default)', node: <Loading variant="circle" size={20} /> },
+-        { key: 'large-circle', name: 'Large circle', node: <Loading variant="circle" size={40} /> },
+-        { key: 'thin-linear', name: 'Thin linear', node: <Loading variant="linear" height={2} /> },
+-        { key: 'default-linear', name: 'Default linear', node: <Loading variant="linear" height={4} /> },
+-        { key: 'thick-linear', name: 'Thick linear', node: <Loading variant="linear" height={8} /> },
++        { key: 'small-circle', group: 'circle', name: 'Small circle', node: <Loading variant="circle" size={14} /> },
++        { key: 'medium-circle', group: 'circle', name: 'Medium circle (default)', node: <Loading variant="circle" size={20} /> },
++        { key: 'large-circle', group: 'circle', name: 'Large circle', node: <Loading variant="circle" size={40} /> },
++        { key: 'thin-linear', group: 'linear', fill: true, name: 'Thin linear', node: <Loading variant="linear" height={2} /> },
++        { key: 'default-linear', group: 'linear', fill: true, name: 'Default linear', node: <Loading variant="linear" height={4} /> },
++        { key: 'thick-linear', group: 'linear', fill: true, name: 'Thick linear', node: <Loading variant="linear" height={8} /> },
+         { key: 'accent', name: 'Accent colour', node: <Loading variant="circle" color={DS_SEMANTIC.emphasis.info} /> },
+       ],
+     },
+```
+
+- [ ] **Step 2: Apply the `CatalogFrameworkExample.tsx` change**
+
+```diff
+--- a/native/catalog/CatalogFrameworkExample.tsx
++++ b/native/catalog/CatalogFrameworkExample.tsx
+@@ -423,6 +423,13 @@
+  */
+ export function CatalogFrameworkExample() {
+   return (
+-    <CatalogShell appName="Design System DS Catalog" title="Catalog Framework" groups={nav} sections={sections} />
++    <CatalogShell
++      appName="Design System DS Catalog"
++      title="Catalog Framework"
++      groups={nav}
++      sections={sections}
++      // These previews document catalog chrome, not phone components, so they keep full width.
++      defaultPreviewWidths="full"
++    />
+   );
+ }
+```
+
+- [ ] **Step 3: Apply the `README.md` change**
+
+```diff
+--- a/README.md
++++ b/README.md
+@@ -84,12 +84,20 @@
+ On web the page is kept in the URL fragment (`#Button`), so refresh, deep links, and back/forward
+ work. Desktop and laptop screens only. `SectionBlock` renders one page: breadcrumb, title,
+ description, previous/next, then the specimens in one of three layouts, then always-visible
+-**Guidance**, **Quick reference** (source path, accessibility), and **Props**:
++**Guidance** and **Quick reference** (source path, accessibility), then **Props** in their own box
++(two columns, filled across first, when there are 4+ props and room). Token pages show only
++Quick reference with the source path. The specimens use one of four layouts:
+ - **Grid** — two props that combine freely, from an explicit `comparison` (e.g. Button's
+   Variant × State).
++- **Grouped rows** — one row per variant holding that variant's own configurations (e.g.
++  Loading's circle sizes and linear thicknesses), when `states` items name a variant in `group`.
+ - **List** — one axis, in one shared card whose cells wrap into balanced rows.
+-- **Preview** — free-form `render()` content and token galleries, full width.
++- **Preview** — `render()` content. Component previews render at phone width (402px), optionally
++  with more widths such as a 320px small phone; token galleries and catalog chrome stay full width.
+
++When a page has two blocks, the catalog places them side by side if that makes the page at least
++120px shorter (e.g. Dropdown), and stacks them otherwise. A block with nothing to show is omitted.
++
+ Grid columns and list cells are at most 402px wide with 16px padding. A page's `specimenSize`
+ (`compact` 160px, `regular` 240px, `wide` 402px) sets the minimum width; full-width (`itemsFill`)
+ slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`, never from
+@@ -124,6 +132,10 @@
+   within what fits a 1280px laptop: 5 compact, 3 regular, or 2 wide columns. `states` items whose
+   key matches a row or column key are not repeated below the grid.
+ - `specimenSize: 'compact' | 'regular' | 'wide'` — the page's specimen width class.
++- `group` on a `states` item — the `variants` key it belongs to (a size that only exists for one
++  variant). Grouped states render one row per variant; ungrouped ones go to "Other configurations".
++- `previewWidths: [402, 320]` — extra preview widths for a `render()` page (each capped at 402).
++  `CatalogShell`'s `defaultPreviewWidths="full"` keeps a catalog's previews full width.
+ - `variants: { desc?, align?, itemsFill?, items: [{ key, name, node }] }` — one item per prop enum
+   value (e.g. every `variant`). If the component has no `variant`-like prop at all, still include one
+   item named `"Default"` showing its plain look — the Variants column should never be empty.
+@@ -131,12 +143,12 @@
+   distinct boolean state (`loading`, `disabled`, icon-only, …). Fine to omit if there are none.
+
+ Every item's `name` is shown as its cell caption (e.g. `"Primary"`, `"Icon-only"`) — use the
+-actual variant/state value, not a generic label. Omitting `states` shows "No additional states or
+-configurations documented." — don't invent items just to fill it. Set `itemsFill: true` on a slot whose
++actual variant/state value, not a generic label. Omit `states` when there are none — the page simply
++shows no States block; don't invent items just to fill it. Set `itemsFill: true` on a slot whose
+ items are wide, block-level components (Banner, Card, Toast, InputField) rather than small ones meant
+ to sit centered (Button, Badge, Pill). Reach for `render()` instead of `variants` only when the
+ content isn't a simple list of instances (a live demo with local state, a wrapping grid); its output
+-renders in a full-width Preview card. For a token-gallery section with no component API at all (raw token
++renders in a Preview card (phone width for components). For a token-gallery section with no component API at all (raw token
+ data, not a component — see `ColorsGallery`/`SpacingGallery`/`TypographyGallery`), set
+ `tokenGallery: true` instead of `props`/`a11y`/`states` — `SectionBlock` then renders `render()`'s
+ output under a "Tokens" label and skips the reference details entirely.
+```
+
+Save each patch to a file, run `git apply --check <file>`, then `git apply <file>`.
+
+- [ ] **Step 4: Commit (only with commit authority)**
+
+```bash
+git add native/catalog/CatalogExample.tsx native/catalog/CatalogFrameworkExample.tsx README.md
+git commit -m "feat(catalog): group Loading configurations and add small-phone previews"
+```
+
+---
+
+### Task 15: Verification and review
+
+**Files:**
+- Modify: `docs/design/evidence/2026-10-06-studio-matrix/VERIFICATION.md` (add a revision 3 section)
+- Create: revision 3 screenshots in the same folder
+
+Restart the 5181 preview (CI mode does not reload) and bring the tab to the front before measuring.
+
+- [ ] **Step 1: Rendered rows**
+
+| # | Viewport | Route | Pass criteria |
+|---|---|---|---|
+| B1 | 1280, 1600, 1100 | `/#Loading` | Label "Variant × configuration"; two row lists "Loading: Circle" and "Loading: Linear", 3 items each; cells 277px (1280), 338px (1600), 240px with in-card scrolling (1100); every specimen centred within 1px; then "Other configurations" with Accent colour. |
+| B2 | 1280 | `/#SegmentedToggle`, `/#UnderlineTabs` | Frames 402px and 320px with captions; no "No additional states" or empty block. |
+| B3 | 1280, 1600, 1100 | `/#Dropdown` | States label to the right of Variants at 1280 and 1600; below it at 1100. |
+| B4 | 1280 | `/#Switch`, `/#Banner`, `/#Button` | Stacked. Previous Part A geometry unchanged (Button 277/316, Switch 237, Banner 402). |
+| B5 | 1280, 1100 | `/#Button` Props | Two columns at 1280: label, variant on the first row; size, showIcon on the second. One column at 1100. SegmentedToggle Props one column. No divider under the last prop of each column. |
+| B6 | 1280 | `/#Colors` | Only a Quick reference card with Source; no Guidance or Props. |
+| B7 | 1280 | `/?catalog=framework#SectionBlock` | Full-width preview (no phone frames); one table with the unsupported cell. |
+| B8 | all | Metro log | No new errors beyond the baseline `Icon.native`/`Loading` errors. |
+
+- [ ] **Step 2: Evidence.** Save screenshots for B1, B2, B3 (1280 and 1100), B5, and B6; record SHA-256 values in `VERIFICATION.md`.
+
+- [ ] **Step 3: One fresh read-only Opus review** of `git diff 2c485d1...HEAD` with the spec and this Part B, through the guarded runner (same configuration as Task 9). One correction pass for Critical and Important findings; re-review only if blocking findings changed the result.
+
+## Part B spec coverage
+
+| Spec requirement (revision 3) | Task |
+|---|---|
+| Grouped rows from authored `group`; leftovers in Other configurations | 10, 11, 14 |
+| Phone-width previews; `previewWidths`; catalog default; token/framework full width | 10, 13, 14 |
+| Automatic placement (120px rule, list-only, stacked-height measurement) | 10, 13 |
+| Empty blocks omitted; one "No examples documented." when nothing exists | 10, 13 |
+| Separate Props box, two columns filled across first | 10, 12 |
+| Token pages show source path | 12 |
+| Fidelity items 9–13 | 15 |
+
+## Part B estimates (agent time)
+
+| Task | Estimate |
+|---|---|
+| 10 Layout contract | 15 min |
+| 11 Grouped rows | 10 min |
+| 12 Props box and token reference | 15 min |
+| 13 Placement and previews | 20 min |
+| 14 Content and README | 10 min |
+| 15 Verification and review | 60 min |
+| **Total** | **≈2 hours** |
+
+## Part B report-only findings
+
+- At 1100px, Loading's grouped rows need 842px and scroll inside their card (desktop minimum is narrower than three regular cells plus the row header).
+- Placement is measured after the first draw, so a two-block page may shift once on load when it moves side by side.
+- Preview frames render one live instance per width; interactive state is not shared between frames.
