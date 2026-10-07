@@ -1,21 +1,18 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
-import type { ViewStyle } from 'react-native';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './tokens';
-import { sortIds, type NavGroup } from './types';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
+import { filterGroups, hashForId } from './catalogNavigation';
+import type { NavGroup } from './types';
 import { CatalogSearchInput } from './CatalogSearchInput';
 
-/**
- * One nav link. Tracks its own hover state via `onHoverIn`/`onHoverOut` (real events on web,
- * simply never fired on native touch devices, so hover styling only ever shows up where it makes
- * sense) rather than reading `hovered` off Pressable's style-callback — this project's Pressable
- * types (targeting native) don't expose that field, even though react-native-web's runtime does.
- */
+function webLinkProps(id: string, active: boolean) {
+  return active ? { href: hashForId(id), 'aria-current': 'page' } : { href: hashForId(id) };
+}
+
+/** One nav link. Hover via onHoverIn/onHoverOut (react-native-web fires them; native never does);
+ *  keyboard focus draws the catalog focus ring because react-native-web removes the browser's. */
 function NavItem<TId extends string>({ id, active, onPress }: { id: TId; active: boolean; onPress: () => void }) {
   const [hovered, setHovered] = useState(false);
-  // Keyboard focus shows the same highlight as hover/press — react-native-web suppresses the
-  // browser's default outline on Pressable, so without this a keyboard user tabbing the sidebar
-  // gets no visible focus position at all.
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
@@ -26,7 +23,18 @@ function NavItem<TId extends string>({ id, active, onPress }: { id: TId; active:
       onBlur={() => setFocused(false)}
       accessibilityRole="link"
       accessibilityState={{ selected: active }}
-      style={({ pressed }) => [styles.item, (pressed || hovered || focused) && styles.itemPressed]}
+      // Web-only props React Native's types do not declare, passed through a cast:
+      // • aria-current — react-native-web ignores `accessibilityState` (native-only), so the open
+      //   page needs aria-current on web.
+      // • href — renders a real <a href="#Id">. react-native-web leaves keyboard activation of
+      //   role="link" to the browser, which only fires click on Enter for genuine anchors.
+      {...(webLinkProps(id, active) as Record<string, unknown>)}
+      style={({ pressed }) => [
+        styles.item,
+        (pressed || hovered) && styles.itemHover,
+        active && styles.itemActive,
+        focused && styles.focusRing,
+      ]}
     >
       <Text style={[styles.label, active && styles.labelActive]}>{id}</Text>
     </Pressable>
@@ -34,10 +42,9 @@ function NavItem<TId extends string>({ id, active, onPress }: { id: TId; active:
 }
 
 /**
- * Sticky sidebar: app name/subtitle, a filter box, and one Pressable nav link per section id,
- * grouped under labeled headings (e.g. "Components" / "Tokens"). Generic over `TId` — the host
- * app supplies its own section-id union and groups; this component never needs to know what a
- * "Button" or a "Colors" page actually is.
+ * Catalog navigation: app name, caption, a filter field, and one link per page under grouped
+ * headings. Selecting a link opens that page (CatalogShell owns which page is shown). The filter
+ * narrows this list only and never changes the open page.
  */
 export function CatalogSidebar<TId extends string>({
   logo,
@@ -49,45 +56,29 @@ export function CatalogSidebar<TId extends string>({
   logo: string;
   caption: string;
   groups: NavGroup<TId>[];
-  active: TId;
+  active: TId | undefined;
   onPress: (id: TId) => void;
 }) {
   const [query, setQuery] = useState('');
-  const q = query.trim().toLowerCase();
+  const filtered = filterGroups(groups, query);
 
   return (
-    <View style={styles.sidebar}>
+    <View role="navigation" aria-label="Catalog pages" style={styles.sidebar}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.logo}>{logo}</Text>
         <Text style={styles.subtitle}>{caption}</Text>
 
         <CatalogSearchInput value={query} onChangeText={setQuery} placeholder="Filter components…" />
 
-        {(() => {
-          // Filter to the query, then order through the shared `sortIds` — the same helper
-          // CatalogShell uses for the main column's render order and scroll-spy, so this list's
-          // visual order can never drift from where a click actually scrolls to.
-          const filtered = groups.map(g => ({
-            ...g,
-            ids: sortIds(q ? g.ids.filter(id => id.toLowerCase().includes(q)) : g.ids),
-          }));
-          const hasMatches = filtered.some(g => g.ids.length > 0);
-          return (
-            <>
-              {!hasMatches && <Text style={styles.empty}>No matches</Text>}
-              {filtered.map(g => g.ids.length > 0 && (
-                <View key={g.label}>
-                  <View style={styles.groupLabelRow}>
-                    <Text style={styles.groupLabel}>{g.label}</Text>
-                  </View>
-                  {g.ids.map(id => (
-                    <NavItem key={id} id={id} active={active === id} onPress={() => onPress(id)} />
-                  ))}
-                </View>
-              ))}
-            </>
-          );
-        })()}
+        {filtered.length === 0 && <Text style={styles.empty}>No matches</Text>}
+        {filtered.map((group) => (
+          <View key={group.label}>
+            <Text style={styles.groupLabel}>{group.label}</Text>
+            {group.ids.map((id) => (
+              <NavItem key={id} id={id} active={active === id} onPress={() => onPress(id)} />
+            ))}
+          </View>
+        ))}
       </ScrollView>
     </View>
   );
@@ -95,34 +86,40 @@ export function CatalogSidebar<TId extends string>({
 
 const styles = StyleSheet.create({
   sidebar: {
-    width: 240,
+    width: CATALOG_LAYOUT.sidebarWidth,
     backgroundColor: CATALOG_COLOR.surface,
     borderRightWidth: 1,
     borderRightColor: CATALOG_COLOR.borderHairline,
-    // Sticky on web so the sidebar stays put while the main column scrolls. RN's ViewStyle type has
-    // no equivalent for these two (there's no native "sticky" or viewport-unit height), so they need
-    // an escape hatch — kept as narrow, explicitly-typed casts rather than `as any` on the property so
-    // a typo here (e.g. "stickey") would still be caught, even though the final assignment can't be.
-    position: 'sticky' as unknown as ViewStyle['position'],
-    top: 0,
-    height: '100vh' as unknown as ViewStyle['height'],
-    overflow: 'hidden',
   },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: CATALOG_SPACE.lg, paddingTop: 28, paddingBottom: CATALOG_SPACE['3xl'] },
-  logo: { fontSize: CATALOG_TYPE.lg, fontWeight: '700', color: CATALOG_COLOR.text },
+  content: {
+    paddingTop: CATALOG_LAYOUT.sidebarPaddingTop,
+    paddingHorizontal: CATALOG_LAYOUT.sidebarPaddingX,
+    paddingBottom: CATALOG_LAYOUT.sidebarPaddingTop,
+  },
+  logo: { fontSize: CATALOG_TYPE.brand, fontWeight: '800', color: CATALOG_COLOR.text },
   subtitle: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, marginTop: 2, marginBottom: 20 },
-  empty: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, paddingHorizontal: 10, paddingVertical: CATALOG_SPACE.sm },
-  groupLabelRow: {
-    marginTop: CATALOG_SPACE.lg, marginBottom: CATALOG_SPACE.xs,
-    paddingHorizontal: 10,
-  },
+  empty: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX, paddingVertical: 8 },
   groupLabel: {
-    fontSize: CATALOG_TYPE.xs, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.7,
+    fontSize: CATALOG_TYPE.xs,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
     color: CATALOG_COLOR.text,
+    marginTop: 22,
+    marginBottom: 7,
+    marginHorizontal: 8,
   },
-  item: { borderRadius: CATALOG_RADIUS.sm, marginBottom: 2 },
-  itemPressed: { backgroundColor: CATALOG_COLOR.surfacePressed },
-  label: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, paddingVertical: 6, paddingHorizontal: 10 },
-  labelActive: { color: CATALOG_COLOR.accent },
+  item: {
+    minHeight: CATALOG_LAYOUT.controlSize,
+    justifyContent: 'center',
+    paddingVertical: CATALOG_LAYOUT.navItemPaddingY,
+    paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX,
+    borderRadius: CATALOG_RADIUS.sm,
+  },
+  itemHover: { backgroundColor: CATALOG_COLOR.surfacePressed },
+  itemActive: { backgroundColor: CATALOG_COLOR.accentSubtle },
+  focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
+  label: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted },
+  labelActive: { color: CATALOG_COLOR.accent, fontWeight: '700' },
 });

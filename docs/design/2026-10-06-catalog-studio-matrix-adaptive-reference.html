@@ -1,0 +1,183 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio Matrix — adaptive layout proposals</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#181818;background:#e9e9e6}
+button,input{font:inherit}
+/* Mockup control bar (not part of the product) */
+.controls{position:sticky;top:0;z-index:5;background:#181818;color:#fff;padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;font-size:12px}
+.controls b{font-weight:700;color:#bbb;margin-right:6px}
+.seg{display:inline-flex;border:1px solid #555;border-radius:8px;overflow:hidden}
+.seg button{background:none;border:0;color:#ddd;padding:6px 10px;cursor:pointer;min-height:32px}
+.seg button[aria-pressed=true]{background:#fff;color:#111;font-weight:700}
+.seg button:focus-visible{outline:3px solid #c9d7ff}
+.controls input[type=range]{width:160px;vertical-align:middle}
+.stage{display:flex;justify-content:center;padding:16px 0}
+.app{height:calc(100vh - 92px);display:grid;grid-template-columns:264px minmax(0,1fr);background:#f6f6f4;box-shadow:0 0 0 1px #ccc}
+.nav{background:#fff;border-right:1px solid #ddd;padding:24px 18px;overflow:auto}
+.brand{font-weight:800;font-size:17px}.sub{font-size:12px;color:#666;margin:2px 0 20px}
+.search{width:100%;height:44px;padding:0 12px;border:1px solid #ddd;border-radius:9px;background:#fafafa}
+.group{font-size:10px;font-weight:800;letter-spacing:.1em;margin:22px 8px 7px;text-transform:uppercase}
+.item{width:100%;min-height:44px;border:0;background:none;text-align:left;padding:8px 10px;border-radius:8px;color:#666;cursor:pointer}
+.item:hover{background:#f1f3f8}.item:focus-visible{outline:3px solid #c9d7ff}
+.item.active{background:#e9efff;color:#174dc6;font-weight:700}
+.mocknote{margin-top:24px;font-size:12px;color:#666;padding:10px;border:1px dashed #ccc;border-radius:8px}
+.main{padding:28px 32px;overflow:auto}
+.content{max-width:1200px}
+.crumb{font-size:12px;color:#666}
+.titlebar{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin:14px 0 24px}
+.titlebar h1{font-size:28px;margin:0 0 5px}.desc{color:#666;max-width:700px}
+.pager{display:flex;gap:6px}
+.iconbtn{width:44px;height:44px;border:1px solid #d7d7d7;border-radius:9px;background:white;cursor:pointer}
+.iconbtn:disabled{background:#f6f6f4;color:#999;cursor:default}
+/* Specimen area: blocks either stack or sit side by side */
+.blocks{display:flex;flex-direction:column;gap:28px;margin-bottom:28px}
+.blocks.side{flex-direction:row;align-items:flex-start}
+.blocks.side > .block{flex:0 0 auto}
+.blocks.side > .block:last-child{flex:1 1 0;min-width:0}
+.block{min-width:0}
+.label{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.label strong{font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.annot:empty{display:none}.annot{font-size:11px;color:#8a5a00;background:#fff4dd;border:1px solid #f0d9a8;border-radius:6px;padding:2px 7px}
+/* Grid */
+.matrix-wrap{overflow:auto;border:1px solid #d7d7d7;border-radius:14px;background:white}
+.matrix{display:grid;width:100%}
+.cell{min-height:150px;padding:16px;border-right:1px solid #e4e4e4;border-bottom:1px solid #e4e4e4;display:flex;align-items:center;justify-content:center}
+.cell.lastcol{border-right:0}.cell.lastrow{border-bottom:0}
+.head{min-height:auto;background:#fafafa;font-size:11px;font-weight:800;letter-spacing:.04em;justify-content:flex-start}
+.rowhead{justify-content:flex-start;background:#fafafa;font-weight:700}
+/* Grouped rows: a row header per variant, each cell keeps its own caption */
+.grouped{border:1px solid #d7d7d7;border-radius:14px;background:#fff;overflow:hidden}
+.grow{display:grid;grid-template-columns:120px 1fr;border-bottom:1px solid #e4e4e4}.grow:last-child{border-bottom:0}
+.grow .rowhead{min-height:auto;border-right:1px solid #e4e4e4;border-bottom:0;padding:16px;display:flex;align-items:center}
+.gcells{display:grid}
+.gcells .tile{border-right:1px solid #e4e4e4}.gcells .tile:last-child{border-right:0}
+/* List */
+.list{display:grid;gap:1px;background:#e4e4e4;border:1px solid #d7d7d7;border-radius:14px;overflow:hidden}
+.tile{background:white;display:flex;flex-direction:column;min-width:0}
+.tile .cap{padding:16px;background:#fafafa;border-bottom:1px solid #e4e4e4;font-size:11px;font-weight:800;letter-spacing:.04em}
+.tile .spec{flex:1;min-height:150px;padding:16px;display:flex;align-items:center;justify-content:center}
+.tile.fill .spec{align-items:stretch;flex-direction:column;justify-content:center}
+.tile.filler .cap{color:transparent}
+/* Preview */
+.preview{background:white;border:1px solid #d7d7d7;border-radius:14px;padding:24px}
+.frames{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.frame{width:402px;max-width:100%}.frame.small{width:320px}
+.frame .flabel{font-size:11px;font-weight:800;letter-spacing:.04em;color:#666;margin-bottom:8px}
+/* Reference */
+.reference{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px;background:white;border:1px solid #ddd;border-radius:12px;padding:20px;margin-bottom:28px}
+.reference.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.reference.single{grid-template-columns:minmax(0,1fr)}
+.reference h2,.propsbox h2{font-size:13px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em}
+.reference p{color:#666;margin:0}
+.fact{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #eee;padding:9px 0}.fact span{color:#666;text-align:right;font-family:Menlo,monospace;font-size:13px}
+.propsbox{background:white;border:1px solid #ddd;border-radius:12px;padding:20px}
+.prow{display:grid;grid-template-columns:200px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid #e4e4e4}.prow:last-child{border-bottom:0}
+.three .prow{grid-template-columns:minmax(0,1fr)}
+/* Props box, two columns filled across first; each prop stacks name + type over description */
+.pgrid{display:grid;column-gap:32px}
+.pgrid .pcell{padding:12px 0;border-bottom:1px solid #e4e4e4;min-width:0}
+.pgrid .pcell.lastrow{border-bottom:0}
+.pgrid .phead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.pgrid .ptype{margin-top:0}.pgrid .pdesc{margin-top:4px}
+.pname{font:700 12px Menlo,monospace}.ptype{font:10px Menlo,monospace;color:#174dc6;margin-top:2px;overflow-wrap:anywhere}.pdesc{font-size:12px;color:#666}
+/* Stand-in specimens */
+.btn{padding:11px 18px;border-radius:999px;font-weight:700;border:1px solid transparent;white-space:nowrap;background:#111;color:#fff}
+.spin{border-radius:50%;border:3px solid #ddd;border-top-color:#111}
+.bar{height:4px;border-radius:2px;background:#e4e4e4;position:relative;overflow:hidden;width:100%}.bar::after{content:'';position:absolute;left:0;top:0;bottom:0;width:40%;background:#111;border-radius:inherit}
+.segtrack{display:flex;background:#e9e9e9;border-radius:999px;padding:3px;gap:2px}
+.segtrack button{flex:1;border:0;background:none;border-radius:999px;padding:9px 6px;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.segtrack button[aria-selected=true]{background:#fff;box-shadow:0 1px 3px #0002}
+.tabs{display:flex;border-bottom:1px solid #e4e4e4;gap:4px}
+.tabs button{border:0;background:none;padding:10px 8px;font-weight:600;color:#666;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.tabs button[aria-selected=true]{color:#111;border-bottom-color:#111}
+.dd{background:#e7e7e7;border-radius:10px;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;width:100%}
+.dd small{display:block;color:#555;font-size:11px}.dd.dis{opacity:.45}
+.phone{width:280px;height:480px;background:#f0f2f7;border-radius:12px;padding:16px;border:1px solid #e4e4e4}
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:12px}
+.swatch .chip{height:56px;border-radius:10px;border:1px solid #0000000f}.swatch div{font-size:12px;margin-top:6px}.swatch span{font-size:11px;color:#666}
+</style></head><body>
+<div class="controls" role="group" aria-label="Mockup options">
+  <span><b>1 · Props</b><span class="seg" data-opt="props"><button data-v="box2">Box, 2 columns across ★</button><button data-v="box">Box, 1 column</button><button data-v="col">Third column</button></span></span>
+  <span><b>2 · Loading</b><span class="seg" data-opt="loading"><button data-v="grouped">Grouped by variant ★</button><button data-v="list">One list (today)</button></span></span>
+  <span><b>3 · Preview width</b><span class="seg" data-opt="cap"><button data-v="cap">402 cap + 320 ★</button><button data-v="full">Full width (today)</button></span></span>
+  <span><b>4 · Placement</b><span class="seg" data-opt="place"><button data-v="auto">Auto: shortest ★</button><button data-v="stack">Always stacked (today)</button></span></span>
+  <span><b>Viewport</b><input type="range" id="vw" min="1100" max="1600" step="20" value="1280" aria-label="Viewport width"> <span id="vwv">1280px</span></span>
+</div>
+<div class="stage"><div class="app" id="app"><aside class="nav" id="nav"></aside><main class="main" id="main"></main></div></div>
+<script>
+const opts={props:'box2',loading:'grouped',cap:'cap',place:'auto'};
+let current=0;
+const BTN=(l='Continue')=>`<span class="btn">${l}</span>`;
+const SPIN=s=>`<span class="spin" style="width:${s}px;height:${s}px;border-width:${Math.max(2,Math.round(s/8))}px"></span>`;
+const BAR=(h,c)=>`<div class="bar" style="height:${h}px">${c?`<style>.acc::after{background:#2563eb}</style>`:''}</div>`;
+const SEG=(opts,sel=0,id)=>`<div class="segtrack" role="tablist">${opts.map((o,i)=>`<button role="tab" aria-selected="${i===sel}" data-g="${id}">${o}</button>`).join('')}</div>`;
+const TABS=(opts,sel=0,id)=>`<div class="tabs" role="tablist">${opts.map((o,i)=>`<button role="tab" aria-selected="${i===sel}" data-g="${id}">${o}</button>`).join('')}</div>`;
+const DD=(label,val,dis)=>`<div class="dd ${dis?'dis':''}"><span>${label?`<small>${label}</small>`:''}${val}</span><span>⌄</span></div>`;
+const PROPS={
+ Button:[['label','string','Button text.'],['variant',"'primary' | 'secondary' | 'tertiary' | 'white' | 'ghost'",'Visual weight. Default primary.'],['size',"'large' | 'medium' | 'small'",'Height and padding. Default large.'],['iconName','IconName','Leading or trailing icon.'],['iconPosition',"'leading' | 'trailing'",'Where the icon sits.'],['loading','boolean','Shows a spinner and blocks taps.'],['disabled','boolean','Dims and blocks taps.'],['fullWidth','boolean','Stretches to the container.'],['onPress','() => void','Tap handler.']],
+ Loading:[['variant',"'circle' | 'linear'",'Spinner or progress bar.'],['size','number','Circle diameter in px.'],['thickness','number','Linear bar height in px.'],['color','string','Indicator colour.']],
+ SegmentedToggle:[['options','{ value; label; iconName?; badge? }[]','The segments.'],['value','string','The selected option value.'],['onChange','(value: string) => void','Selection handler.']],
+ UnderlineTabs:[['tabs','{ value; label }[]','The tabs.'],['value','string','The selected tab.'],['onChange','(value: string) => void','Selection handler.']],
+ Dropdown:[['label','string','Caption above the value.'],['value','string','Selected value.'],['placeholder','string','Shown when empty.'],['options','string[]','Choices in the sheet.'],['disabled','boolean','Blocks opening.']]};
+const pages=[
+ {id:'Button',group:'Actions',desc:'The primary tap target. Five visual weights, three sizes, optional icons, loading and icon-only modes.',src:'native/components/Button',a11y:'Pressable with role button; pass a label for icon-only.',guide:'An action — something happens on tap. For a chip that keeps a selected state, use Pill.',
+  blocks:()=>[
+   {kind:'grid',title:'Variant × State',size:'regular',rowLabel:'Variant',rows:['Primary','Secondary','Tertiary'],cols:['Default','Disabled','Loading'],cell:(r,c)=>c===1?`<span style="opacity:.4">${BTN()}</span>`:c===2?`<span class="btn">◌</span>`:BTN()},
+   {kind:'list',title:'Other configurations',size:'regular',items:[['With icon',BTN('＋ Add stop')],['Trailing icon',BTN('Continue ›')],['Icon-only',BTN('＋')],['Full width',`<span class="btn" style="display:block;text-align:center">Confirm trip</span>`,true],['Medium size',BTN('Add stop')],['Small size',`<span class="btn" style="padding:6px 12px;font-size:13px">Add stop</span>`]]}]},
+ {id:'Loading',group:'Feedback',desc:'A spinner or progress bar for work in progress. Circle and linear variants, each with its own size control.',src:'native/components/Loading',a11y:'role progressbar with label "Loading".',guide:'Use while waiting on work the user started. For placeholder content, use Shimmer.',
+  blocks:()=>opts.loading==='grouped'?[
+   {kind:'grouped',title:'Variant × configuration',size:'regular',groups:[['Circle',[['Small · 16',SPIN(16)],['Medium · 24 (default)',SPIN(24)],['Large · 40',SPIN(40)]]],['Linear',[['Thin · 2',BAR(2),true],['Default · 4',BAR(4),true],['Thick · 8',BAR(8),true]]]]},
+   {kind:'list',title:'Other configurations',size:'regular',items:[['Accent colour',`<span class="spin" style="width:24px;height:24px;border-top-color:#2563eb"></span>`]]}]:[
+   {kind:'list',title:'Variants',size:'wide',items:[['Circle',SPIN(24)],['Linear',BAR(4),true]]},
+   {kind:'list',title:'States / configurations',size:'wide',items:[['Small circle',SPIN(16)],['Medium circle (default)',SPIN(24)],['Large circle',SPIN(40)],['Thin linear',BAR(2),true],['Default linear',BAR(4),true],['Thick linear',BAR(8),true],['Accent colour',`<span class="spin" style="width:24px;height:24px;border-top-color:#2563eb"></span>`]]}]},
+ {id:'SegmentedToggle',group:'Selection',desc:'Mutually-exclusive options on a recessed track, with a white thumb that slides to the selected segment.',src:'native/components/SegmentedToggle',a11y:'tablist; each segment is a tab with selected state.',guide:'A filled, prominent choice. For quieter secondary navigation, use UnderlineTabs.',
+  blocks:()=>[{kind:'preview',title:'Preview',component:true,html:w=>SEG(['🗺 Map','☰ List','🔔 Saved 3','Settings'],0,'seg'+w)}]},
+ {id:'UnderlineTabs',group:'Selection',desc:'Quiet text tabs with an underline on the selected one.',src:'native/components/UnderlineTabs',a11y:'tablist; each tab has selected state.',guide:'Secondary navigation inside a screen. For a prominent choice, use SegmentedToggle.',
+  blocks:()=>[{kind:'preview',title:'Preview',component:true,html:w=>TABS(['Upcoming','Past trips','Saved places','Drafts'],0,'tab'+w)}]},
+ {id:'Dropdown',group:'Inputs',desc:'A labelled field that opens a bottom-sheet picker on tap.',src:'native/components/Dropdown',a11y:'Pressable row with role button; the sheet traps focus.',guide:'One choice from a short known list. For free text, use InputField.',
+  blocks:()=>[
+   {kind:'list',title:'Variants',size:'wide',items:[['Default (tap to open)',`<div class="phone">${DD('Direction','Uptown &amp; The Bronx')}</div>`]]},
+   {kind:'list',title:'States / configurations',size:'wide',items:[['Placeholder',DD('Direction','<span style="color:#666">Choose a direction</span>'),true],['No label',DD('','Uptown &amp; The Bronx'),true],['Disabled',DD('Direction','Uptown &amp; The Bronx',true),true]]}]},
+ {id:'Colors',group:'Tokens',desc:'Semantic color roles and the raw palette.',src:'tokens/semantic.ts',token:true,
+  blocks:()=>[{kind:'preview',title:'Tokens',html:()=>`<div class="swatches">${[['surface.white','#FFFFFF'],['surface.muted','#F5F5F5'],['text.regular','#171717'],['text.muted','#666666'],['emphasis.info','#2563EB'],['emphasis.positive','#16A34A'],['emphasis.warning','#D97706'],['emphasis.negative','#DC2626']].map(([n,h])=>`<div class="swatch"><div class="chip" style="background:${h}"></div><div>${n}</div><span>${h}</span></div>`).join('')}</div>`}]}];
+const MIN={compact:160,regular:240,wide:402};
+const cap1=(n,html,fill)=>`<div class="tile ${fill?'fill':''}"><div class="cap">${n}</div><div class="spec">${html}</div></div>`;
+function grid(b){const min=MIN[b.size],cols=b.cols.length;let h=`<div class="matrix-wrap"><div class="matrix" style="grid-template-columns:120px repeat(${cols},minmax(${min}px,402px))"><div class="cell head">${b.rowLabel}</div>`+b.cols.map((c,ci)=>`<div class="cell head ${ci===cols-1?'lastcol':''}">${c}</div>`).join('');b.rows.forEach((r,ri)=>{const last=ri===b.rows.length-1?'lastrow':'';h+=`<div class="cell rowhead ${last}">${r}</div>`+b.cols.map((c,ci)=>`<div class="cell ${last} ${ci===cols-1?'lastcol':''}">${b.cell(ri,ci)}</div>`).join('')});return h+'</div></div>'}
+function grouped(b){const min=MIN[b.size];const n=Math.max(...b.groups.map(g=>g[1].length));return `<div class="grouped">${b.groups.map(([name,cells])=>`<div class="grow"><div class="rowhead">${name}</div><div class="gcells" style="grid-template-columns:repeat(${n},minmax(${min}px,402px))">${cells.map(([c,h,f])=>cap1(c,h,f)).join('')}</div></div>`).join('')}</div>`}
+function list(b){return `<div class="list" data-min="${MIN[b.size]}" data-wide="${b.size==='wide'}" data-items="${encodeURIComponent(JSON.stringify(b.items.map(i=>[i[0],i[1],!!i[2]])))}"></div>`}
+function preview(b){if(b.component&&opts.cap==='cap')return `<div class="preview"><div class="frames"><div class="frame"><div class="flabel">402 · DEFAULT PHONE</div>${b.html(402)}</div><div class="frame small"><div class="flabel">320 · SMALL PHONE</div>${b.html(320)}</div></div></div>`;return `<div class="preview">${b.html(0)}</div>`}
+function layoutLists(scope){scope.querySelectorAll('.list').forEach(el=>{const items=JSON.parse(decodeURIComponent(el.dataset.items));const min=+el.dataset.min,wide=el.dataset.wide==='true';const avail=el.parentElement.clientWidth;const colW=wide?402:min;const maxCols=Math.max(1,Math.min(items.length,Math.floor((avail-2)/colW)));const rows=Math.ceil(items.length/maxCols);const cols=Math.ceil(items.length/rows);const filler=rows*cols-items.length;el.style.gridTemplateColumns=wide?`repeat(${cols},402px)`:`repeat(${cols},minmax(${min}px,402px))`;el.style.width=wide||cols*403<avail?'max-content':'100%';el.innerHTML=items.map(([n,h,f])=>cap1(n,h,f)).join('')+Array.from({length:filler},()=>`<div class="tile filler" aria-hidden="true"><div class="cap">.</div><div class="spec"></div></div>`).join('')})}
+function blockHtml(b){return `<section class="block"><div class="label"><strong>${b.title}</strong><span class="annot" data-annot></span></div>${b.kind==='grid'?grid(b):b.kind==='grouped'?grouped(b):b.kind==='list'?list(b):preview(b)}</section>`}
+// Placement rule: try stacked and side by side; keep the shorter one; ties and small wins (<120px) stay stacked.
+function place(wrap){wrap.classList.remove('side');layoutLists(wrap);const kids=[...wrap.children];const ann=wrap.querySelector('[data-annot]');
+ if(kids.length!==2){if(ann)ann.textContent='';return}
+ const stacked=wrap.getBoundingClientRect().height;
+ if(opts.place!=='auto'){ann.textContent=`Stacked · ${Math.round(stacked)}px tall`;return}
+ const first=kids[0].querySelector('.list,.matrix-wrap,.grouped,.preview');const firstW=first?first.getBoundingClientRect().width:0;
+ if(firstW>wrap.getBoundingClientRect().width*0.7){ann.textContent=`Stacked · ${kids[0].querySelector('strong').textContent} already fills the width`;return}
+ wrap.classList.add('side');kids[0].style.width=firstW+'px';layoutLists(wrap);
+ const minB=+(kids[1].querySelector('.list')?.dataset.min||240);const room=kids[1].getBoundingClientRect().width;const side=wrap.getBoundingClientRect().height;
+ const ok=room>=Math.min(minB,402)+2&&side<stacked-120;
+ const fits=room>=Math.min(minB,402)+2;
+ if(!ok){wrap.classList.remove('side');kids[0].style.width='';layoutLists(wrap);ann.textContent=fits?`Stacked · side by side would only save ${Math.max(0,Math.round(stacked-side))}px`:`Stacked · only ${Math.round(room)}px beside it, cells need ${Math.min(minB,402)}px`}
+ else ann.textContent=`Side by side · saves ${Math.round(stacked-side)}px`}
+function reference(p){if(p.token)return `<section class="reference single"><div><h2>Quick reference</h2><div class="fact"><b>Source</b><span>${p.src}</span></div></div></section>`;
+ const rows=(PROPS[p.id]||[]).map(([n,t,d])=>`<div class="prow"><div><div class="pname">${n}</div><div class="ptype">${t}</div></div><div class="pdesc">${d}</div></div>`).join('');
+ const g=`<div><h2>Guidance</h2><p>${p.guide}</p></div>`,q=`<div><h2>Quick reference</h2><div class="fact"><b>Source</b><span>${p.src}</span></div><div class="fact"><b>Accessibility</b><span style="font-family:inherit;font-size:14px">${p.a11y}</span></div></div>`;
+ if(opts.props==='box2'){const list=PROPS[p.id]||[];const inner=document.querySelector('.content')?document.querySelector('.content').clientWidth-42:900;const cols=list.length>=4&&inner>=2*360+32?2:1;const rowsN=Math.ceil(list.length/cols);
+  const cells=list.map(([n,t,d],i)=>`<div class="pcell ${i+cols>=list.length?'lastrow':''}"><div class="phead"><span class="pname">${n}</span><span class="ptype">${t}</span></div><div class="pdesc">${d}</div></div>`).join('');
+  return `<section class="reference">${g}${q}</section><section class="propsbox"><h2>Props</h2><div class="pgrid" data-cols="${cols}" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${cells}</div></section>`}
+ return opts.props==='col'?`<section class="reference three">${g}${q}<div><h2>Props</h2>${rows}</div></section>`:`<section class="reference">${g}${q}</section><section class="propsbox"><h2>Props</h2>${rows}</section>`}
+function renderNav(){const groups=[...new Set(pages.map(p=>p.group))];document.getElementById('nav').innerHTML=`<div class="brand">Native App DS Template</div><div class="sub">Component Catalog</div><input class="search" placeholder="Filter components…" aria-label="Filter components">`+groups.map(g=>`<div class="group">${g}</div>`+pages.map((p,i)=>p.group===g?`<button class="item ${i===current?'active':''}" data-i="${i}">${p.id}</button>`:'').join('')).join('')+`<div class="mocknote">Mockup: 6 pages that exercise the four proposals. ★ = recommended. Amber notes explain the automatic placement and are not part of the product.</div>`;document.querySelectorAll('.item').forEach(b=>b.onclick=()=>{current=+b.dataset.i;render()})}
+function render(){const p=pages[current];renderNav();const bl=p.blocks();
+ document.getElementById('main').innerHTML=`<div class="content"><div class="crumb">Native App DS Template / ${p.group}</div><div class="titlebar"><div><h1>${p.id}</h1><div class="desc">${p.desc}</div></div><div class="pager"><button class="iconbtn" id="prev" aria-label="Previous page" ${current===0?'disabled':''}>←</button><button class="iconbtn" id="next" aria-label="Next page" ${current===pages.length-1?'disabled':''}>→</button></div></div><div class="blocks">${bl.map(blockHtml).join('')}</div>${reference(p)}</div>`;
+ document.getElementById('prev').onclick=()=>{if(current>0){current--;render()}};document.getElementById('next').onclick=()=>{if(current<pages.length-1){current++;render()}};
+ document.querySelectorAll('[role=tab]').forEach(t=>t.onclick=()=>{document.querySelectorAll(`[data-g="${t.dataset.g}"]`).forEach(x=>x.setAttribute('aria-selected',x===t))});
+ document.getElementById('main').scrollTop=0;place(document.querySelector('.blocks'))}
+function syncControls(){document.querySelectorAll('.seg').forEach(s=>s.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',opts[s.dataset.opt]===b.dataset.v)))}
+document.querySelectorAll('.seg').forEach(s=>s.querySelectorAll('button').forEach(b=>b.onclick=()=>{opts[s.dataset.opt]=b.dataset.v;syncControls();render()}));
+const vw=document.getElementById('vw');function setW(){const w=Math.min(+vw.value,innerWidth);document.getElementById('app').style.width=w+'px';document.getElementById('vwv').textContent=vw.value+'px';place(document.querySelector('.blocks'))}
+vw.oninput=()=>{setW();render();setW()};addEventListener('resize',setW);
+const start=new URLSearchParams(location.hash.slice(1)).get('p');if(start){const i=pages.findIndex(p=>p.id===start);if(i>=0)current=i}
+syncControls();render();setW();
+</script></body></html>

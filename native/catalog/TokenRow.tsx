@@ -8,7 +8,7 @@ import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
  * and CatalogFrameworkExample.tsx. The row's own content (a spacing bar, a type sample, …) is
  * freeform `children`; only the value-plus-use-note stacking is standardized here.
  *
- * Draws a bottom divider by default (same hairline as PropsTable's rows) so a stack of TokenRows
+ * Draws a 1px `CATALOG_COLOR.border` bottom divider by default (the same divider PropsTable's rows use) so a stack of TokenRows
  * reads as a list, not a loose pile of paragraphs. Pass `last` on the final row in a stack to drop
  * the divider, matching PropsTable's own `rowLast` convention.
  */
@@ -25,8 +25,8 @@ const styles = StyleSheet.create({
   item: { gap: CATALOG_SPACE.xs },
   itemDivider: {
     paddingBottom: CATALOG_SPACE.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: CATALOG_COLOR.borderHairline,
+    borderBottomWidth: 1,
+    borderBottomColor: CATALOG_COLOR.border,
   },
   use: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
 });

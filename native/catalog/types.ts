@@ -35,6 +35,10 @@ export interface VariantExample {
    *  any enum value from `SectionDef.props` that no tagged item covers — the mechanical version of
    *  the completeness policy documented on `states` below. */
   props?: Record<string, unknown>;
+  /** In `states` only: the `variants` item key this configuration belongs to (e.g. a size that
+   *  exists only for the circle variant). When any state names a variant, the page shows one row
+   *  per variant with its own configurations instead of separate Variants and States lists. */
+  group?: string;
 }
 
 /** The content of the "Variants" or "States / Configurations" column — every value of a single prop's
@@ -49,9 +53,48 @@ export interface VariantSlot {
   items: VariantExample[];
 }
 
+/** Width class for a page's specimens: compact (min 160px), regular (min 240px), or wide (fixed
+ *  402px, phone width). Sets grid column and list cell widths. */
+export type SpecimenSize = 'compact' | 'regular' | 'wide';
+
+/** Widths for a component preview: one or more phone widths (each capped at 402px), or 'full' for
+ *  content that is not a phone component (catalog chrome, token galleries). */
+export type PreviewWidths = readonly number[] | 'full';
+
+/** One row or column heading in a grid. */
+export interface ComparisonAxisItem {
+  key: string;
+  label: string;
+}
+
+/** One authored row × column specimen. Provide exactly one of `node` (a real instance of the
+ *  documented component) or `unavailableReason` (the combination genuinely does not exist). */
+export interface ComparisonCell {
+  rowKey: string;
+  columnKey: string;
+  node?: React.ReactNode;
+  unavailableReason?: string;
+  /** Stretch this specimen to the cell width. @default false */
+  fill?: boolean;
+}
+
+/** A grid of two props that combine freely. Every row × column pair is authored — never inferred
+ *  by multiplying `variants` with `states`, because pre-rendered nodes cannot be combined. */
+export interface ComparisonDef {
+  /** Names the row axis; shown in the corner cell (e.g. "Variant"). */
+  rowLabel: string;
+  /** Names the column axis (e.g. "State"). */
+  columnLabel: string;
+  rows: ComparisonAxisItem[];
+  columns: ComparisonAxisItem[];
+  cells: ComparisonCell[];
+  /** Defaults to the section's `specimenSize`, then 'regular'. */
+  size?: SpecimenSize;
+}
+
 /** One entry in the catalog — a documented component or token group. `TId` is the app's own
- *  union of section ids (e.g. `'Button' | 'Card' | ...'`), so the sidebar/scroll-spy stay typed
- *  to the app's real section list without this file needing to know what they are. */
+ *  union of section ids (e.g. `'Button' | 'Card' | ...'`), so the sidebar and page navigation stay
+ *  typed to the app's real section list without this file needing to know what they are. */
 export interface SectionDef<TId extends string = string> {
   id: TId;
   description: string;
@@ -73,10 +116,10 @@ export interface SectionDef<TId extends string = string> {
    *  **including whichever value that prop defaults to** (e.g. Button's Variants starts with
    *  "Primary" since `variant` defaults to `'primary'`; Card's single instance is named "Default"
    *  since it has no enum at all). Never skip the default on the assumption it's obvious from source.
-   *  SectionBlock always renders a "Variants" column — omit this and it shows "No variants
-   *  documented." instead of just not appearing, so every section has the same fixed shape. If
-   *  neither this nor `render` is set, that's what shows; if `render` is set instead, its output
-   *  fills this column (for content that isn't a simple list of instances — see `render` below). */
+   *  Omit it when there are none: the page simply shows no Variants block (a page with nothing
+   *  documented at all shows one "No examples documented." block). If `render` is set instead,
+   *  its output is the page's Preview (for content that isn't a simple list of instances — see
+   *  `render` below). */
   variants?: VariantSlot;
   /** Every meaningfully distinct boolean/flag state (`loading`, `disabled`, icon-only, …) **and** any
    *  other optional, prop-driven configuration worth showing that isn't the primary enum (an optional
@@ -103,28 +146,37 @@ export interface SectionDef<TId extends string = string> {
    *     like" doesn't count as demonstrating the range — this is the same rule as #3, but continuous
    *     props are exactly where it's easiest to skip a middle value because "the default is shown
    *     elsewhere anyway."
-   *  SectionBlock always renders a "States / Configurations" column; omit this and it shows "No
-   *  additional states or configurations documented." instead of just not appearing. */
+   *  Omit this when there are none — the page then shows no States block; never invent items to
+   *  fill it. Give an item `group` (a `variants` key) when it only exists for that variant. */
   states?: VariantSlot;
-  /** Escape hatch for "Variants" column content that isn't a simple list of instances — token
-   *  galleries, live interactive demos with local state, structure diagrams, wrapping grids. Ignored
-   *  when `variants` is set. */
+  /** Escape hatch for content that isn't a simple list of instances — token galleries, live
+   *  interactive demos with local state, structure diagrams, wrapping grids. Rendered as the page's
+   *  Preview (phone width for components; see `previewWidths`). Ignored when `variants` is set. */
   render?: () => React.ReactNode;
   /** Marks this as a token-gallery section (raw token data, not a component with its own API) —
-   *  SectionBlock skips the States/Configurations, Props, and Accessibility columns entirely (there's
-   *  no component behavior to document) and renders a single column titled "Tokens" instead of
-   *  "Variants". */
+   *  SectionBlock renders `render()` full width under a "Tokens" label, skips the States /
+   *  configurations list, and shows only a Quick reference card with the source path (there's no
+   *  component behavior to document). */
   tokenGallery?: boolean;
-  /** Overrides the `tokenGallery` column's label (default `'Tokens'`) — e.g. `'Preview'` for a page
+  /** Overrides the `tokenGallery` block's label (default `'Tokens'`) — e.g. `'Preview'` for a page
    *  that's a composed, realistic usage example rather than a list of raw token values. Ignored
    *  unless `tokenGallery` is also set. */
   fullWidthLabel?: string;
-  /** Hide specific cards entirely for this section, rather than showing an empty-state placeholder
-   *  sentence ("No additional states or configurations documented.", etc.) — for a catalog whose
-   *  sections genuinely have no meaningful states/props/accessibility story to tell (e.g. a
-   *  framework's own building-block pages). Hidden columns free up the row's width for whatever
-   *  remains; if only one column is left standing, it fills the whole row, the same way a
-   *  `tokenGallery` section does. */
+  /** A grid of two props that combine freely. When set, it replaces the Variants list, and any
+   *  `states` item whose key matches a grid row or column key is not repeated below it.
+   *  `variants`/`states` stay as data for the manifest and completeness check. */
+  comparison?: ComparisonDef;
+  /** Width class for this page's specimens. Without it, full-width (`itemsFill`) slots are 'wide'
+   *  and everything else is 'regular'. */
+  specimenSize?: SpecimenSize;
+  /** Widths for this page's `render()` preview, e.g. `[402, 320]` to add a small-phone example.
+   *  Defaults to the catalog's default (CatalogShell `defaultPreviewWidths`), else `[402]`. */
+  previewWidths?: PreviewWidths;
+  /** Remove specific parts of the page — for sections with no meaningful states, props, or
+   *  accessibility story (e.g. a framework's own building-block pages). `variants` removes the
+   *  first specimen block (grid, Variants list, or Preview); `states` removes the States /
+   *  configurations (or "Other configurations") list; `props` and `accessibility` remove those
+   *  parts of the reference panel. */
   hide?: {
     variants?: boolean;
     states?: boolean;
@@ -139,11 +191,6 @@ export interface NavGroup<TId extends string = string> {
   ids: readonly TId[];
 }
 
-/** THE canonical within-group ordering of section ids — every place that walks a group's ids
- *  (the sidebar's link list, the main column's render order, scroll-spy's offset scan) MUST order
- *  them through this one helper. A previous bug came from exactly this sort being written out
- *  independently in two of those places and drifting: the sidebar's visual order disagreed with
- *  the main column's actual render order, so clicking a link scrolled to the wrong section. */
-export function sortIds<TId extends string>(ids: readonly TId[]): TId[] {
-  return ids.slice().sort((a, b) => a.localeCompare(b));
-}
+/** Canonical within-group ordering — implemented in ./catalogNavigation (pure, unit-tested) and
+ *  re-exported here so existing imports keep working. */
+export { sortIds } from './catalogNavigation';

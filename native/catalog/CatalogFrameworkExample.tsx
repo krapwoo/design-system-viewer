@@ -5,9 +5,9 @@
  * CatalogExample.tsx documents the actual DS components. Meta by design — this page is itself built
  * with the very framework it documents.
  *
- * Two of the eleven (CatalogShell, CatalogSidebar) size themselves to the real viewport
- * (`height: 100vh`, `position: sticky`) — embedding a live instance inside a bounded Examples card
- * would blow out this page's layout, not demonstrate the component. Those two render a small static
+ * Two of the eleven (CatalogShell, CatalogSidebar) are whole-screen chrome — the shell fills its
+ * host and owns the URL fragment and history — so embedding a live instance inside a preview card
+ * would fight the real catalog around it, not demonstrate the component. Those two render a small static
  * diagram of their structure instead, with a note pointing at where they're actually running live
  * (this very page, and the Native App DS Template catalog). The other nine are ordinary content
  * components with no viewport-relative sizing, so they render live, with real interactive state.
@@ -140,7 +140,7 @@ function ShellDiagram() {
     <View style={demo.diagramFrame}>
       <SidebarSwatch />
       <View style={demo.diagramMainCol}>
-        <Text style={demo.diagramPageTitle}>Component Catalog</Text>
+        <Text style={demo.diagramPageTitle}>Pill</Text>
         <View style={demo.diagramBlock} />
         <View style={demo.diagramBlock} />
       </View>
@@ -180,19 +180,32 @@ const mockSectionDef: SectionDef<'Example'> = {
       { key: 'b', name: 'B', node: <Text style={demo.mockText}>Variant B</Text> },
     ],
   },
-  // States covers interaction/mode states beyond the default variant shown above — including a
-  // "Default" instance here too, so States reads on its own instead of assuming the reader scrolled
-  // back to Variants to see what "not disabled" looks like.
+  // Both state keys match grid columns below, so the page shows them in the grid and does not
+  // repeat them as a States list. They stay here as data for the manifest and completeness check.
   states: {
     items: [
       { key: 'default', name: 'Default', node: <Text style={demo.mockText}>(the component's live example goes here)</Text> },
       { key: 'disabled', name: 'Disabled', node: <Text style={demo.mockText}>(a disabled instance)</Text> },
     ],
   },
+  // Two props that combine freely become a grid. Every cell is authored; B genuinely has no
+  // disabled look, so that cell says so instead of faking one.
+  comparison: {
+    rowLabel: 'Variant',
+    columnLabel: 'State',
+    rows: [{ key: 'a', label: 'A (default)' }, { key: 'b', label: 'B' }],
+    columns: [{ key: 'default', label: 'Default' }, { key: 'disabled', label: 'Disabled' }],
+    cells: [
+      { rowKey: 'a', columnKey: 'default', node: <Text style={demo.mockText}>A</Text> },
+      { rowKey: 'a', columnKey: 'disabled', node: <Text style={demo.mockText}>A, disabled</Text> },
+      { rowKey: 'b', columnKey: 'default', node: <Text style={demo.mockText}>B</Text> },
+      { rowKey: 'b', columnKey: 'disabled', unavailableReason: 'B has no disabled look' },
+    ],
+  },
 };
 
 function SectionBlockDemo() {
-  return <SectionBlock def={mockSectionDef} />;
+  return <SectionBlock def={mockSectionDef} headingLevel={2} />;
 }
 
 function PropsTableDemo() {
@@ -270,14 +283,14 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'CatalogShell',
     path: 'native/catalog/CatalogShell.tsx',
-    description: 'The whole catalog page — sticky sidebar + scrollable main column with scroll-spy. Hand it your sections and groups; it owns layout, scrolling, filtering, and each section\'s own columns. You\'re reading a live CatalogShell right now — this page and the Native App DS Template catalog are both one.',
+    description: 'The whole catalog — a persistent, searchable sidebar plus one selected page. Selecting a page replaces the main content; on web the page is kept in the URL fragment (#Button) so refresh, deep links, and back/forward work. Desktop and laptop screens only. You\'re reading a live CatalogShell right now.',
     hide: { states: true, props: true, accessibility: true },
     render: () => <ShellDiagram />,
   },
   {
     id: 'CatalogSidebar',
     path: 'native/catalog/CatalogSidebar.tsx',
-    description: 'Sticky sidebar: logo/caption, a filter box, and grouped nav links with scroll-spy highlighting. Used internally by CatalogShell — you\'d reach for it directly only to build a custom shell. The filter narrows the jump-list only; every section still renders on the page below it, unfiltered.',
+    description: 'Catalog navigation: app name, caption, a filter box, and grouped links, one per page. Selecting a link opens that page; the filter narrows this list only and never changes the open page. Used internally by CatalogShell.',
     hide: { states: true, props: true, accessibility: true },
     render: () => <SidebarDiagram />,
   },
@@ -291,7 +304,7 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'SectionBlock',
     path: 'native/catalog/SectionBlock.tsx',
-    description: 'One documented component: title, description, file path, then either a single "Tokens" column (for `tokenGallery` sections — raw token data with no component API to document, like Colors/Spacing/Type Scale below) or up to three columns — Variants, States / Configurations, and Props+Accessibility — in that order. "States / Configurations" isn\'t only strict boolean toggles (disabled, loading) — it also covers optional content slots and structural modes that aren\'t the primary enum, so the name doesn\'t overclaim. A column with nothing to show still renders by default, with a plain sentence saying so; pass `hide` to remove specific columns entirely instead of blanking them out — every section in this catalog does exactly that (`hide: { states, props, accessibility }`), which is why you\'re seeing only a Variants column here. The live example below is a full, un-hidden SectionBlock documenting a mock component with real variants/states/props/a11y — the default shape when nothing is hidden.',
+    description: 'One catalog page: breadcrumb, title, description, previous/next, then the specimens in one of three layouts — a grid (two props that combine freely, from `comparison`), a list (one axis, in one shared card), or a full-width preview (`render()` and token galleries) — then always-visible Guidance, Quick reference, and Props. Columns and cells are at most 402px wide with 16px padding. The demo below is a standalone SectionBlock with a mock grid, including one genuinely unsupported cell.',
     hide: { states: true, props: true, accessibility: true },
     render: () => <SectionBlockDemo />,
   },
@@ -410,6 +423,13 @@ const nav: NavGroup<SectionId>[] = [
  */
 export function CatalogFrameworkExample() {
   return (
-    <CatalogShell appName="Design System DS Catalog" title="Catalog Framework" groups={nav} sections={sections} />
+    <CatalogShell
+      appName="Design System DS Catalog"
+      title="Catalog Framework"
+      groups={nav}
+      sections={sections}
+      // These previews document catalog chrome, not phone components, so they keep full width.
+      defaultPreviewWidths="full"
+    />
   );
 }
