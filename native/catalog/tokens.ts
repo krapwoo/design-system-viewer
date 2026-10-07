@@ -84,10 +84,10 @@ export const CATALOG_TYPE_USE: Record<keyof typeof CATALOG_TYPE, string> = {
  *  Spacing page. */
 export const CATALOG_SPACE_USE: Record<keyof typeof CATALOG_SPACE, string> = {
   xs: 'Tight gap — e.g. between a token\'s rendered value and its use-note.',
-  sm: 'Small gap — below the filter field; between the Props heading and its table.',
+  sm: 'Small gap — below the filter field; between a preview frame\'s label and its demo.',
   md: 'Medium gap — between a card\'s contents; token-row divider padding.',
   lg: 'Grid and list cell padding (16px); row gap in scale galleries.',
-  xl: 'Preview-card padding; gap between reference-panel sections.',
+  xl: 'Preview-card padding; gap between preview frames.',
   '2xl': 'Gap between the reference panel\'s Guidance and Quick reference columns.',
   '3xl': 'Bottom padding of the main column.',
 };

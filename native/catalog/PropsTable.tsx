@@ -1,12 +1,51 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
+import { PROPS_COLUMN_GAP } from './comparison';
 import type { PropDef } from './types';
 
-/** Renders a component's real prop interface as a table: each row holds name + type in a fixed-width
- *  first column, with the description (and default, if any) in a second column beside it. It spans
- *  the full width of the reference panel (ReferenceDetails), so the side-by-side layout reads
- *  comfortably. */
-export function PropsTable({ props }: { props: PropDef[] }) {
+/** One prop, stacked: name and type on one line, then description and default. Used by the
+ *  two-column layout, where a side-by-side name column would wrap long union types. */
+function PropCell({ prop, divider }: { prop: PropDef; divider: boolean }) {
+  return (
+    <View style={[styles.cell, divider && styles.cellDivider]}>
+      <View style={styles.cellHead}>
+        <Text style={styles.name}>
+          {prop.name}
+          <Text style={styles.optionalMark}>{prop.required ? '' : '?'}</Text>
+        </Text>
+        <Text style={styles.type}>{prop.type}</Text>
+      </View>
+      <Text style={styles.desc}>{prop.desc}</Text>
+      {prop.default != null && (
+        <Text style={styles.default}>
+          Default: <Text style={styles.defaultVal}>{prop.default}</Text>
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/** Renders a component's real prop interface. One column: each row holds name + type in a
+ *  fixed-width first column with the description beside it. Two columns (`columns={2}`, chosen by
+ *  ReferenceDetails through `propsColumns`): props fill across first, each stacked, so reading and
+ *  focus order stay the declared order. */
+export function PropsTable({ props, columns = 1 }: { props: PropDef[]; columns?: 1 | 2 }) {
+  if (columns === 2) {
+    const rows: PropDef[][] = [];
+    for (let i = 0; i < props.length; i += 2) rows.push(props.slice(i, i + 2));
+    return (
+      <View style={styles.table}>
+        {rows.map((row, ri) => (
+          <View key={row[0].name} style={styles.gridRow}>
+            {row.map((prop, ci) => (
+              <PropCell key={prop.name} prop={prop} divider={ri * 2 + ci + 2 < props.length} />
+            ))}
+            {row.length === 1 && <View style={styles.cell} />}
+          </View>
+        ))}
+      </View>
+    );
+  }
   return (
     <View style={styles.table}>
       {props.map((prop, i) => (
@@ -55,4 +94,8 @@ const styles = StyleSheet.create({
   desc: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, lineHeight: 17 },
   default: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted },
   defaultVal: { fontFamily: CATALOG_COLOR.code, color: CATALOG_COLOR.textMuted },
+  gridRow: { flexDirection: 'row', gap: PROPS_COLUMN_GAP },
+  cell: { flex: 1, minWidth: 0, paddingVertical: CATALOG_SPACE.md, gap: 4 },
+  cellDivider: { borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },
+  cellHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 10, rowGap: 2 },
 });

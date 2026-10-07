@@ -5,7 +5,7 @@ import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_SPACE
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
 import { groupLabelFor, hashForId, idFromHash, neighbors, orderedIds } from './catalogNavigation';
-import type { NavGroup, SectionDef } from './types';
+import type { NavGroup, PreviewWidths, SectionDef } from './types';
 
 function isWeb(): boolean {
   return Platform.OS === 'web' && typeof window !== 'undefined';
@@ -47,6 +47,7 @@ export function CatalogShell<TId extends string>({
   title,
   groups,
   sections,
+  defaultPreviewWidths,
 }: {
   /** Short product/app name — the sidebar logo and the breadcrumb root. */
   appName: string;
@@ -54,6 +55,9 @@ export function CatalogShell<TId extends string>({
   title: string;
   groups: NavGroup<TId>[];
   sections: SectionDef<TId>[];
+  /** Preview widths for component pages without their own `previewWidths`. Default: `[402]`
+   *  (phone width). Pass 'full' for a catalog whose previews are not phone components. */
+  defaultPreviewWidths?: PreviewWidths;
 }) {
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
   const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
@@ -134,6 +138,7 @@ export function CatalogShell<TId extends string>({
                 onNavigate: select,
               }}
               headingRef={headingRef}
+              defaultPreviewWidths={defaultPreviewWidths}
             />
           ) : (
             <Text style={styles.empty}>No catalog pages are available.</Text>

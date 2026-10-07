@@ -1872,6 +1872,8 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'SegmentedToggle',
     path: 'native/components/SegmentedToggle',
+    // Phone width plus a small phone, where long labels truncate.
+    previewWidths: [402, 320],
     description: 'A row of mutually-exclusive options on a recessed track, with a white thumb that slides to the selected segment. Two or more options.',
     whenToUse: 'A filled, heavier-weight control for a primary, prominent choice on the screen. For quieter secondary navigation, use UnderlineTabs.',
     a11y: 'The row is accessibilityRole="tablist"; each segment is a "tab" with accessibilityState.selected reflecting the current value.',
@@ -1885,6 +1887,8 @@ const sections: SectionDef<SectionId>[] = [
   {
     id: 'UnderlineTabs',
     path: 'native/components/UnderlineTabs',
+    // Phone width plus a small phone, where long labels truncate.
+    previewWidths: [402, 320],
     description: 'A quieter tab switcher — left-aligned labels over a hairline rule, with a sliding underline indicator. Same options/value/onChange API as SegmentedToggle.',
     whenToUse: "Quiet, secondary navigation within a screen that already has a clear primary focus. For a prominent, primary choice, use SegmentedToggle.",
     a11y: 'Each tab is a Pressable label; the underline is a visual indicator only, so selection is also conveyed by the active label weight.',
@@ -2042,18 +2046,17 @@ const sections: SectionDef<SectionId>[] = [
       ],
     },
     // `size` (circle) and `height` (linear) are continuous numbers, not enums — small/medium/large
-    // and thin/default/thick are explicit, labeled sweeps across each, rather than a single "bigger"
-    // example. "Medium"/"Default" repeat the same 20px/4px values already used unsized in Variants
-    // above, labeled here so States / Configurations reads as the full range on its own.
+    // and thin/default/thick are explicit, labeled sweeps across each. Each sweep names its variant
+    // through `group`, so the page shows one row per variant; Accent colour applies to both and
+    // stays in "Other configurations".
     states: {
-      itemsFill: true,
       items: [
-        { key: 'small-circle', name: 'Small circle', node: <Loading variant="circle" size={14} /> },
-        { key: 'medium-circle', name: 'Medium circle (default)', node: <Loading variant="circle" size={20} /> },
-        { key: 'large-circle', name: 'Large circle', node: <Loading variant="circle" size={40} /> },
-        { key: 'thin-linear', name: 'Thin linear', node: <Loading variant="linear" height={2} /> },
-        { key: 'default-linear', name: 'Default linear', node: <Loading variant="linear" height={4} /> },
-        { key: 'thick-linear', name: 'Thick linear', node: <Loading variant="linear" height={8} /> },
+        { key: 'small-circle', group: 'circle', name: 'Small circle', node: <Loading variant="circle" size={14} /> },
+        { key: 'medium-circle', group: 'circle', name: 'Medium circle (default)', node: <Loading variant="circle" size={20} /> },
+        { key: 'large-circle', group: 'circle', name: 'Large circle', node: <Loading variant="circle" size={40} /> },
+        { key: 'thin-linear', group: 'linear', fill: true, name: 'Thin linear', node: <Loading variant="linear" height={2} /> },
+        { key: 'default-linear', group: 'linear', fill: true, name: 'Default linear', node: <Loading variant="linear" height={4} /> },
+        { key: 'thick-linear', group: 'linear', fill: true, name: 'Thick linear', node: <Loading variant="linear" height={8} /> },
         { key: 'accent', name: 'Accent colour', node: <Loading variant="circle" color={DS_SEMANTIC.emphasis.info} /> },
       ],
     },

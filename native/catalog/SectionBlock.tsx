@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { ComparisonGrid } from './ComparisonGrid';
+import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { ReferenceDetails } from './ReferenceDetails';
-import { presentationBlocks, type PresentationBlock } from './comparison';
-import type { SectionDef } from './types';
+import { choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
+import type { PreviewWidths, SectionDef } from './types';
 
 // Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
 // else (string, boolean, IconName, () => void, …) has no fixed enum to sweep and is skipped.
@@ -86,14 +87,46 @@ function PagerButton<TId extends string>({
   );
 }
 
+/** Caption above each frame when a preview shows more than one width. */
+function frameLabel(width: number): string {
+  if (width >= 402) return `${width} · Default phone`;
+  if (width <= 360) return `${width} · Small phone`;
+  return `${width}px`;
+}
+
+/** A component preview: one frame per width (each at most phone width), or full width for catalog
+ *  chrome and token galleries. Every frame is its own live instance with its own state. */
+function Preview({ render, widths }: { render: () => React.ReactNode; widths: PreviewWidths }) {
+  if (widths === 'full') return <View style={styles.previewCard}>{render()}</View>;
+  return (
+    <View style={styles.previewCard}>
+      <View style={styles.frames}>
+        {widths.map((width, i) => (
+          <View
+            key={`${width}-${i}`}
+            // Two live instances of the same component: name each so assistive tech can tell them apart.
+            {...(widths.length > 1 ? ({ role: 'group', 'aria-label': frameLabel(width) } as Record<string, unknown>) : null)}
+            style={[styles.frame, { width }]}
+          >
+            {widths.length > 1 && <Text style={styles.frameLabel}>{frameLabel(width)}</Text>}
+            {render()}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function BlockContent<TId extends string>({ block, def }: { block: PresentationBlock; def: SectionDef<TId> }) {
   switch (block.kind) {
     case 'grid':
       return <ComparisonGrid def={block.comparison} size={block.size} sectionId={def.id} />;
+    case 'grouped':
+      return <ComparisonGroups groups={block.groups} size={block.size} label={def.id} />;
     case 'list':
       return <ComparisonList items={block.items} size={block.size} label={`${def.id}: ${block.title}`} />;
     case 'preview':
-      return <View style={styles.previewCard}>{def.render?.()}</View>;
+      return def.render ? <Preview render={def.render} widths={block.widths} /> : null;
     default:
       return (
         <View style={styles.previewCard}>
@@ -103,11 +136,78 @@ function BlockContent<TId extends string>({ block, def }: { block: PresentationB
   }
 }
 
+/** Width a block's card occupies: lists hug their columns; everything else fills the row. */
+function blockWidth(block: PresentationBlock, available: number): number {
+  return block.kind === 'list' ? listGeometry(block.items.length, available, block.size).containerWidth : available;
+}
+
+/**
+ * The page's specimen blocks, stacked or side by side. Starts stacked, records each block's stacked
+ * height, then moves to side by side only when choosePlacement says it saves real height. Heights
+ * are never recorded while side by side, so the decision never feeds on its own result; a width
+ * change returns to stacked and decides again.
+ */
+function Blocks<TId extends string>({ blocks, def }: { blocks: PresentationBlock[]; def: SectionDef<TId> }) {
+  const [available, setAvailable] = useState(0);
+  const [heights, setHeights] = useState<number[]>([]);
+  const [placement, setPlacement] = useState<'side' | 'stacked'>('stacked');
+
+  const onContainerLayout = (event: LayoutChangeEvent) => {
+    const width = Math.round(event.nativeEvent.layout.width);
+    if (width <= 0 || width === available) return;
+    // Keep recorded heights: they are only taken while stacked, and blocks often report before the
+    // container does. A new width returns to stacked so the decision is made again.
+    setAvailable(width);
+    setPlacement('stacked');
+  };
+  const onBlockLayout = (index: number) => (event: LayoutChangeEvent) => {
+    if (placement !== 'stacked' || blocks.length !== 2) return;
+    const height = Math.round(event.nativeEvent.layout.height);
+    setHeights((prev: number[]) => {
+      if (prev[index] === height) return prev;
+      const next = [...prev];
+      next[index] = height;
+      return next;
+    });
+  };
+
+  // Decide once both stacked heights are known for the current width.
+  useEffect(() => {
+    if (placement !== 'stacked' || blocks.length !== 2 || available <= 0 || !heights[0] || !heights[1]) return;
+    const [first, second] = blocks;
+    const decision = choosePlacement({
+      available,
+      gap: CATALOG_LAYOUT.blockGap,
+      first: { kind: first.kind, width: blockWidth(first, available), height: heights[0] },
+      second: second.kind === 'list'
+        ? { kind: 'list', height: heights[1], itemCount: second.items.length, size: second.size }
+        : { kind: second.kind, height: heights[1] },
+    });
+    if (decision === 'side') setPlacement('side');
+  }, [available, blocks, heights, placement]);
+
+  const side = placement === 'side';
+  return (
+    <View onLayout={onContainerLayout} style={[styles.blocks, side && styles.blocksSide]}>
+      {blocks.map((block, i) => (
+        <View
+          key={block.title}
+          onLayout={onBlockLayout(i)}
+          style={side ? (i === 0 ? { width: blockWidth(block, available), flexShrink: 0 } : styles.blockFill) : undefined}
+        >
+          <Text style={styles.blockLabel}>{block.title}</Text>
+          <BlockContent block={block} def={def} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /**
  * One catalog page: breadcrumb, title, description, previous/next, then one or two specimen
- * blocks (grid, list, or preview), then always-visible reference details (not for token
- * galleries). Works standalone without a pager inside a host page, as the framework catalog's
- * own SectionBlock demo does.
+ * blocks (grid, grouped rows, list, or preview), stacked or side by side, then always-visible
+ * reference details (Quick reference only for token galleries). Works standalone without a pager
+ * inside a host page, as the framework catalog's own SectionBlock demo does.
  */
 export function SectionBlock<TId extends string>({
   def,
@@ -116,6 +216,7 @@ export function SectionBlock<TId extends string>({
   pager,
   headingRef,
   headingLevel = 1,
+  defaultPreviewWidths,
 }: {
   def: SectionDef<TId>;
   groupLabel?: string;
@@ -123,9 +224,12 @@ export function SectionBlock<TId extends string>({
   pager?: SectionPager<TId>;
   headingRef?: React.Ref<View>;
   headingLevel?: 1 | 2;
+  /** Preview widths for pages without `previewWidths` (CatalogShell passes its catalog default). */
+  defaultPreviewWidths?: PreviewWidths;
 }) {
   checkCompleteness(def);
-  const blocks = presentationBlocks(def);
+  // Memoized so Blocks' placement effect runs on real changes, not on every render.
+  const blocks = useMemo(() => presentationBlocks(def, { defaultPreviewWidths }), [def, defaultPreviewWidths]);
   // react-native-web reads `aria-level`; React Native's prop types do not declare it.
   const headingLevelProps = { 'aria-level': headingLevel } as Record<string, unknown>;
 
@@ -150,14 +254,9 @@ export function SectionBlock<TId extends string>({
         )}
       </View>
 
-      {blocks.map((block) => (
-        <View key={block.title} style={styles.block}>
-          <Text style={styles.blockLabel}>{block.title}</Text>
-          <BlockContent block={block} def={def} />
-        </View>
-      ))}
+      {blocks.length > 0 && <Blocks blocks={blocks} def={def} />}
 
-      {!def.tokenGallery && <ReferenceDetails def={def} />}
+      <ReferenceDetails def={def} />
     </View>
   );
 }
@@ -192,7 +291,18 @@ const styles = StyleSheet.create({
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
   pagerGlyph: { fontSize: CATALOG_TYPE.lg, color: CATALOG_COLOR.text },
   pagerGlyphDisabled: { color: CATALOG_COLOR.textMuted },
-  block: { marginBottom: CATALOG_LAYOUT.blockGap },
+  blocks: { gap: CATALOG_LAYOUT.blockGap, marginBottom: CATALOG_LAYOUT.blockGap },
+  blocksSide: { flexDirection: 'row', alignItems: 'flex-start' },
+  blockFill: { flex: 1, minWidth: 0 },
+  frames: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.xl, alignItems: 'flex-start' },
+  frame: { maxWidth: '100%', gap: CATALOG_SPACE.sm },
+  frameLabel: {
+    fontSize: CATALOG_TYPE.tableHeader,
+    fontWeight: '800',
+    letterSpacing: 0.44,
+    textTransform: 'uppercase',
+    color: CATALOG_COLOR.textMuted,
+  },
   blockLabel: {
     fontSize: CATALOG_TYPE.sm,
     fontWeight: '700',

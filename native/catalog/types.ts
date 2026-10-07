@@ -35,6 +35,10 @@ export interface VariantExample {
    *  any enum value from `SectionDef.props` that no tagged item covers — the mechanical version of
    *  the completeness policy documented on `states` below. */
   props?: Record<string, unknown>;
+  /** In `states` only: the `variants` item key this configuration belongs to (e.g. a size that
+   *  exists only for the circle variant). When any state names a variant, the page shows one row
+   *  per variant with its own configurations instead of separate Variants and States lists. */
+  group?: string;
 }
 
 /** The content of the "Variants" or "States / Configurations" column — every value of a single prop's
@@ -52,6 +56,10 @@ export interface VariantSlot {
 /** Width class for a page's specimens: compact (min 160px), regular (min 240px), or wide (fixed
  *  402px, phone width). Sets grid column and list cell widths. */
 export type SpecimenSize = 'compact' | 'regular' | 'wide';
+
+/** Widths for a component preview: one or more phone widths (each capped at 402px), or 'full' for
+ *  content that is not a phone component (catalog chrome, token galleries). */
+export type PreviewWidths = readonly number[] | 'full';
 
 /** One row or column heading in a grid. */
 export interface ComparisonAxisItem {
@@ -108,10 +116,10 @@ export interface SectionDef<TId extends string = string> {
    *  **including whichever value that prop defaults to** (e.g. Button's Variants starts with
    *  "Primary" since `variant` defaults to `'primary'`; Card's single instance is named "Default"
    *  since it has no enum at all). Never skip the default on the assumption it's obvious from source.
-   *  SectionBlock always renders a "Variants" column — omit this and it shows "No variants
-   *  documented." instead of just not appearing, so every section has the same fixed shape. If
-   *  neither this nor `render` is set, that's what shows; if `render` is set instead, its output
-   *  fills this column (for content that isn't a simple list of instances — see `render` below). */
+   *  Omit it when there are none: the page simply shows no Variants block (a page with nothing
+   *  documented at all shows one "No examples documented." block). If `render` is set instead,
+   *  its output is the page's Preview (for content that isn't a simple list of instances — see
+   *  `render` below). */
   variants?: VariantSlot;
   /** Every meaningfully distinct boolean/flag state (`loading`, `disabled`, icon-only, …) **and** any
    *  other optional, prop-driven configuration worth showing that isn't the primary enum (an optional
@@ -138,16 +146,17 @@ export interface SectionDef<TId extends string = string> {
    *     like" doesn't count as demonstrating the range — this is the same rule as #3, but continuous
    *     props are exactly where it's easiest to skip a middle value because "the default is shown
    *     elsewhere anyway."
-   *  SectionBlock always renders a "States / Configurations" column; omit this and it shows "No
-   *  additional states or configurations documented." instead of just not appearing. */
+   *  Omit this when there are none — the page then shows no States block; never invent items to
+   *  fill it. Give an item `group` (a `variants` key) when it only exists for that variant. */
   states?: VariantSlot;
-  /** Escape hatch for "Variants" column content that isn't a simple list of instances — token
-   *  galleries, live interactive demos with local state, structure diagrams, wrapping grids. Ignored
-   *  when `variants` is set. */
+  /** Escape hatch for content that isn't a simple list of instances — token galleries, live
+   *  interactive demos with local state, structure diagrams, wrapping grids. Rendered as the page's
+   *  Preview (phone width for components; see `previewWidths`). Ignored when `variants` is set. */
   render?: () => React.ReactNode;
   /** Marks this as a token-gallery section (raw token data, not a component with its own API) —
-   *  SectionBlock renders `render()` full width under a "Tokens" label and skips the States /
-   *  configurations list and the reference panel (there's no component behavior to document). */
+   *  SectionBlock renders `render()` full width under a "Tokens" label, skips the States /
+   *  configurations list, and shows only a Quick reference card with the source path (there's no
+   *  component behavior to document). */
   tokenGallery?: boolean;
   /** Overrides the `tokenGallery` block's label (default `'Tokens'`) — e.g. `'Preview'` for a page
    *  that's a composed, realistic usage example rather than a list of raw token values. Ignored
@@ -160,9 +169,11 @@ export interface SectionDef<TId extends string = string> {
   /** Width class for this page's specimens. Without it, full-width (`itemsFill`) slots are 'wide'
    *  and everything else is 'regular'. */
   specimenSize?: SpecimenSize;
-  /** Remove specific parts of the page instead of showing an empty-state sentence ("No additional
-   *  states or configurations documented.", etc.) — for sections with no meaningful states, props,
-   *  or accessibility story (e.g. a framework's own building-block pages). `variants` removes the
+  /** Widths for this page's `render()` preview, e.g. `[402, 320]` to add a small-phone example.
+   *  Defaults to the catalog's default (CatalogShell `defaultPreviewWidths`), else `[402]`. */
+  previewWidths?: PreviewWidths;
+  /** Remove specific parts of the page — for sections with no meaningful states, props, or
+   *  accessibility story (e.g. a framework's own building-block pages). `variants` removes the
    *  first specimen block (grid, Variants list, or Preview); `states` removes the States /
    *  configurations (or "Other configurations") list; `props` and `accessibility` remove those
    *  parts of the reference panel. */

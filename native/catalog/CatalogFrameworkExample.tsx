@@ -423,6 +423,13 @@ const nav: NavGroup<SectionId>[] = [
  */
 export function CatalogFrameworkExample() {
   return (
-    <CatalogShell appName="Design System DS Catalog" title="Catalog Framework" groups={nav} sections={sections} />
+    <CatalogShell
+      appName="Design System DS Catalog"
+      title="Catalog Framework"
+      groups={nav}
+      sections={sections}
+      // These previews document catalog chrome, not phone components, so they keep full width.
+      defaultPreviewWidths="full"
+    />
   );
 }

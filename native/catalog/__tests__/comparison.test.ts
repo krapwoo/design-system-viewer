@@ -8,7 +8,12 @@ import {
   gridWidthBounds,
   indexCells,
   listGeometry,
+  PREVIEW_MAX_WIDTH,
+  PROPS_COLUMN_GAP,
+  PROPS_MIN_COLUMN_WIDTH,
+  choosePlacement,
   presentationBlocks,
+  propsColumns,
   remainingStates,
   validateComparison,
 } from '../comparison.ts';
@@ -113,7 +118,7 @@ test('remainingStates drops states already shown as grid rows or columns', () =>
   assert.equal(remainingStates({ items: [states.items[0]] }, valid), undefined);
 });
 
-test('presentationBlocks plans grid, list, preview, and empty blocks', () => {
+test('presentationBlocks plans grid, list, grouped, preview, and empty blocks', () => {
   const base = { id: 'X', path: 'p', description: 'd' };
   const variants = { items: [{ key: 'a', name: 'A', node: 'a' }] };
   const wideVariants = { itemsFill: true, items: [{ key: 'a', name: 'A', node: 'a' }] };
@@ -121,8 +126,8 @@ test('presentationBlocks plans grid, list, preview, and empty blocks', () => {
   const render = () => 'r';
   const summary = (def) => presentationBlocks(def).map((b) => [b.kind, b.title, b.size ?? null]);
 
-  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, render }), [{ kind: 'preview', title: 'Tokens' }]);
-  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, fullWidthLabel: 'Palette', render }), [{ kind: 'preview', title: 'Palette' }]);
+  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, render }), [{ kind: 'preview', title: 'Tokens', widths: 'full' }]);
+  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, fullWidthLabel: 'Palette', render }), [{ kind: 'preview', title: 'Palette', widths: 'full' }]);
   assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true }), [{ kind: 'empty', title: 'Tokens', message: 'Nothing to preview.' }]);
 
   assert.deepEqual(summary({ ...base, variants, states, comparison: valid }), [
@@ -131,27 +136,85 @@ test('presentationBlocks plans grid, list, preview, and empty blocks', () => {
   ]);
   assert.deepEqual(summary({ ...base, specimenSize: 'compact', comparison: valid }), [['grid', 'Variant × State', 'compact']]);
   assert.deepEqual(summary({ ...base, comparison: { ...valid, size: 'wide' }, specimenSize: 'compact' }), [['grid', 'Variant × State', 'wide']]);
-  assert.deepEqual(summary({ ...base, variants }), [
-    ['list', 'Variants', 'regular'],
-    ['empty', 'States / configurations', null],
-  ]);
+  // A lone block no longer carries an empty "No additional states" sibling.
+  assert.deepEqual(summary({ ...base, variants }), [['list', 'Variants', 'regular']]);
   assert.deepEqual(summary({ ...base, variants: wideVariants, states }), [
     ['list', 'Variants', 'wide'],
     ['list', 'States / configurations', 'regular'],
   ]);
-  assert.deepEqual(summary({ ...base, variants, specimenSize: 'compact' }).slice(0, 1), [['list', 'Variants', 'compact']]);
-  assert.deepEqual(summary({ ...base, render }), [
-    ['preview', 'Preview', null],
-    ['empty', 'States / configurations', null],
-  ]);
-  assert.deepEqual(presentationBlocks(base), [
-    { kind: 'empty', title: 'Variants', message: 'No variants documented.' },
-    { kind: 'empty', title: 'States / configurations', message: 'No additional states or configurations documented.' },
-  ]);
+  assert.deepEqual(summary({ ...base, variants, specimenSize: 'compact' }), [['list', 'Variants', 'compact']]);
+  assert.deepEqual(summary({ ...base, render }), [['preview', 'Preview', null]]);
+  // Nothing documented at all: one truthful empty block.
+  assert.deepEqual(presentationBlocks(base), [{ kind: 'empty', title: 'Examples', message: 'No examples documented.' }]);
   assert.deepEqual(summary({ ...base, render, hide: { states: true } }), [['preview', 'Preview', null]]);
   assert.deepEqual(summary({ ...base, variants, states, hide: { variants: true } }), [['list', 'States / configurations', 'regular']]);
+  assert.deepEqual(presentationBlocks({ ...base, hide: { variants: true, states: true } }), []);
+  assert.deepEqual(presentationBlocks({ ...base, hide: { variants: true } }), [], 'hiding a part never adds an empty sentence');
   assert.deepEqual(summary({ ...base, comparison: valid, states: { items: [states.items[0]] } }), [['grid', 'Variant × State', 'regular']]);
 
   const list = presentationBlocks({ ...base, variants: wideVariants })[0];
   assert.deepEqual(list.items, [{ key: 'a', label: 'A', node: 'a', fill: true }]);
+});
+
+test('component previews are phone width by default; token galleries stay full width', () => {
+  const base = { id: 'X', path: 'p', description: 'd', render: () => 'r' };
+  assert.equal(PREVIEW_MAX_WIDTH, 402);
+  assert.deepEqual(presentationBlocks(base)[0], { kind: 'preview', title: 'Preview', widths: [402] });
+  assert.deepEqual(presentationBlocks({ ...base, previewWidths: [402, 320] })[0].widths, [402, 320]);
+  assert.deepEqual(presentationBlocks(base, { defaultPreviewWidths: 'full' })[0].widths, 'full');
+  assert.deepEqual(presentationBlocks({ ...base, previewWidths: [402] }, { defaultPreviewWidths: 'full' })[0].widths, [402]);
+  assert.deepEqual(presentationBlocks({ ...base, previewWidths: [500] })[0].widths, [402], 'never wider than a phone');
+});
+
+test('states that name their variant become grouped rows', () => {
+  const base = { id: 'Loading', path: 'p', description: 'd' };
+  const variants = { itemsFill: true, items: [{ key: 'circle', name: 'Circle', node: 'c' }, { key: 'linear', name: 'Linear', node: 'l' }, { key: 'dots', name: 'Dots', node: 'd' }] };
+  const states = { itemsFill: true, items: [
+    { key: 'small', name: 'Small', node: 's', group: 'circle' },
+    { key: 'medium', name: 'Medium', node: 'm', group: 'circle' },
+    { key: 'thin', name: 'Thin', node: 't', group: 'linear' },
+    { key: 'accent', name: 'Accent colour', node: 'x' },
+    { key: 'stray', name: 'Stray', node: 'y', group: 'nope' },
+  ] };
+  const blocks = presentationBlocks({ ...base, variants, states });
+  assert.deepEqual(blocks.map((b) => [b.kind, b.title, b.size ?? null]), [
+    ['grouped', 'Variant × configuration', 'regular'],
+    ['list', 'Other configurations', 'wide'],
+  ]);
+  assert.deepEqual(blocks[0].groups.map((g) => [g.key, g.label, g.items.map((i) => i.key)]), [
+    ['circle', 'Circle', ['small', 'medium']],
+    ['linear', 'Linear', ['thin']],
+    ['dots', 'Dots', ['dots']],
+  ]);
+  assert.deepEqual(blocks[1].items.map((i) => i.key), ['accent', 'stray']);
+  // A comparison grid takes precedence over grouping.
+  assert.equal(presentationBlocks({ ...base, variants, states, comparison: valid })[0].kind, 'grid');
+  // hide.states keeps the plain Variants list.
+  assert.deepEqual(presentationBlocks({ ...base, variants, states, hide: { states: true } }).map((b) => b.kind), ['list']);
+});
+
+test('choosePlacement keeps the shorter arrangement and prefers stacking', () => {
+  const second = { kind: 'list', itemCount: 3, size: 'wide', height: 600 };
+  // Dropdown at 1280: one 402px variant (≈600 tall) beside three wide states.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second: { ...second, height: 640 } }), 'side');
+  // Same page at 1100: only 340px beside it, narrower than a 402px cell.
+  assert.equal(choosePlacement({ available: 772, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second }), 'stacked');
+  // A first block that fills the width (grid, grouped, preview) never shares the row.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'grid', width: 952, height: 500 }, second }), 'stacked');
+  // Switch at 1280: beside a 402px variant, four compact states wrap to two rows — no real saving.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 4, size: 'compact', height: 230 } }), 'stacked');
+  // Two single-row blocks that both fit save a full row and go side by side.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 1, size: 'wide', height: 230 } }), 'side');
+  // Only lists reflow predictably beside another block.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second: { kind: 'grid', itemCount: 3, size: 'wide', height: 640 } }), 'stacked');
+});
+
+test('propsColumns uses two columns only for 4+ props with room', () => {
+  assert.equal(PROPS_MIN_COLUMN_WIDTH, 360);
+  assert.equal(PROPS_COLUMN_GAP, CATALOG_SPACE['2xl']);
+  assert.equal(propsColumns(9, 910), 2);
+  assert.equal(propsColumns(3, 910), 1);
+  assert.equal(propsColumns(9, 730), 1);
+  assert.equal(propsColumns(4, 752), 2);
+  assert.equal(propsColumns(0, 910), 1);
 });
