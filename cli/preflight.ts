@@ -3,7 +3,14 @@ import path from 'node:path';
 
 export interface PreflightIssue {
   package: string;
+  /** What is wrong, when it is more than "missing" (for example, an Expo SDK that is too old). */
+  problem?: string;
   installCommand: string;
+}
+
+/** One line per issue: the problem (or "Missing <package>.") and the command that fixes it. */
+export function formatPreflightIssue(issue: PreflightIssue): string {
+  return `${issue.problem ?? `Missing ${issue.package}.`} Run: ${issue.installCommand}`;
 }
 
 export interface PreflightResult {
@@ -12,7 +19,7 @@ export interface PreflightResult {
 }
 
 const REQUIRED_PACKAGES = ['react-native-web', 'react-dom'];
-// @expo/metro-runtime is recommended, not required: Expo 57 web works without it (verified in the
+// @expo/metro-runtime is recommended, not required: Expo web works without it (verified in the
 // 0.1 spike and in native-preview's own node_modules, which has no @expo/metro-runtime installed
 // either) — design §1 "Host requirements" only warns when it is missing.
 const RECOMMENDED_PACKAGES: Record<string, string> = {
@@ -20,7 +27,9 @@ const RECOMMENDED_PACKAGES: Record<string, string> = {
   typescript: 'npm install --save-dev typescript',
 };
 const MIN_NODE: [number, number, number] = [20, 19, 0];
-const MIN_EXPO: [number, number, number] = [57, 0, 0];
+// Lowered from 57 in 0.4.2 (owner-approved): sync, doctor, the viewer and Update now were verified
+// end to end on a fresh Expo SDK 54 app and on Skiffr (Expo 54).
+const MIN_EXPO: [number, number, number] = [54, 0, 0];
 
 /** Accepts `x.y.z`, and a version with a missing minor/patch (e.g. `"57"`, `"^57"`) by defaulting
  *  the missing segments to 0 — a range specifier like `"^57"` must not be flagged as older than 57. */
@@ -63,7 +72,7 @@ export function preflight(projectRoot: string): PreflightResult {
   if (!expoVersion) {
     errors.push({ package: 'expo', installCommand: 'npx expo install expo' });
   } else if (!atLeast(expoVersion, MIN_EXPO)) {
-    errors.push({ package: 'expo', installCommand: 'Upgrade to Expo SDK 57 or later: npx expo install expo@^57' });
+    errors.push({ package: 'expo', problem: `Expo SDK 54 or later is required (found ${expoVersion}).`, installCommand: 'npx expo install expo@^54' });
   }
 
   for (const name of REQUIRED_PACKAGES) {

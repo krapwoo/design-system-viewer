@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { execFileSync } from 'node:child_process';
-import { preflight } from './preflight.ts';
+import { formatPreflightIssue, preflight } from './preflight.ts';
 import { detectComponentFolders, detectTokenFiles, type DetectedComponentFolder, type DetectedTokenFile } from './detect.ts';
 import { ensureAgentsFileSection } from './agentsFile.ts';
 import { ensureGithubAction } from './githubAction.ts';
@@ -81,7 +81,7 @@ function detectIndent(raw: string): string {
 export async function initExistingProject(projectRoot: string, options: InitOptions = {}): Promise<InitResult> {
   const { errors, warnings } = preflight(projectRoot);
   if (errors.length > 0) {
-    return { messages: errors.map((issue) => `Missing ${issue.package}. Run: ${issue.installCommand}`), written: [], exitCode: 1 };
+    return { messages: errors.map(formatPreflightIssue), written: [], exitCode: 1 };
   }
 
   const componentFolders = detectComponentFolders(projectRoot, projectRoot);
@@ -269,7 +269,7 @@ export default defineConfig({
 export async function initNewProject(projectRoot: string, options: NewProjectOptions = {}): Promise<InitResult> {
   const { errors, warnings } = preflight(projectRoot);
   if (errors.length > 0) {
-    return { messages: errors.map((issue) => `Missing ${issue.package}. Run: ${issue.installCommand}`), written: [], exitCode: 1 };
+    return { messages: errors.map(formatPreflightIssue), written: [], exitCode: 1 };
   }
 
   const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8')) as {
