@@ -26,6 +26,13 @@ function run(...args: string[]) {
   });
 }
 
+function runIn(cwd: string, ...args: string[]) {
+  return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', mainPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+  });
+}
+
 for (const flag of ['--help', '-h', 'help']) {
   test(`${flag} prints usage with every command and exits 0`, () => {
     const result = run(flag);
@@ -292,4 +299,48 @@ test('runExplainCommand with a malformed --heights value exits 1 with a clear me
   const result = runExplainCommand('/irrelevant', 'Widget', ['--heights', 'nope']);
   assert.match(result.output, /--heights must be two comma-separated numbers/);
   assert.equal(result.exitCode, 1);
+});
+
+test('"kit diff" with no component name prints usage and exits 1', () => {
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-kit-diff-usage-');
+  const result = runIn(dir, 'kit', 'diff');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage: ds-viewer kit diff <Component>/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"kit diff Button" dispatches to runKitDiffCommand', () => {
+  // EXISTING_PROJECT_FIXTURE_ROOT's own ds-viewer.config.ts has no starterKit (fixtures/existing-project/ds-viewer.config.ts)
+  // — a real, deterministic, network-free dispatch proof: reaching runKitDiffCommand's own
+  // "no starter kit configured" message is only possible via main()'s "kit diff" branch.
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-kit-diff-button-');
+  const result = runIn(dir, 'kit', 'diff', 'Button');
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /no starter kit configured/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"migrate" with no --from prints usage and exits 1', () => {
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-migrate-usage-');
+  const result = runIn(dir, 'migrate');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage: ds-viewer migrate --from <version>/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"migrate --from 0.3.0 --json" prints valid JSON with from: "0.3.0"', () => {
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-migrate-json-');
+  const result = runIn(dir, 'migrate', '--from', '0.3.0', '--json');
+  assert.equal(result.status, 0);
+  // MIGRATIONS is empty in 0.4, so this never touches any real file — changes: [] is the whole assertion.
+  assert.deepEqual(JSON.parse(result.stdout), { version: 1, from: '0.3.0', changes: [], dryRun: false });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"update --dry-run" dispatches through to resolveConfig and reports its error, never touching the network', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-run-update-'));
+  const result = runIn(dir, 'update', '--dry-run');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /No ds-viewer\.config\.ts found/);
+  rmSync(dir, { recursive: true, force: true });
 });

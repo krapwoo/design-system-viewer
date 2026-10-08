@@ -9,6 +9,9 @@ import { formatHuman, runDoctor, toDoctorJson } from './doctor.ts';
 import { explainPage, formatExplain, parseHeights } from './explain.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { checkForUpdate, isUpdateCheckEnabled } from './updateCheck.ts';
+import { runKitDiffCommand } from './kitDiff.ts';
+import { formatMigrateHuman, runMigrate } from './migrate.ts';
+import { runUpdate } from './update.ts';
 
 const USAGE = `Usage: ds-viewer <command>
 
@@ -27,6 +30,15 @@ Commands:
            Print why a page's specimens are laid out the way they are
            --heights <first>,<second>  check side-by-side placement with these measured heights
            --json          print the machine-readable report instead
+  kit diff <Component>
+           Show the user's kit file(s) for <Component> against the installed kit's copy
+  migrate --from <version>
+           Run every migration introduced after <version>
+           --dry-run       report the changes without writing them
+           --json          print the machine-readable report instead
+  update  [--dry-run]     Build and show the update plan; stop without installing
+          [--yes]         Skip the confirmation prompt
+          [--force]       Install even if planned files have uncommitted changes
 
 Options:
   -h, --help     Show this help
@@ -197,6 +209,41 @@ async function main(): Promise<void> {
     const { output, exitCode } = runExplainCommand(projectRoot, pageId, explainRest);
     console.log(output);
     if (exitCode) process.exitCode = exitCode;
+    return;
+  }
+
+  if (command === 'kit') {
+    const [sub, componentName] = rest;
+    if (sub !== 'diff' || !componentName) {
+      console.error(`Usage: ds-viewer kit diff <Component>\n\n${USAGE}`);
+      process.exitCode = 1;
+      return;
+    }
+    const config = resolveConfig(projectRoot);
+    const { output, exitCode } = runKitDiffCommand(config, componentName);
+    console.log(output);
+    if (exitCode) process.exitCode = exitCode;
+    return;
+  }
+
+  if (command === 'migrate') {
+    const fromIndex = rest.indexOf('--from');
+    const fromVersion = fromIndex !== -1 ? rest[fromIndex + 1] : undefined;
+    if (!fromVersion) {
+      console.error(`Usage: ds-viewer migrate --from <version> [--dry-run] [--json]\n\n${USAGE}`);
+      process.exitCode = 1;
+      return;
+    }
+    const result = runMigrate(projectRoot, fromVersion, { dryRun: rest.includes('--dry-run') });
+    console.log(rest.includes('--json') ? JSON.stringify(result, null, 2) : formatMigrateHuman(result));
+    return;
+  }
+
+  if (command === 'update') {
+    const config = resolveConfig(projectRoot);
+    const result = await runUpdate(config, { dryRun: rest.includes('--dry-run'), yes: rest.includes('--yes'), force: rest.includes('--force') });
+    console.log(result.output);
+    if (result.exitCode) process.exitCode = result.exitCode;
     return;
   }
 
