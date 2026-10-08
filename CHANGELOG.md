@@ -3,6 +3,23 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.0
+
+- Added `npx ds-viewer kit diff <Component>` to compare your starter-kit files against the
+installed kit's copy.
+- Added `npx ds-viewer migrate --from <version>` and the migrations framework `update` uses to
+apply breaking changes automatically from 0.4 on. This release ships the framework with an empty
+migration list — it introduces no breaking change of its own.
+- Added `npx ds-viewer update` (with `--dry-run`, `--yes`, `--force`) to build an update plan and
+apply it from the terminal.
+- The viewer now shows a footer line (and, for a major version, a dismissible banner) when an
+update is available, opening an update page with an **Update now** button that applies it without
+leaving the browser.
+- `dev` and `doctor` now check for a newer version at most once a day (never with `--ci`), cached
+across projects; disable with `updateCheck: false` or `DS_VIEWER_NO_UPDATE_CHECK=1`.
+- `ds-viewer.config.ts`'s `starterKit` gained an optional `root` field, written by `init --new`;
+older configs without it still work via inference from the `components` glob.
+
 ## 0.3.0
 
 - Added `npx ds-viewer doctor` (`--json`, `--ci`) — checks every page for drift and coverage gaps by reading it statically, never by running app code.
