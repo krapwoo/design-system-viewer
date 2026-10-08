@@ -17,16 +17,25 @@ export type ButtonSize = 'large' | 'medium' | 'small';
 export type ButtonIconPosition = 'leading' | 'trailing';
 
 export interface ButtonProps {
+  /** Button text. */
   label?: string;
+  /** Which action this is, not just a look: primary = the one main action here; secondary = worth
+   *  considering, not primary; tertiary = fine if the user skips it; white = primary on a dark/photo
+   *  bg; ghost = inline within word-heavy text, not a nav icon or standalone CTA. */
   variant?: ButtonVariant;
+  /** Control size. */
   size?: ButtonSize;
   /** Show the icon named by `iconName`. */
   showIcon?: boolean;
+  /** Which icon to render. */
   iconName?: IconName;
+  /** Which side of the label the icon sits on. */
   iconPosition?: ButtonIconPosition;
   /** Hide the label (with showIcon) for an icon-only, square button. */
   showLabel?: boolean;
+  /** Tap handler. */
   onPress?: () => void;
+  /** Non-interactive, dimmed. */
   disabled?: boolean;
   /** Swaps the label for a spinner and disables presses. Turn on right after the tap that
    *  triggered it, for as long as the background task it kicked off is still running — not a

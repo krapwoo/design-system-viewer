@@ -9,6 +9,7 @@ export interface DialogProps {
   visible: boolean;
   /** Called when the backdrop is tapped — the dialog doesn't close itself; the caller decides. */
   onDismiss: () => void;
+  /** The dialog's content. */
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
 }

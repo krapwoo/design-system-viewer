@@ -23,6 +23,7 @@ const VARIANT_CONFIG: Record<ToastVariant, { bg: string; fg: string; icon: IconN
 };
 
 export interface ToastProps {
+  /** Toast text. */
   message: string;
   /** Whether the toast is mounted and shown — animates in by sliding down from above (+ fading in)
    *  when it becomes true, and slides back out the same way when it becomes false. @default true

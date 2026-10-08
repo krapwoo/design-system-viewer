@@ -5,11 +5,14 @@ import { useSlideAnim } from '../SegmentedToggle/useSlideAnim';
 import { usePressScale } from '../Radio/usePressScale';
 
 export interface SwitchProps {
+  /** Whether the switch is on. */
   value: boolean;
+  /** Called with the new value on tap. */
   onValueChange: (value: boolean) => void;
   /** Optional inline label rendered to the left of the track, at the same bodyMd size/weight
    *  Checkbox/Radio use for their own labels — tapping it toggles the switch too. */
   label?: string;
+  /** Non-interactive, dimmed. */
   disabled?: boolean;
   /** Accessible name. Defaults to `label` when set — pass this separately only when the switch
    *  needs a different (or the only) spoken name, e.g. no visible label at all. */

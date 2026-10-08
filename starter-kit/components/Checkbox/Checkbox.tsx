@@ -5,10 +5,13 @@ import { Icon } from '../../icons/Icon.native';
 import { usePressScale } from '../Radio/usePressScale';
 
 export interface CheckboxProps {
+  /** Whether the box is checked. */
   checked: boolean;
+  /** Called with the new value on tap. */
   onChange: (checked: boolean) => void;
   /** Optional inline label rendered to the right of the box. */
   label?: string;
+  /** Non-interactive, dimmed. */
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }

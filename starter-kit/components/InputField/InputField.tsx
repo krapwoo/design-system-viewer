@@ -36,18 +36,23 @@ const LABEL_TEXT: Record<Exclude<InputFieldLabelVariant, 'icon'>, string> = {
 const ANIM_MS = 170;
 
 export interface InputFieldProps {
+  /** Leading label slot. */
   label?: InputFieldLabelVariant;
   /** Icon for the `label="icon"` variant. */
   labelIcon?: IconName;
+  /** Current value. */
   value?: string;
   /** Trailing icon rendered after the value text. Also tints the value text with the accent colour,
    *  so the two always match. */
   valueIcon?: IconName;
   /** Tint the value text with the accent (info) colour. Overridden by valueIcon's tint when both are set. */
   valueAccent?: boolean;
+  /** Shown when empty. */
   placeholder?: string;
   onPress?: () => void;
+  /** Editable-mode change handler. */
   onChangeText?: (text: string) => void;
+  /** Live TextInput vs. tappable picker. */
   editable?: boolean;
   /** Force the active (floated label + border) look — for a picker field whose external picker (e.g.
    *  a Dropdown's sheet) is open. Editable fields derive this from focus and ignore it. */

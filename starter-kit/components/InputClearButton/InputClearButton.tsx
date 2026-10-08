@@ -7,7 +7,9 @@ import { Icon } from '../../icons/Icon.native';
 const CLEAR_ICON_SIZE = 20;
 
 export interface InputClearButtonProps {
+  /** Tap handler — typically clears the paired field and refocuses it. */
   onPress: () => void;
+  /** Accessible name — InputField/SearchField pass a field-specific label (e.g. "Clear To"). */
   accessibilityLabel?: string;
 }
 

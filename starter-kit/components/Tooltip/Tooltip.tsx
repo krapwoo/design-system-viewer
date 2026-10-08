@@ -6,6 +6,7 @@ export interface TooltipProps {
   /** Whether the bubble is shown. Fully controlled — drive this from the wrapped trigger's own
    *  onLongPress/onPressIn, since mobile has no hover. */
   visible: boolean;
+  /** The tooltip text. */
   label: string;
   /** Which side of the trigger the bubble appears on. @default 'top' */
   placement?: 'top' | 'bottom';

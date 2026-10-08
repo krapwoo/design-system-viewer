@@ -21,6 +21,7 @@ export interface EmptyStateProps {
   /** Override the avatar circle's fill — same prop, same meaning as Avatar's own `backgroundColor`.
    *  Defaults to Avatar's own default (a neutral muted surface). */
   backgroundColor?: string;
+  /** Primary message. */
   title: string;
   /** Supporting line below the title — what's empty, or what to do about it. */
   description?: string;

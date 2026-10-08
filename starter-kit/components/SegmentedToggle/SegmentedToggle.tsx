@@ -15,9 +15,11 @@ export interface SegmentedToggleOption {
 }
 
 export interface SegmentedToggleProps {
+  /** The segments. */
   options: SegmentedToggleOption[];
   /** The currently-selected option `value`. */
   value: string;
+  /** Selection handler. */
   onChange: (value: string) => void;
   style?: StyleProp<ViewStyle>;
 }

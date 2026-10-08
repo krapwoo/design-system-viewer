@@ -15,9 +15,11 @@ export interface UnderlineTabOption {
 }
 
 export interface UnderlineTabsProps {
+  /** The tabs. */
   options: UnderlineTabOption[];
   /** The currently-selected option `value`. */
   value: string;
+  /** Selection handler. */
   onChange: (value: string) => void;
   style?: StyleProp<ViewStyle>;
 }

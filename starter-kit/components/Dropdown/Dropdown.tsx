@@ -20,9 +20,11 @@ export interface DropdownProps {
   value?: string;
   /** Shown when no option is selected. */
   placeholder?: string;
+  /** The selectable options. */
   options: DropdownOption[];
   /** Called with the newly selected option's value. */
   onChange: (value: string) => void;
+  /** Non-interactive, dimmed; the picker won't open. */
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }

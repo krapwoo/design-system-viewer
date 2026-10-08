@@ -6,7 +6,8 @@ import type { ButtonProps, ButtonVariant } from '../Button';
 export type ButtonGroupVariant = 'horizontal' | 'vertical';
 
 export interface ButtonGroupProps {
-  /** @default 'horizontal' */
+  /** Which layout to use.
+   *  @default 'horizontal' */
   variant?: ButtonGroupVariant;
   /** Button elements. Horizontal holds up to two; vertical holds up to three. Extra children are dropped. */
   children: ReactNode;

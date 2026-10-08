@@ -14,6 +14,7 @@ import { DS_SEMANTIC, DS_RADIUS, DS_SPACING, DS_SHADOW } from '../../tokens';
 const DEV_PLACEHOLDER_BG = '#f4c3ff';
 
 interface CardBaseProps {
+  /** Card content. */
   children?: ReactNode;
   /** Figma slot visibility toggles — prefer `children` for real content. */
   showSlot1?: boolean;
@@ -29,7 +30,12 @@ interface CardBaseProps {
 // `disabled` only means something on a pressable card — a plain (non-`onPress`) card can't be
 // disabled, so that combination is a type error here instead of a silently-ignored prop.
 export type CardProps =
-  | (CardBaseProps & { onPress: () => void; disabled?: boolean })
+  | (CardBaseProps & {
+      /** Makes the whole card a tappable button. */
+      onPress: () => void;
+      /** Only valid on a pressable card. */
+      disabled?: boolean;
+    })
   | (CardBaseProps & { onPress?: undefined; disabled?: undefined });
 
 /**

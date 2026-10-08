@@ -6,7 +6,9 @@ import { DS_MOTION_DURATION, DS_MOTION_EASING } from '../../tokens';
 export interface AnimatedChevronProps {
   /** When true the chevron points up; when false it points down. */
   expanded: boolean;
+  /** Icon size in px. */
   size?: number;
+  /** Icon color. */
   color?: string;
   /** Morph duration in ms. Defaults to DS_MOTION_DURATION.base (240). */
   duration?: number;
