@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, ScrollView, StyleSheet, Text, View, findNodeHandle } from 'react-native';
+import type { ImageSourcePropType } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
@@ -43,6 +44,7 @@ function resetMainScroll(scrollView: ScrollView | null): void {
  */
 export function CatalogShell<TId extends string>({
   appName,
+  logoImageSource,
   title,
   groups,
   sections,
@@ -50,6 +52,9 @@ export function CatalogShell<TId extends string>({
 }: {
   /** Short product/app name — the sidebar logo and the breadcrumb root. */
   appName: string;
+  /** Optional logo image, validated and bundled by `cli/workspace.ts` from the project's `logo`
+   *  config field. See `CatalogSidebar`'s own doc comment for the approved layout rule. */
+  logoImageSource?: ImageSourcePropType;
   /** What this catalog is (e.g. "Component Catalog") — the sidebar caption. */
   title: string;
   groups: NavGroup<TId>[];
@@ -122,7 +127,7 @@ export function CatalogShell<TId extends string>({
 
   return (
     <View style={styles.root}>
-      <CatalogSidebar logo={appName} caption={title} groups={groups} active={active} onPress={select} />
+      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} active={active} onPress={select} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {activeDef ? (
           <SectionBlock

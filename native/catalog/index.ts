@@ -33,6 +33,7 @@ export type { ComponentManifestEntry, ManifestExample } from './manifest';
 export { defineCatalogPage, buildCatalogSections } from './pageApi';
 export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
 export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, PreviewWidths } from './types';
+export type { ListGroup, ListItem } from './comparison';
 export {
   CATALOG_TYPE,
   CATALOG_TYPE_USE,

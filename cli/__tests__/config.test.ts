@@ -61,3 +61,36 @@ test('resolveConfig attaches the project root and config path', () => {
   assert.equal(resolved.configPath, FIXTURE_CONFIG);
   assert.equal(resolved.name, 'Fixture App');
 });
+
+test('resolveConfig warns and drops a logo path that does not exist, falling back to no logo', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-logo-'));
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', logo: './missing.png', components: [], tokens: [] });\n",
+  );
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const resolved = resolveConfig(dir);
+    assert.equal(resolved.logo, undefined);
+    // Exact wording from the controller's binding visual spec below, not an ad-hoc message —
+    // `cli/init.ts`'s existing warnings follow the same "quote the controller's exact text" rule.
+    assert.ok(warnings.some((w) => w === 'Logo not found: ./missing.png — showing the name instead.'));
+  } finally {
+    console.warn = originalWarn;
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('resolveConfig keeps a logo path that does exist', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-logo-'));
+  writeFileSync(path.join(dir, 'logo.png'), '');
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', logo: './logo.png', components: [], tokens: [] });\n",
+  );
+  const resolved = resolveConfig(dir);
+  assert.equal(resolved.logo, './logo.png');
+  rmSync(dir, { recursive: true, force: true });
+});

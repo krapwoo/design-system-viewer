@@ -58,6 +58,11 @@ export const CATALOG_LAYOUT = {
   factPaddingY: 9,
   blockLabelGap: 14,
   blockGap: 28,
+  /** Sidebar logo header (design `docs/design/2026-10-08-ds-viewer-sidebar-logo-approved.html`,
+   *  "C · Adaptive", approved 2026-10-08) — see `native/catalog/logoLayout.ts`. */
+  logoMark: 32,
+  logoWordmarkHeight: 28,
+  logoCaptionGap: 6,
 } as const;
 
 /** Max width of the main content column. */

@@ -66,11 +66,25 @@ export function loadConfig(configPath: string): LoadConfigResult {
   return { config, warnings };
 }
 
+/** Design §1 Ownership table — a missing `logo` file is a warning, never a hard error: the
+ *  sidebar simply falls back to the name-only header. Resolved relative to `projectRoot`, the same
+ *  way `components`/`tokens`/`pages` globs are. */
+export function validateLogo(projectRoot: string, logo: string | undefined): { logo?: string; warning?: string } {
+  if (!logo) return {};
+  const resolved = path.join(projectRoot, logo);
+  if (!existsSync(resolved)) {
+    return { warning: `Logo not found: ${logo} — showing the name instead.` };
+  }
+  return { logo };
+}
+
 /** Loads `<projectRoot>/ds-viewer.config.ts`, attaches where it came from, and prints any
  *  "unknown field" warning so every CLI command that resolves a config reports them the same way. */
 export function resolveConfig(projectRoot: string): ResolvedConfig {
   const configPath = path.join(projectRoot, 'ds-viewer.config.ts');
   const { config, warnings } = loadConfig(configPath);
   for (const warning of warnings) console.warn(warning);
-  return { ...config, projectRoot, configPath };
+  const { logo, warning: logoWarning } = validateLogo(projectRoot, config.logo);
+  if (logoWarning) console.warn(logoWarning);
+  return { ...config, logo, projectRoot, configPath };
 }

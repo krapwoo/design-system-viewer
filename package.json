@@ -25,7 +25,6 @@
   },
   "files": [
     "native/catalog",
-    "!native/catalog/CatalogFrameworkExample.tsx",
     "!native/catalog/**/__tests__",
     "starter-kit",
     "dist/cli",

@@ -26,7 +26,12 @@ config.server = { ...(config.server || {}), unstable_serverRoot: workspace };
 // runtime, not baked in as an absolute path, so the generated file stays portable across machines.
 const EXTRA_WATCH_FOLDERS = ${JSON.stringify(extraWatchFolders)};
 const extraWatchFolders = EXTRA_WATCH_FOLDERS;
-config.watchFolders = Array.from(new Set([...(config.watchFolders || []), projectRoot, ...extraWatchFolders.map((f) => path.resolve(projectRoot, f))]));
+// A configured components/tokens/pages glob can point at a folder that doesn't exist yet (e.g. a
+// standalone-pages folder before its first file is added) — Metro refuses to watch a nonexistent
+// folder, which otherwise makes every single bundle request fail with HTTP 500. Filtered here, at
+// workspace-generation time, not above at config-resolution time, because a folder created after
+// \`dev\` starts should start being watched on its own next run, same as every other glob folder.
+config.watchFolders = Array.from(new Set([...(config.watchFolders || []), projectRoot, ...extraWatchFolders.map((f) => path.resolve(projectRoot, f)).filter((f) => fs.existsSync(f))]));
 config.resolver.nodeModulesPaths = [path.join(projectRoot, 'node_modules')];
 // A standalone page can read generated data with \`import { components, tokens } from '@krapwoo/ds-viewer/generated'\`
 // (design §3) — redirect that one specifier to this workspace's own generated/index.ts.
@@ -47,13 +52,23 @@ module.exports = config;
  *  at bundle time, so a runtime try/catch `require` cannot skip it when the optional peer is
  *  missing. Importing and wrapping must instead be baked into the generated entry (design §1
  *  "Three parts", Viewer row). */
-function entryTsx(name: string, hasSafeArea: boolean, groupOrder: string[]): string {
+function entryTsx(name: string, hasSafeArea: boolean, groupOrder: string[], logoRequirePath: string | undefined): string {
   const safeAreaImport = hasSafeArea ? "import { SafeAreaProvider } from 'react-native-safe-area-context';\n" : '';
-  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections} />`;
+  // A literal `require(...)` with a path computed at generation time: Metro resolves every import
+  // statically, so the logo's actual (arbitrary, user-configured) location must already be baked
+  // into this generated file, the same reasoning `hasSafeArea` above already follows for the
+  // optional SafeAreaProvider import.
+  // A single-quoted literal, not `JSON.stringify` (which would emit double quotes and fail the
+  // workspace test's `require('../assets/logo.png')` assertion below) — `logoRequirePath` is
+  // always a `path.relative`-computed, forward-slash-joined relative path (Step 8), never
+  // arbitrary user text, so it never contains a `'`.
+  const logoImport = logoRequirePath ? `const logoSource = require('${logoRequirePath}');\n` : '';
+  const logoProp = logoRequirePath ? ' logoImageSource={logoSource}' : '';
+  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} />`;
   const root = hasSafeArea ? `<SafeAreaProvider>${viewer}</SafeAreaProvider>` : viewer;
   return `import { registerRootComponent } from 'expo';
 import { CatalogShell, buildCatalogSections } from '@krapwoo/ds-viewer';
-${safeAreaImport}import pages from './generated/pages';
+${safeAreaImport}${logoImport}import pages from './generated/pages';
 import components from './generated/components.json';
 
 function App() {
@@ -111,6 +126,13 @@ export function writeWorkspace(config: ResolvedConfig): string {
   }
 
   const hasSafeArea = existsSync(path.join(config.projectRoot, 'node_modules', 'react-native-safe-area-context', 'package.json'));
-  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? []));
+  // `config.logo` is already validated by `cli/config.ts`'s `resolveConfig` (Step 3 above) — by the
+  // time `writeWorkspace` sees it, it's either a real, existing file or undefined. Computed relative
+  // to `workspace` (one level deeper than `projectRoot`), with forward slashes so the generated
+  // `require()` string is portable across machines.
+  const logoRequirePath = config.logo
+    ? path.relative(workspace, path.resolve(config.projectRoot, config.logo)).split(path.sep).join('/')
+    : undefined;
+  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? [], logoRequirePath));
   return workspace;
 }

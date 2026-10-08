@@ -117,3 +117,34 @@ test('writeWorkspace still watches a same-root project\'s own folders (0.1 behav
   assert.match(metroConfig, /EXTRA_WATCH_FOLDERS = \["src\/components","src\/tokens"\]/);
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('writeWorkspace makes a validated logo available to the generated entry', () => {
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, 'assets'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'assets', 'logo.png'), '');
+  const workspace = writeWorkspace({ ...baseConfig(projectRoot), logo: './assets/logo.png' });
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  assert.match(entry, /require\('\.\.\/assets\/logo\.png'\)/);
+  assert.match(entry, /logoImageSource=\{logoSource\}/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace omits logoImageSource entirely when no logo is configured', () => {
+  const projectRoot = copyFixture();
+  const workspace = writeWorkspace(baseConfig(projectRoot));
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  assert.doesNotMatch(entry, /logoImageSource/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace\'s generated metro config only watches extra folders that exist on disk, so a missing pages folder does not break every bundle', () => {
+  const projectRoot = copyFixture();
+  // `viewer-pages` is configured but never created — the real bug (a config's `pages`/`components`/
+  // `tokens` glob pointing at a folder that doesn't exist yet) that made every Metro bundle request
+  // return HTTP 500, because Metro refuses to watch a nonexistent folder.
+  const config = { ...baseConfig(projectRoot), pages: ['viewer-pages/*.catalog.tsx'] };
+  const workspace = writeWorkspace(config);
+  const metroConfig = readFileSync(path.join(workspace, 'metro.config.js'), 'utf8');
+  assert.match(metroConfig, /extraWatchFolders\.map\(\(f\) => path\.resolve\(projectRoot, f\)\)\.filter\(\(f\) => fs\.existsSync\(f\)\)/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});

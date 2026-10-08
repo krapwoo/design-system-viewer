@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
+import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-native';
+import type { ImageSourcePropType, LayoutChangeEvent, NativeSyntheticEvent, ImageLoadEventData } from 'react-native';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { logoLayout } from './logoLayout';
 import { filterGroups, hashForId } from './catalogNavigation';
 import type { NavGroup } from './types';
 import { CatalogSearchInput } from './CatalogSearchInput';
@@ -48,25 +50,103 @@ function NavItem<TId extends string>({ id, active, onPress }: { id: TId; active:
  */
 export function CatalogSidebar<TId extends string>({
   logo,
+  logoImageSource,
   caption,
   groups,
   active,
   onPress,
 }: {
   logo: string;
+  /** Optional logo image, validated and bundled by `cli/workspace.ts` from the project's `logo`
+   *  config field. Visual spec: docs/design/2026-10-08-ds-viewer-sidebar-logo-approved.html
+   *  ("C · Adaptive", approved 2026-10-08) — a mark (aspect ratio ≤ 2) sits beside the name; a
+   *  wordmark (> 2) replaces the name text, carrying it as its own accessible label instead. */
+  logoImageSource?: ImageSourcePropType;
   caption: string;
   groups: NavGroup<TId>[];
   active: TId | undefined;
   onPress: (id: TId) => void;
 }) {
   const [query, setQuery] = useState('');
+  // A bundled local image (the only kind `cli/workspace.ts` ever produces — see its doc comment
+  // above) already carries its own `width`/`height` on the required module object, both on native
+  // and on react-native-web (confirmed by reading `AssetRegistry`/Metro's asset plugin output) — no
+  // need to wait for a load event for the common case. `onLoad` below is kept only as a fallback for
+  // a source with no static dimensions (e.g. a bare `{ uri }`); the mock prober stops rendering as
+  // soon as either resolves an aspect.
+  const staticSource = typeof logoImageSource === 'object' && logoImageSource !== null && !Array.isArray(logoImageSource)
+    ? (logoImageSource as { width?: number; height?: number })
+    : undefined;
+  const staticAspect = staticSource?.width && staticSource?.height ? staticSource.width / staticSource.height : undefined;
+  const [loadedAspect, setLoadedAspect] = useState<number | undefined>(undefined);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [nameWrapped, setNameWrapped] = useState(false);
   const filtered = filterGroups(groups, query);
+
+  const logoAspect = staticAspect ?? loadedAspect;
+  const attemptingLogo = Boolean(logoImageSource) && !logoFailed;
+  const header = attemptingLogo ? logoLayout(logoAspect) : 'text';
+
+  // Fallback only (see the comment above `staticSource`): on web, `ImageLoader.load`'s `onLoad`
+  // fires after `HTMLImageElement.decode()` resolves, by which point Chrome has already nulled the
+  // underlying DOM event's `target` — confirmed empirically (`event.target` reads non-null only
+  // when read synchronously inside `onload`, before any `await`). Native's real `Image` reports
+  // `source.{width,height}` on its `onLoad` nativeEvent instead, which this still reads correctly.
+  const onLogoLoad = (e: NativeSyntheticEvent<ImageLoadEventData>) => {
+    const native = e.nativeEvent as unknown as { source?: { width: number; height: number } };
+    const width = native.source?.width;
+    const height = native.source?.height;
+    if (width && height) setLoadedAspect(width / height);
+  };
+  const onLogoError = () => setLogoFailed(true);
+  // Wrap detection for the "mark" row: the name Text's own measured height, not `onTextLayout`
+  // (react-native-web's `Text` doesn't implement it) and not a character-count heuristic (wraps at
+  // a different length per name). More than one line of `CATALOG_TYPE.brand` means it wrapped.
+  const NAME_LINE_HEIGHT = Math.round(CATALOG_TYPE.brand * 1.3);
+  const onNameLayout = (e: LayoutChangeEvent) => {
+    setNameWrapped(e.nativeEvent.layout.height > NAME_LINE_HEIGHT * 1.5);
+  };
 
   return (
     <View role="navigation" aria-label="Catalog pages" style={styles.sidebar}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.logo}>{logo}</Text>
-        <Text style={styles.subtitle}>{caption}</Text>
+        <View style={styles.header}>
+          {/* Invisible — exists only so a configured logo's `onLoad`/`onError` can fire at all
+              while `header` is still `'text'` (the aspect isn't known yet). Once `logoAspect`
+              resolves (or the image fails), `header` switches and this prober stops rendering. */}
+          {attemptingLogo && logoAspect === undefined && (
+            <Image source={logoImageSource} style={styles.logoProbe} onLoad={onLogoLoad} onError={onLogoError} />
+          )}
+          {header === 'wordmark' && (
+            <>
+              <Image
+                source={logoImageSource}
+                accessibilityRole="image"
+                accessibilityLabel={logo}
+                resizeMode="contain"
+                style={[styles.wordmark, { width: Math.min(CATALOG_LAYOUT.logoWordmarkHeight * (logoAspect ?? 0), 228) }]}
+                onLoad={onLogoLoad}
+                onError={onLogoError}
+              />
+              <Text style={[styles.subtitle, styles.subtitleAfterWordmark]}>{caption}</Text>
+            </>
+          )}
+          {header === 'mark' && (
+            <View style={[styles.inlineHeader, nameWrapped && styles.inlineHeaderTop]}>
+              <Image source={logoImageSource} resizeMode="contain" style={styles.mark} onLoad={onLogoLoad} onError={onLogoError} />
+              <View style={styles.inlineText}>
+                <Text style={styles.logo} onLayout={onNameLayout}>{logo}</Text>
+                <Text style={styles.subtitle}>{caption}</Text>
+              </View>
+            </View>
+          )}
+          {header === 'text' && (
+            <>
+              <Text style={styles.logo}>{logo}</Text>
+              <Text style={styles.subtitle}>{caption}</Text>
+            </>
+          )}
+        </View>
 
         <CatalogSearchInput value={query} onChangeText={setQuery} placeholder="Filter components…" />
 
@@ -97,8 +177,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: CATALOG_LAYOUT.sidebarPaddingX,
     paddingBottom: CATALOG_LAYOUT.sidebarPaddingTop,
   },
+  header: { marginBottom: 20 },
   logo: { fontSize: CATALOG_TYPE.brand, fontWeight: '800', color: CATALOG_COLOR.text },
-  subtitle: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, marginTop: 2, marginBottom: 20 },
+  subtitle: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, marginTop: 2 },
+  subtitleAfterWordmark: { marginTop: CATALOG_LAYOUT.logoCaptionGap },
+  mark: { width: CATALOG_LAYOUT.logoMark, height: CATALOG_LAYOUT.logoMark },
+  wordmark: { height: CATALOG_LAYOUT.logoWordmarkHeight, alignSelf: 'flex-start' },
+  logoProbe: { position: 'absolute', width: 1, height: 1, opacity: 0 },
+  inlineHeader: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md },
+  inlineHeaderTop: { alignItems: 'flex-start' },
+  inlineText: { flex: 1, minWidth: 0 },
   empty: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX, paddingVertical: 8 },
   groupLabel: {
     fontSize: CATALOG_TYPE.xs,
