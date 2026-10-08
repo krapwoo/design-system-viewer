@@ -4,6 +4,8 @@ import { createInterface } from 'node:readline/promises';
 import { execFileSync } from 'node:child_process';
 import { preflight } from './preflight.ts';
 import { detectComponentFolders, detectTokenFiles, type DetectedComponentFolder, type DetectedTokenFile } from './detect.ts';
+import { ensureAgentsFileSection } from './agentsFile.ts';
+import { ensureGithubAction } from './githubAction.ts';
 
 export interface InitResult {
   messages: string[];
@@ -149,8 +151,8 @@ export async function initExistingProject(projectRoot: string, options: InitOpti
 }
 
 /** Design §2, "Both paths then write what is missing": `ds-viewer.config.ts` is written by each
- *  path separately (its contents differ), but the package script, the devDependency entry, and the
- *  `.gitignore` entry are identical either way. */
+ *  path separately (its contents differ), but the package script, the devDependency entry, the
+ *  `.gitignore` entry, and (from 0.3) the `AGENTS.md` section are identical either way. */
 function ensureSharedProjectFiles(projectRoot: string): string[] {
   const written: string[] = [];
   const packageJsonPath = path.join(projectRoot, 'package.json');
@@ -184,6 +186,8 @@ function ensureSharedProjectFiles(projectRoot: string): string[] {
     writeFileSync(gitignorePath, `${existingGitignore}${separator}${gitignoreEntry}\n`);
     written.push(gitignorePath);
   }
+  written.push(...ensureAgentsFileSection(projectRoot));
+  written.push(...ensureGithubAction(projectRoot));
   return written;
 }
 
