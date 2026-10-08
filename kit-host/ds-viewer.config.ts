@@ -10,4 +10,5 @@ export default defineConfig({
     'Actions', 'Surfaces', 'Inputs', 'Controls', 'Selection', 'Feedback', 'Navigation',
     'Overlays', 'Layout', 'Sub-Parts', 'Recipes', 'Tokens', 'Reference', 'Viewer',
   ],
+  updateCheck: false,
 });

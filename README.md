@@ -286,6 +286,73 @@ either one only if it's missing (an `AGENTS.md` without the start marker counts 
 section, even if the file already has other content) and never touches anything outside its own
 markers or its own file.
 
+## Updating
+
+A quiet line appears in the sidebar footer when a new version is published — a banner too, for a
+major version, dismissible per version. Either opens the update page (`#ds-viewer-update`), which
+shows what would change and one **Update now** button:
+
+```
+0.4.0 → 0.5.0  Minor
+You're on 0.4.0. Released 2 days ago.
+
+What's new
+  •  Faster sync for large kits
+  •  New Tabs component in the starter kit
+
+Files that would change
+  package.json               version
+  package-lock.json          version
+
+[ Update now ]  or run npx ds-viewer update
+```
+
+**Update now** asks the running `dev` process to apply the same steps `update` runs below, over a
+local endpoint that only ever answers the viewer's own page (random port, a per-run secret, exact
+origin match). The viewer restarts itself on the new version and reloads automatically; nothing is
+committed.
+
+If any file the update would touch has uncommitted changes, the panel refuses and names them —
+there's no override in the viewer; commit or stash first, or use `update --force` below. Outside a
+git repository, every file is treated as not dirty (there's nothing to check).
+
+### `npx ds-viewer update`
+
+```
+npx ds-viewer update              # shows the plan, asks to confirm, then updates
+npx ds-viewer update --dry-run    # shows the plan and stops
+npx ds-viewer update --yes        # skip the confirmation prompt
+npx ds-viewer update --force      # update even with uncommitted changes in a planned file
+```
+
+Downloads the target version, runs its own `migrate --from <your version>`, upgrades with
+whichever package manager your lockfile names, re-runs `migrate` for real, then `doctor`. Changes
+are left uncommitted — review them like any other change.
+
+### `npx ds-viewer migrate --from <version>`
+
+Runs every migration introduced after `<version>` — `update` calls this for you; run it directly
+only to catch up a project that upgraded its `package.json` some other way. `--dry-run` reports the
+changes without writing them; `--json` for the machine-readable version. 0.4 ships this framework
+with an empty migration list — it introduces no breaking change of its own.
+
+### `npx ds-viewer kit diff <Component>`
+
+Starter-kit files are copied once by `init` and never touched again — not even by `update`, which
+only ever counts how many differ from the version you're installing. `kit diff <Component>` shows
+your copy against the installed kit's, as a plain diff:
+
+```
+npx ds-viewer kit diff Button
+--- components/Button/Button.catalog.tsx (installed kit)
++++ components/Button/Button.catalog.tsx (yours)
+  ...
+```
+
+Set `starterKit.root` in `ds-viewer.config.ts` if you moved the kit after `init --new` wrote it
+(default `src/ds`); a config from before 0.4 with no `root` field still works — it's inferred from
+your first `components` glob.
+
 ## What's included
 
 Tokens · Icons (45) · and generic components:
