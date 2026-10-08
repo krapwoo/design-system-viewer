@@ -1,0 +1,54 @@
+{
+  "manifest_version": 1,
+  "task_id": "ds-viewer-04-plan-review",
+  "slice_id": "ds-viewer-0.4-plan-fable-review",
+  "attempt": 1,
+  "role": "read_only",
+  "model": "fable",
+  "workdir": "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.4",
+  "add_dirs": [
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-04-plan-fable-review",
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-04-plan"
+  ],
+  "required_read_paths": [
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-04-plan-fable-review/review-brief.md",
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.4/docs/superpowers/plans/2026-10-08-ds-viewer-0.4.md",
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.4/docs/superpowers/specs/2026-10-07-ds-viewer-npm-package-design.md",
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-04-plan/brief.md",
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-04-plan/spikes/README.md",
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.4/docs/design/2026-10-08-ds-viewer-update-panel-approved.html"
+  ],
+  "tools": [
+    "Read",
+    "Grep",
+    "Glob"
+  ],
+  "allowed_tools": [
+    "Read",
+    "Grep",
+    "Glob"
+  ],
+  "disallowed_tools": [
+    "Bash",
+    "Edit",
+    "Write",
+    "WebSearch",
+    "WebFetch",
+    "NotebookEdit",
+    "Task"
+  ],
+  "required_tools": [
+    "Read"
+  ],
+  "prompt_path": "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-04-plan-fable-review/review-brief.md",
+  "prompt_sha256": "50e96d54cef7724e8d3719a87448652312babfc8f91cd0c935710c0368169831",
+  "max_turns": 200,
+  "hard_timeout_seconds": 9000,
+  "stall_seconds": 900,
+  "restricted": true,
+  "safe_mode": true,
+  "permission_mode": "dontAsk",
+  "permission_prompts": "none",
+  "strict_mcp_config": true,
+  "mcp_config_path": "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-04-plan-fable-review/empty-mcp.json"
+}
