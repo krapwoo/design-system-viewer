@@ -6,7 +6,7 @@ import path from 'node:path';
 import { readComponents } from '../props.ts';
 
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, '../../fixtures/existing-project');
-const TYPE_ROOT = path.resolve(import.meta.dirname, '../../native-preview/node_modules');
+const TYPE_ROOT = path.resolve(import.meta.dirname, '../../kit-host/node_modules');
 const RESOLVE_OPTIONS = {
   paths: {
     react: [path.join(TYPE_ROOT, '@types/react')],

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sync } from '../sync.ts';
@@ -8,7 +8,7 @@ import type { ResolvedConfig } from '../types.ts';
 
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, '../../fixtures/existing-project');
 const REPO_ROOT = path.resolve(import.meta.dirname, '../..');
-const TYPE_ROOT = path.resolve(import.meta.dirname, '../../native-preview/node_modules');
+const TYPE_ROOT = path.resolve(import.meta.dirname, '../../kit-host/node_modules');
 const RESOLVE_OPTIONS = {
   paths: {
     react: [path.join(TYPE_ROOT, '@types/react')],
@@ -114,8 +114,8 @@ test('sync reports an unreadable component file and still syncs the rest', () =>
 test('sync reads the starter kit\'s 37 components in under 3 seconds (one shared program, not one per entry)', () => {
   const config: ResolvedConfig = {
     name: 'Starter Kit',
-    components: ['native/components/*/index.ts'],
-    tokens: ['tokens/index.ts'],
+    components: ['starter-kit/components/*/index.ts'],
+    tokens: ['starter-kit/tokens/index.ts'],
     pages: [],
     updateCheck: true,
     doctor: { strict: false },
@@ -128,4 +128,46 @@ test('sync reads the starter kit\'s 37 components in under 3 seconds (one shared
   assert.equal(result.componentCount, 37);
   assert.ok(elapsedMs < 3000, `sync took ${elapsedMs}ms, expected under 3000ms`);
   rmSync(path.join(REPO_ROOT, '.ds-viewer'), { recursive: true, force: true });
+});
+
+test('sync resolves a component entry file outside config.projectRoot, falling back to the project\'s own node_modules — no `paths` injected', () => {
+  const outer = mkdtempSync(path.join(tmpdir(), 'ds-viewer-sync-fallback-'));
+  const projectRoot = path.join(outer, 'host');
+  const siblingComponent = path.join(outer, 'components', 'Widget');
+  mkdirSync(path.join(projectRoot, 'node_modules', 'widget-kit'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'node_modules', 'widget-kit', 'package.json'), '{"name":"widget-kit","main":"index.js"}');
+  writeFileSync(path.join(projectRoot, 'node_modules', 'widget-kit', 'index.js'), 'module.exports = {};\n');
+  // A SEPARATE, types-only package for the same specifier — mirrors `react`'s own split between its
+  // untyped runtime package and `@types/react`. Guards the fallback's *order*: once `paths` redirects
+  // a specifier to an on-disk folder, TypeScript resolves it there and never tries a second entry
+  // just because the first has no types — the wrong order would leave this component's return type
+  // `any` and therefore undetectable, reproducing the same silent-zero bug this test guards against.
+  mkdirSync(path.join(projectRoot, 'node_modules', '@types', 'widget-kit'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'node_modules', '@types', 'widget-kit', 'index.d.ts'), 'export interface ReactNode { readonly node: true }\n');
+  mkdirSync(siblingComponent, { recursive: true });
+  // Imported under a local alias, not the bare name: TypeScript's error recovery for an unresolved
+  // module preserves a type reference's own written text, which would make `WidgetNode` print as
+  // `ReactNode` (matching COMPONENT_RETURN_HINT) even while genuinely unresolved, defeating the RED
+  // this test depends on. Aliasing means the RED case prints the local alias (`WidgetNode`, no
+  // match) while the GREEN case — once the module actually resolves — prints the real symbol's own
+  // name (`ReactNode`, matches), which is what readComponentRecord's heuristic is built around.
+  writeFileSync(
+    path.join(siblingComponent, 'index.ts'),
+    "import type { ReactNode as WidgetNode } from 'widget-kit';\nexport function Widget(): WidgetNode {\n  return null;\n}\n",
+  );
+  const config: ResolvedConfig = {
+    name: 'Fallback Fixture',
+    components: ['../components/Widget/index.ts'],
+    tokens: [],
+    pages: [],
+    updateCheck: true,
+    doctor: { strict: false },
+    projectRoot,
+    configPath: path.join(projectRoot, 'ds-viewer.config.ts'),
+  };
+  const result = sync(config); // no RESOLVE_OPTIONS — the fallback must come from config.projectRoot alone
+  assert.equal(result.componentCount, 1);
+  const components = JSON.parse(readFileSync(path.join(result.generatedDir, 'components.json'), 'utf8'));
+  assert.deepEqual(components.map((c: { name: string }) => c.name), ['Widget']);
+  rmSync(outer, { recursive: true, force: true });
 });

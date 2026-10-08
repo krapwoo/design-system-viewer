@@ -94,3 +94,26 @@ test('writeWorkspace re-exports the project\'s own babel.config.js when one exis
   assert.equal(babelConfig, "module.exports = require('../babel.config.js');\n");
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('writeWorkspace watches every configured glob\'s base folder, including ones outside projectRoot', () => {
+  const projectRoot = copyFixture();
+  const config = {
+    ...baseConfig(projectRoot),
+    components: ['../starter-kit/components/*/index.ts'],
+    tokens: ['../starter-kit/tokens/index.ts'],
+    pages: ['viewer-pages/*.catalog.tsx'],
+  };
+  const workspace = writeWorkspace(config);
+  const metroConfig = readFileSync(path.join(workspace, 'metro.config.js'), 'utf8');
+  assert.match(metroConfig, /EXTRA_WATCH_FOLDERS = \["\.\.\/starter-kit\/components","\.\.\/starter-kit\/tokens","viewer-pages"\]/);
+  assert.match(metroConfig, /extraWatchFolders\.map/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace still watches a same-root project\'s own folders (0.1 behavior unchanged)', () => {
+  const projectRoot = copyFixture();
+  const workspace = writeWorkspace(baseConfig(projectRoot));
+  const metroConfig = readFileSync(path.join(workspace, 'metro.config.js'), 'utf8');
+  assert.match(metroConfig, /EXTRA_WATCH_FOLDERS = \["src\/components","src\/tokens"\]/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});

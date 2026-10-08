@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { globBaseFolder } from './glob.ts';
 import type { ResolvedConfig } from './types.ts';
 
-const METRO_CONFIG = `const path = require('path');
+function metroConfigJs(extraWatchFolders: string[]): string {
+  return `const path = require('path');
 const fs = require('fs');
 const workspace = __dirname;
 const projectRoot = path.resolve(workspace, '..');
@@ -18,7 +20,13 @@ if (typeof config !== 'object') {
 config.projectRoot = workspace;
 // Expo sets the server root to the folder the config was built for; bundle URLs must resolve from the workspace.
 config.server = { ...(config.server || {}), unstable_serverRoot: workspace };
-config.watchFolders = Array.from(new Set([...(config.watchFolders || []), projectRoot]));
+// Every configured components/tokens/pages glob's base folder — not just projectRoot itself — so a
+// host whose kit lives in a sibling folder (e.g. kit-host/ds-viewer.config.ts reaching
+// ../starter-kit/components) still gets its files watched and bundled. Resolved from projectRoot at
+// runtime, not baked in as an absolute path, so the generated file stays portable across machines.
+const EXTRA_WATCH_FOLDERS = ${JSON.stringify(extraWatchFolders)};
+const extraWatchFolders = EXTRA_WATCH_FOLDERS;
+config.watchFolders = Array.from(new Set([...(config.watchFolders || []), projectRoot, ...extraWatchFolders.map((f) => path.resolve(projectRoot, f))]));
 config.resolver.nodeModulesPaths = [path.join(projectRoot, 'node_modules')];
 // A standalone page can read generated data with \`import { components, tokens } from '@krapwoo/ds-viewer/generated'\`
 // (design §3) — redirect that one specifier to this workspace's own generated/index.ts.
@@ -33,6 +41,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
 };
 module.exports = config;
 `;
+}
 
 /** Decided here, not inside the viewer: Metro resolves `react-native-safe-area-context` statically
  *  at bundle time, so a runtime try/catch `require` cannot skip it when the optional peer is
@@ -56,26 +65,23 @@ registerRootComponent(App);
 `;
 }
 
-/** The folder a glob pattern varies under — the part of the pattern before its first wildcard
- *  segment (or, for a pattern with no wildcard, its own containing folder). Same logic as
- *  `cli/sync.ts`'s `globBaseFolder` (Task 10), kept local here since it's one line and this module
- *  has no other reason to depend on `sync.ts`. */
-function globBaseFolder(pattern: string): string {
-  const segments = pattern.split('/');
-  const wildcardIndex = segments.findIndex((segment) => segment.includes('*'));
-  const baseSegments = wildcardIndex === -1 ? segments.slice(0, -1) : segments.slice(0, wildcardIndex);
-  return baseSegments.join('/') || '.';
+/** Every configured components/tokens/pages glob's base folder, deduplicated and sorted — shared by
+ *  `projectIncludeGlobs` (tsconfig `include`, below) and `metroConfigJs`'s extra watch folders
+ *  (above). Kept as the raw relative folder (e.g. `"../starter-kit/components"`), not yet turned
+ *  into either a tsconfig glob or an absolute path — each caller does that its own way. */
+function configGlobFolders(config: ResolvedConfig): string[] {
+  const folders = new Set<string>();
+  for (const pattern of [...config.components, ...(config.tokens ?? []), ...(config.pages ?? [])]) {
+    folders.add(globBaseFolder(pattern));
+  }
+  return [...folders].sort();
 }
 
 /** Folders the workspace's own `tsconfig.json` needs to type-check — derived from the config's own
  *  globs (the spike used `../src/**\/*`), instead of `../**\/*`, which would pull in the whole
  *  project, including `node_modules`. */
 function projectIncludeGlobs(config: ResolvedConfig): string[] {
-  const folders = new Set<string>();
-  for (const pattern of [...config.components, ...(config.tokens ?? []), ...(config.pages ?? [])]) {
-    folders.add(globBaseFolder(pattern));
-  }
-  return [...folders].sort().map((folder) => `../${folder}/**/*`);
+  return configGlobFolders(config).map((folder) => `../${folder}/**/*`);
 }
 
 /** Writes the self-contained Expo web workspace at `.ds-viewer/` (design §2 "The preview
@@ -97,7 +103,7 @@ export function writeWorkspace(config: ResolvedConfig): string {
   const workspaceTsconfig: { extends?: string; include: string[] } = { include: projectIncludeGlobs(config) };
   if (existsSync(projectTsconfig)) workspaceTsconfig.extends = '../tsconfig.json';
   writeFileSync(path.join(workspace, 'tsconfig.json'), `${JSON.stringify(workspaceTsconfig, null, 2)}\n`);
-  writeFileSync(path.join(workspace, 'metro.config.js'), METRO_CONFIG);
+  writeFileSync(path.join(workspace, 'metro.config.js'), metroConfigJs(configGlobFolders(config)));
 
   const projectBabelConfig = path.join(config.projectRoot, 'babel.config.js');
   if (existsSync(projectBabelConfig)) {

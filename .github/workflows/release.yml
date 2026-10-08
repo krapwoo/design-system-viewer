@@ -31,7 +31,7 @@ jobs:
             }
           "
       - run: npm ci
-      - run: npm ci --prefix native-preview
+      - run: npm ci --prefix kit-host
       - run: npm test
       - run: npm run build
       # Trusted publishing (OIDC) needs npm 11.5.1+; both Node 20 and 22 currently bundle npm 10,

@@ -28,6 +28,7 @@
     "!native/catalog/CatalogExample.tsx",
     "!native/catalog/CatalogFrameworkExample.tsx",
     "!native/catalog/**/__tests__",
+    "starter-kit",
     "dist/cli",
     "dist/config",
     "config/index.ts",
@@ -57,6 +58,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --experimental-strip-types --test 'cli/**/*.test.ts' 'config/**/*.test.ts' 'native/catalog/__tests__/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "kit:dev": "npm run build && cd kit-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js dev",
     "release": "node scripts/release.mjs"
   }
 }

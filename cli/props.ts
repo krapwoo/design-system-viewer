@@ -9,6 +9,12 @@ export interface ReadComponentsOptions {
    *  `readHostTsconfigOptions` below). No `baseUrl` field here: TypeScript 6 deprecates `baseUrl`
    *  (removed in 7), and every entry a caller passes is already absolute. */
   paths?: Record<string, string[]>;
+  /** Lowest-priority `paths` fallback — applied only under the host tsconfig's own `paths` and
+   *  under `paths` above. `sync` passes `<config.projectRoot>/node_modules/*` here so a component
+   *  entry file outside the host's own directory tree (e.g. kit-host's sibling `../starter-kit/`)
+   *  still resolves `react`/`react-native` against the *host's* node_modules, instead of whatever
+   *  ambient tsconfig.json happens to be nearest that entry file on disk. */
+  fallbackPaths?: Record<string, string[]>;
   /** Absolute folders whose type declarations count as "local" for coverage-target options (design
    *  §3 — "Options for coverage"). Omit to record no options at all (e.g. when a caller has no
    *  config to derive folders from). */
@@ -70,7 +76,7 @@ export function createComponentReader(entryFiles: string[], options: ReadCompone
     allowJs: false,
     noEmit: true,
     baseUrl: host.baseUrl,
-    paths: { ...host.paths, ...options.paths },
+    paths: { ...options.fallbackPaths, ...host.paths, ...options.paths },
     // `pathsBasePath` is @internal: it tells the compiler which folder `paths` are relative to when
     // the host tsconfig has `paths` but no `baseUrl` (the TypeScript 6 idiom).
     ...(host.pathsBasePath ? ({ pathsBasePath: host.pathsBasePath } as ts.CompilerOptions) : {}),
