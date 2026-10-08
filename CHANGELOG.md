@@ -3,6 +3,15 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.3.0
+
+- Added `npx ds-viewer doctor` (`--json`, `--ci`) — checks every page for drift and coverage gaps by reading it statically, never by running app code.
+- Added `npx ds-viewer explain <Page>` (`--heights`, `--json`) — prints why a page's specimens are laid out the way they are, using the catalog's own layout logic.
+- Grid comparisons can bind a row or column axis to a real prop (`{ prop: 'variant', items: [...] }`), so `doctor` can check it against that prop's actual options.
+- The catalog now warns in development when two pages resolve to the same id.
+- `init` now appends a short `AGENTS.md` section telling an AI how to keep the catalog current with `doctor`/`explain`.
+- `init` now writes a SHA-pinned `.github/workflows/ds-viewer.yml` that installs dependencies (npm, pnpm, or yarn — detected from the project's lockfile) and runs `doctor --ci` on every pull request.
+
 ## 0.2.0
 
 - Fixed two starter-kit console errors on web: `Icon.native` no longer spreads `key` into JSX or leaks `translateX`/`translateY` to the DOM, and `Loading` no longer leaks `collapsable`/`accessible` to the DOM.
