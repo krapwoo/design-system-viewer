@@ -7,59 +7,97 @@ Drop it into a new project, rebrand the tokens, and build.
 
 ```
 design-system-template/
-├── tokens/          ← ONE source of truth (colors, spacing, radius, type, shadow). Platform-neutral.
-│   ├── palette.ts       raw color scale (0–800 per hue)
-│   ├── semantic.ts      role tokens (surface / text / emphasis / shade / border …)
-│   ├── scales.ts        spacing · radius · icon-size
-│   ├── typography.ts    type scale + font weights
-│   ├── shadow.ts        elevation (RN style objects)
-│   └── index.ts         barrel
-├── icons/           ← shared SVG path DATA + the native renderer
-│   ├── paths.ts         platform-neutral icon geometry
-│   ├── types.ts         IconName union
-│   ├── Icon.native.tsx  react-native-svg renderer
-│   └── index.ts         barrel (data + types only)
-├── native/          ← React Native / Expo components + catalog
-│   ├── components/…     one folder per component (Component.tsx, .types.ts, index.ts)
-│   └── catalog/         app-agnostic catalog framework (RN) + CatalogExample.tsx
-└── native-preview/  ← dev-only Expo shell for browsing the catalog in a browser (not part
-                        of the reusable template — see "Browsing the catalog" below)
+├── starter-kit/     ← the starter kit: copied, never imported, into a new project by `init --new`
+│   ├── tokens/          ONE source of truth (colors, spacing, radius, type, shadow). Platform-neutral.
+│   ├── icons/           shared SVG path data + the native (react-native-svg) renderer
+│   ├── components/…     one folder per component: Component.tsx, .types.ts, index.ts, and a
+│   │                    finished Component.catalog.tsx documenting it
+│   ├── pages/           standalone pages (token galleries, Icons, recipes, Manifest)
+│   └── WHEN_TO_USE.md   the deciding question behind every pair of similar components
+├── native/catalog/  ← the viewer itself — app-agnostic, ships in the published package
+└── kit-host/        ← this repo's own view of the starter kit; depends on this package via
+                        `file:..`; `npm run kit:dev` opens it (not part of the published package —
+                        see "Developing this repository" below)
 ```
 
 ## Using `@krapwoo/ds-viewer` in your own project
 
-This repository is also the source of the `@krapwoo/ds-viewer` npm package — a CLI and viewer
-for browsing *your own* app's components, not this template's. In an existing Expo app:
+**New project:**
 
 ```bash
-npx @krapwoo/ds-viewer init
+npx @krapwoo/ds-viewer init --new
+npm install
+npm run ds-viewer dev
+```
+
+`init --new` checks Expo/Node/package requirements, installs `react-native-svg` and
+`react-native-safe-area-context` if your project doesn't have them yet (via `expo install`), then
+copies the starter kit above into `src/ds/` — pass `--kit-root <path>` to put it somewhere else.
+Every component already has a finished example page; `ds-viewer dev` opens the catalog immediately
+with no further authoring needed. Running `init --new` again only adds whatever is still missing —
+it never overwrites a file you've already edited.
+
+**Existing project:**
+
+```bash
+npx @krapwoo/ds-viewer init --existing
 npm install
 ```
 
-`init` detects your component folders and token modules and, after you confirm the list it prints
-(`--yes` skips the prompt), writes `ds-viewer.config.ts`, a draft `<Export>.catalog.tsx` beside
-each detected component (marked "needs examples" — nothing is invented), a `ds-viewer` package
-script, a `@krapwoo/ds-viewer` devDependency entry, and a `.ds-viewer/` entry in `.gitignore`. The
-`npm install` above is what actually fetches that devDependency — `init` can only add the entry,
-not invoke your package manager. Then:
+`init --existing` detects your component folders and token modules and, after you confirm the list
+it prints (`--yes` skips the prompt), writes `ds-viewer.config.ts`, a draft
+`<Export>.catalog.tsx` beside each detected component (marked "needs examples" — nothing is
+invented), a `ds-viewer` package script, a `@krapwoo/ds-viewer` devDependency entry, and a
+`.ds-viewer/` entry in `.gitignore`.
+
+Running `npx @krapwoo/ds-viewer init` with neither `--new` nor `--existing` asks which one you
+want, interactively. `init --yes` alone (no `--new`/`--existing`) skips that question and sets up
+an existing project instead — the same default `--yes` always had in 0.1, so a script that already
+calls `init --yes` keeps working unchanged. The `npm install` above is what actually fetches the
+devDependency `init` added — `init` can only add the entry, not invoke your package manager.
+
+Either way, then:
 
 ```bash
 npm run ds-viewer dev    # opens the catalog in a browser, re-syncing on every file change
 npm run ds-viewer sync   # regenerates component/token/page data without starting a server
 ```
 
-`ds-viewer.config.ts` fields in 0.1: `name`, `components`, `exclude`, `tokens`, `pages`,
-`groupOrder` — see `config/index.ts`'s `DsViewerConfig` for each field's exact meaning. Write a
-page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same shape as this template's own
-`SectionDef`, minus `id`/`path`/`props`, plus `component`, `group`, and `propNotes`).
+`ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
+sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
+and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `starterKit` (new-project only —
+records the kit's version), `updateCheck`, `doctor` — see `config/index.ts`'s `DsViewerConfig` for
+each field's exact meaning. Write a page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same
+shape as a `SectionDef`, minus `id`/`path`/`props`, plus `component`, `group`, and `propNotes`).
+
+`logo`'s own shape decides how it renders, not a separate setting: a roughly square or modestly
+wide image appears as a small mark beside the name; one more than twice as wide as it is tall
+replaces the name entirely as a wordmark. A missing file just warns and falls back to the name
+only. Use PNG if your project transforms SVG imports into components (Metro would otherwise try to
+bundle the logo as a React component, not an image).
 
 The package ships `native/catalog/` as TypeScript source, not pre-built JavaScript — your own
 project's `tsc`/Metro compiles it under your own compiler options, the same as any other local file.
 
+## Developing this repository
+
+This repository views its own starter kit the same way a real user would: `kit-host/` is a small
+Expo project that depends on `@krapwoo/ds-viewer` via `file:..` and points its `ds-viewer.config.ts`
+at `../starter-kit/`. From the repo root:
+
+```bash
+npm run kit:dev          # builds the CLI, then opens the starter kit's own catalog
+npm run check:catalog    # the same headless check CI runs — every page, zero console errors
+```
+
+`kit-host/` also hosts `viewer-pages/` — standalone catalog pages (not shipped in the package)
+documenting the viewer framework's own pieces (`CatalogShell`, `SectionBlock`, `ComparisonGrid`,
+…), shown under a "Viewer" group alongside the starter kit's own pages.
+
 ## Picking the right component
 
 Several components look alike but solve different problems (InputField vs. SearchField vs.
-Dropdown, Toast vs. Banner, Dialog vs. BottomSheet, …). See **[WHEN_TO_USE.md](./WHEN_TO_USE.md)**
+Dropdown, Toast vs. Banner, Dialog vs. BottomSheet, …). See **[WHEN_TO_USE.md](./starter-kit/WHEN_TO_USE.md)**
 for the deciding question behind each pair before reaching for the closest-looking one. For a
 component's exact props/variants/states as structured data (not prose), see
 `native/catalog/manifest.ts`'s `buildComponentManifest()`, also rendered live at the catalog's
@@ -77,19 +115,19 @@ rebrand a two-file edit. Read tokens directly: `import { DS_SEMANTIC } from '...
 
 ## Rebranding (make it yours)
 
-1. **Palette** — edit `tokens/palette.ts`: swap the six hue scales for your brand's (keep the 0–800
+1. **Palette** — edit `starter-kit/tokens/palette.ts`: swap the six hue scales for your brand's (keep the 0–800
    shape).
-2. **Semantic** — in `tokens/semantic.ts`, re-point any role you want to shift (e.g. make `emphasis.info`
+2. **Semantic** — in `starter-kit/tokens/semantic.ts`, re-point any role you want to shift (e.g. make `emphasis.info`
    your brand blue). Every component re-themes automatically.
-3. **Type** — adjust `tokens/typography.ts` (sizes/weights) and set your font family at the app root.
+3. **Type** — adjust `starter-kit/tokens/typography.ts` (sizes/weights) and set your font family at the app root.
 
 Nothing else needs touching — components reference roles, not values.
 
 ## Using the components
 
 ```tsx
-import { Button } from '@ds/native/components/Button';
-import { Badge } from '@ds/native/components/Badge';
+import { Button } from './src/ds/components/Button';   // after `init --new` (default --kit-root)
+import { Badge } from './src/ds/components/Badge';
 
 <Button label="Save" variant="primary" onPress={save} />
 <Badge variant="positive" label="On time" leadingIcon="check" />
@@ -98,17 +136,10 @@ import { Badge } from '@ds/native/components/Badge';
 ## Browsing the catalog
 
 `native/catalog/` is a framework-only package (`CatalogShell`, `SectionBlock`, `PropsTable`, …) —
-it has no runnable app of its own. It ships two worked examples, both built the same way (drop
-either behind a dev-only route in your Expo app):
-
-- `native/catalog/CatalogExample.tsx` — **"Native App DS Template"**: documents this template's own
-  DS components (Button, Card, Banner, …).
-- `native/catalog/CatalogFrameworkExample.tsx` — **"Design System DS Catalog"**: documents the
-  catalog framework's own eight pieces (`CatalogShell`, `CatalogSidebar`, `CatalogSearchInput`,
-  `SectionBlock`, `PropsTable`, `VariantGroup`, `TokenRow`, `DividedStack`) plus its own
-  Colors/Spacing/Type Scale token pages (`native/catalog/tokens.ts` — `CATALOG_*`, independent of
-  the host app's DS tokens) — a catalog of the catalog tool itself, useful when you're extending the
-  framework rather than the DS.
+it has no runnable app of its own and no hand-assembled example anymore. A page is just a
+`*.catalog.tsx` file next to its component (or a standalone one for tokens/recipes), written with
+`defineCatalogPage()`; `ds-viewer dev` discovers them, generates their props tables from your real
+component source, and serves the whole thing as one app you never have to add a route for.
 
 Each catalog shows **one page at a time**: a persistent, searchable sidebar and the selected page.
 On web the page is kept in the URL fragment (`#Button`), so refresh, deep links, and back/forward
@@ -133,27 +164,17 @@ Grid columns and list cells are at most 402px wide with 16px padding. A page's `
 slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`, never from
 the host app's tokens.
 
-```tsx
-import { CatalogExample } from '@ds/native/catalog/CatalogExample';
-// or: import { CatalogFrameworkExample } from '@ds/native/catalog/CatalogFrameworkExample';
-// e.g. render one from a `?ds=1` dev route, mirroring the pattern this template's source project used.
-```
-
-For a quick browser preview without a host app, see `native-preview/` — a minimal throwaway Expo
-shell (not part of the reusable template) that renders both via `expo start --web`:
-- `http://localhost:5181/` → CatalogExample ("Native App DS Template")
-- `http://localhost:5181/?catalog=framework` → CatalogFrameworkExample ("Design System DS Catalog")
-
 ## Adding a component (the recipe)
 
-Copy the shape of an existing pair, e.g. `native/components/Button/` or `native/components/Badge/`:
-- `<Name>.tsx` — `StyleSheet.create`, import tokens from `../../../tokens`, icons from
-  `../../../icons/Icon.native`.
+Copy the shape of an existing pair, e.g. `starter-kit/components/Button/` or `starter-kit/components/Badge/`:
+- `<Name>.tsx` — `StyleSheet.create`, import tokens from `../../tokens`, icons from
+  `../../icons/Icon.native`.
 - `<Name>.types.ts` — export `<Name>Props` (+ any `<Name>Variant`).
 - `index.ts` — re-export.
 
-Then add a `SectionDef` for it (id, path, description, props, a11y, and its content) to
-`native/catalog/CatalogExample.tsx`, and to `native/components/index.ts`. `SectionBlock` shows the
+Then add a `<Name>.catalog.tsx` file next to it, written with `defineCatalogPage()` (description,
+a11y, and its content — `id`/`path`/`props` are derived, never authored), and export it from
+`src/ds/components/index.ts` the same way its siblings are. `SectionBlock` shows the
 specimens first, then Guidance, Quick reference, and Props. Give it whichever of these fields
 actually apply:
 - `comparison: { rowLabel, columnLabel, rows, columns, cells, size? }` — when two props genuinely
@@ -196,10 +217,10 @@ bars, modals, and any domain components. They depend on navigation/gesture stack
 
 ## Porting to another platform later
 
-The token layer (`tokens/`) and icon data (`icons/paths.ts`, `icons/types.ts`) are already
-platform-neutral — no React Native or DOM imports. Only `native/` (components + catalog) and the
-`Icon.native.tsx` renderer are RN-specific. When you need this design system on another platform
-(web, desktop via Tauri/Electron, etc.), that's a translation of `native/` against those same
-tokens and icon data — a `web/` (or other) tree was built this way once already for this exact
+The token layer (`starter-kit/tokens/`) and icon data (`starter-kit/icons/paths.ts`,
+`starter-kit/icons/types.ts`) are already platform-neutral — no React Native or DOM imports. Only
+`starter-kit/components/` and the `Icon.native.tsx` renderer are RN-specific. When you need this
+design system on another platform (web, desktop via Tauri/Electron, etc.), that's a translation of
+`starter-kit/components/` against those same tokens and icon data — a `web/` (or other) tree was built this way once already for this exact
 template and later removed to keep the template single-platform until it's actually needed; ask
 for that port again when you're ready rather than maintaining an unused second tree in the meantime.

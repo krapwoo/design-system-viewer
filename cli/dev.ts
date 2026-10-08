@@ -91,4 +91,16 @@ export async function dev(config: ResolvedConfig): Promise<void> {
     for (const watcher of watchers) watcher.close();
     process.exitCode = code ?? 0;
   });
+  // Node's default SIGTERM/SIGINT behavior exits this process without touching its children —
+  // left alone, a signal sent only to `dev`'s own pid (not its process group) would leave the
+  // spawned `expo start` running, still bound to its port (Important finding, Fable correction
+  // pass: this is exactly what would hang `check:catalog`'s driving script, Task 11, if `dev`
+  // didn't clean up on its own).
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      for (const watcher of watchers) watcher.close();
+      child.kill(signal);
+      process.exit(0);
+    });
+  }
 }
