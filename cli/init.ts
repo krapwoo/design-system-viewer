@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import { execFileSync } from 'node:child_process';
 import { preflight } from './preflight.ts';
 import { detectComponentFolders, detectTokenFiles, type DetectedComponentFolder, type DetectedTokenFile } from './detect.ts';
 
@@ -21,6 +22,15 @@ export interface InitOptions {
   confirm?: (message: string) => Promise<boolean> | boolean;
 }
 
+export interface NewProjectOptions {
+  /** Default `'src/ds'` (design §2 new-project column: "copies the starter kit into `src/ds/`
+   *  (kit root configurable)"). */
+  kitRoot?: string;
+  /** Test-only: replaces the real `npx expo install` call. Receives the subset of
+   *  `['react-native-svg', 'react-native-safe-area-context']` that isn't already a dependency. */
+  installer?: (projectRoot: string, missingPackages: string[]) => Promise<void> | void;
+}
+
 async function promptConfirm(message: string): Promise<boolean> {
   // A closed, non-interactive stdin (CI, piped npx) would reject `question` with an AbortError;
   // say how to proceed instead.
@@ -34,23 +44,27 @@ async function promptConfirm(message: string): Promise<boolean> {
   return /^y(es)?$/i.test(answer.trim());
 }
 
-/** This package's own version — used as the `^x.y.z` devDependency version written below, since a
- *  project run via `npx @krapwoo/ds-viewer init` has no local copy to read its version from yet.
- *  Walks up from this file's own directory looking for the `package.json` named
- *  `@krapwoo/ds-viewer`, rather than a fixed relative path: this file sits one level under the
- *  repo root as `cli/init.ts` (how the test below runs it) but two levels under it once compiled,
- *  as `dist/cli/init.js` — a single `../..` would be wrong for one of the two. */
-function ownVersion(): string {
+/** This package's own installed root — needed both for `ownVersion()` below and (new in 0.2) to
+ *  find the bundled `starter-kit/` to copy from. Walks up from this file's own directory looking
+ *  for the `package.json` named `@krapwoo/ds-viewer`, rather than a fixed relative path: this file
+ *  sits one level under the repo root as `cli/init.ts` (how tests run it) but two levels under it
+ *  once compiled, as `dist/cli/init.js` — a single `../..` would be wrong for one of the two. */
+function packageRoot(): string {
   let dir = import.meta.dirname;
   for (let depth = 0; depth < 5; depth += 1) {
     const candidate = path.join(dir, 'package.json');
     if (existsSync(candidate)) {
-      const pkg = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string; version: string };
-      if (pkg.name === '@krapwoo/ds-viewer') return pkg.version;
+      const pkg = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string };
+      if (pkg.name === '@krapwoo/ds-viewer') return dir;
     }
     dir = path.dirname(dir);
   }
   throw new Error("Could not find @krapwoo/ds-viewer's own package.json to read its version.");
+}
+
+function ownVersion(): string {
+  const pkg = JSON.parse(readFileSync(path.join(packageRoot(), 'package.json'), 'utf8')) as { version: string };
+  return pkg.version;
 }
 
 /** Detects the existing indent of a JSON file's first indented line, so rewriting it (e.g.
@@ -114,6 +128,31 @@ export async function initExistingProject(projectRoot: string, options: InitOpti
     }
   }
 
+  written.push(...ensureSharedProjectFiles(projectRoot));
+
+  const routerWarnings = componentFolders
+    .filter((folder) => folder.relativePath.split(path.sep)[0] === 'app')
+    .map(
+      (folder) =>
+        `Warning: ${folder.relativePath.split(path.sep).join('/')} is inside an Expo Router "app/" directory; its .catalog.tsx file will become a route.`,
+    );
+
+  const messages = [
+    ...warnings.map((issue) => `Warning: ${issue.package} not found. Run: ${issue.installCommand}`),
+    ...routerWarnings,
+    // "with catalog pages", not "with examples": this counts any existing `<Name>.catalog.tsx`,
+    // including init's own drafts, which explicitly say "Needs examples" — not real coverage yet.
+    `${componentFolders.length} components · ${withExamplesCount} with catalog pages`,
+    'Next: npm install, then npm run ds-viewer dev',
+  ];
+  return { messages, written };
+}
+
+/** Design §2, "Both paths then write what is missing": `ds-viewer.config.ts` is written by each
+ *  path separately (its contents differ), but the package script, the devDependency entry, and the
+ *  `.gitignore` entry are identical either way. */
+function ensureSharedProjectFiles(projectRoot: string): string[] {
+  const written: string[] = [];
   const packageJsonPath = path.join(projectRoot, 'package.json');
   const packageJsonRaw = readFileSync(packageJsonPath, 'utf8');
   const packageJson = JSON.parse(packageJsonRaw) as {
@@ -140,30 +179,111 @@ export async function initExistingProject(projectRoot: string, options: InitOpti
   const gitignorePath = path.join(projectRoot, '.gitignore');
   const gitignoreEntry = '.ds-viewer/';
   const existingGitignore = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf8') : '';
-  // `\r\n` line endings leave a trailing `\r` on each split line, which never equals the entry —
-  // trim it per line so a CRLF .gitignore is recognized as already having the entry on a rerun.
   if (!existingGitignore.split('\n').some((line) => line.replace(/\r$/, '') === gitignoreEntry)) {
     const separator = existingGitignore === '' || existingGitignore.endsWith('\n') ? '' : '\n';
     writeFileSync(gitignorePath, `${existingGitignore}${separator}${gitignoreEntry}\n`);
     written.push(gitignorePath);
   }
+  return written;
+}
 
-  const routerWarnings = componentFolders
-    .filter((folder) => folder.relativePath.split(path.sep)[0] === 'app')
-    .map(
-      (folder) =>
-        `Warning: ${folder.relativePath.split(path.sep).join('/')} is inside an Expo Router "app/" directory; its .catalog.tsx file will become a route.`,
-    );
+const KIT_REQUIRED_PACKAGES = ['react-native-svg', 'react-native-safe-area-context'];
+
+/** Default `installer` — a real `npx expo install`, run only for whichever of
+ *  `KIT_REQUIRED_PACKAGES` the project doesn't already depend on. Test-injected in every unit test
+ *  (this plan's Global Constraints: never run a real `expo install` in tests). */
+function defaultInstaller(projectRoot: string, missingPackages: string[]): void {
+  if (missingPackages.length === 0) return;
+  // Same `shell: process.platform === 'win32'` reasoning as `dev.ts`'s existing `spawn('npx', ...)`
+  // call: Windows resolves `npx` via `npx.cmd`, which `execFileSync` only finds through a shell.
+  execFileSync('npx', ['expo', 'install', ...missingPackages], { cwd: projectRoot, stdio: 'inherit', shell: process.platform === 'win32' });
+}
+
+/** Copies every file under `srcDir` into `destDir`, skipping any destination file that already
+ *  exists (design's "never overwrites user files" rule — Global Constraints) and reporting, not
+ *  throwing on, one unreadable source file (Error-handling rule). Returns every path it wrote. */
+function copyKitIfMissing(srcDir: string, destDir: string): string[] {
+  const written: string[] = [];
+  mkdirSync(destDir, { recursive: true });
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      written.push(...copyKitIfMissing(srcPath, destPath));
+      continue;
+    }
+    if (existsSync(destPath)) continue;
+    try {
+      copyFileSync(srcPath, destPath);
+      written.push(destPath);
+    } catch (error) {
+      console.warn(`Could not copy ${path.relative(srcDir, srcPath)}: ${(error as Error).message}`);
+    }
+  }
+  return written;
+}
+
+function newProjectConfigContents(kitRoot: string, starterKitVersion: string): string {
+  return `import { defineConfig } from '@krapwoo/ds-viewer/config';
+
+export default defineConfig({
+  name: 'My App',
+  components: ['${kitRoot}/components/*/index.ts'],
+  tokens: ['${kitRoot}/tokens/index.ts'],
+  pages: ['${kitRoot}/pages/*.catalog.tsx'],
+  starterKit: { version: '${starterKitVersion}' },
+});
+`;
+}
+
+/** The new-project half of `init` (design §2's "new project" column) — existing-project `init` is
+ *  `initExistingProject`, 0.1 scope. No confirmation prompt here: unlike the existing-project path,
+ *  there is nothing to detect or confirm — the kit root is the only user choice, and it's a flag. */
+export async function initNewProject(projectRoot: string, options: NewProjectOptions = {}): Promise<InitResult> {
+  const { errors, warnings } = preflight(projectRoot);
+  if (errors.length > 0) {
+    return { messages: errors.map((issue) => `Missing ${issue.package}. Run: ${issue.installCommand}`), written: [], exitCode: 1 };
+  }
+
+  const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const installedPackages = { ...packageJson.dependencies, ...packageJson.devDependencies };
+  const missingKitPackages = KIT_REQUIRED_PACKAGES.filter((name) => !installedPackages[name]);
+  await (options.installer ?? defaultInstaller)(projectRoot, missingKitPackages);
+
+  const kitRoot = options.kitRoot ?? 'src/ds';
+  const written = copyKitIfMissing(path.join(packageRoot(), 'starter-kit'), path.join(projectRoot, kitRoot));
+
+  const configPath = path.join(projectRoot, 'ds-viewer.config.ts');
+  if (!existsSync(configPath)) {
+    writeFileSync(configPath, newProjectConfigContents(kitRoot, ownVersion()));
+    written.push(configPath);
+  }
+
+  written.push(...ensureSharedProjectFiles(projectRoot));
 
   const messages = [
     ...warnings.map((issue) => `Warning: ${issue.package} not found. Run: ${issue.installCommand}`),
-    ...routerWarnings,
-    // "with catalog pages", not "with examples": this counts any existing `<Name>.catalog.tsx`,
-    // including init's own drafts, which explicitly say "Needs examples" — not real coverage yet.
-    `${componentFolders.length} components · ${withExamplesCount} with catalog pages`,
+    ...(missingKitPackages.length > 0 ? [`Installed ${missingKitPackages.join(', ')}.`] : []),
+    `Copied the starter kit into ${kitRoot}/.`,
     'Next: npm install, then npm run ds-viewer dev',
   ];
   return { messages, written };
+}
+
+/** The one new-vs-existing question (design §2's "One question") — `--new`/`--existing` (wired in
+ *  `cli/main.ts`) skip it entirely; this is only reached with neither flag. */
+export async function promptInitMode(): Promise<'new' | 'existing' | undefined> {
+  if (!process.stdin.isTTY) return undefined;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await rl.question('New or existing project? [new/existing] ');
+  rl.close();
+  const normalized = answer.trim().toLowerCase();
+  if (normalized === 'new' || normalized === 'n') return 'new';
+  if (normalized === 'existing' || normalized === 'e') return 'existing';
+  return undefined;
 }
 
 function configFileContents(componentFolders: DetectedComponentFolder[], tokenFiles: DetectedTokenFile[]): string {

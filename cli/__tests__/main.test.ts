@@ -22,6 +22,9 @@ for (const flag of ['--help', '-h', 'help']) {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Usage: ds-viewer <command>/);
     for (const command of ['init', 'sync', 'dev']) assert.match(result.stdout, new RegExp(`^  ${command} `, 'm'));
+    assert.match(result.stdout, /--new/);
+    assert.match(result.stdout, /--existing/);
+    assert.match(result.stdout, /--kit-root/);
     assert.match(result.stdout, /--yes/);
     assert.equal(result.stderr, '');
   });
