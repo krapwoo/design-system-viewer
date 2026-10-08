@@ -34,6 +34,9 @@ export type { ComponentManifestEntry, ManifestExample } from './manifest';
 export { defineCatalogPage, buildCatalogSections } from './pageApi';
 export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
 export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, GridAxis, PreviewWidths } from './types';
+export { UpdatePanel } from './UpdatePanel';
+export { UPDATE_PAGE_ID } from './catalogNavigation';
+export type { UpdateNotice } from './types';
 export type { ListGroup, ListItem } from './comparison';
 export {
   CATALOG_TYPE,

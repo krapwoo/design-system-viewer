@@ -195,3 +195,14 @@ export interface NavGroup<TId extends string = string> {
   label: string;
   ids: readonly TId[];
 }
+
+/** Design §5 "Update check"/"Viewer notice" — the generated entry file (Task 17) imports this
+ *  shape directly from `.ds-viewer/update.json`; `null` when no update is known (disabled,
+ *  offline, or genuinely up to date — the viewer treats all three identically). */
+export interface UpdateNotice {
+  current: string;
+  latest: string;
+  breaking: boolean;
+  summary: string[];
+  releasedAt?: string;
+}
