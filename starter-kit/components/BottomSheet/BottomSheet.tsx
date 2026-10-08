@@ -125,9 +125,14 @@ export function BottomSheet({ visible, onDismiss, header, children, footer, styl
   );
 }
 
+/** `StyleSheet.absoluteFill`, spelled out: React Native 0.81's types don't allow spreading
+ *  `StyleSheet.absoluteFill` (and 0.86 removed `absoluteFillObject`), so this one form
+ *  type-checks on both. */
+const FILL = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
+
 const styles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: DS_SEMANTIC.element.overlayBackdrop },
+  overlay: { ...FILL, justifyContent: 'flex-end' },
+  backdrop: { ...FILL, backgroundColor: DS_SEMANTIC.element.overlayBackdrop },
   sheet: {
     maxHeight: MAX_HEIGHT_PERCENT,
     backgroundColor: DS_SEMANTIC.surface.white,

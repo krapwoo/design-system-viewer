@@ -173,6 +173,11 @@ export function Banner({
   );
 }
 
+/** `StyleSheet.absoluteFill`, spelled out: React Native 0.81's types don't allow spreading
+ *  `StyleSheet.absoluteFill` (and 0.86 removed `absoluteFillObject`), so this one form
+ *  type-checks on both. */
+const FILL = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
+
 const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
@@ -235,7 +240,7 @@ const styles = StyleSheet.create({
   },
   // Translucent pressed overlay — sits above the banner bg so the tinted bg shows through.
   pressOverlay: {
-    ...StyleSheet.absoluteFill,
+    ...FILL,
     backgroundColor: DS_SEMANTIC.interaction.pressed,
     borderRadius: DS_RADIUS.medium,
   },
