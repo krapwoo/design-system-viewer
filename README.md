@@ -26,6 +26,36 @@ design-system-template/
                         of the reusable template — see "Browsing the catalog" below)
 ```
 
+## Using `@krapwoo/ds-viewer` in your own project
+
+This repository is also the source of the `@krapwoo/ds-viewer` npm package — a CLI and viewer
+for browsing *your own* app's components, not this template's. In an existing Expo app:
+
+```bash
+npx @krapwoo/ds-viewer init
+npm install
+```
+
+`init` detects your component folders and token modules and, after you confirm the list it prints
+(`--yes` skips the prompt), writes `ds-viewer.config.ts`, a draft `<Export>.catalog.tsx` beside
+each detected component (marked "needs examples" — nothing is invented), a `ds-viewer` package
+script, a `@krapwoo/ds-viewer` devDependency entry, and a `.ds-viewer/` entry in `.gitignore`. The
+`npm install` above is what actually fetches that devDependency — `init` can only add the entry,
+not invoke your package manager. Then:
+
+```bash
+npm run ds-viewer dev    # opens the catalog in a browser, re-syncing on every file change
+npm run ds-viewer sync   # regenerates component/token/page data without starting a server
+```
+
+`ds-viewer.config.ts` fields in 0.1: `name`, `components`, `exclude`, `tokens`, `pages`,
+`groupOrder` — see `config/index.ts`'s `DsViewerConfig` for each field's exact meaning. Write a
+page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same shape as this template's own
+`SectionDef`, minus `id`/`path`/`props`, plus `component`, `group`, and `propNotes`).
+
+The package ships `native/catalog/` as TypeScript source, not pre-built JavaScript — your own
+project's `tsc`/Metro compiles it under your own compiler options, the same as any other local file.
+
 ## Picking the right component
 
 Several components look alike but solve different problems (InputField vs. SearchField vs.

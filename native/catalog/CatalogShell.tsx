@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, ScrollView, StyleSheet, Text, View, findNodeHandle } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
@@ -122,30 +121,28 @@ export function CatalogShell<TId extends string>({
   const activeDef = active !== undefined ? sectionsById.get(active) : undefined;
 
   return (
-    <SafeAreaProvider>
-      <View style={styles.root}>
-        <CatalogSidebar logo={appName} caption={title} groups={groups} active={active} onPress={select} />
-        <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
-          {activeDef ? (
-            <SectionBlock
-              key={activeDef.id}
-              def={activeDef}
-              groupLabel={groupLabelFor(groups, activeDef.id)}
-              breadcrumbRoot={appName}
-              pager={{
-                previousId: neighbors(order, activeDef.id).previous,
-                nextId: neighbors(order, activeDef.id).next,
-                onNavigate: select,
-              }}
-              headingRef={headingRef}
-              defaultPreviewWidths={defaultPreviewWidths}
-            />
-          ) : (
-            <Text style={styles.empty}>No catalog pages are available.</Text>
-          )}
-        </ScrollView>
-      </View>
-    </SafeAreaProvider>
+    <View style={styles.root}>
+      <CatalogSidebar logo={appName} caption={title} groups={groups} active={active} onPress={select} />
+      <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
+        {activeDef ? (
+          <SectionBlock
+            key={activeDef.id}
+            def={activeDef}
+            groupLabel={groupLabelFor(groups, activeDef.id)}
+            breadcrumbRoot={appName}
+            pager={{
+              previousId: neighbors(order, activeDef.id).previous,
+              nextId: neighbors(order, activeDef.id).next,
+              onNavigate: select,
+            }}
+            headingRef={headingRef}
+            defaultPreviewWidths={defaultPreviewWidths}
+          />
+        ) : (
+          <Text style={styles.empty}>No catalog pages are available.</Text>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 

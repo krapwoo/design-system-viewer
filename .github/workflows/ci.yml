@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          # `--experimental-strip-types` (every test/build command below) requires Node 22.6+ — it
+          # was never backported to 20.x. The published CLI's own `engines` stays `>=20.19.0`
+          # (Task 1): end users run compiled `dist/cli/main.js`, which needs no type stripping.
+          node-version: '22'
+      - run: npm ci
+      # `npm test` needs native-preview/node_modules for its @types/react and react-native type
+      # roots (cli/__tests__/props.test.ts, sync.test.ts) — without this, every component vanishes
+      # from the catalog's test fixtures and `const [button] = []` throws (Important finding 1).
+      - run: npm ci --prefix native-preview
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build

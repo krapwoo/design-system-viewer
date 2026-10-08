@@ -30,6 +30,8 @@ export { SpacingScaleGallery } from './SpacingScaleGallery';
 export { TypeScaleGallery } from './TypeScaleGallery';
 export { buildComponentManifest } from './manifest';
 export type { ComponentManifestEntry, ManifestExample } from './manifest';
+export { defineCatalogPage, buildCatalogSections } from './pageApi';
+export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
 export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, PreviewWidths } from './types';
 export {
   CATALOG_TYPE,

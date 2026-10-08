@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      # A mistyped or stale tag would otherwise publish the wrong version under the right name.
+      - name: Verify the pushed tag matches package.json's version
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const tag = process.env.GITHUB_REF_NAME;
+            const expected = 'v' + pkg.version;
+            if (tag !== expected) {
+              console.error('Tag ' + tag + ' does not match package.json version ' + expected);
+              process.exit(1);
+            }
+          "
+      - run: npm ci
+      - run: npm ci --prefix native-preview
+      - run: npm test
+      - run: npm run build
+      # Trusted publishing (OIDC) needs npm 11.5.1+; both Node 20 and 22 currently bundle npm 10,
+      # which fails `npm publish --provenance` with ENEEDAUTH. Pinned (not `@latest`) so a future
+      # npm major can't change publish behavior out from under this workflow unannounced.
+      - run: npm install -g npm@11
+      - run: npm publish --provenance --access public

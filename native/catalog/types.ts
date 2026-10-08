@@ -44,8 +44,6 @@ export interface VariantExample {
 /** The content of the "Variants" or "States / Configurations" column — every value of a single prop's
  *  enum, or every distinct boolean/flag state, as individual instances. */
 export interface VariantSlot {
-  /** @default 'center' */
-  align?: 'center' | 'left';
   /** When true, each item stretches to fill the available width instead of shrinking to its own
    *  content width — for wide block-level components (Banner, Card, Toast, InputField) rather than
    *  small instances meant to sit centered (Button, Badge, Pill). @default false */
