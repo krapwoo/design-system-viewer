@@ -355,6 +355,17 @@ Set `starterKit.root` in `ds-viewer.config.ts` if you moved the kit after `init 
 (default `src/ds`); a config from before 0.4 with no `root` field still works — it's inferred from
 your first `components` glob.
 
+### Updating: known limits
+
+- **Updating needs the network.** If npm doesn't answer within 20 seconds, the update page shows
+  "Couldn’t prepare the update" and nothing changes. It doesn't fall back to npm's cache, because
+  the install that follows would need the network anyway.
+- **A console error while installing is expected.** While npm replaces the package, Metro briefly
+  reports that it can't resolve `@krapwoo/ds-viewer`. The update page keeps going, and the viewer
+  restarts on the new version.
+- **Windows hasn't been tested on a real machine yet.** Package-manager commands run through a
+  shell on Windows (needed for `npm.cmd`), and this is covered by unit tests only.
+
 ## What's included
 
 Tokens · Icons (45) · and generic components:

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { detectPackageManager, type PackageManager } from './packageManager.ts';
+import { detectPackageManager, platformCommand, type PackageManager } from './packageManager.ts';
 import { listKitFileDiffs } from './kitDiff.ts';
 import { extractSummaryBullets, fetchWithTimeout } from './updateCheck.ts';
 import { compareVersions, isBreakingUpgrade, parseVersion } from './semver.ts';
@@ -141,7 +141,10 @@ export async function buildUpdatePlan(
   options: BuildPlanOptions = {},
 ): Promise<UpdatePlan | { error: string }> {
   const execFileAsync = promisify(execFile);
-  const execImpl = options.execImpl ?? (async (cmd, args, opts) => (await execFileAsync(cmd, args, opts)).stdout);
+  const execImpl = options.execImpl ?? (async (cmd, args, opts) => {
+    const run = platformCommand(cmd, args);
+    return (await execFileAsync(run.command, run.args, { ...opts, shell: run.shell })).stdout;
+  });
   const fetchImpl = options.fetchImpl ?? fetch;
   const tmpDirImpl = options.tmpDirImpl ?? (() => mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-')));
   const gitStatusImpl = options.gitStatusImpl ?? defaultGitStatus;

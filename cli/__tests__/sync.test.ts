@@ -131,7 +131,7 @@ test('sync returns every "Could not read" warning it would otherwise only print'
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
-test('sync reads the starter kit\'s 37 components in under 3 seconds (one shared program, not one per entry)', () => {
+test('sync reads the starter kit\'s 37 components in under 10 seconds (one shared program, not one per entry)', () => {
   const config: ResolvedConfig = {
     name: 'Starter Kit',
     components: ['starter-kit/components/*/index.ts'],
@@ -146,7 +146,10 @@ test('sync reads the starter kit\'s 37 components in under 3 seconds (one shared
   const result = sync(config, RESOLVE_OPTIONS);
   const elapsedMs = Date.now() - start;
   assert.equal(result.componentCount, 37);
-  assert.ok(elapsedMs < 3000, `sync took ${elapsedMs}ms, expected under 3000ms`);
+  // One shared program takes about 0.6–1.4 s here; a program per entry (37 of them) takes many
+  // times longer. 10 s still catches that regression without failing on a loaded machine (the
+  // earlier 3 s bound failed once at load average 40).
+  assert.ok(elapsedMs < 10000, `sync took ${elapsedMs}ms, expected under 10000ms`);
   rmSync(path.join(REPO_ROOT, '.ds-viewer'), { recursive: true, force: true });
 });
 
