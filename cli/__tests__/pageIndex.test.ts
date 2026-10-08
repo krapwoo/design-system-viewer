@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { discoverPages, writePageIndex } from '../pageIndex.ts';
+import { discoverAllPageFiles, discoverPages, resolvePageId, writePageIndex } from '../pageIndex.ts';
 
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, '../../fixtures/existing-project');
 
@@ -45,4 +45,21 @@ test('writePageIndex writes one import per page, resolving each one\'s id from c
       `export default [resolved0, resolved1];\n`,
   );
   rmSync(generatedDir, { recursive: true, force: true });
+});
+
+test('resolvePageId prefers id, then component, then the file\'s own stem', () => {
+  assert.equal(resolvePageId({ id: 'Explicit', component: 'Button' }, '/x/Button.catalog.tsx'), 'Explicit');
+  assert.equal(resolvePageId({ component: 'Button' }, '/x/Button.catalog.tsx'), 'Button');
+  assert.equal(resolvePageId({}, '/x/Colors.catalog.tsx'), 'Colors');
+});
+
+test('discoverAllPageFiles finds every *.catalog.tsx in a component folder, even one with no matching current export', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-discoverall-'));
+  const folder = path.join(dir, 'Button');
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(path.join(folder, 'Button.catalog.tsx'), '');
+  writeFileSync(path.join(folder, 'OldName.catalog.tsx'), ''); // the component was renamed; this is the orphan.
+  const files = discoverAllPageFiles({ componentFolders: [folder], standalonePageGlobs: [], projectRoot: dir });
+  assert.deepEqual(files.map((f) => path.basename(f)).sort(), ['Button.catalog.tsx', 'OldName.catalog.tsx']);
+  rmSync(dir, { recursive: true, force: true });
 });

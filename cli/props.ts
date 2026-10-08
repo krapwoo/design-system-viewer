@@ -32,7 +32,7 @@ const COMPONENT_TYPE_HINT = /MemoExoticComponent|ForwardRefExoticComponent|Named
  *  fixtures have no tsconfig of their own, so lookup reaches this repository's root
  *  `tsconfig.json` (Task 1); it declares no `paths`, `baseUrl`, or `jsx`, so `options.paths`
  *  alone decides resolution in tests. */
-function readHostTsconfigOptions(
+export function readHostTsconfigOptions(
   entryFile: string,
 ): Pick<ts.CompilerOptions, 'baseUrl' | 'paths' | 'jsx'> & { pathsBasePath?: string } {
   const tsconfigPath = ts.findConfigFile(path.dirname(entryFile), ts.sys.fileExists);

@@ -29,6 +29,7 @@
     "starter-kit",
     "dist/cli",
     "dist/config",
+    "dist/native",
     "config/index.ts",
     "README.md",
     "LICENSE"
@@ -51,6 +52,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
     "puppeteer": "^25.12.0"
   },
   "scripts": {

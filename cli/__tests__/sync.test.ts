@@ -111,6 +111,26 @@ test('sync reports an unreadable component file and still syncs the rest', () =>
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
+test('sync returns every "Could not read" warning it would otherwise only print', () => {
+  const projectRoot = copyFixture();
+  const brokenFile = path.join(projectRoot, 'src/components/Button/Button.tsx');
+  chmodSync(brokenFile, 0o000);
+  const config: ResolvedConfig = {
+    name: 'Fixture App', components: ['src/components/*/index.ts'], tokens: ['src/tokens/index.ts'], pages: [],
+    updateCheck: true, doctor: { strict: false }, projectRoot, configPath: path.join(projectRoot, 'ds-viewer.config.ts'),
+  };
+  try {
+    // Not meaningful when run as root, where chmod 0o000 is unenforced — CI and local runs are
+    // non-root (same caveat this file's own sibling test already states).
+    const result = sync(config, RESOLVE_OPTIONS);
+    assert.equal(result.warnings.length, 1);
+    assert.match(result.warnings[0], /Could not read .*Cannot read/);
+  } finally {
+    chmodSync(brokenFile, 0o644);
+  }
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
 test('sync reads the starter kit\'s 37 components in under 3 seconds (one shared program, not one per entry)', () => {
   const config: ResolvedConfig = {
     name: 'Starter Kit',

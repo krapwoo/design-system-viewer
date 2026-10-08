@@ -36,16 +36,25 @@ export const PROPS_COLUMN_GAP = 32;
 /** Smallest column or cell width per specimen size. Wide specimens are fixed at phone width. */
 export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402 };
 
+/** `Array.isArray`'s built-in type guard narrows to a mutable `any[]`, which a `readonly T[]`
+ *  union member is never assignable to — so the `else` branch of `Array.isArray(axis) ? ... :
+ *  ...` keeps `axis`'s full union type instead of narrowing away the array member. This explicit
+ *  predicate sidesteps that (never caught before Task 4: this file had never been typechecked by
+ *  `tsc` until `cli/doctor.ts`'s import pulled it into the root `tsconfig.json`'s program). */
+function isBoundAxis(axis: GridAxis): axis is { prop: string; items: readonly ComparisonAxisItem[] } {
+  return !Array.isArray(axis);
+}
+
 /** A `GridAxis`'s own items, whether it's a plain array or bound to a prop — every reader of
  *  `ComparisonDef.rows`/`columns` goes through this (never `Array.isArray` directly), so a future
  *  third axis shape only needs to change this one function. */
 export function axisItems(axis: GridAxis): ComparisonAxisItem[] {
-  return Array.isArray(axis) ? [...axis] : [...axis.items];
+  return isBoundAxis(axis) ? [...axis.items] : [...axis];
 }
 
 /** The prop name a `GridAxis` is bound to, or undefined for a plain, unbound axis. */
 export function axisProp(axis: GridAxis): string | undefined {
-  return Array.isArray(axis) ? undefined : axis.prop;
+  return isBoundAxis(axis) ? axis.prop : undefined;
 }
 
 /**

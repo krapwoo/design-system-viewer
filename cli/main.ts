@@ -6,6 +6,7 @@ import { resolveConfig } from './config.ts';
 import { initExistingProject, initNewProject, promptInitMode, type InitOptions, type InitResult, type NewProjectOptions } from './init.ts';
 import { dev } from './dev.ts';
 import { sync } from './sync.ts';
+import { formatHuman, runDoctor, toDoctorJson } from './doctor.ts';
 
 const USAGE = `Usage: ds-viewer <command>
 
@@ -17,6 +18,9 @@ Commands:
            --yes           accept the detected components and tokens without asking (--existing only)
   sync     Regenerate the component, props, token, and page data from source
   dev      Sync, then serve the catalog on a local web address and keep it current as files change
+  doctor   Check every page for drift and coverage gaps
+           --json          print the machine-readable report instead
+           --ci            exit 1 when any error was found (never on a warning alone)
 
 Options:
   -h, --help     Show this help
@@ -109,6 +113,16 @@ export async function runInit(projectRoot: string, rest: string[], options: RunI
     : initExistingProject(projectRoot, { yes: rest.includes('--yes'), confirm: options.confirm });
 }
 
+/** Pulled out of `main()` for the same reason `runInit` was in 0.1/0.2 (Fable's review): testable
+ *  without spawning a process. `--ci`'s exit code is read from `runDoctor`'s own `exitCode` — a
+ *  plain `doctor` (no `--ci`) always returns 0 here regardless of errors found. */
+export function runDoctorCommand(projectRoot: string, rest: string[]): { output: string; exitCode: number } {
+  const config = resolveConfig(projectRoot);
+  const result = runDoctor(config);
+  const output = rest.includes('--json') ? JSON.stringify(toDoctorJson(result), null, 2) : formatHuman(result);
+  return { output, exitCode: rest.includes('--ci') ? result.exitCode : 0 };
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const projectRoot = process.cwd();
@@ -135,6 +149,13 @@ async function main(): Promise<void> {
     const config = resolveConfig(projectRoot);
     const result = sync(config);
     console.log(`Synced ${result.componentCount} components, ${result.pageCount} pages.`);
+    return;
+  }
+
+  if (command === 'doctor') {
+    const { output, exitCode } = runDoctorCommand(projectRoot, rest);
+    console.log(output);
+    if (exitCode) process.exitCode = exitCode;
     return;
   }
 

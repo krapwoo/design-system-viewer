@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseKitRoot, runInit } from '../main.ts';
+import { parseKitRoot, runDoctorCommand, runInit } from '../main.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const mainPath = path.join(repoRoot, 'cli/main.ts');
@@ -149,4 +149,74 @@ test('runInit keeps the non-interactive message when stdin is not a TTY', async 
   assert.equal(result.exitCode, 1);
   assert.ok(result.messages.some((message) => message.includes('non-interactive stdin cannot be asked')));
   rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('--help mentions doctor and its flags', () => {
+  const result = run('--help');
+  assert.match(result.stdout, /^  doctor /m);
+  assert.match(result.stdout, /--json/);
+  assert.match(result.stdout, /--ci/);
+});
+
+// A real React-component-shaped return type, not `{ return null; }` — `isComponentType`
+// (`cli/props.ts`) matches a call signature's *return type string* against `Element|ReactNode`;
+// an untyped `null` return never matches, so `Widget` would silently never appear in
+// `components.json` at all, and a test asserting only `summary.errors === 1` would then "pass"
+// for the wrong reason (`component-export-removed`, not whatever the test actually names).
+// Mirrors `doctor.test.ts`'s own `WIDGET_SOURCE` fixture, in this file's own scope.
+const WIDGET_SOURCE = `
+import type React from 'react';
+export type WidgetVariant = 'primary' | 'secondary';
+export function Widget({ variant }: { variant: WidgetVariant }): React.ReactElement {
+  return null as never;
+}
+`;
+
+function makeDoctorFixture(pageSource: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-doctor-cmd-'));
+  mkdirSync(path.join(dir, 'components', 'Widget'), { recursive: true });
+  writeFileSync(path.join(dir, 'components', 'Widget', 'index.ts'), WIDGET_SOURCE);
+  writeFileSync(path.join(dir, 'components', 'Widget', 'Widget.catalog.tsx'), pageSource);
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'Fixture', components: ['components/*/index.ts'], tokens: [] });\n",
+  );
+  // Errata (controller, binding): a stub `node_modules/@krapwoo/ds-viewer` so `checkPageTypeErrors`'s
+  // real `ts.Program` never reports TS2307 on this fixture's own `import ... from '@krapwoo/ds-viewer'`.
+  mkdirSync(path.join(dir, 'node_modules', '@krapwoo', 'ds-viewer'), { recursive: true });
+  writeFileSync(
+    path.join(dir, 'node_modules', '@krapwoo', 'ds-viewer', 'package.json'),
+    JSON.stringify({ name: '@krapwoo/ds-viewer', types: 'index.d.ts' }),
+  );
+  writeFileSync(
+    path.join(dir, 'node_modules', '@krapwoo', 'ds-viewer', 'index.d.ts'),
+    'export const defineCatalogPage: any;\nexport const grid: any;\n',
+  );
+  return dir;
+}
+
+test('runDoctorCommand prints JSON and exits non-zero with --ci when there is an error', () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'removed', name: 'Removed', props: { variant: 'removed' }, node: null }] },
+    });
+  `);
+  const result = runDoctorCommand(dir, ['--json', '--ci']);
+  const json = JSON.parse(result.output);
+  assert.equal(json.summary.errors, 1);
+  assert.equal(result.exitCode, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand prints the human report and never sets an exit code without --ci', () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const result = runDoctorCommand(dir, []);
+  assert.match(result.output, /error/);
+  assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
 });
