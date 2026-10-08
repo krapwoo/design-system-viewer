@@ -5,7 +5,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseKitRoot, runDoctorCommand, runInit } from '../main.ts';
+import { parseKitRoot, runDoctorCommand, runExplainCommand, runInit } from '../main.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const mainPath = path.join(repoRoot, 'cli/main.ts');
@@ -158,6 +158,12 @@ test('--help mentions doctor and its flags', () => {
   assert.match(result.stdout, /--ci/);
 });
 
+test('--help mentions explain and its flags', () => {
+  const result = run('--help');
+  assert.match(result.stdout, /^  explain <Page>/m);
+  assert.match(result.stdout, /--heights/);
+});
+
 // A real React-component-shaped return type, not `{ return null; }` — `isComponentType`
 // (`cli/props.ts`) matches a call signature's *return type string* against `Element|ReactNode`;
 // an untyped `null` return never matches, so `Widget` would silently never appear in
@@ -219,4 +225,23 @@ test('runDoctorCommand prints the human report and never sets an exit code witho
   assert.match(result.output, /error/);
   assert.equal(result.exitCode, 0);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('runExplainCommand prints "No page named" and exits 1 for an unknown page, with no project needed beyond a config', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-explain-cmd-'));
+  mkdirSync(path.join(dir, 'components'), { recursive: true });
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'Fixture', components: ['components/*/index.ts'], tokens: [] });\n",
+  );
+  const result = runExplainCommand(dir, 'NoSuchPage', []);
+  assert.match(result.output, /No page named "NoSuchPage" was found\./);
+  assert.equal(result.exitCode, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runExplainCommand with a malformed --heights value exits 1 with a clear message', () => {
+  const result = runExplainCommand('/irrelevant', 'Widget', ['--heights', 'nope']);
+  assert.match(result.output, /--heights must be two comma-separated numbers/);
+  assert.equal(result.exitCode, 1);
 });

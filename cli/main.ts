@@ -7,6 +7,7 @@ import { initExistingProject, initNewProject, promptInitMode, type InitOptions, 
 import { dev } from './dev.ts';
 import { sync } from './sync.ts';
 import { formatHuman, runDoctor, toDoctorJson } from './doctor.ts';
+import { explainPage, formatExplain, parseHeights } from './explain.ts';
 
 const USAGE = `Usage: ds-viewer <command>
 
@@ -21,6 +22,10 @@ Commands:
   doctor   Check every page for drift and coverage gaps
            --json          print the machine-readable report instead
            --ci            exit 1 when any error was found (never on a warning alone)
+  explain <Page>
+           Print why a page's specimens are laid out the way they are
+           --heights <first>,<second>  check side-by-side placement with these measured heights
+           --json          print the machine-readable report instead
 
 Options:
   -h, --help     Show this help
@@ -123,6 +128,21 @@ export function runDoctorCommand(projectRoot: string, rest: string[]): { output:
   return { output, exitCode: rest.includes('--ci') ? result.exitCode : 0 };
 }
 
+/** Same "testable without spawning" shape as `runDoctorCommand` above. */
+export function runExplainCommand(projectRoot: string, pageId: string | undefined, rest: string[]): { output: string; exitCode: number } {
+  if (!pageId) return { output: 'Usage: ds-viewer explain <Page> [--heights <first>,<second>] [--json]', exitCode: 1 };
+  const heightsIndex = rest.indexOf('--heights');
+  const heightsRaw = heightsIndex !== -1 ? rest[heightsIndex + 1] : undefined;
+  const heights = heightsRaw ? parseHeights(heightsRaw) : undefined;
+  if (heightsRaw && !heights) {
+    return { output: `--heights must be two comma-separated numbers, e.g. --heights 420,610 (got "${heightsRaw}")`, exitCode: 1 };
+  }
+  const config = resolveConfig(projectRoot);
+  const result = explainPage(config, pageId, { heights });
+  if (!result) return { output: `No page named "${pageId}" was found.`, exitCode: 1 };
+  return { output: rest.includes('--json') ? JSON.stringify(result, null, 2) : formatExplain(result), exitCode: 0 };
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const projectRoot = process.cwd();
@@ -154,6 +174,14 @@ async function main(): Promise<void> {
 
   if (command === 'doctor') {
     const { output, exitCode } = runDoctorCommand(projectRoot, rest);
+    console.log(output);
+    if (exitCode) process.exitCode = exitCode;
+    return;
+  }
+
+  if (command === 'explain') {
+    const [pageId, ...explainRest] = rest;
+    const { output, exitCode } = runExplainCommand(projectRoot, pageId, explainRest);
     console.log(output);
     if (exitCode) process.exitCode = exitCode;
     return;
