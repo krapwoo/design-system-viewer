@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DS Viewer 0.2 — sidebar logo mockup</title>
+<style>
+  /* Catalog chrome tokens (native/catalog/tokens.ts) */
+  :root {
+    --text: #181818; --text-muted: #666666; --border-hairline: #dddddd; --surface: #ffffff;
+    --surface-muted: #fafafa; --page-bg: #f6f6f4; --accent: #174dc6; --accent-subtle: #e9efff; --focus: #c9d7ff;
+    --type-xs: 10px; --type-sm: 12px; --type-md: 14px; --type-brand: 17px; --type-xl: 20px;
+    --space-xs: 4px; --space-sm: 8px; --space-md: 12px; --space-lg: 16px; --space-xl: 24px; --space-2xl: 32px;
+    --radius-sm: 8px; --radius-control: 9px;
+    --sidebar-w: 264px; --sidebar-pt: 24px; --sidebar-px: 18px; --control: 44px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page-bg); color: var(--text); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .page { padding: var(--space-2xl); max-width: 1400px; }
+  h1 { font-size: var(--type-xl); margin: 0 0 var(--space-sm); }
+  .lead { color: var(--text-muted); margin: 0 0 var(--space-xl); max-width: 760px; }
+  .switch { display: inline-flex; gap: var(--space-xs); background: var(--surface); border: 1px solid var(--border-hairline); border-radius: var(--radius-control); padding: var(--space-xs); margin-bottom: var(--space-sm); }
+  .switch button { font: inherit; border: 0; background: transparent; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); cursor: pointer; color: var(--text-muted); min-height: 36px; }
+  .switch button[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent); font-weight: 700; }
+  .switch button:focus-visible { outline: 3px solid var(--focus); }
+  .why { margin: 0 0 var(--space-xl); color: var(--text); max-width: 900px; min-height: 40px; }
+  .why b { color: var(--accent); }
+  .row { display: flex; gap: var(--space-xl); flex-wrap: wrap; align-items: flex-start; }
+  .case { width: var(--sidebar-w); }
+  .case h2 { font-size: var(--type-sm); text-transform: uppercase; letter-spacing: 1px; margin: 0 0 var(--space-sm); }
+  .note { font-size: var(--type-sm); color: var(--text-muted); margin-top: var(--space-sm); }
+
+  /* Sidebar replica (CatalogSidebar.tsx) */
+  .sidebar { width: var(--sidebar-w); height: 340px; background: var(--surface); border: 1px solid var(--border-hairline); border-radius: 4px; padding: var(--sidebar-pt) var(--sidebar-px); overflow: hidden; }
+  .name { font-size: var(--type-brand); font-weight: 800; color: var(--text); overflow-wrap: anywhere; }
+  .caption { font-size: var(--type-sm); color: var(--text-muted); margin-top: 2px; }
+  .header { margin-bottom: 20px; }
+  .filter { height: var(--control); border: 1px solid var(--border-hairline); background: var(--surface-muted); border-radius: var(--radius-control); padding: 0 var(--space-md); display: flex; align-items: center; color: var(--text-muted); }
+  .group { font-size: var(--type-xs); font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin: 22px 8px 7px; }
+  .item { min-height: var(--control); display: flex; align-items: center; padding: 8px 10px; border-radius: var(--radius-sm); color: var(--text-muted); }
+  .item.active { background: var(--accent-subtle); color: var(--accent); font-weight: 700; }
+
+  /* Header variants */
+  .inline { display: flex; align-items: center; gap: var(--space-md); }
+  .inline .text { min-width: 0; }
+  .mark { width: 32px; height: 32px; flex: none; object-fit: contain; display: block; }
+  .stack .logo { display: block; max-height: 32px; max-width: 100%; object-fit: contain; object-position: left; margin-bottom: var(--space-sm); }
+  .stack .mark { margin-bottom: var(--space-sm); }
+  .wordmark { display: block; height: 28px; max-width: 100%; object-fit: contain; object-position: left; }
+  .wordmark + .caption { margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Sidebar logo: 3 directions</h1>
+  <p class="lead">Config: <code>logo: './assets/logo.png'</code> (optional). Each case below uses the selected direction: a square mark, a wide wordmark, no logo, a logo that fails to load, and a long name. The sidebar width (264 px) and every other value come from the catalog tokens.</p>
+
+  <div class="switch" role="group" aria-label="Direction">
+    <button type="button" data-dir="adaptive" aria-pressed="true">C · Adaptive (recommended)</button>
+    <button type="button" data-dir="inline" aria-pressed="false">A · Mark beside name</button>
+    <button type="button" data-dir="stack" aria-pressed="false">B · Logo above name</button>
+  </div>
+  <p class="why" id="why"></p>
+
+  <div class="row" id="cases"></div>
+</div>
+
+<script>
+const MARK = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0f766e"/><path d="M18 44V20h14a10 10 0 0 1 0 20h-6l12 4" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
+const WORDMARK = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48"><rect y="6" width="36" height="36" rx="9" fill="#0f766e"/><path d="M11 33V15h8a6.5 6.5 0 0 1 0 13h-4l8 3" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><text x="46" y="34" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="26" font-weight="800" fill="#0f172a">Rider App</text></svg>`);
+const BROKEN = 'data:image/png;base64,invalid';
+
+const CASES = [
+  { title: 'Square mark', src: MARK, ratio: 1, name: 'Rider App', note: 'logo.png, 64 × 64' },
+  { title: 'Wide wordmark', src: WORDMARK, ratio: 220/48, name: 'Rider App', note: 'logo.png, 220 × 48, includes the name' },
+  { title: 'No logo', src: null, name: 'Rider App', note: 'Unchanged from 0.1' },
+  { title: 'Logo fails to load', src: BROKEN, ratio: 1, name: 'Rider App', note: 'Falls back to the name; the CLI warns about the missing file' },
+  { title: 'Long name + mark', src: MARK, ratio: 1, name: 'Metropolitan Transit Rider Companion', note: 'The name wraps; the mark stays top-aligned' },
+];
+
+const WHY = {
+  adaptive: '<b>Why:</b> a square mark sits beside the name (as in A). A wide logo (more than 2× wider than tall) is treated as a wordmark: it replaces the name text, so the name never shows twice, and the name becomes the image’s accessible label. No new config option is needed. <b>Trade-off:</b> the layout depends on the image’s shape, which the docs must explain.',
+  inline: '<b>Why:</b> one predictable layout, and the name always shows as text. <b>Trade-off:</b> a wordmark is squeezed into 32 px and the name appears twice (“Rider App Rider App”).',
+  stack: '<b>Why:</b> wide logos get the full 228 px width. <b>Trade-off:</b> a wordmark still repeats the name, and the header grows by about 40 px, pushing the page list down.',
+};
+
+function header(c, dir) {
+  const caption = '<div class="caption">Component Catalog</div>';
+  const nameEl = `<div class="name">${c.name}</div>`;
+  if (!c.src) return nameEl + caption;
+  const img = (cls) => `<img class="${cls}" src="${c.src}" alt="" onerror="this.closest('.header').innerHTML=this.closest('.header').dataset.fallback">`;
+  const isWordmark = c.ratio > 2;
+  if (dir === 'adaptive') {
+    if (isWordmark) return `<img class="wordmark" src="${c.src}" alt="${c.name}" onerror="this.closest('.header').innerHTML=this.closest('.header').dataset.fallback">` + caption;
+    return `<div class="inline" style="align-items:${c.name.length > 22 ? 'flex-start' : 'center'}">${img('mark')}<div class="text">${nameEl}${caption}</div></div>`;
+  }
+  if (dir === 'inline') return `<div class="inline" style="align-items:${c.name.length > 22 ? 'flex-start' : 'center'}">${img('mark')}<div class="text">${nameEl}${caption}</div></div>`;
+  return `<div class="stack">${img(isWordmark ? 'logo' : 'mark')}${nameEl}${caption}</div>`;
+}
+
+function render(dir) {
+  document.getElementById('why').innerHTML = WHY[dir];
+  document.getElementById('cases').innerHTML = CASES.map((c) => `
+    <div class="case">
+      <h2>${c.title}</h2>
+      <nav class="sidebar" aria-label="Catalog pages">
+        <div class="header" data-fallback='<div class="name">${c.name}</div><div class="caption">Component Catalog</div>'>${header(c, dir)}</div>
+        <div class="filter">Filter components…</div>
+        <div class="group">Components</div>
+        <div class="item active">Button</div>
+        <div class="item">Card</div>
+      </nav>
+      <div class="note">${c.note}</div>
+    </div>`).join('');
+  document.querySelectorAll('.switch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.dir === dir)));
+}
+document.querySelectorAll('.switch button').forEach((b) => b.addEventListener('click', () => render(b.dataset.dir)));
+render('adaptive');
+</script>
+</body>
+</html>
