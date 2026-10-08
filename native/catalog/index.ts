@@ -17,6 +17,7 @@ export { CatalogSidebar } from './CatalogSidebar';
 export { CatalogSearchInput } from './CatalogSearchInput';
 export { SectionBlock } from './SectionBlock';
 export { ComparisonGrid } from './ComparisonGrid';
+export { grid, axisItems, axisProp } from './comparison';
 export { ComparisonGroups } from './ComparisonGroups';
 export { ComparisonList } from './ComparisonList';
 export { ReferenceDetails } from './ReferenceDetails';
@@ -32,7 +33,7 @@ export { buildComponentManifest } from './manifest';
 export type { ComponentManifestEntry, ManifestExample } from './manifest';
 export { defineCatalogPage, buildCatalogSections } from './pageApi';
 export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
-export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, PreviewWidths } from './types';
+export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, GridAxis, PreviewWidths } from './types';
 export type { ListGroup, ListItem } from './comparison';
 export {
   CATALOG_TYPE,

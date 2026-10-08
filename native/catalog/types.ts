@@ -65,6 +65,13 @@ export interface ComparisonAxisItem {
   label: string;
 }
 
+/** A grid axis's rows or columns: a plain list of items (today's shape, unchanged), or items bound
+ *  to a real prop so `doctor` can check each item's key against that prop's actual options (design
+ *  §4 "Binding examples to props"). Only a prop typed as a string-literal union can be bound —
+ *  binding any other prop is a `doctor` error, never a runtime check here (the viewer renders a
+ *  bound and an unbound axis identically; see `native/catalog/comparison.ts`'s `axisItems`). */
+export type GridAxis = readonly ComparisonAxisItem[] | { prop: string; items: readonly ComparisonAxisItem[] };
+
 /** One authored row × column specimen. Provide exactly one of `node` (a real instance of the
  *  documented component) or `unavailableReason` (the combination genuinely does not exist). */
 export interface ComparisonCell {
@@ -83,8 +90,8 @@ export interface ComparisonDef {
   rowLabel: string;
   /** Names the column axis (e.g. "State"). */
   columnLabel: string;
-  rows: ComparisonAxisItem[];
-  columns: ComparisonAxisItem[];
+  rows: GridAxis;
+  columns: GridAxis;
   cells: ComparisonCell[];
   /** Defaults to the section's `specimenSize`, then 'regular'. */
   size?: SpecimenSize;
@@ -188,7 +195,3 @@ export interface NavGroup<TId extends string = string> {
   label: string;
   ids: readonly TId[];
 }
-
-/** Canonical within-group ordering — implemented in ./catalogNavigation (pure, unit-tested) and
- *  re-exported here so existing imports keep working. */
-export { sortIds } from './catalogNavigation';

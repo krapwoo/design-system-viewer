@@ -8,7 +8,8 @@
  * It also decides whether two blocks sit side by side (choosePlacement) and how many columns the
  * Props box uses (propsColumns). ComparisonGrid, ComparisonGroups, and ComparisonList render it.
  */
-import type { ComparisonDef, PreviewWidths, SectionDef, SpecimenSize, VariantSlot } from './types';
+import type { ComparisonAxisItem, ComparisonDef, GridAxis, PreviewWidths, SectionDef, SpecimenSize, VariantSlot } from './types.ts';
+import type React from 'react';
 
 /** Approved geometry. `cellPadding` equals CATALOG_SPACE.lg (asserted in tests). The laptop
  *  content width is a 1280px viewport minus the 264px sidebar and 32px side padding. */
@@ -34,6 +35,52 @@ export const PROPS_COLUMN_GAP = 32;
 
 /** Smallest column or cell width per specimen size. Wide specimens are fixed at phone width. */
 export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402 };
+
+/** A `GridAxis`'s own items, whether it's a plain array or bound to a prop — every reader of
+ *  `ComparisonDef.rows`/`columns` goes through this (never `Array.isArray` directly), so a future
+ *  third axis shape only needs to change this one function. */
+export function axisItems(axis: GridAxis): ComparisonAxisItem[] {
+  return Array.isArray(axis) ? [...axis] : [...axis.items];
+}
+
+/** The prop name a `GridAxis` is bound to, or undefined for a plain, unbound axis. */
+export function axisProp(axis: GridAxis): string | undefined {
+  return Array.isArray(axis) ? undefined : axis.prop;
+}
+
+/**
+ * Shared page-authoring helper (design §1 "Page shape", §4 "Binding examples to props"). Every
+ * grid comparison in the starter kit builds its `ComparisonDef` with this instead of its own local
+ * copy, so `cli/staticPage.ts`'s static reader has exactly one call shape to recognize anywhere a
+ * page's `comparison` field is produced by a function call rather than written as a plain object
+ * literal. `rows`/`columns` accept either a plain item array (unbound) or `{ prop, items }` (bound)
+ * — the cell grid itself is unaffected either way, since cells are always keyed by each axis's own
+ * items regardless of whether that axis names a prop. Lives here, beside `axisItems`/`axisProp`,
+ * rather than in its own `grid.ts` — every other file in this module has only *type-only* relative
+ * imports; a bare, no-extension value import would be the first of its kind in `native/catalog`.
+ *
+ * Each cell is a real instance with exactly the props its row and column name. Never build these by
+ * multiplying `variants` with `states` — those are pre-rendered nodes and cannot be combined.
+ */
+export function grid(
+  rowLabel: string,
+  columnLabel: string,
+  rows: GridAxis,
+  columns: GridAxis,
+  cell: (row: string, column: string) => React.ReactNode,
+  size?: SpecimenSize,
+): ComparisonDef {
+  const rowItems = axisItems(rows);
+  const columnItems = axisItems(columns);
+  return {
+    rowLabel,
+    columnLabel,
+    rows,
+    columns,
+    cells: rowItems.flatMap((row) => columnItems.map((column) => ({ rowKey: row.key, columnKey: column.key, node: cell(row.key, column.key) }))),
+    size,
+  };
+}
 
 /** How many grid columns fit beside the row header on a 1280px laptop without scrolling. */
 export function gridColumnLimit(size: SpecimenSize): number {
@@ -94,17 +141,19 @@ export function indexCells(def: ComparisonDef): Map<string, ComparisonDef['cells
 /** Human-readable problems in a stable order: axis duplicates, column fit, each cell in
  *  declaration order, then missing coordinates in row-major order. Empty when valid. */
 export function validateComparison(def: ComparisonDef): string[] {
-  if (def.rows.length === 0 || def.columns.length === 0) {
+  const rowItems = axisItems(def.rows);
+  const columnItems = axisItems(def.columns);
+  if (rowItems.length === 0 || columnItems.length === 0) {
     return ['Comparison needs at least one row and one column.'];
   }
   const issues: string[] = [];
   const rowKeys = new Set<string>();
-  for (const row of def.rows) {
+  for (const row of rowItems) {
     if (rowKeys.has(row.key)) issues.push(`Duplicate row key "${row.key}".`);
     rowKeys.add(row.key);
   }
   const columnKeys = new Set<string>();
-  for (const column of def.columns) {
+  for (const column of columnItems) {
     if (columnKeys.has(column.key)) issues.push(`Duplicate column key "${column.key}".`);
     columnKeys.add(column.key);
   }
@@ -149,7 +198,7 @@ export function validateComparison(def: ComparisonDef): string[] {
 export function remainingStates(states: VariantSlot | undefined, comparison: ComparisonDef | undefined): VariantSlot | undefined {
   if (!states) return undefined;
   if (!comparison) return states;
-  const covered = new Set([...comparison.rows.map((row) => row.key), ...comparison.columns.map((column) => column.key)]);
+  const covered = new Set([...axisItems(comparison.rows).map((row) => row.key), ...axisItems(comparison.columns).map((column) => column.key)]);
   const items = states.items.filter((item) => !covered.has(item.key));
   return items.length > 0 ? { ...states, items } : undefined;
 }
