@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.2
+
+- ds-viewer now supports Expo SDK 54 and later (it required 57). The starter kit type-checks on React Native 0.81 as well as 0.86, and `init` explains an Expo SDK that is too old instead of calling it missing.
+
 ## 0.4.1
 
 - Package-manager commands that `update` and **Update now** run (npm, pnpm, yarn) now work on Windows, where they are `.cmd` shims that need a shell. The README lists the known limits of updating.
