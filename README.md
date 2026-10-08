@@ -252,6 +252,10 @@ Button
 - `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code.
 - A page whose layout data (`specimenSize`, `group`, grid `rows`/`columns`, list items' `key`/`name`/`props`/`group`, `propNotes` keys) isn't a literal — written as something other than a literal value, array, object, or a same-file `const` reference — gets one "page not statically checkable" warning. A page file that fails to parse *or typecheck* is `page-parse-error` instead: every page file is also run through the TypeScript type checker (the same way a component file already is), so a genuine syntax or type error in a page is reported with its line.
 
+## Known gaps
+
+- The viewer's own dev-mode console warnings only cover `duplicate-page-id` (design §4's "the same rules appear as development warnings naming the page" — scoped to that one rule in 0.3). Bound-axis drift (`bound-option-removed`, `bound-axis-prop-removed`) has no viewer-side warning yet; `npx ds-viewer doctor` (and its `--ci` workflow) is the only place that catches it today.
+
 ### `npx ds-viewer explain <Page>`
 
 Prints each layout decision with its reason, using the exact same pure functions the catalog itself

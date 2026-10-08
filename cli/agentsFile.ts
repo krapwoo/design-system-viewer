@@ -22,7 +22,12 @@ export function ensureAgentsFileSection(projectRoot: string): string[] {
   const agentsPath = path.join(projectRoot, 'AGENTS.md');
   const existing = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '';
   if (existing.includes(START_MARKER)) return [];
-  const separator = existing === '' ? '' : existing.endsWith('\n\n') ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
-  writeFileSync(agentsPath, `${existing}${separator}${START_MARKER}\n${SECTION_BODY}\n${END_MARKER}\n`);
+  // Minor finding (Fable's review): a CRLF `AGENTS.md` must not end up with mixed line endings
+  // after the append — the separator and the whole section below use whichever newline the
+  // existing file already uses.
+  const newline = existing.includes('\r\n') ? '\r\n' : '\n';
+  const separator = existing === '' ? '' : existing.endsWith(`${newline}${newline}`) ? '' : existing.endsWith(newline) ? newline : `${newline}${newline}`;
+  const body = newline === '\n' ? SECTION_BODY : SECTION_BODY.replace(/\n/g, newline);
+  writeFileSync(agentsPath, `${existing}${separator}${START_MARKER}${newline}${body}${newline}${END_MARKER}${newline}`);
   return [agentsPath];
 }

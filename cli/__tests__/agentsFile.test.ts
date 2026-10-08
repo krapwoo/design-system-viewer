@@ -43,6 +43,20 @@ test('a file with no trailing newline still gets exactly one blank line before t
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('appends using \\r\\n line endings throughout the separator and section when the existing file is CRLF', () => {
+  const dir = makeDir();
+  writeFileSync(path.join(dir, 'AGENTS.md'), '# Project notes\r\n\r\nSome existing guidance.\r\n');
+  ensureAgentsFileSection(dir);
+  const content = readFileSync(path.join(dir, 'AGENTS.md'), 'utf8');
+  const crlfBody = EXPECTED_BODY.replace(/\n/g, '\r\n');
+  assert.equal(
+    content,
+    `# Project notes\r\n\r\nSome existing guidance.\r\n\r\n<!-- ds-viewer:start v1 -->\r\n${crlfBody}\r\n<!-- ds-viewer:end -->\r\n`,
+  );
+  assert.ok(!content.includes('\n\n\n'));
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('is idempotent: a second call writes nothing and the file is unchanged', () => {
   const dir = makeDir();
   ensureAgentsFileSection(dir);

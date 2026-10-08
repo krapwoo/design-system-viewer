@@ -77,7 +77,7 @@ function mergePropNotes(component: GeneratedComponent, propNotes: Record<string,
   return [...own, ...inherited];
 }
 
-function orderGroups(groupIds: Map<string, string[]>, groupOrder: string[] | undefined): { label: string; ids: string[] }[] {
+function orderGroups<TId extends string>(groupIds: Map<string, TId[]>, groupOrder: string[] | undefined): NavGroup<TId>[] {
   const listed = groupOrder ?? [];
   const labels = [...groupIds.keys()];
   const ordered = [...listed.filter((label) => groupIds.has(label)), ...labels.filter((label) => !listed.includes(label)).sort()];
@@ -145,5 +145,5 @@ export function buildCatalogSections<TId extends string>(
     addToGroup('Components', id);
   }
 
-  return { sections, groups: orderGroups(groupIds, groupOrder) as NavGroup<TId>[] };
+  return { sections, groups: orderGroups(groupIds, groupOrder) };
 }

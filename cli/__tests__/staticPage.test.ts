@@ -276,3 +276,30 @@ test('previewWidths, fullWidthLabel, hide.variants/hide.states, and each slot\'s
   assert.equal(readStaticPages([fullWidthFile])[0].previewWidths, 'full');
   rmSync(path.dirname(fullWidthFile), { recursive: true, force: true });
 });
+
+// Minor finding (Fable's review): `readStaticPages` only guards the file *read* — an unexpected
+// throw from deeper in one file's own AST walk (not just a missing/unreadable file) must not abort
+// every other file in the same `doctor`/`explain` run. A long chain of same-file `const` aliases
+// (each resolved one recursive `resolve()` call at a time, cli/staticPage.ts) is a real, reachable
+// way to hit exactly that: valid TypeScript, but deep enough to overflow the call stack.
+function longConstChainPage(length: number): string {
+  const lines = ["import { defineCatalogPage } from '@krapwoo/ds-viewer';", "const c0 = 'Components';"];
+  for (let i = 1; i <= length; i++) lines.push(`const c${i} = c${i - 1};`);
+  lines.push(`export default defineCatalogPage({ component: 'Widget', group: c${length}, description: 'x' });`);
+  return lines.join('\n');
+}
+
+test('a file whose own AST walk throws (not just an unreadable file) still yields one page-parse-error-shaped result, and sibling files are still read', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-staticpage-'));
+  const crashFile = path.join(dir, 'Crash.catalog.tsx');
+  writeFileSync(crashFile, longConstChainPage(50000));
+  const goodFile = path.join(dir, 'Good.catalog.tsx');
+  writeFileSync(goodFile, "import { defineCatalogPage } from '@krapwoo/ds-viewer';\nexport default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });\n");
+
+  const [crashPage, goodPage] = readStaticPages([crashFile, goodFile]);
+  assert.equal(crashPage.checkable, false);
+  assert.equal(typeof crashPage.parseError, 'string');
+  assert.equal(goodPage.checkable, true);
+  assert.equal(goodPage.group, 'Components');
+  rmSync(dir, { recursive: true, force: true });
+});

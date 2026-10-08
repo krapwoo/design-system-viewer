@@ -86,7 +86,18 @@ const TRANSPILE_OPTIONS: ts.TranspileOptions = {
  *  One broken file never stops the rest (Global Constraints, Error-handling rule): each file is
  *  read independently. */
 export function readStaticPages(pageFiles: string[]): StaticPage[] {
-  return pageFiles.map(readStaticPage);
+  // Error-handling rule (design, Global Constraints): one broken file never stops the rest of a
+  // read. `readStaticPage` already guards its own `readFileSync` call, but an unexpected throw
+  // from deeper in its AST walk (e.g. a pathological same-file `const` chain overflowing the call
+  // stack) must be caught per file too, not just per-read, or it aborts every other page in the
+  // same `doctor`/`explain` run.
+  return pageFiles.map((file) => {
+    try {
+      return readStaticPage(file);
+    } catch (error) {
+      return { file, checkable: false, parseError: (error as Error).message };
+    }
+  });
 }
 
 function readStaticPage(file: string): StaticPage {

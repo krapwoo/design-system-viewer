@@ -24,6 +24,10 @@ export interface ExplainBlockResult {
 
 export interface ExplainResult {
   pageId: string;
+  /** True when the page itself isn't statically checkable (design §4) — some of its layout data
+   *  isn't a literal this reader can resolve. `blocks` is empty and `placement` absent in that
+   *  case, since explaining it anyway would show different (or no) data than the real viewer. */
+  notCheckable?: true;
   blocks: ExplainBlockResult[];
   placement?: { decision: 'side' | 'stacked' | 'decided-in-viewer'; reason: string };
 }
@@ -110,12 +114,24 @@ function toPlacementBlock(block: PresentationBlock, height: number, available: n
  *  its throwaway `SectionDef`, and asks the viewer's own pure layout functions for each block's
  *  decision — undefined when no page resolves to that id. */
 export function explainPage(config: ResolvedConfig, pageId: string, options: ExplainOptions = {}): ExplainResult | undefined {
+  // Same exclusion `cli/doctor.ts`'s `runDoctor` applies (mirroring `sync`) — an excluded folder's
+  // page should never resolve here either.
+  const excluded = new Set((config.exclude ?? []).flatMap((pattern) => resolveGlob(config.projectRoot, pattern)));
   const componentFolders = [
-    ...new Set(config.components.flatMap((pattern) => resolveGlob(config.projectRoot, pattern)).map((file) => path.dirname(file))),
+    ...new Set(
+      config.components
+        .flatMap((pattern) => resolveGlob(config.projectRoot, pattern))
+        .filter((file) => !excluded.has(file))
+        .map((file) => path.dirname(file)),
+    ),
   ];
   const pageFiles = discoverAllPageFiles({ componentFolders, standalonePageGlobs: config.pages ?? [], projectRoot: config.projectRoot });
   const page = readStaticPages(pageFiles).find((p) => resolvePageId(p, p.file) === pageId);
   if (!page) return undefined;
+  // Important finding 4 (Fable's review): a page whose layout data isn't a literal (or that has a
+  // syntax error) must never be explained from partial/empty data — design §4 requires `explain`
+  // to never drift from what the viewer actually renders.
+  if (!page.checkable) return { pageId, notCheckable: true, blocks: [] };
 
   const def = toSectionDef(page);
   const blocks = presentationBlocks(def, { defaultPreviewWidths: [402] });
@@ -147,6 +163,9 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
 }
 
 export function formatExplain(result: ExplainResult): string {
+  if (result.notCheckable) {
+    return `${result.pageId}\n\nPage not statically checkable — some of its layout data is not a literal doctor can read.`;
+  }
   const lines = [result.pageId, ''];
   for (const block of result.blocks) {
     lines.push(block.title);

@@ -127,6 +127,28 @@ test('--heights lets explain compute the same side/stacked decision the viewer w
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('explainPage returns undefined for a page whose component folder is excluded via config.exclude', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ group: 'Components', description: 'x' });
+  `);
+  const config = { ...configFor(dir), exclude: [path.join('components', 'Widget', 'index.ts')] };
+  assert.equal(explainPage(config, 'Widget'), undefined);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('explainPage reports a page that is not statically checkable as such, instead of explaining it from partial/empty data', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    function buildItems() { return [{ key: 'a', name: 'A', node: null }]; }
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x', states: { items: buildItems() } });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.notCheckable, true);
+  assert.deepEqual(result?.blocks, []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('explainPage returns undefined for an unknown page id', () => {
   const dir = makeProject(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
@@ -144,6 +166,12 @@ test('formatExplain lists each block, its reason, then Placement', () => {
   });
   assert.match(text, /^Widget\n/);
   assert.match(text, /States \/ configurations\n  4 items\./);
+});
+
+test('formatExplain reports a not-checkable page with its own message, not an empty block list', () => {
+  const text = formatExplain({ pageId: 'Widget', notCheckable: true, blocks: [] });
+  assert.match(text, /^Widget\n/);
+  assert.match(text, /not statically checkable/);
 });
 
 test('parseHeights accepts "first,second" and rejects anything else', () => {

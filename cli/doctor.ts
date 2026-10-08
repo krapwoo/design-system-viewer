@@ -237,6 +237,12 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
         if (typeof value !== 'string') continue;
         const prop = propsByName.get(propName);
         if (!prop) {
+          // A name missing from `props` is only real drift when the component has nothing
+          // inherited to explain it — `component.props` deliberately omits a node_modules-declared
+          // prop (cli/props.ts:200), so e.g. `autoCapitalize` on a `TextInput`-extending component
+          // is expected to be absent here, not a removed prop (design: `inheritedFrom` summarises
+          // those instead of listing them).
+          if (component.inheritedFrom.length > 0) continue;
           // The tagged prop *name* itself no longer exists — arguably the same drift as
           // `bound-axis-prop-removed`, but a tagged list item (unlike a bound axis) has no
           // "prop" field of its own to report that id against, so it's reported here instead.
@@ -359,22 +365,20 @@ export function checkPageTypeErrors(pages: StaticPage[], options: { fallbackPath
   const pageFiles = checkablePages.map((p) => p.file);
   if (pageFiles.length === 0) return [];
   const byFile = new Map(checkablePages.map((p) => [p.file, p]));
+  // Important finding 2 (Fable's review): the host project's own tsconfig decides every option —
+  // its ambient declarations (expo-env.d.ts's `*.png`/`*.svg` modules, a project's own
+  // declarations.d.ts) and its `strict`/`lib`/etc. settings — not a fixed set copied from
+  // `createComponentReader` (where a mismatch only degrades prop reading silently; here it would
+  // produce CI-failing errors the host's own `tsc` would never raise). Only `noEmit`,
+  // `skipLibCheck`, and the merged `paths` are forced on top.
   const host = readHostTsconfigOptions(pageFiles[0]);
   const compilerOptions: ts.CompilerOptions = {
-    jsx: host.jsx ?? ts.JsxEmit.ReactJSX,
-    strict: true,
-    esModuleInterop: true,
-    skipLibCheck: true,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    module: ts.ModuleKind.ESNext,
-    target: ts.ScriptTarget.ES2022,
-    allowJs: false,
+    ...host.options,
     noEmit: true,
-    baseUrl: host.baseUrl,
+    skipLibCheck: true,
     paths: { ...options.fallbackPaths, ...host.paths },
-    ...(host.pathsBasePath ? ({ pathsBasePath: host.pathsBasePath } as ts.CompilerOptions) : {}),
   };
-  const program = ts.createProgram(pageFiles, compilerOptions);
+  const program = ts.createProgram([...pageFiles, ...host.declarationFiles], compilerOptions);
   const issues: DoctorIssue[] = [];
   for (const file of pageFiles) {
     const sourceFile = program.getSourceFile(file);
@@ -450,8 +454,18 @@ function countUnboundExamples(pages: StaticPage[]): number {
 export function runDoctor(config: ResolvedConfig): DoctorRunResult {
   const syncResult = sync(config);
   const components = JSON.parse(readFileSync(path.join(syncResult.generatedDir, 'components.json'), 'utf8')) as ComponentRecord[];
+  // Same exclusion `sync` already applies to `componentEntryFiles` (cli/sync.ts:29-30) — without
+  // it, an excluded folder's own `*.catalog.tsx` is still discovered below (`discoverAllPageFiles`)
+  // even though its component never makes it into `components.json`, firing a false
+  // `component-export-removed`.
+  const excluded = new Set((config.exclude ?? []).flatMap((pattern) => resolveGlob(config.projectRoot, pattern)));
   const componentFolders = [
-    ...new Set(config.components.flatMap((pattern) => resolveGlob(config.projectRoot, pattern)).map((file) => path.dirname(file))),
+    ...new Set(
+      config.components
+        .flatMap((pattern) => resolveGlob(config.projectRoot, pattern))
+        .filter((file) => !excluded.has(file))
+        .map((file) => path.dirname(file)),
+    ),
   ];
   const tokenFileCount = config.tokens.flatMap((pattern) => resolveGlob(config.projectRoot, pattern)).length;
   const pageFiles = discoverAllPageFiles({ componentFolders, standalonePageGlobs: config.pages ?? [], projectRoot: config.projectRoot });
@@ -507,7 +521,8 @@ export function formatHuman(result: DoctorJsonResult): string {
   }
   const lines: string[] = [];
   const renderIssue = (issue: DoctorIssue) => {
-    lines.push(`  [${issue.severity}] ${issue.id}: ${issue.message}`);
+    const location = issue.file ? ` (${issue.file}${issue.line ? `:${issue.line}` : ''})` : '';
+    lines.push(`  [${issue.severity}] ${issue.id}: ${issue.message}${location}`);
     lines.push(`    Fix: ${issue.fix}`);
   };
   for (const [page, issues] of [...byPage].sort(([a], [b]) => a.localeCompare(b))) {

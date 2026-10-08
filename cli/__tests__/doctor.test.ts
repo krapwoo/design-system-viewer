@@ -127,6 +127,14 @@ test('bound-option-removed also fires for a tagged list item whose value is no l
   assert.ok(propNameRemoved.some((i) => i.id === 'bound-option-removed' && i.message.includes('no longer a prop')));
 });
 
+test('bound-option-removed is never fired for a tagged prop name that is genuinely inherited from node_modules (e.g. autoCapitalize on a TextInput-extending component) — only a real drift fires', () => {
+  const inherited = collectIssues([page({
+    component: 'SearchField',
+    variantsItems: [{ key: 'a', name: 'A', props: { autoCapitalize: 'none' } }],
+  })], [component({ name: 'SearchField', props: [], inheritedFrom: ['TextInput'] })]);
+  assert.deepEqual(inherited.filter((i) => i.id === 'bound-option-removed'), []);
+});
+
 test('option-not-covered fires for an uncovered option and not for one covered by a bound axis or a tagged item', () => {
   const twoOptions = [component({ props: [{ name: 'variant', type: "'a' | 'b'", required: true, desc: '', options: ['a', 'b'] }] })];
   const uncovered = collectIssues([page({ component: 'Widget' })], twoOptions);
@@ -263,6 +271,71 @@ export default defineCatalogPage({
 });
 `;
 
+test('runDoctor never reports component-export-removed for a page inside a folder excluded via config.exclude — that folder is dropped the same way sync drops it', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ group: 'Components', description: 'x' });
+  `);
+  const result = runDoctor(configFor(dir, { exclude: [path.join('components', 'Widget', 'index.ts')] }));
+  assert.equal(result.issues.filter((i) => i.id === 'component-export-removed').length, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// Important finding 2 (Fable's review): `checkPageTypeErrors` must honor the host project's own
+// tsconfig (its ambient declarations and its `strict`/`lib`/etc. settings), not a fixed option set.
+function makeProjectWithTsconfig(pageSource: string, tsconfigCompilerOptions: Record<string, unknown>, extraFiles: Record<string, string> = {}): string {
+  const dir = makeProject(pageSource);
+  writeFileSync(
+    path.join(dir, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { module: 'esnext', moduleResolution: 'bundler', jsx: 'react-jsx', ...tsconfigCompilerOptions } }),
+  );
+  for (const [name, contents] of Object.entries(extraFiles)) writeFileSync(path.join(dir, name), contents);
+  return dir;
+}
+
+test('checkPageTypeErrors resolves a page import through the host tsconfig\'s own ambient module declarations (e.g. expo-env.d.ts\'s *.png)', () => {
+  const dir = makeProjectWithTsconfig(
+    `
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      import logo from './logo.png';
+      export default defineCatalogPage({ component: 'Widget', group: 'Components', description: logo });
+    `,
+    {},
+    { 'declarations.d.ts': "declare module '*.png' {\n  const value: string;\n  export default value;\n}\n" },
+  );
+  const result = runDoctor(configFor(dir));
+  assert.deepEqual(result.issues.filter((i) => i.id === 'page-parse-error'), []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('checkPageTypeErrors honors a host tsconfig that sets strict: false — no strict-only diagnostic fires', () => {
+  const dir = makeProjectWithTsconfig(
+    `
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      const identity = (x) => x;
+      export default defineCatalogPage({ component: 'Widget', group: 'Components', description: String(identity(1)) });
+    `,
+    { strict: false },
+  );
+  const result = runDoctor(configFor(dir));
+  assert.deepEqual(result.issues.filter((i) => i.id === 'page-parse-error'), []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// Minor finding (Fable's review), Errata 6: a page with a genuine syntax error is skipped by
+// `checkPageTypeErrors` (`pages.filter((p) => !p.parseError)`) so it is reported exactly once, by
+// `checkParseErrors` — never a second time from the real `ts.Program` typecheck. Previously only
+// tested at the `collectIssues` level (not `runDoctor`, where both checks actually run together).
+test('runDoctor reports a syntax-error page exactly once, not twice (once from the syntactic reader, once from the real ts.Program)', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ group: 'Components', description: 'x'
+  `);
+  const result = runDoctor(configFor(dir));
+  assert.equal(result.issues.filter((i) => i.id === 'page-parse-error').length, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('runDoctor reports zero errors for a fully covered page', () => {
   const dir = makeProject(FULLY_COVERED_PAGE);
   const result = runDoctor(configFor(dir));
@@ -340,6 +413,19 @@ test('formatHuman groups issues by page, lists page-less issues under "General",
   assert.match(text, /^Widget\n/);
   assert.match(text, /General/);
   assert.match(text, /1 error, 1 warning/);
+});
+
+test('formatHuman appends an issue\'s file (and line, when present) so a syntax error isn\'t reported with no file at all, and a semantic one doesn\'t lose its line', () => {
+  const text = formatHuman({
+    version: 1, update: null,
+    summary: { errors: 2, warnings: 0, components: 1, withExamples: 0, unboundExamples: 0 },
+    issues: [
+      { id: 'page-parse-error', severity: 'error', file: 'pages/Bad.catalog.tsx', message: 'Unexpected token', fix: 'Fix the syntax error, then rerun doctor.' },
+      { id: 'page-parse-error', severity: 'error', page: 'Widget', file: 'components/Widget/Widget.catalog.tsx', line: 12, message: 'Failed to typecheck: x', fix: 'Fix the error, then rerun doctor.' },
+    ],
+  });
+  assert.match(text, /Unexpected token \(pages\/Bad\.catalog\.tsx\)/);
+  assert.match(text, /Failed to typecheck: x \(components\/Widget\/Widget\.catalog\.tsx:12\)/);
 });
 
 test('the summary counts an unbound grid axis item and an untagged list item as unbound examples', () => {

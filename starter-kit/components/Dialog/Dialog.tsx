@@ -65,12 +65,12 @@ export function Dialog({ visible, onDismiss, children, style }: DialogProps) {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     padding: DS_SPACING[800],
   },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: DS_SEMANTIC.element.overlayBackdrop },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: DS_SEMANTIC.element.overlayBackdrop },
   card: {
     width: '100%',
     maxWidth: 400,
