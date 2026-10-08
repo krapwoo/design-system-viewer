@@ -3,6 +3,11 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.1
+
+- Package-manager commands that `update` and **Update now** run (npm, pnpm, yarn) now work on Windows, where they are `.cmd` shims that need a shell. The README lists the known limits of updating.
+- `npx ds-viewer update` now exits 0 when you are already on the latest version, instead of 1.
+
 ## 0.4.0
 
 - Added `npx ds-viewer kit diff <Component>` to compare your starter-kit files against the
