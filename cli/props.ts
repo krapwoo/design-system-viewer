@@ -32,16 +32,28 @@ const COMPONENT_TYPE_HINT = /MemoExoticComponent|ForwardRefExoticComponent|Named
  *  fixtures have no tsconfig of their own, so lookup reaches this repository's root
  *  `tsconfig.json` (Task 1); it declares no `paths`, `baseUrl`, or `jsx`, so `options.paths`
  *  alone decides resolution in tests. */
-function readHostTsconfigOptions(
+export function readHostTsconfigOptions(
   entryFile: string,
-): Pick<ts.CompilerOptions, 'baseUrl' | 'paths' | 'jsx'> & { pathsBasePath?: string } {
+): Pick<ts.CompilerOptions, 'baseUrl' | 'paths' | 'jsx'> & {
+  pathsBasePath?: string;
+  /** The host's full parsed `compilerOptions` (design §4, Important finding 2) — `cli/doctor.ts`'s
+   *  `checkPageTypeErrors` spreads this wholesale so the host's own `strict`/`lib`/`types`/etc.
+   *  settings are honored, unlike the cherry-picked fields above (kept only for
+   *  `createComponentReader`'s existing, narrower contract). */
+  options: ts.CompilerOptions;
+  /** The host's own ambient `.d.ts` files (e.g. Expo's `expo-env.d.ts` asset-module declarations) —
+   *  `checkPageTypeErrors` adds these to its program's root names so a page importing e.g. a
+   *  `*.png` the host declares resolves instead of reporting `Cannot find module`. */
+  declarationFiles: string[];
+} {
   const tsconfigPath = ts.findConfigFile(path.dirname(entryFile), ts.sys.fileExists);
-  if (!tsconfigPath) return {};
+  if (!tsconfigPath) return { options: {}, declarationFiles: [] };
   const { config } = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
   const parsed = ts.parseJsonConfigFileContent(config, ts.sys, path.dirname(tsconfigPath));
   const { baseUrl, paths, jsx } = parsed.options;
   const pathsBasePath = (parsed.options as { pathsBasePath?: string }).pathsBasePath;
-  return { baseUrl, paths, jsx, pathsBasePath };
+  const declarationFiles = parsed.fileNames.filter((file) => file.endsWith('.d.ts'));
+  return { baseUrl, paths, jsx, pathsBasePath, options: parsed.options, declarationFiles };
 }
 
 /** What is a component (design §3): an export whose type has a call signature returning

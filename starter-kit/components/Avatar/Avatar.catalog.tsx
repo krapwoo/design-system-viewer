@@ -1,30 +1,12 @@
 import React from 'react';
-import { defineCatalogPage, type ComparisonDef } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
 import { Avatar } from './Avatar';
 import { DS_SEMANTIC } from '../../tokens';
 
-// Grid comparisons: each cell is a real instance with exactly the props its row and column name.
-// Never build these by multiplying `variants` with `states` — those are pre-rendered nodes and
-// cannot combine.
-function grid(
-  rowLabel: string,
-  columnLabel: string,
-  rows: { key: string; label: string }[],
-  columns: { key: string; label: string }[],
-  cell: (row: string, column: string) => React.ReactNode,
-  size?: ComparisonDef['size'],
-): ComparisonDef {
-  return {
-    rowLabel,
-    columnLabel,
-    rows,
-    columns,
-    cells: rows.flatMap((row) => columns.map((column) => ({ rowKey: row.key, columnKey: column.key, node: cell(row.key, column.key) }))),
-    size,
-  };
-}
-
 // Avatar: content Kind × Size (Avatar's `size` is continuous; 24 / 40 default / 64 is the sweep).
+// Neither axis names a real prop — "Kind" is which of 3 optional props is set, not one enum, and
+// `size` has no fixed option set — so both stay unbound. An unbound axis is fully valid; `doctor`
+// only ever reports how many examples are unbound as information, never as an error or a warning.
 const AVATAR_COMPARISON = grid(
   'Kind',
   'Size',

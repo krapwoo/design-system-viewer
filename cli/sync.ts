@@ -10,6 +10,10 @@ export interface SyncResult {
   componentCount: number;
   pageCount: number;
   generatedDir: string;
+  /** Every "Could not read ..." message this run printed via `console.warn` — also returned so
+   *  `cli/doctor.ts`'s `props-unreadable` rule (Task 4) can report them without re-deriving
+   *  anything `sync` already knows. In declaration order; empty when nothing failed to read. */
+  warnings: string[];
 }
 
 const GENERATED_INDEX = "export { default as components } from './components.json';\nexport { default as tokens } from './tokens.json';\n";
@@ -64,18 +68,23 @@ export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOpti
     ? { '*': [path.join(config.projectRoot, 'node_modules', '@types', '*'), path.join(config.projectRoot, 'node_modules', '*')] }
     : undefined;
   const readComponent = createComponentReader(componentEntryFiles, { ...resolveOptions, optionRoots, fallbackPaths });
+  const warnings: string[] = [];
   for (const entryFile of componentEntryFiles) {
     try {
       for (const record of readComponent(entryFile)) {
         if (seenNames.has(record.name)) {
-          console.warn(`Duplicate component name "${record.name}" (${path.relative(config.projectRoot, entryFile)}); the catalog will show only one.`);
+          const message = `Duplicate component name "${record.name}" (${path.relative(config.projectRoot, entryFile)}); the catalog will show only one.`;
+          console.warn(message);
+          warnings.push(message);
         }
         seenNames.add(record.name);
         components.push(record);
         componentRefs.push({ name: record.name, entryFile });
       }
     } catch (error) {
-      console.warn(`Could not read ${path.relative(config.projectRoot, entryFile)}: ${(error as Error).message}`);
+      const message = `Could not read ${path.relative(config.projectRoot, entryFile)}: ${(error as Error).message}`;
+      console.warn(message);
+      warnings.push(message);
     }
   }
   components.sort((a, b) => a.name.localeCompare(b.name));
@@ -86,7 +95,9 @@ export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOpti
     try {
       tokenRecords.push(...readTokenModules([tokenFile]));
     } catch (error) {
-      console.warn(`Could not read ${path.relative(config.projectRoot, tokenFile)}: ${(error as Error).message}`);
+      const message = `Could not read ${path.relative(config.projectRoot, tokenFile)}: ${(error as Error).message}`;
+      console.warn(message);
+      warnings.push(message);
     }
   }
   writeFileSync(path.join(generatedDir, 'tokens.json'), `${JSON.stringify(tokenRecords, null, 2)}\n`);
@@ -95,5 +106,5 @@ export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOpti
   const pageFiles = discoverPages({ components: componentRefs, standalonePageGlobs: config.pages ?? [], projectRoot: config.projectRoot });
   writePageIndex(generatedDir, pageFiles);
 
-  return { componentCount: components.length, pageCount: pageFiles.length, generatedDir };
+  return { componentCount: components.length, pageCount: pageFiles.length, generatedDir, warnings };
 }

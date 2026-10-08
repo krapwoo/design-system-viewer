@@ -126,8 +126,8 @@ export function BottomSheet({ visible, onDismiss, header, children, footer, styl
 }
 
 const styles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: DS_SEMANTIC.element.overlayBackdrop },
+  overlay: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: DS_SEMANTIC.element.overlayBackdrop },
   sheet: {
     maxHeight: MAX_HEIGHT_PERCENT,
     backgroundColor: DS_SEMANTIC.surface.white,

@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
   },
   // Translucent pressed overlay — sits above the banner bg so the tinted bg shows through.
   pressOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: DS_SEMANTIC.interaction.pressed,
     borderRadius: DS_RADIUS.medium,
   },

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { defineCatalogPage, type ComparisonDef } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
 import { Button } from './Button';
 import type { ButtonVariant } from './Button.types';
 import { DS_SEMANTIC } from '../../tokens';
@@ -16,38 +16,24 @@ const styles = StyleSheet.create({
   },
 });
 
-// Grid comparisons: each cell is a real instance with exactly the props its row and column name.
-// Never build these by multiplying `variants` with `states` — those are pre-rendered nodes and
-// cannot combine.
-function grid(
-  rowLabel: string,
-  columnLabel: string,
-  rows: { key: string; label: string }[],
-  columns: { key: string; label: string }[],
-  cell: (row: string, column: string) => React.ReactNode,
-  size?: ComparisonDef['size'],
-): ComparisonDef {
-  return {
-    rowLabel,
-    columnLabel,
-    rows,
-    columns,
-    cells: rows.flatMap((row) => columns.map((column) => ({ rowKey: row.key, columnKey: column.key, node: cell(row.key, column.key) }))),
-    size,
-  };
-}
-
 // Button: Variant × State. `white` keeps the dark backdrop its variant requires.
+// `rows` is bound to Button's own `variant` prop (design §4): each row key below is an actual
+// `ButtonVariant` option, so `doctor` can tell when one is renamed or removed. `columns` names no
+// single prop (disabled/loading are two separate booleans, not one "State" prop) and stays unbound
+// — unbound axes are just as valid, and `doctor` never flags one.
 const BUTTON_COMPARISON = grid(
   'Variant',
   'State',
-  [
-    { key: 'primary', label: 'Primary' },
-    { key: 'secondary', label: 'Secondary' },
-    { key: 'tertiary', label: 'Tertiary' },
-    { key: 'white', label: 'White' },
-    { key: 'ghost', label: 'Ghost' },
-  ],
+  {
+    prop: 'variant',
+    items: [
+      { key: 'primary', label: 'Primary' },
+      { key: 'secondary', label: 'Secondary' },
+      { key: 'tertiary', label: 'Tertiary' },
+      { key: 'white', label: 'White' },
+      { key: 'ghost', label: 'Ghost' },
+    ],
+  },
   [
     { key: 'default', label: 'Default' },
     { key: 'disabled', label: 'Disabled' },

@@ -1,28 +1,7 @@
 import React from 'react';
-import { defineCatalogPage, type ComparisonDef } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
 import { Badge } from './Badge';
 import type { BadgeVariant } from './Badge.types';
-
-// Grid comparisons: each cell is a real instance with exactly the props its row and column name.
-// Never build these by multiplying `variants` with `states` — those are pre-rendered nodes and
-// cannot combine.
-function grid(
-  rowLabel: string,
-  columnLabel: string,
-  rows: { key: string; label: string }[],
-  columns: { key: string; label: string }[],
-  cell: (row: string, column: string) => React.ReactNode,
-  size?: ComparisonDef['size'],
-): ComparisonDef {
-  return {
-    rowLabel,
-    columnLabel,
-    rows,
-    columns,
-    cells: rows.flatMap((row) => columns.map((column) => ({ rowKey: row.key, columnKey: column.key, node: cell(row.key, column.key) }))),
-    size,
-  };
-}
 
 // Badge: Tone × Icon layout. One icon per tone, matching the Variants examples.
 const BADGE_TONES: { key: BadgeVariant; label: string; text: string; icon: React.ComponentProps<typeof Badge>['leadingIcon'] }[] = [
@@ -32,10 +11,23 @@ const BADGE_TONES: { key: BadgeVariant; label: string; text: string; icon: React
   { key: 'warning', label: 'Warning', text: 'Delayed', icon: 'triangle-alert' },
   { key: 'negative', label: 'Negative', text: 'Suspended', icon: 'circle-slash' },
 ];
+// `rows` is bound to Badge's own `variant` prop (design §4) — written as its own literal array
+// (not `BADGE_TONES.map(...)`) so `doctor`'s static reader can check it without evaluating a
+// function call; `BADGE_TONES` above still drives the real rendering in `cell` below.
+const BADGE_ROWS = {
+  prop: 'variant',
+  items: [
+    { key: 'neutral', label: 'Neutral' },
+    { key: 'info', label: 'Info' },
+    { key: 'positive', label: 'Positive' },
+    { key: 'warning', label: 'Warning' },
+    { key: 'negative', label: 'Negative' },
+  ],
+} as const;
 const BADGE_COMPARISON = grid(
   'Tone',
   'Icon',
-  BADGE_TONES.map(({ key, label }) => ({ key, label })),
+  BADGE_ROWS,
   [
     { key: 'label-only', label: 'Label only' },
     { key: 'leading-icon', label: 'Leading icon' },

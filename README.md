@@ -61,6 +61,8 @@ Either way, then:
 ```bash
 npm run ds-viewer dev    # opens the catalog in a browser, re-syncing on every file change
 npm run ds-viewer sync   # regenerates component/token/page data without starting a server
+npm run ds-viewer doctor   # checks every page for drift and coverage gaps (--json, --ci)
+npm run ds-viewer explain <Page>   # prints why a page's specimens are laid out the way they are
 ```
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
@@ -203,6 +205,86 @@ data, not a component — see `ColorsGallery`/`SpacingGallery`/`TypographyGaller
 `tokenGallery: true` instead of `props`/`a11y`/`states` — `SectionBlock` then renders `render()`'s
 output full width under a "Tokens" label and shows only a Quick reference card with the source
 path.
+
+## Keeping the catalog current
+
+### Binding examples to props
+
+A grid's row or column axis can name the real prop it demonstrates:
+
+```tsx
+import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
+
+comparison: grid(
+  'Variant', 'State',
+  { prop: 'variant', items: [
+    { key: 'primary', label: 'Primary' },
+    { key: 'ghost', label: 'Ghost' },
+  ] },
+  [{ key: 'default', label: 'Default' }, { key: 'disabled', label: 'Disabled' }],
+  (row, column) => <Button variant={row} disabled={column === 'disabled'} onPress={() => {}} />,
+),
+```
+
+Only a prop typed as a string-literal union (2 or more options) can be bound this way; each item's
+`key` must then be a real option of that prop. An axis that doesn't name a single real prop (e.g.
+"which of three optional props is set," or a continuous `number`) stays a plain array of
+`{ key, label }` — just as valid, and never flagged by `doctor`. `variants`/`states` list items use
+the existing `props` tag (`{ key: 'ghost', props: { variant: 'ghost' }, node: ... }`) the same way.
+Binding is what lets `doctor` tell you precisely when a renamed or removed option leaves a stale
+example behind, instead of you finding out by reading the diff.
+
+### `npx ds-viewer doctor`
+
+Reads every page with the TypeScript compiler — it never imports a page file or runs app code.
+Human output is grouped by page, each issue with a one-line fix:
+
+```
+Button
+  [error] bound-option-removed: The row "outline" is bound to "variant", which no longer has that option.
+    Fix: Delete this row, or update its key to a current option of "variant".
+
+0 errors, 1 warning — 38 components (37 with examples), 2 unbound examples.
+```
+
+- `--json` prints the same report as stable, versioned data: `{ version: 1, summary: { errors, warnings, components, withExamples, unboundExamples }, update: null, issues: [{ id, severity, page?, file?, line?, message, fix }] }`. `update` is always `null` in this release (filled in starting 0.4's update check); `file` is always relative to the project root. `line` is populated for a `page-parse-error` found by typechecking a page file (see below), and always `undefined` for every other issue id — threading a real position through every rule is future work.
+- `--ci` exits 1 only when an error was found — a warning alone never fails CI, and `--ci` never makes a network call.
+- `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code.
+- A page whose layout data (`specimenSize`, `group`, grid `rows`/`columns`, list items' `key`/`name`/`props`/`group`, `propNotes` keys) isn't a literal — written as something other than a literal value, array, object, or a same-file `const` reference — gets one "page not statically checkable" warning. A page file that fails to parse *or typecheck* is `page-parse-error` instead: every page file is also run through the TypeScript type checker (the same way a component file already is), so a genuine syntax or type error in a page is reported with its line.
+
+## Known gaps
+
+- The viewer's own dev-mode console warnings only cover `duplicate-page-id` (design §4's "the same rules appear as development warnings naming the page" — scoped to that one rule in 0.3). Bound-axis drift (`bound-option-removed`, `bound-axis-prop-removed`) has no viewer-side warning yet; `npx ds-viewer doctor` (and its `--ci` workflow) is the only place that catches it today.
+
+### `npx ds-viewer explain <Page>`
+
+Prints each layout decision with its reason, using the exact same pure functions the catalog itself
+renders with:
+
+```
+Button
+Grid (Variant × State)
+  5 rows × 3 columns (regular); 3 of 3 max regular columns used — fits a 1280px laptop.
+```
+
+Side-by-side placement depends on a real measured height, so by default `explain` reports it as
+"decided in the viewer." Pass `--heights <firstBlockPx>,<secondBlockPx>` to check that decision here
+too, assuming a 1280px laptop (952px content width) the same way `doctor`'s own column-limit check
+does. `--json` is available on `explain` as well.
+
+### The `AGENTS.md` section and GitHub Action
+
+`npx @krapwoo/ds-viewer init` (either path) appends a short section to `AGENTS.md` between
+`<!-- ds-viewer:start v1 -->`/`<!-- ds-viewer:end -->` markers — creating the file if it doesn't
+exist — telling an AI working on the project to update a page alongside its component, bind
+examples to props, never invent grid cells or groups, and run `doctor`/`explain` before finishing.
+It also writes `.github/workflows/ds-viewer.yml`, a SHA-pinned Action that installs dependencies
+(picking `npm ci`, `pnpm install --frozen-lockfile`, or `yarn install --immutable` from whichever
+lockfile the project has at that moment) and then runs `npx ds-viewer doctor --ci` on every pull
+request. Both are written once; re-running `init` adds
+either one only if it's missing (an `AGENTS.md` without the start marker counts as missing the
+section, even if the file already has other content) and never touches anything outside its own
+markers or its own file.
 
 ## What's included
 

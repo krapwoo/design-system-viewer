@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
-import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
+import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, axisItems, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
 import type { ComparisonDef, SpecimenSize } from './types';
 
 /**
@@ -14,7 +14,9 @@ export function ComparisonGrid({ def, size, sectionId }: { def: ComparisonDef; s
     for (const issue of validateComparison({ ...def, size })) console.warn(`[Catalog] ${sectionId}: ${issue}`);
   }
   const cells = indexCells(def);
-  const bounds = gridWidthBounds(def.columns.length, size);
+  const rows = axisItems(def.rows);
+  const columns = axisItems(def.columns);
+  const bounds = gridWidthBounds(columns.length, size);
   const column = {
     flexGrow: 1,
     flexShrink: 1,
@@ -22,7 +24,7 @@ export function ComparisonGrid({ def, size, sectionId }: { def: ComparisonDef; s
     minWidth: COLUMN_MIN_WIDTH[size],
     maxWidth: MATRIX_LAYOUT.columnMaxWidth,
   };
-  const lastColumn = def.columns.length - 1;
+  const lastColumn = columns.length - 1;
 
   return (
     <ScrollView horizontal style={styles.scroller} contentContainerStyle={styles.scrollContent}>
@@ -35,18 +37,18 @@ export function ComparisonGrid({ def, size, sectionId }: { def: ComparisonDef; s
           <View role="columnheader" style={[styles.cell, styles.rowHeader, styles.headerCell]}>
             <Text style={styles.headerText}>{def.rowLabel}</Text>
           </View>
-          {def.columns.map((c, ci) => (
+          {columns.map((c, ci) => (
             <View key={c.key} role="columnheader" style={[styles.cell, column, styles.headerCell, ci === lastColumn && styles.lastColumn]}>
               <Text style={styles.headerText}>{c.label}</Text>
             </View>
           ))}
         </View>
-        {def.rows.map((row, ri) => (
-          <View key={row.key} role="row" style={[styles.row, ri === def.rows.length - 1 && styles.lastRow]}>
+        {rows.map((row, ri) => (
+          <View key={row.key} role="row" style={[styles.row, ri === rows.length - 1 && styles.lastRow]}>
             <View role="rowheader" style={[styles.cell, styles.rowHeader, styles.bodyRow]}>
               <Text style={styles.rowHeaderText}>{row.label}</Text>
             </View>
-            {def.columns.map((c, ci) => {
+            {columns.map((c, ci) => {
               const cell = cells.get(cellKey(row.key, c.key));
               return (
                 <View key={c.key} role="cell" style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>

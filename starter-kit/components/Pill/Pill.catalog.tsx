@@ -1,36 +1,22 @@
 import React from 'react';
-import { defineCatalogPage, type ComparisonDef } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
 import { Pill } from './Pill';
 
-// Grid comparisons: each cell is a real instance with exactly the props its row and column name.
-// Never build these by multiplying `variants` with `states` — those are pre-rendered nodes and
-// cannot combine.
-function grid(
-  rowLabel: string,
-  columnLabel: string,
-  rows: { key: string; label: string }[],
-  columns: { key: string; label: string }[],
-  cell: (row: string, column: string) => React.ReactNode,
-  size?: ComparisonDef['size'],
-): ComparisonDef {
-  return {
-    rowLabel,
-    columnLabel,
-    rows,
-    columns,
-    cells: rows.flatMap((row) => columns.map((column) => ({ rowKey: row.key, columnKey: column.key, node: cell(row.key, column.key) }))),
-    size,
-  };
-}
-
 // Pill: Selection × State.
+// `rows` is bound to Pill's own `variant` prop (design §4); the second item's key is
+// `'not_selected'` (underscore), matching `PillVariant` exactly — not `'not-selected'`, which is
+// only this page's own label-ish spelling and would fail `doctor`'s "item key must be a real
+// option" check.
 const PILL_COMPARISON = grid(
   'Selection',
   'State',
-  [
-    { key: 'selected', label: 'Selected' },
-    { key: 'not-selected', label: 'Not selected' },
-  ],
+  {
+    prop: 'variant',
+    items: [
+      { key: 'selected', label: 'Selected' },
+      { key: 'not_selected', label: 'Not selected' },
+    ],
+  },
   [
     { key: 'icon-text', label: 'Icon + Text' },
     { key: 'icon-only', label: 'Icon-only' },

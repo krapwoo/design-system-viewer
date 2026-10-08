@@ -3,7 +3,7 @@
  * runner. CatalogShell, CatalogSidebar, and SectionBlock all derive page order from here, so the
  * sidebar order, previous/next order, and fragment fallback can never drift apart.
  */
-import type { NavGroup } from './types';
+import type { NavGroup } from './types.ts';
 
 /** THE canonical within-group ordering of section ids. */
 export function sortIds<TId extends string>(ids: readonly TId[]): TId[] {

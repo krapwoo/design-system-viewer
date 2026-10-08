@@ -8,7 +8,7 @@ import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './to
  * framework's own, and any host app's). Generic over the step-name type so it works for any scale
  * (the host app's `DS_SPACING`, this framework's own `CATALOG_SPACE`, or a third-party one).
  */
-export function SpacingScaleGallery<TStep extends string>({
+export function SpacingScaleGallery<TStep extends string | number>({
   steps,
   values,
   useNotes,

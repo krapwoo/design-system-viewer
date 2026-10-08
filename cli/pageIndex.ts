@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveGlob } from './glob.ts';
 
@@ -20,6 +20,25 @@ export function discoverPages(input: PageIndexInput): string[] {
   return [...componentPages, ...standalonePages].sort();
 }
 
+/** Every `*.catalog.tsx`/`.catalog.ts` file `doctor` should read — unlike `discoverPages`, this
+ *  also finds a page beside a component whose folder still exists but whose export was renamed or
+ *  removed (that page's file never changed, so it's still sitting right there). `componentFolders`
+ *  is every distinct folder containing a currently-resolved component entry file — `cli/doctor.ts`
+ *  derives it the same way `cli/sync.ts` does, by resolving `config.components` and taking each
+ *  match's `path.dirname`. A folder that was deleted entirely (not just renamed within) has nothing
+ *  left to find here, which is correct: there's no stale page file left on disk to warn about. */
+export function discoverAllPageFiles(input: { componentFolders: string[]; standalonePageGlobs: string[]; projectRoot: string }): string[] {
+  const componentPages = input.componentFolders.flatMap((folder) => {
+    try {
+      return readdirSync(folder).filter((name) => /\.catalog\.tsx?$/.test(name)).map((name) => path.join(folder, name));
+    } catch {
+      return [];
+    }
+  });
+  const standalonePages = input.standalonePageGlobs.flatMap((pattern) => resolveGlob(input.projectRoot, pattern));
+  return [...new Set([...componentPages, ...standalonePages])].sort();
+}
+
 /** Writes `.ds-viewer/generated/pages.ts`: imports every discovered page's default export,
  *  resolves each one's id (design §2 "Page id": `id ?? component ?? <file stem>` — a component
  *  page defaults to its export name, a standalone page to its own file's stem) and `file` (the
@@ -37,6 +56,14 @@ export function writePageIndex(generatedDir: string, pageFiles: string[]): strin
   const exportLine = `export default [${pageFiles.map((_, index) => `resolved${index}`).join(', ')}];`;
   writeFileSync(outFile, `${importLines.join('\n')}\n\n${resolveLines.join('\n')}\n\n${exportLine}\n`);
   return outFile;
+}
+
+/** `page.id ?? page.component ?? <file's own stem>` (design §2 "Page id") — factored out of
+ *  `writePageIndex`'s own inline logic above so `cli/doctor.ts` resolves a page's id exactly the
+ *  same way, never a second, drifting copy of this rule. Takes the same two fields `StaticPage`
+ *  (Task 3) and the generated page index both already carry. */
+export function resolvePageId(page: { id?: string; component?: string }, file: string): string {
+  return page.id ?? page.component ?? fileStem(file);
 }
 
 function toImportPath(fromDir: string, toFile: string): string {
