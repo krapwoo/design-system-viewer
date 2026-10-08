@@ -8,7 +8,7 @@ Written 2026-10-08 by the App Design controller, session `20261007_205910_31e7a4
 |---|---|
 | 0.1.0, 0.1.1, 0.2.0, 0.3.0 | Published on npm (`latest` = 0.3.0), each with an SLSA provenance attestation, published by `release.yml` through trusted publishing |
 | `@krapwoo/catalog` | All versions deprecated: "Replaced by @krapwoo/ds-viewer" |
-| **0.4** | **Plan written and corrected once. Not yet re-reviewed. Nothing built.** |
+| **0.4** | **Plan final: corrected once, Fable follow-up NOT_READY with small fixes, which were written as a binding `## Errata` at the top of the plan (commit `2087311`). Restart spike done. Nothing built.** |
 
 - Repository: `/Users/woohopark/HermesProject/Projects/design-system-viewer` (`main` at `43c58d9`, the v0.3.0 release commit)
 - 0.4 worktree: `/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.4`, branch `feat/ds-viewer-0.4` (local only, not pushed). Commits: `e00cb2e` (mockups), `40435f5` (plan), `3b0bf77` (corrected plan), and the commit adding this handoff.
@@ -18,7 +18,7 @@ Written 2026-10-08 by the App Design controller, session `20261007_205910_31e7a4
 
 - Design: `docs/superpowers/specs/2026-10-07-ds-viewer-npm-package-design.md` (revision 3). 0.4 is the "0.4" row of §6, plus all of §5.
 - **Owner-approved mockup:** `docs/design/2026-10-08-ds-viewer-update-panel-approved.html`, sha256 `c334ed7aea59213681aa790767e9bfedd06749276d739f75e3045778ae35fe83`. Direction **C · Update page** at `#ds-viewer-update`, opened from the sidebar footer line or the major banner's "Review update". **Content max width 512px** (the owner asked for about two-thirds of the first draft). Ten states with their copy, plus new warning/danger/success tokens.
-- Plan: `docs/superpowers/plans/2026-10-08-ds-viewer-0.4.md`, 20 tasks, sha256 `1912e61e288d17fe849183b0511aa60dc3219bfa231202a3cb9807fb39caa07b` at `3b0bf77`. Task 20 is controller-only verification.
+- Plan: `docs/superpowers/plans/2026-10-08-ds-viewer-0.4.md`, 20 tasks, sha256 `e98f08b9a884d92f738f79332f60eb3bbc0fd58fdb1e9c7b1afd9826d40e5a2f` at `2087311` (the Errata section was added on top of `3b0bf77`'s text). Task 20 is controller-only verification. **Every slice brief must say: the Errata section wins over the task text.**
 - Owner decisions this cycle: build 0.4 after the mockup approval; plans that pass Fable review go ahead without owner approval; stop only for mockups and blockers.
 
 ## 3. Review history (files in this folder)
@@ -28,10 +28,16 @@ Written 2026-10-08 by the App Design controller, session `20261007_205910_31e7a4
 - `correction-brief-1.md` and `correction-report-1.md`: one correction pass that applied all 25 findings, with tests now 238 → 353. The controller also made two security Minors required: `timingSafeEqual` for the secret, and a `Host` header check against DNS rebinding.
 - `spikes-README.md`: worker-reported spikes (CORS/endpoint with `curl`, Verdaccio end-to-end without publishing, running the downloaded version's `migrate`).
 
+## 3a. Update (2026-10-08, later in the same session `20261007_205910_31e7a4`)
+
+- Steps 1 and 2 below are **done**. `fable-plan-review-2.md` is the follow-up verdict: NOT_READY, 2 Critical, 6 Important, 8 Minor. 21 of the 25 earlier findings were RESOLVED and 4 were PARTIAL. The brief is `fable-plan-followup-brief.md`. Everything was applied as plan Errata 1–14.
+- `restart-spike/README.md` holds the controller's restart spike on a real Expo/Metro in `kit-host`. The restart works: group kill, same port, Metro back in about 1 s, no orphan. It reproduced two orphaned-Metro defects (SIGTERM to the supervisor; closing the terminal, i.e. SIGHUP) and confirmed the fixes (Errata 7a and 7b). Metro binds `[::1]` only (Errata 7c).
+- **Resume at step 3 (build).**
+
 ## 4. Next steps, in order
 
-1. **Fable follow-up review** of the corrected plan. Reuse `fable-plan-review-brief.md` in the style of the 0.3 follow-up: per-finding RESOLVED/PARTIAL/OPEN plus new defects in changed regions only. **Policy:** if it is NOT_READY again with small, precise fixes, write them as a binding `## Errata` section at the top of the plan (as 0.3 did) instead of a third review round.
-2. **Open check the correction did not prove:** the controller asked for a spike of the **restart on a real `dev` in `kit-host`** (process-group kill, port freed, re-bind on the same port, Metro not orphaned). The worker rewrote `performRestart` but did not spike it; only Task 20 Step 5.6 checks it. Spike it before building Task 18, or make it an early slice gate.
+1. ~~**Fable follow-up review**~~ (done, see §3a) of the corrected plan. Reuse `fable-plan-review-brief.md` in the style of the 0.3 follow-up: per-finding RESOLVED/PARTIAL/OPEN plus new defects in changed regions only. **Policy:** if it is NOT_READY again with small, precise fixes, write them as a binding `## Errata` section at the top of the plan (as 0.3 did) instead of a third review round.
+2. ~~**Open check the correction did not prove:**~~ (done, see §3a) the controller asked for a spike of the **restart on a real `dev` in `kit-host`** (process-group kill, port freed, re-bind on the same port, Metro not orphaned). The worker rewrote `performRestart` but did not spike it; only Task 20 Step 5.6 checks it. Spike it before building Task 18, or make it an early slice gate.
 3. **Build in waves** with guarded Sonnet slices (see §5). Group tasks into slices that touch separate files and run independent slices in parallel worktrees, as 0.3 did. Respect the plan's hard order: Task 17 before Task 18.
 4. After each slice: run `npm test`, `typecheck`, `build`, `check:types`, `check:doctor` and `check:catalog` yourself; verify worker claims; commit a local checkpoint.
 5. **Fable implementation review** of the whole branch; one consolidated fix pass with the controller's end-to-end findings.
