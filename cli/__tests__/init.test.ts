@@ -32,8 +32,10 @@ test('initExistingProject writes the config, missing drafts, the script, the dev
   const buttonDraft = path.join(projectRoot, 'src/components/Button/Button.catalog.tsx');
   const packageJsonPath = path.join(projectRoot, 'package.json');
   const gitignorePath = path.join(projectRoot, '.gitignore');
+  const agentsPath = path.join(projectRoot, 'AGENTS.md');
+  const workflowPath = path.join(projectRoot, '.github', 'workflows', 'ds-viewer.yml');
 
-  assert.deepEqual(result.written, [configPath, badgeDraft, buttonDraft, packageJsonPath, gitignorePath]);
+  assert.deepEqual(result.written, [configPath, badgeDraft, buttonDraft, packageJsonPath, gitignorePath, agentsPath, workflowPath]);
   // Both catalog pages are missing *before* this run writes anything (Button's was just deleted
   // above; Badge never had one) — the coverage line counts pre-existing pages, not this run's
   // own writes, so it reads "0 with examples" even though both now have a draft.
@@ -176,6 +178,9 @@ test('initNewProject installs missing kit packages via the injected installer, c
   assert.equal(packageJson.scripts['ds-viewer'], 'ds-viewer');
   assert.match(packageJson.devDependencies['@krapwoo/ds-viewer'], /^\^\d+\.\d+\.\d+$/);
   assert.equal(readFileSync(path.join(projectRoot, '.gitignore'), 'utf8'), '.ds-viewer/\n');
+  assert.ok(result.written.some((f) => f.endsWith('AGENTS.md')));
+  assert.equal(readFileSync(path.join(projectRoot, 'AGENTS.md'), 'utf8').includes('<!-- ds-viewer:start v1 -->'), true);
+  assert.ok(result.written.some((f) => f.endsWith(path.join('.github', 'workflows', 'ds-viewer.yml'))));
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
