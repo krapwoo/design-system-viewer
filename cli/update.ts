@@ -3,8 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildUpdatePlan, type BuildPlanOptions, type UpdatePlan } from './updatePlan.ts';
-import { detectPackageManager, installUpgradeCommand } from './packageManager.ts';
+import { buildUpdatePlan, isAlreadyUpToDate, type BuildPlanOptions, type UpdatePlan } from './updatePlan.ts';
+import { detectPackageManager, installUpgradeCommand, platformCommand } from './packageManager.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { lastSummaryLine } from './doctor.ts';
 import type { ResolvedConfig } from './types.ts';
@@ -52,7 +52,7 @@ function installedMainJs(projectRoot: string): string {
 export async function runUpdate(config: ResolvedConfig, options: UpdateRunOptions = {}): Promise<{ output: string; exitCode: number }> {
   const currentVersion = options.currentVersion ?? readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
   const plan = await (options.buildPlan ?? buildUpdatePlan)(config, currentVersion);
-  if ('error' in plan) return { output: plan.error, exitCode: 1 };
+  if ('error' in plan) return { output: plan.error, exitCode: isAlreadyUpToDate(plan.error) ? 0 : 1 };
 
   const planText = formatPlanHuman(plan);
   if (options.dryRun) return { output: planText, exitCode: 0 };
@@ -72,7 +72,10 @@ export async function runUpdate(config: ResolvedConfig, options: UpdateRunOption
     if (!proceed) return { output: 'Aborted: nothing was changed.', exitCode: 0 };
   }
 
-  const execImpl: ExecImpl = options.execImpl ?? ((cmd, args, opts) => execFileSync(cmd, args, { ...opts, encoding: 'utf8' }) as unknown as string);
+  const execImpl: ExecImpl = options.execImpl ?? ((cmd, args, opts) => {
+    const run = platformCommand(cmd, args);
+    return execFileSync(run.command, run.args, { ...opts, encoding: 'utf8', shell: run.shell }) as unknown as string;
+  });
   const { command, args } = installUpgradeCommand(detectPackageManager(config.projectRoot), '@krapwoo/ds-viewer', plan.latest);
   try {
     execImpl(command, args, { cwd: config.projectRoot, encoding: 'utf8' });

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { detectPackageManager, installUpgradeCommand } from '../packageManager.ts';
+import { detectPackageManager, installUpgradeCommand, platformCommand } from '../packageManager.ts';
 
 function project(files: Record<string, string>): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-pm-'));
@@ -47,4 +47,22 @@ test('installUpgradeCommand: one case per package manager', () => {
   assert.deepEqual(installUpgradeCommand('pnpm', '@krapwoo/ds-viewer', '0.5.0'), { command: 'pnpm', args: ['add', '--save-dev', '@krapwoo/ds-viewer@0.5.0'] });
   assert.deepEqual(installUpgradeCommand('yarn-classic', '@krapwoo/ds-viewer', '0.5.0'), { command: 'yarn', args: ['add', '--dev', '@krapwoo/ds-viewer@0.5.0'] });
   assert.deepEqual(installUpgradeCommand('yarn-berry', '@krapwoo/ds-viewer', '0.5.0'), { command: 'yarn', args: ['add', '--dev', '@krapwoo/ds-viewer@0.5.0'] });
+});
+
+// Windows: npm, npx, pnpm and yarn are `.cmd` shims, which Node refuses to run without a shell
+// (since the CVE-2024-27980 fix). Everywhere else, and for real executables, no shell.
+test('platformCommand: package managers run through a shell on win32 only, with quoted arguments', () => {
+  assert.deepEqual(platformCommand('npm', ['install', '--save-dev', '@krapwoo/ds-viewer@0.4.1'], 'darwin'), {
+    command: 'npm', args: ['install', '--save-dev', '@krapwoo/ds-viewer@0.4.1'], shell: false,
+  });
+  assert.deepEqual(platformCommand('npm', ['pack', 'x@1.0.0', '--pack-destination', 'C:\\Users\\Jane Doe\\Temp\\ds'], 'win32'), {
+    command: 'npm', args: ['pack', 'x@1.0.0', '--pack-destination', '"C:\\Users\\Jane Doe\\Temp\\ds"'], shell: true,
+  });
+  for (const pm of ['npx', 'pnpm', 'yarn']) assert.equal(platformCommand(pm, ['add'], 'win32').shell, true);
+});
+
+test('platformCommand: real executables (node, tar, git) never get a shell, even on win32', () => {
+  for (const exe of ['node', 'tar', 'git']) {
+    assert.deepEqual(platformCommand(exe, ['a b'], 'win32'), { command: exe, args: ['a b'], shell: false });
+  }
 });

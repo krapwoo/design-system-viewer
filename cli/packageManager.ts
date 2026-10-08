@@ -28,3 +28,19 @@ export function installUpgradeCommand(pm: PackageManager, pkg: string, version: 
   if (pm === 'pnpm') return { command: 'pnpm', args: ['add', '--save-dev', spec] };
   return { command: 'yarn', args: ['add', '--dev', spec] };
 }
+
+const WINDOWS_SHIMS = new Set(['npm', 'npx', 'pnpm', 'yarn']);
+
+/** On Windows, `npm`, `npx`, `pnpm` and `yarn` are `.cmd` shims, which Node refuses to run
+ *  without a shell (the CVE-2024-27980 fix). With a shell, Node joins the arguments with spaces,
+ *  so any argument containing a space or a shell metacharacter (a temp folder under
+ *  `C:\Users\Jane Doe\…`) is wrapped in double quotes. Real executables (`node`, `tar`, `git`)
+ *  and every other platform keep running without a shell. */
+export function platformCommand(
+  command: string,
+  args: string[],
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[]; shell: boolean } {
+  if (platform !== 'win32' || !WINDOWS_SHIMS.has(command)) return { command, args, shell: false };
+  return { command, args: args.map((arg) => (/[\s"&|<>^()]/.test(arg) ? `"${arg.replace(/"/g, '""')}"` : arg)), shell: true };
+}

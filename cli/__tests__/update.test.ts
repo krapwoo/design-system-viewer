@@ -55,6 +55,17 @@ test('a plan error (e.g. offline) is printed with exit 1', async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('already on the latest version is not a failure: the message is printed with exit 0', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl, calls } = recordingExec({});
+  const buildPlan = async () => ({ error: 'Already on the latest version (0.4.0).' });
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, currentVersion: '0.4.0' });
+  assert.equal(result.output, 'Already on the latest version (0.4.0).');
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(calls, []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('dirty files without --force refuse, listing every dirty path, and never call exec', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
   const { execImpl, calls } = recordingExec({});

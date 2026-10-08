@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { detectPackageManager, type PackageManager } from './packageManager.ts';
+import { detectPackageManager, platformCommand, type PackageManager } from './packageManager.ts';
 import { listKitFileDiffs } from './kitDiff.ts';
 import { extractSummaryBullets, fetchWithTimeout } from './updateCheck.ts';
 import { compareVersions, isBreakingUpgrade, parseVersion } from './semver.ts';
@@ -132,6 +132,14 @@ function defaultGitStatus(projectRoot: string, plannedPaths: string[]): string |
   }
 }
 
+/** "Already on the latest version" is reported through the plan's `{ error }` channel, but it is not a
+ *  failure: `update` exits 0 for it, and the viewer shows it as up to date (`isAlreadyUpToDateError`). */
+export const ALREADY_UP_TO_DATE = 'Already on the latest version';
+
+export function isAlreadyUpToDate(error: string): boolean {
+  return error.startsWith(ALREADY_UP_TO_DATE);
+}
+
 /** Design §5 "Update plan", steps 1-3, in full. Every external effect is injected (Global
  *  Constraints) — the real defaults are a real `npm view`/`npm pack`/`tar`/`node migrate` and a
  *  real `git status --porcelain`, exactly what Task 20's own Verdaccio spike already exercised. */
@@ -141,7 +149,10 @@ export async function buildUpdatePlan(
   options: BuildPlanOptions = {},
 ): Promise<UpdatePlan | { error: string }> {
   const execFileAsync = promisify(execFile);
-  const execImpl = options.execImpl ?? (async (cmd, args, opts) => (await execFileAsync(cmd, args, opts)).stdout);
+  const execImpl = options.execImpl ?? (async (cmd, args, opts) => {
+    const run = platformCommand(cmd, args);
+    return (await execFileAsync(run.command, run.args, { ...opts, shell: run.shell })).stdout;
+  });
   const fetchImpl = options.fetchImpl ?? fetch;
   const tmpDirImpl = options.tmpDirImpl ?? (() => mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-')));
   const gitStatusImpl = options.gitStatusImpl ?? defaultGitStatus;
@@ -163,7 +174,7 @@ export async function buildUpdatePlan(
   // installed version ahead of the registry's own `npm view` result (e.g. a local prerelease) is
   // not something `update` should try to "downgrade" into.
   if (compareVersions(parseVersion(targetVersion), parseVersion(currentVersion)) <= 0) {
-    return { error: `Already on the latest version (${currentVersion}).` };
+    return { error: `${ALREADY_UP_TO_DATE} (${currentVersion}).` };
   }
 
   let migrateResult: MigrateResult;

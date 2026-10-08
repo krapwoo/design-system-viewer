@@ -15,7 +15,7 @@ import { readOwnVersion } from './packageVersion.ts';
 import { createUpdateEndpoint, type EndpointDeps, type UpdateStatus } from './endpoint.ts';
 import { buildUpdatePlan, type UpdatePlan } from './updatePlan.ts';
 import { lastSummaryLine } from './doctor.ts';
-import { detectPackageManager, installUpgradeCommand, type PackageManager } from './packageManager.ts';
+import { detectPackageManager, installUpgradeCommand, platformCommand, type PackageManager } from './packageManager.ts';
 import type { ResolvedConfig } from './types.ts';
 
 export class LocalInstallMissingError extends Error {}
@@ -96,7 +96,10 @@ export async function refreshUpdateFile(
 // version blocked the entire event loop until the whole update finished).
 const execFileAsync = promisify(execFile);
 type ExecImpl = (command: string, args: string[], options: { cwd: string; encoding: 'utf8' }) => Promise<string>;
-const defaultExecImpl: ExecImpl = async (command, args, options) => (await execFileAsync(command, args, options)).stdout;
+const defaultExecImpl: ExecImpl = async (command, args, options) => {
+  const run = platformCommand(command, args);
+  return (await execFileAsync(run.command, run.args, { ...options, shell: run.shell })).stdout;
+};
 
 function installedMainJs(projectRoot: string): string {
   return path.join(projectRoot, 'node_modules', '@krapwoo', 'ds-viewer', 'dist', 'cli', 'main.js');
