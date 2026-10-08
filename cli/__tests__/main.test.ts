@@ -201,7 +201,7 @@ function makeDoctorFixture(pageSource: string): string {
   return dir;
 }
 
-test('runDoctorCommand prints JSON and exits non-zero with --ci when there is an error', () => {
+test('runDoctorCommand prints JSON and exits non-zero with --ci when there is an error', async () => {
   const dir = makeDoctorFixture(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
     export default defineCatalogPage({
@@ -209,21 +209,69 @@ test('runDoctorCommand prints JSON and exits non-zero with --ci when there is an
       variants: { items: [{ key: 'removed', name: 'Removed', props: { variant: 'removed' }, node: null }] },
     });
   `);
-  const result = runDoctorCommand(dir, ['--json', '--ci']);
+  const result = await runDoctorCommand(dir, ['--json', '--ci']);
   const json = JSON.parse(result.output);
   assert.equal(json.summary.errors, 1);
   assert.equal(result.exitCode, 1);
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('runDoctorCommand prints the human report and never sets an exit code without --ci', () => {
+test('runDoctorCommand prints the human report and never sets an exit code without --ci', async () => {
   const dir = makeDoctorFixture(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
     export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
   `);
-  const result = runDoctorCommand(dir, []);
+  // No --ci here, so the update-check overlay would otherwise run against the real registry
+  // (Global Constraints: "No network in npm test") — inject a stub that resolves "no update known",
+  // the same uniform outcome `checkForUpdate` itself returns when offline.
+  const checkForUpdate = async () => undefined;
+  const result = await runDoctorCommand(dir, [], { checkForUpdate });
   assert.match(result.output, /error/);
   assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand never calls checkForUpdate with --ci, even when updateCheck is enabled', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => { throw new Error('must not be called'); };
+  const result = await runDoctorCommand(dir, ['--ci'], { checkForUpdate });
+  assert.ok(result); // reaching this line without throwing is the assertion
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand overlays update into --json output when a check resolves', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => ({ current: '0.3.0', latest: '0.4.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
+  const { output } = await runDoctorCommand(dir, ['--json'], { checkForUpdate });
+  assert.deepEqual(JSON.parse(output).update, { current: '0.3.0', latest: '0.4.0', breaking: false });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand leaves update: null when checkForUpdate resolves undefined (offline)', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => undefined;
+  const { output } = await runDoctorCommand(dir, ['--json'], { checkForUpdate });
+  assert.equal(JSON.parse(output).update, null);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand mentions the update in its human-readable output too, not only --json', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => ({ current: '0.3.0', latest: '0.4.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
+  const { output } = await runDoctorCommand(dir, [], { checkForUpdate });
+  assert.match(output, /0\.3\.0.*0\.4\.0/s);
   rmSync(dir, { recursive: true, force: true });
 });
 

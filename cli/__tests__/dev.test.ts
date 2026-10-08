@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { assertLocalInstall, isWatchedPath, LocalInstallMissingError, reloadWorkspace, watchTargetFolders } from '../dev.ts';
+import { assertLocalInstall, isWatchedPath, LocalInstallMissingError, reloadWorkspace, refreshUpdateFile, watchTargetFolders } from '../dev.ts';
 import type { ResolvedConfig } from '../types.ts';
 
 test('isWatchedPath ignores .ds-viewer/, node_modules/, and .git/', () => {
@@ -92,4 +92,28 @@ test('reloadWorkspace re-resolves the config and rewrites entry.tsx from the new
   assert.match(readFileSync(entryPath, 'utf8'), /appName=\{"Second"\}/);
 
   rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('refreshUpdateFile writes null when updateCheck is disabled, without calling checkForUpdate', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  const config: ResolvedConfig = {
+    name: 'X', components: [], tokens: [], updateCheck: false, doctor: { strict: false },
+    projectRoot: dir, configPath: path.join(dir, 'ds-viewer.config.ts'),
+  };
+  const checkForUpdate = async () => { throw new Error('must not be called'); };
+  await refreshUpdateFile(config, '0.4.0', { checkForUpdate });
+  assert.equal(readFileSync(path.join(dir, '.ds-viewer', 'update.json'), 'utf8').trim(), 'null');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('refreshUpdateFile writes the real result when enabled', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  const config: ResolvedConfig = {
+    name: 'X', components: [], tokens: [], updateCheck: true, doctor: { strict: false },
+    projectRoot: dir, configPath: path.join(dir, 'ds-viewer.config.ts'),
+  };
+  const checkForUpdate = async () => ({ current: '0.4.0', latest: '0.5.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
+  await refreshUpdateFile(config, '0.4.0', { checkForUpdate });
+  assert.equal(JSON.parse(readFileSync(path.join(dir, '.ds-viewer', 'update.json'), 'utf8')).latest, '0.5.0');
+  rmSync(dir, { recursive: true, force: true });
 });

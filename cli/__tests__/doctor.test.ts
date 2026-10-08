@@ -441,3 +441,9 @@ test('the summary counts an unbound grid axis item and an untagged list item as 
   assert.equal(runDoctor(configFor(dir)).summary.unboundExamples, 3);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('runDoctor itself always returns update: null — the update check is layered on by runDoctorCommand, never inside the pure rules engine', () => {
+  const dir = makeProject(FULLY_COVERED_PAGE);
+  assert.equal(runDoctor(configFor(dir)).update, null);
+  rmSync(dir, { recursive: true, force: true });
+});

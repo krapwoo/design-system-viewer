@@ -409,8 +409,10 @@ export interface DoctorSummary {
 export interface DoctorJsonResult {
   version: 1;
   summary: DoctorSummary;
-  /** Always null in 0.3 (design §4 — filled in 0.4's update check). */
-  update: null;
+  /** `null` when the check didn't run (disabled, `--ci`, or offline with nothing cached);
+   *  otherwise filled by `cli/main.ts`'s `runDoctorCommand` — `runDoctor` itself never calls the
+   *  update check (it stays pure/synchronous; see this task's own note in Global Constraints). */
+  update: { current: string; latest: string; breaking: boolean } | null;
   issues: DoctorIssue[];
 }
 

@@ -6,6 +6,8 @@ import { sync } from './sync.ts';
 import { writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
+import { checkForUpdate, isUpdateCheckEnabled, writeUpdateFile, type UpdateCheckResult } from './updateCheck.ts';
+import { readOwnVersion } from './packageVersion.ts';
 import type { ResolvedConfig } from './types.ts';
 
 export class LocalInstallMissingError extends Error {}
@@ -64,6 +66,22 @@ export function reloadWorkspace(projectRoot: string): ResolvedConfig {
   return config;
 }
 
+/** Design §5: `dev` writes `.ds-viewer/update.json` every run, from a fresh check (respecting the
+ *  24h cache inside `checkForUpdate`) or `null` when checks are disabled — never left unwritten,
+ *  since the generated entry file (Task 17) always imports it. Exported and test-only-injectable
+ *  the same way `reloadWorkspace` already is, so this plan never needs to test `dev()` itself
+ *  (which spawns a real Expo process) to prove this one behavior. */
+export async function refreshUpdateFile(
+  config: ResolvedConfig,
+  ownVersion: string,
+  options: { checkForUpdate?: typeof checkForUpdate } = {},
+): Promise<void> {
+  const result: UpdateCheckResult | undefined = isUpdateCheckEnabled(config, process.env)
+    ? await (options.checkForUpdate ?? checkForUpdate)(ownVersion)
+    : undefined;
+  writeUpdateFile(config.projectRoot, result);
+}
+
 /** Design §2 "`dev`": checks the local install, runs `sync`, writes the workspace, starts Expo
  *  web on the first free port from 5181 bound to localhost only, and watches the project for
  *  component/token/page changes to re-run `sync`. Metro's own HMR updates the rendered component
@@ -71,6 +89,7 @@ export function reloadWorkspace(projectRoot: string): ResolvedConfig {
  *  on this: editing `Button.tsx` must update its props table, not just hot-reload the component). */
 export async function dev(initialConfig: ResolvedConfig): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
+  await refreshUpdateFile(initialConfig, readOwnVersion(import.meta.dirname));
   let config = initialConfig;
   sync(config);
   const workspace = writeWorkspace(config);
