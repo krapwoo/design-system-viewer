@@ -103,7 +103,16 @@ export function buildCatalogSections<TId extends string>(
   const groupIds = new Map<string, TId[]>();
   const addToGroup = (group: string, id: TId) => groupIds.set(group, [...(groupIds.get(group) ?? []), id]);
 
+  // Design §4 "duplicate-page-id" rule's viewer-side equivalent — this is the one place in the
+  // whole viewer that already resolves every page's id to build sections/groups, so it costs
+  // nothing extra to also notice two pages claiming the same one (`sectionsById` in
+  // `CatalogShell.tsx` would otherwise just let the last one silently win).
+  const seenIds = new Set<TId>();
   const sections: SectionDef<TId>[] = pages.map((page) => {
+    if ((globalThis as { __DEV__?: boolean }).__DEV__) {
+      if (seenIds.has(page.id)) console.warn(`[Catalog] Page id "${page.id}" is used by more than one page; only the last one will show. Give one of them its own "id".`);
+      seenIds.add(page.id);
+    }
     const componentName = page.component ?? page.id;
     const component = componentByName.get(componentName);
     addToGroup(page.group, page.id);

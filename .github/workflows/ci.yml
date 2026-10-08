@@ -27,3 +27,4 @@ jobs:
       # --no-sandbox, so the check runs Chrome exactly as on a developer machine.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm run check:catalog
+      - run: npm run check:doctor
