@@ -255,7 +255,8 @@ test('runDoctorCommand overlays update into --json output when a check resolves'
     export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
   `);
   const checkForUpdate = async () => ({ current: '0.3.0', latest: '0.4.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
-  const { output } = await runDoctorCommand(dir, ['--json'], { checkForUpdate });
+  // `env: {}`: independent of the ambient DS_VIEWER_NO_UPDATE_CHECK, which CI sets for the whole job.
+  const { output } = await runDoctorCommand(dir, ['--json'], { checkForUpdate, env: {} });
   assert.deepEqual(JSON.parse(output).update, { current: '0.3.0', latest: '0.4.0', breaking: false });
   rmSync(dir, { recursive: true, force: true });
 });
@@ -277,7 +278,7 @@ test('runDoctorCommand mentions the update in its human-readable output too, not
     export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
   `);
   const checkForUpdate = async () => ({ current: '0.3.0', latest: '0.4.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
-  const { output } = await runDoctorCommand(dir, [], { checkForUpdate });
+  const { output } = await runDoctorCommand(dir, [], { checkForUpdate, env: {} });
   assert.match(output, /0\.3\.0.*0\.4\.0/s);
   rmSync(dir, { recursive: true, force: true });
 });

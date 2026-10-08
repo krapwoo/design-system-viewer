@@ -132,13 +132,13 @@ export async function runInit(projectRoot: string, rest: string[], options: RunI
 export async function runDoctorCommand(
   projectRoot: string,
   rest: string[],
-  options: { checkForUpdate?: typeof checkForUpdate } = {},
+  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv } = {},
 ): Promise<{ output: string; exitCode: number }> {
   const config = resolveConfig(projectRoot);
   const result = runDoctor(config);
   // Design §4 "`--ci`: ... no update check." — `--ci` skips this whole block even when
   // `updateCheck` is otherwise enabled; `result.update` stays `null`.
-  if (!rest.includes('--ci') && isUpdateCheckEnabled(config, process.env)) {
+  if (!rest.includes('--ci') && isUpdateCheckEnabled(config, options.env ?? process.env)) {
     const ownVersion = readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
     const updateResult = await (options.checkForUpdate ?? checkForUpdate)(ownVersion);
     if (updateResult) {

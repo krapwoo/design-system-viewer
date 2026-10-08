@@ -82,9 +82,9 @@ export function reloadWorkspace(projectRoot: string, updateEndpoint?: { baseUrl:
 export async function refreshUpdateFile(
   config: ResolvedConfig,
   ownVersion: string,
-  options: { checkForUpdate?: typeof checkForUpdate } = {},
+  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv } = {},
 ): Promise<void> {
-  const result: UpdateCheckResult | undefined = isUpdateCheckEnabled(config, process.env)
+  const result: UpdateCheckResult | undefined = isUpdateCheckEnabled(config, options.env ?? process.env)
     ? await (options.checkForUpdate ?? checkForUpdate)(ownVersion)
     : undefined;
   writeUpdateFile(config.projectRoot, result);

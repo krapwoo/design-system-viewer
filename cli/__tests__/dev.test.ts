@@ -115,7 +115,8 @@ test('refreshUpdateFile writes the real result when enabled', async () => {
     projectRoot: dir, configPath: path.join(dir, 'ds-viewer.config.ts'),
   };
   const checkForUpdate = async () => ({ current: '0.4.0', latest: '0.5.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
-  await refreshUpdateFile(config, '0.4.0', { checkForUpdate });
+  // `env: {}`: independent of the ambient DS_VIEWER_NO_UPDATE_CHECK, which CI sets for the whole job.
+  await refreshUpdateFile(config, '0.4.0', { checkForUpdate, env: {} });
   assert.equal(JSON.parse(readFileSync(path.join(dir, '.ds-viewer', 'update.json'), 'utf8')).latest, '0.5.0');
   rmSync(dir, { recursive: true, force: true });
 });
