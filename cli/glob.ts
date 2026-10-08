@@ -32,6 +32,14 @@ function walk(root: string, segments: string[], consumed: string[]): string[] {
     }
   }
   const [segment, ...rest] = segments;
+  // `readdirSync` never returns "." or ".." as entries, so without this a config glob that climbs
+  // out of its own root (e.g. kit-host's `../starter-kit/components/*/index.ts`, Task 5) would
+  // regex-match against real directory entries and silently resolve to nothing. `path.join` below
+  // already collapses "." and ".." correctly once they're part of `consumed` — this just lets them
+  // reach it instead of being treated as a literal name to search for.
+  if (segment === '..' || segment === '.') {
+    return walk(root, rest, [...consumed, segment]);
+  }
   const dir = path.join(root, ...consumed);
   let entries: string[];
   try {

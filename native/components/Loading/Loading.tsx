@@ -1,9 +1,18 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Animated, Easing, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, type PathProps } from 'react-native-svg';
 import { DS_SEMANTIC, DS_MOTION_LOOP_DURATION } from '../../../tokens';
 
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+// `Animated.createAnimatedComponent` forces `collapsable: false` onto the wrapped component's
+// props (so the native view isn't flattened out from under the native driver) — react-native-svg's
+// web shim doesn't recognize `collapsable` and passes it straight through to the DOM, so an
+// animated Path would otherwise log "Received `false` for a non-boolean attribute `collapsable`."
+// This wrapper drops it before it reaches the real Path; native platforms never read it off Path.
+const AnimatedPath = Animated.createAnimatedComponent(
+  React.forwardRef<unknown, PathProps & { collapsable?: boolean }>(({ collapsable: _collapsable, ...rest }, ref) => (
+    <Path ref={ref as never} {...rest} />
+  )),
+);
 
 // A 20×20 viewBox, ~292° arc (radius 9, centre 10,10), 2px stroke. The arc is a single stroke whose
 // dash exactly covers its length, so animating the dash offset draws it on (fills) then off (empties).
@@ -95,18 +104,14 @@ export function Loading({
   }
 
   return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox="0 0 20 20"
-      fill="none"
-      style={style}
-      accessible
-      accessibilityRole="progressbar"
-      accessibilityLabel="Loading"
-    >
-      <AnimatedPath d={ARC_PATH} stroke={color} strokeWidth={2} strokeDasharray={ARC_LEN} strokeDashoffset={progress} />
-    </Svg>
+    // The accessibility props live on this wrapping View, not the Svg: react-native-svg's web shim
+    // forwards unrecognized props straight to the DOM, and `accessible`/`accessibilityRole` would
+    // otherwise log "Received `true`/`\"progressbar\"` for a non-boolean/non-standard attribute."
+    <View style={style} accessible accessibilityRole="progressbar" accessibilityLabel="Loading">
+      <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+        <AnimatedPath d={ARC_PATH} stroke={color} strokeWidth={2} strokeDasharray={ARC_LEN} strokeDashoffset={progress} />
+      </Svg>
+    </View>
   );
 }
 

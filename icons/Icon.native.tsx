@@ -46,7 +46,7 @@ export function Icon({
         const stroke = resolvePaint(p.stroke, color) ?? (isStroke ? color : undefined);
         const hasStroke = stroke !== undefined && stroke !== 'none';
 
-        const common: Record<string, unknown> = { key: i, fill, fillRule: p.fillRule };
+        const common: Record<string, unknown> = { fill, fillRule: p.fillRule };
         if (hasStroke) {
           common.stroke = stroke;
           common.strokeWidth = p.strokeWidth ?? defStrokeWidth;
@@ -56,29 +56,34 @@ export function Icon({
             common.strokeLinejoin = 'round';
           }
         }
-        if (p.translateX !== undefined) common.translateX = p.translateX;
-        if (p.translateY !== undefined) common.translateY = p.translateY;
+        // A `transform` string (not `translateX`/`translateY` props) — react-native-svg's web
+        // shim only folds `translateX`/`translateY` into the SVG `transform` attribute, it does not
+        // strip the original props first, so they would otherwise also reach the DOM unchanged and
+        // React would warn "does not recognize the `translateX` prop on a DOM element".
+        if (p.translateX !== undefined || p.translateY !== undefined) {
+          common.transform = `translate(${p.translateX ?? 0}, ${p.translateY ?? 0})`;
+        }
 
-        return renderPrimitive(p, common);
+        return renderPrimitive(p, common, i);
       })}
     </Svg>
   );
 }
 
-function renderPrimitive(p: IconPrimitive, common: Record<string, unknown>): React.ReactElement | null {
+function renderPrimitive(p: IconPrimitive, common: Record<string, unknown>, key: number): React.ReactElement | null {
   switch (p.tag) {
     case 'path':
-      return <Path {...common} d={p.d} />;
+      return <Path key={key} {...common} d={p.d} />;
     case 'rect':
-      return <Rect {...common} x={p.x} y={p.y} width={p.width} height={p.height} rx={p.rx} ry={p.ry} />;
+      return <Rect key={key} {...common} x={p.x} y={p.y} width={p.width} height={p.height} rx={p.rx} ry={p.ry} />;
     case 'circle':
-      return <Circle {...common} cx={p.cx} cy={p.cy} r={p.r} />;
+      return <Circle key={key} {...common} cx={p.cx} cy={p.cy} r={p.r} />;
     case 'line':
-      return <Line {...common} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} />;
+      return <Line key={key} {...common} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} />;
     case 'polyline':
-      return <Polyline {...common} points={p.points} />;
+      return <Polyline key={key} {...common} points={p.points} />;
     case 'polygon':
-      return <Polygon {...common} points={p.points} />;
+      return <Polygon key={key} {...common} points={p.points} />;
     default:
       return null;
   }
