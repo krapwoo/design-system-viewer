@@ -60,3 +60,23 @@ test('buildCatalogSections hides the Props box and uses the page file as the Sou
   assert.equal(overview?.hide?.props, true);
   assert.equal(overview?.props, undefined);
 });
+
+test('buildCatalogSections summarises props inherited from node_modules as one row per source (design §3)', () => {
+  const searchField = {
+    name: 'SearchField',
+    file: 'src/components/SearchField/index.ts',
+    props: [{ name: 'iconName', type: 'IconName', required: false, desc: 'Leading icon.' }],
+    inheritedFrom: ['TextInput'],
+  };
+  const pages = [defineCatalogPage({ id: 'SearchField', group: 'Inputs', description: 'Search.' })];
+  const { sections } = buildCatalogSections(pages, [searchField]);
+  assert.deepEqual(sections[0].props?.map((p) => p.name), ['iconName', 'TextInput props']);
+  assert.deepEqual(sections[0].props?.[1], {
+    name: 'TextInput props',
+    type: 'inherited',
+    required: true,
+    desc: 'Plus all TextInput props, not listed individually.',
+  });
+  const undocumented = buildCatalogSections([], [searchField]).sections[0];
+  assert.equal(undocumented.props?.at(-1)?.name, 'TextInput props');
+});
