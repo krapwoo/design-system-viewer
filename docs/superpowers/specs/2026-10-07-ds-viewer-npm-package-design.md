@@ -401,5 +401,5 @@ Monorepo project switching; `ds-viewer list` and `update --all` across projects;
 | npm account `krapwoo` owns the `@krapwoo` scope | Before 0.1 | Confirmed |
 | GitHub repository public | Before 0.1 | Done (verified) |
 | License | Before 0.1 | Decided: MIT |
-| First publish of `@krapwoo/ds-viewer` from the owner's machine, then enable trusted publishing on npm | At 0.1 | Pending |
+| First publish of `@krapwoo/ds-viewer` from the owner's machine, then enable trusted publishing on npm | At 0.1 | Done: 0.1.0 published 2026-10-08; trusted publishing configured (owner-reported) |
 | Approve deprecating `@krapwoo/catalog` | At 0.2 | Pending |
