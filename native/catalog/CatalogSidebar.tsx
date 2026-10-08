@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-nati
 import type { ImageSourcePropType, LayoutChangeEvent, NativeSyntheticEvent, ImageLoadEventData } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { logoLayout } from './logoLayout';
-import { filterGroups, hashForId } from './catalogNavigation';
+import { filterGroups, hashForId, UPDATE_PAGE_ID } from './catalogNavigation';
 import type { NavGroup } from './types';
 import { CatalogSearchInput } from './CatalogSearchInput';
 
@@ -43,6 +43,32 @@ function NavItem<TId extends string>({ id, active, onPress }: { id: TId; active:
   );
 }
 
+function FooterLink({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="link"
+      accessibilityState={{ selected: active }}
+      {...({ href: hashForId(UPDATE_PAGE_ID), ...(active ? { 'aria-current': 'page' } : null) } as Record<string, unknown>)}
+      style={({ pressed }) => [
+        styles.footerLink,
+        (pressed || hovered) && styles.footerLinkHover,
+        active && styles.footerLinkActive,
+        focused && styles.focusRing,
+      ]}
+    >
+      <View style={styles.footerDot} />
+      <Text style={[styles.footerLabel, active && styles.footerLabelActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 /**
  * Catalog navigation: app name, caption, a filter field, and one link per page under grouped
  * headings. Selecting a link opens that page (CatalogShell owns which page is shown). The filter
@@ -55,6 +81,7 @@ export function CatalogSidebar<TId extends string>({
   groups,
   active,
   onPress,
+  footer,
 }: {
   logo: string;
   /** Optional logo image, validated and bundled by `cli/workspace.ts` from the project's `logo`
@@ -64,8 +91,12 @@ export function CatalogSidebar<TId extends string>({
   logoImageSource?: ImageSourcePropType;
   caption: string;
   groups: NavGroup<TId>[];
-  active: TId | undefined;
+  active: string | undefined;
   onPress: (id: TId) => void;
+  /** The quiet update-notice link below the nav list (design §5's footer line), or `undefined`
+   *  when there is no update to show. `active` is true while the update page itself is open — it
+   *  gets the same active styling a selected nav item would. */
+  footer?: { label: string; active: boolean; onPress: () => void };
 }) {
   const [query, setQuery] = useState('');
   // A bundled local image (the only kind `cli/workspace.ts` ever produces — see its doc comment
@@ -165,6 +196,11 @@ export function CatalogSidebar<TId extends string>({
           </View>
         ))}
       </ScrollView>
+      {footer && (
+        <View style={styles.footerContainer}>
+          <FooterLink label={footer.label} active={footer.active} onPress={footer.onPress} />
+        </View>
+      )}
     </View>
   );
 }
@@ -193,6 +229,26 @@ const styles = StyleSheet.create({
   inlineHeaderTop: { alignItems: 'flex-start' },
   inlineText: { flex: 1, minWidth: 0 },
   empty: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX, paddingVertical: 8 },
+  footerContainer: {
+    borderTopWidth: 1,
+    borderTopColor: CATALOG_COLOR.borderHairline,
+    paddingHorizontal: CATALOG_LAYOUT.sidebarPaddingX,
+    paddingTop: 10,
+    paddingBottom: 14,
+  },
+  footerLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: CATALOG_SPACE.sm,
+    minHeight: CATALOG_LAYOUT.controlSize,
+    paddingHorizontal: 10,
+    borderRadius: CATALOG_RADIUS.sm,
+  },
+  footerLinkHover: { backgroundColor: CATALOG_COLOR.surfacePressed },
+  footerLinkActive: { backgroundColor: CATALOG_COLOR.accentSubtle },
+  footerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: CATALOG_COLOR.accent, flexShrink: 0 },
+  footerLabel: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  footerLabelActive: { color: CATALOG_COLOR.accent, fontWeight: '700' },
   groupLabel: {
     fontSize: CATALOG_TYPE.xs,
     fontWeight: '800',
