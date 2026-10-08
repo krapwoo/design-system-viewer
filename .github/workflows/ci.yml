@@ -22,4 +22,8 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      # ubuntu-latest (24.04) blocks unprivileged user namespaces through AppArmor, so headless
+      # Chrome cannot start its sandbox. Lift the restriction on the runner instead of passing
+      # --no-sandbox, so the check runs Chrome exactly as on a developer machine.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm run check:catalog
