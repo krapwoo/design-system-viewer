@@ -34,6 +34,12 @@ Written 2026-10-08 by the App Design controller, session `20261007_205910_31e7a4
 - `restart-spike/README.md` holds the controller's restart spike on a real Expo/Metro in `kit-host`. The restart works: group kill, same port, Metro back in about 1 s, no orphan. It reproduced two orphaned-Metro defects (SIGTERM to the supervisor; closing the terminal, i.e. SIGHUP) and confirmed the fixes (Errata 7a and 7b). Metro binds `[::1]` only (Errata 7c).
 - **Resume at step 3 (build).**
 
+## 3b. Update (build complete, same session)
+
+- Steps 3–6 are **done**. Tasks 1–19 were built in guarded Sonnet slices (a1, n1, n2, a2, c1, d1; the native slices ran in a separate worktree and were merged). Fable's implementation review (`fable-impl-review.md`) returned SHIP_WITH_FIXES (1 Critical, 3 Important, 12 Minor). One consolidated fix pass (`fix1-brief.md`) applied everything along with the controller's end-to-end findings, and the controller added three small follow-ups (a rejected-plan reset with a test, banner link underline, a capped log height).
+- Task 20 results and screenshots with hashes: `task20-results.md`, `task20-shots/`. `npm test` 363 of 363.
+- **Resume at step 7 (PR → CI → merge → release).** Pushing, opening the PR, merging, tagging and publishing each need the owner's authorization.
+
 ## 4. Next steps, in order
 
 1. ~~**Fable follow-up review**~~ (done, see §3a) of the corrected plan. Reuse `fable-plan-review-brief.md` in the style of the 0.3 follow-up: per-finding RESOLVED/PARTIAL/OPEN plus new defects in changed regions only. **Policy:** if it is NOT_READY again with small, precise fixes, write them as a binding `## Errata` section at the top of the plan (as 0.3 did) instead of a third review round.

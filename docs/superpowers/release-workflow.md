@@ -13,8 +13,8 @@ Approved by the owner on 2026-10-08, after the 0.4 retrospective. These rules ap
 ## Trial (0.5): one plan review
 
 4. **One Fable plan review, aimed at design, mockup conformance, security, and the order tasks must run in.** Its findings are applied in one correction pass, which the controller checks under rule 3. There is no second plan review: anything left goes into a binding `## Errata` section at the top of the plan. The full review happens on the built branch.
-   - **Measure:** the Critical and Important counts from the 0.5 build review, compared with 0.3 (0 Critical, 6 Important) and 0.4 (when available), plus the hours from the mockup approval to the first build slice.
-   - **Decide after 0.5:** keep the trial if the build-review Critical and Important counts are no worse than 0.3's. Otherwise go back to two plan reviews.
+   - **Measure:** the Critical and Important counts from the 0.5 build review, compared with 0.3 (0 Critical, 6 Important) and 0.4 (1 Critical, 3 Important, 12 Minor; Fable, 2026-10-08), plus the hours from the mockup approval to the first build slice. 0.4 for reference: mockup approved at 11:59, first build slice started at 15:05 (local).
+   - **Decide after 0.5:** keep the trial if the build-review Critical and Important counts are no worse than 0.3's or 0.4's, whichever is higher. Otherwise go back to two plan reviews.
 
 ## Not adopted
 

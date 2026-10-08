@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { DS_VIEWER_SECRET_HEADER } from './catalogNavigation';
 import { daysAgoLabel, isAlreadyUpToDateError, resolvePanelPhase, type UpdatePlanView, type UpdateStatusView } from './updatePanelState';
@@ -117,10 +117,16 @@ function Steps({ steps, failedStep }: { steps: { label: string; state: 'done' | 
 }
 
 function LogBlock({ children }: { children: string }) {
+  // Real npm logs run to dozens of lines; cap the height so "Copy log" stays in view. The region
+  // is keyboard-focusable on web so the overflow can be scrolled without a pointer.
   return (
-    <View style={styles.logBox}>
+    <ScrollView
+      style={styles.logBox}
+      accessibilityLabel="Update log"
+      {...(Platform.OS === 'web' ? ({ tabIndex: 0 } as Record<string, unknown>) : {})}
+    >
       <Text style={styles.logText}>{children}</Text>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -545,6 +551,6 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted },
   stepLabelNow: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.text, fontWeight: '700' },
   stepLabelFail: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.text, fontWeight: '700' },
-  logBox: { backgroundColor: '#1d1d1f', borderRadius: CATALOG_RADIUS.md, padding: 12, marginTop: 8 },
+  logBox: { backgroundColor: '#1d1d1f', borderRadius: CATALOG_RADIUS.md, padding: 12, marginTop: 8, maxHeight: 240 },
   logText: { color: '#e8e8e8', fontSize: 12, fontFamily: 'Menlo, monospace' },
 });
