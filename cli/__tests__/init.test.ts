@@ -173,7 +173,7 @@ test('initNewProject installs missing kit packages via the injected installer, c
   const config = readFileSync(path.join(projectRoot, 'ds-viewer.config.ts'), 'utf8');
   assert.match(config, /components: \['src\/ds\/components\/\*\/index\.ts'\]/);
   assert.match(config, /pages: \['src\/ds\/pages\/\*\.catalog\.tsx'\]/);
-  assert.match(config, /starterKit: \{ version: '\d+\.\d+\.\d+' \}/);
+  assert.match(config, /starterKit: \{ version: '\d+\.\d+\.\d+', root: 'src\/ds' \}/);
   const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['ds-viewer'], 'ds-viewer');
   assert.match(packageJson.devDependencies['@krapwoo/ds-viewer'], /^\^\d+\.\d+\.\d+$/);

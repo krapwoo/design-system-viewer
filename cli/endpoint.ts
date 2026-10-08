@@ -1,0 +1,169 @@
+// cli/endpoint.ts
+import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
+import { DS_VIEWER_SECRET_HEADER } from '../native/catalog/catalogNavigation.ts';
+import type { UpdatePlan } from './updatePlan.ts';
+
+/** A constant-time secret compare (Minor finding, Fable correction pass; controller decision 1
+ *  makes this required, not optional) — `!==` on two strings short-circuits at the first
+ *  differing byte, which leaks the secret's length and prefix through response-timing one byte at
+ *  a time. Buffers of different lengths are rejected before ever reaching `timingSafeEqual`
+ *  (which throws, rather than returning `false`, when its two inputs aren't the same length). */
+function secretMatches(received: string | string[] | undefined, expected: string): boolean {
+  if (typeof received !== 'string') return false;
+  const receivedBuf = Buffer.from(received);
+  const expectedBuf = Buffer.from(expected);
+  return receivedBuf.length === expectedBuf.length && timingSafeEqual(receivedBuf, expectedBuf);
+}
+
+export type UpdateStatus =
+  | { phase: 'idle' }
+  | { phase: 'updating'; steps: { label: string; state: 'done' | 'now' | 'todo' }[] }
+  | { phase: 'restarting' }
+  // Errata 1b: `latest` lets the viewer render the success state after `update.json` has gone
+  // back to `null` (current === latest post-reload) without the panel ever needing `update` again.
+  | { phase: 'success'; doctorSummary: string; files: string[]; latest: string }
+  | { phase: 'failure'; log: string; failedStep: string };
+
+export interface EndpointDeps {
+  secret: string;
+  /** The viewer's own Metro URL, e.g. `http://localhost:5181` — computed once per `dev` run (Task 18). */
+  allowedOrigin: string;
+  buildPlan: () => Promise<UpdatePlan | { error: string }>;
+  /** Fire-and-forget — must never throw; a failure surfaces only through `getStatus()`'s own
+   *  `'failure'` phase, never as a rejected promise this endpoint would have to catch. */
+  startUpdate: (plan: UpdatePlan) => void;
+  getStatus: () => UpdateStatus;
+}
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown, allowedOrigin: string): void {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowedOrigin });
+  res.end(JSON.stringify(body));
+}
+
+/** Design §5 "Local endpoint safeguards", every one of them, in the exact order this plan's own
+ *  `spikes/cors-endpoint/` spike proved: Origin (including `OPTIONS`) → secret → route. Does not
+ *  call `.listen()` itself — Task 18's `dev.ts` owns the real port (`0` → OS-assigned, `127.0.0.1`
+ *  only) and this task's own tests each pick their own ephemeral port the same way. */
+export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
+  // Critical finding, Fable correction pass: the "one update at a time" refusal only ever checked
+  // `getStatus()`, which doesn't become `'updating'` until `startUpdate` runs — but `buildPlan`
+  // (re-downloading the tarball) can take seconds, and the panel leaves **Update now** enabled
+  // throughout, so a second click during that window passed the same check twice. This flag closes
+  // exactly that window: set synchronously before the plan is even (re-)built, reset on every path
+  // that does *not* hand the plan to `startUpdate` — the 502/409 refusals below. Once `startUpdate`
+  // is actually called, `getStatus()` already reports `'updating'` (set synchronously inside it, by
+  // every real caller), so resetting this flag right after is safe and lets a later retry (after a
+  // `'failure'`, in the same process) through again.
+  let starting = false;
+  return http.createServer(async (req, res) => {
+    // Controller decision 1 (required, not optional): reject a request whose `Host` header is not
+    // this very socket's own `127.0.0.1:<port>` — a DNS-rebinding defence, since `req.socket`'s own
+    // `localPort` is the port the OS actually accepted this connection on, never spoofable the way
+    // `Origin` (an ordinary request header) technically is from a non-browser client. Checked before
+    // everything else, including `OPTIONS`.
+    if (req.headers.host !== `127.0.0.1:${req.socket.localPort}`) {
+      res.writeHead(400).end('Invalid Host header.');
+      return;
+    }
+
+    const origin = req.headers.origin;
+
+    if (req.method === 'OPTIONS') {
+      // The browser's own preflight never attaches the app's custom header to itself — checking
+      // the secret here would make every state-changing request fail cross-origin before it ever
+      // got the chance to send one.
+      if (origin !== deps.allowedOrigin) {
+        res.writeHead(403).end();
+        return;
+      }
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': deps.allowedOrigin,
+        'Access-Control-Allow-Methods': 'POST, GET',
+        'Access-Control-Allow-Headers': DS_VIEWER_SECRET_HEADER,
+      });
+      res.end();
+      return;
+    }
+
+    if (origin === undefined) {
+      res.writeHead(400).end('Missing Origin header.');
+      return;
+    }
+    if (origin !== deps.allowedOrigin) {
+      res.writeHead(403).end('Origin rejected.');
+      return;
+    }
+    if (!secretMatches(req.headers[DS_VIEWER_SECRET_HEADER], deps.secret)) {
+      res.writeHead(401).end('Missing or wrong secret.');
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/plan') {
+      const plan = await deps.buildPlan();
+      sendJson(res, 200, plan, deps.allowedOrigin);
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/update') {
+      // "Runs one update at a time; further start requests are refused while one runs" (design
+      // §5) — checked before even building a fresh plan, so a second click never re-downloads
+      // anything while the first update is still in flight.
+      const status = deps.getStatus();
+      if (starting || status.phase === 'updating' || status.phase === 'restarting') {
+        sendJson(res, 409, { error: 'An update is already running.' }, deps.allowedOrigin);
+        return;
+      }
+      starting = true;
+      let plan: Awaited<ReturnType<EndpointDeps['buildPlan']>>;
+      try {
+        plan = await deps.buildPlan();
+      } catch (error) {
+        // A rejected plan must not leave `starting` stuck, or every later Update now is refused.
+        starting = false;
+        sendJson(res, 502, { error: (error as Error).message }, deps.allowedOrigin);
+        return;
+      }
+      if ('error' in plan) {
+        starting = false;
+        sendJson(res, 502, { error: plan.error }, deps.allowedOrigin);
+        return;
+      }
+      // "Refuses with the plan's dirty-file list ... the panel offers no override" (design §5) —
+      // this is the one, authoritative refusal: even if the panel's own UI somehow let a dirty
+      // plan through, the endpoint itself still never starts.
+      if (plan.dirtyFiles.length > 0) {
+        starting = false;
+        sendJson(res, 409, { error: 'dirty-files', dirtyFiles: plan.dirtyFiles }, deps.allowedOrigin);
+        return;
+      }
+      // Sends 202 *before* ever calling `startUpdate` — install/migrate/doctor run as real child
+      // processes that can take seconds (Critical finding, Fable correction pass: calling
+      // `startUpdate` first, synchronously, blocked this response until the whole update finished,
+      // so the browser's `POST /update` saw a connection reset instead of 202, and every
+      // `/update/status` poll during the install went unanswered). `setImmediate` defers the actual
+      // work to the next turn of the event loop, after this response has already been written.
+      sendJson(res, 202, { started: true }, deps.allowedOrigin);
+      // Errata 3: `startUpdate` is wrapped here too — a synchronous throw inside `setImmediate`'s
+      // callback would otherwise become an unhandled exception on the whole process, since there is
+      // no request/response left at that point to carry the error back to.
+      setImmediate(() => {
+        try {
+          deps.startUpdate(plan);
+        } catch (error) {
+          console.warn('Update could not start: ' + (error as Error).message);
+        } finally {
+          starting = false;
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/update/status') {
+      sendJson(res, 200, deps.getStatus(), deps.allowedOrigin);
+      return;
+    }
+
+    res.writeHead(404).end('Not found.');
+  });
+}

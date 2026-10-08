@@ -29,7 +29,7 @@ function startDev() {
     // whole group (the `expo start` grandchild included) with one signal, not just this one pid.
     const child = spawn('node', [path.join('node_modules', '@krapwoo', 'ds-viewer', 'dist', 'cli', 'main.js'), 'dev'], {
       cwd: projectRoot,
-      env: { ...process.env, CI: '1' },
+      env: { ...process.env, CI: '1', DS_VIEWER_NO_UPDATE_CHECK: '1' },
       detached: true,
     });
     let resolved = false;

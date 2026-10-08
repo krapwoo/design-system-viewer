@@ -26,6 +26,13 @@ function run(...args: string[]) {
   });
 }
 
+function runIn(cwd: string, ...args: string[]) {
+  return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', mainPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+  });
+}
+
 for (const flag of ['--help', '-h', 'help']) {
   test(`${flag} prints usage with every command and exits 0`, () => {
     const result = run(flag);
@@ -201,7 +208,7 @@ function makeDoctorFixture(pageSource: string): string {
   return dir;
 }
 
-test('runDoctorCommand prints JSON and exits non-zero with --ci when there is an error', () => {
+test('runDoctorCommand prints JSON and exits non-zero with --ci when there is an error', async () => {
   const dir = makeDoctorFixture(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
     export default defineCatalogPage({
@@ -209,21 +216,70 @@ test('runDoctorCommand prints JSON and exits non-zero with --ci when there is an
       variants: { items: [{ key: 'removed', name: 'Removed', props: { variant: 'removed' }, node: null }] },
     });
   `);
-  const result = runDoctorCommand(dir, ['--json', '--ci']);
+  const result = await runDoctorCommand(dir, ['--json', '--ci']);
   const json = JSON.parse(result.output);
   assert.equal(json.summary.errors, 1);
   assert.equal(result.exitCode, 1);
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('runDoctorCommand prints the human report and never sets an exit code without --ci', () => {
+test('runDoctorCommand prints the human report and never sets an exit code without --ci', async () => {
   const dir = makeDoctorFixture(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
     export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
   `);
-  const result = runDoctorCommand(dir, []);
+  // No --ci here, so the update-check overlay would otherwise run against the real registry
+  // (Global Constraints: "No network in npm test") — inject a stub that resolves "no update known",
+  // the same uniform outcome `checkForUpdate` itself returns when offline.
+  const checkForUpdate = async () => undefined;
+  const result = await runDoctorCommand(dir, [], { checkForUpdate });
   assert.match(result.output, /error/);
   assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand never calls checkForUpdate with --ci, even when updateCheck is enabled', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => { throw new Error('must not be called'); };
+  const result = await runDoctorCommand(dir, ['--ci'], { checkForUpdate });
+  assert.ok(result); // reaching this line without throwing is the assertion
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand overlays update into --json output when a check resolves', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => ({ current: '0.3.0', latest: '0.4.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
+  // `env: {}`: independent of the ambient DS_VIEWER_NO_UPDATE_CHECK, which CI sets for the whole job.
+  const { output } = await runDoctorCommand(dir, ['--json'], { checkForUpdate, env: {} });
+  assert.deepEqual(JSON.parse(output).update, { current: '0.3.0', latest: '0.4.0', breaking: false });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand leaves update: null when checkForUpdate resolves undefined (offline)', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => undefined;
+  const { output } = await runDoctorCommand(dir, ['--json'], { checkForUpdate });
+  assert.equal(JSON.parse(output).update, null);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runDoctorCommand mentions the update in its human-readable output too, not only --json', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const checkForUpdate = async () => ({ current: '0.3.0', latest: '0.4.0', breaking: false, summary: [], checkedAt: new Date().toISOString() });
+  const { output } = await runDoctorCommand(dir, [], { checkForUpdate, env: {} });
+  assert.match(output, /0\.3\.0.*0\.4\.0/s);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -244,4 +300,48 @@ test('runExplainCommand with a malformed --heights value exits 1 with a clear me
   const result = runExplainCommand('/irrelevant', 'Widget', ['--heights', 'nope']);
   assert.match(result.output, /--heights must be two comma-separated numbers/);
   assert.equal(result.exitCode, 1);
+});
+
+test('"kit diff" with no component name prints usage and exits 1', () => {
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-kit-diff-usage-');
+  const result = runIn(dir, 'kit', 'diff');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage: ds-viewer kit diff <Component>/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"kit diff Button" dispatches to runKitDiffCommand', () => {
+  // EXISTING_PROJECT_FIXTURE_ROOT's own ds-viewer.config.ts has no starterKit (fixtures/existing-project/ds-viewer.config.ts)
+  // — a real, deterministic, network-free dispatch proof: reaching runKitDiffCommand's own
+  // "no starter kit configured" message is only possible via main()'s "kit diff" branch.
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-kit-diff-button-');
+  const result = runIn(dir, 'kit', 'diff', 'Button');
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /no starter kit configured/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"migrate" with no --from prints usage and exits 1', () => {
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-migrate-usage-');
+  const result = runIn(dir, 'migrate');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Usage: ds-viewer migrate --from <version>/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"migrate --from 0.3.0 --json" prints valid JSON with from: "0.3.0"', () => {
+  const dir = copyFixture(EXISTING_PROJECT_FIXTURE_ROOT, 'ds-viewer-run-migrate-json-');
+  const result = runIn(dir, 'migrate', '--from', '0.3.0', '--json');
+  assert.equal(result.status, 0);
+  // MIGRATIONS is empty in 0.4, so this never touches any real file — changes: [] is the whole assertion.
+  assert.deepEqual(JSON.parse(result.stdout), { version: 1, from: '0.3.0', changes: [], dryRun: false });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('"update --dry-run" dispatches through to resolveConfig and reports its error, never touching the network', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-run-update-'));
+  const result = runIn(dir, 'update', '--dry-run');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /No ds-viewer\.config\.ts found/);
+  rmSync(dir, { recursive: true, force: true });
 });

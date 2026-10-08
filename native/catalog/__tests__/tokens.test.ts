@@ -31,6 +31,14 @@ test('colors match the approved visual system', () => {
       accentSubtle: '#e9efff',
       focusRing: '#c9d7ff',
       code: 'Menlo',
+      warning: '#8a4b00',
+      warningSubtle: '#fff4e0',
+      warningBorder: '#f0cf97',
+      danger: '#b3261e',
+      dangerSubtle: '#fdecea',
+      dangerBorder: '#f2b8b5',
+      success: '#1e6b3a',
+      successSubtle: '#e8f5ec',
     },
   );
 });
@@ -58,4 +66,19 @@ test('text colors meet WCAG AA on every catalog surface', () => {
   }
   assert.ok(contrast(CATALOG_COLOR.accent, CATALOG_COLOR.accentSubtle) >= 4.5, 'active nav label');
   assert.ok(contrast('#777777', CATALOG_COLOR.pageBackground) < 4.5, 'the reference gray really fails');
+});
+
+test('the 0.4 warning/danger/success tokens match the approved update-panel mockup exactly', () => {
+  assert.equal(CATALOG_COLOR.warning, '#8a4b00');
+  assert.equal(CATALOG_COLOR.warningSubtle, '#fff4e0');
+  assert.equal(CATALOG_COLOR.warningBorder, '#f0cf97');
+  assert.equal(CATALOG_COLOR.danger, '#b3261e');
+  assert.equal(CATALOG_COLOR.dangerSubtle, '#fdecea');
+  assert.equal(CATALOG_COLOR.dangerBorder, '#f2b8b5');
+  assert.equal(CATALOG_COLOR.success, '#1e6b3a');
+  assert.equal(CATALOG_COLOR.successSubtle, '#e8f5ec');
+});
+
+test('updateContentMaxWidth matches the approved mockup\'s .pagewrap (512px)', () => {
+  assert.equal(CATALOG_LAYOUT.updateContentMaxWidth, 512);
 });

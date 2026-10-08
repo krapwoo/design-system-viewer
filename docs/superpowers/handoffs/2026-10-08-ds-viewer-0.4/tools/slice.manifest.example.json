@@ -1,0 +1,65 @@
+{
+  "manifest_version": 1,
+  "task_id": "ds-viewer-03-build",
+  "slice_id": "b1",
+  "attempt": 1,
+  "role": "mutating",
+  "model": "sonnet",
+  "workdir": "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.3",
+  "add_dirs": [
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-03-build"
+  ],
+  "required_read_paths": [
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-03-build/b1-brief.md",
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.3/docs/superpowers/plans/2026-10-08-ds-viewer-0.3.md",
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.3/docs/superpowers/specs/2026-10-07-ds-viewer-npm-package-design.md"
+  ],
+  "tools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Edit",
+    "Write",
+    "Bash"
+  ],
+  "allowed_tools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Edit",
+    "Write",
+    "Bash"
+  ],
+  "disallowed_tools": [
+    "WebSearch",
+    "WebFetch",
+    "NotebookEdit",
+    "Task"
+  ],
+  "required_tools": [
+    "Read",
+    "Edit",
+    "Bash"
+  ],
+  "prompt_path": "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-03-build/b1-brief.md",
+  "prompt_sha256": "56e55d5ed5b632b1d74851cf62426a5b22798fcfbf982f20f33f3221090d30e6",
+  "write_paths": [
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.3"
+  ],
+  "deny_write_paths": [
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.3/.git",
+    "/Users/woohopark/HermesProject/Worktrees/design-system-viewer-0.3/docs",
+    "/Users/woohopark/HermesProject/Projects",
+    "/Users/woohopark/HermesProject/WooVault",
+    "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-03-build"
+  ],
+  "max_turns": 200,
+  "hard_timeout_seconds": 10800,
+  "stall_seconds": 1200,
+  "restricted": true,
+  "safe_mode": true,
+  "permission_mode": "dontAsk",
+  "permission_prompts": "none",
+  "strict_mcp_config": true,
+  "mcp_config_path": "/Users/woohopark/.hermes/profiles/app-design/cache/scratch/ds-viewer-03-build/empty-mcp.json"
+}

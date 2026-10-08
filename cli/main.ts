@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig } from './config.ts';
@@ -8,6 +7,11 @@ import { dev } from './dev.ts';
 import { sync } from './sync.ts';
 import { formatHuman, runDoctor, toDoctorJson } from './doctor.ts';
 import { explainPage, formatExplain, parseHeights } from './explain.ts';
+import { readOwnVersion } from './packageVersion.ts';
+import { checkForUpdate, isUpdateCheckEnabled } from './updateCheck.ts';
+import { runKitDiffCommand } from './kitDiff.ts';
+import { formatMigrateHuman, runMigrate } from './migrate.ts';
+import { runUpdate } from './update.ts';
 
 const USAGE = `Usage: ds-viewer <command>
 
@@ -19,6 +23,8 @@ Commands:
            --yes           accept the detected components and tokens without asking (--existing only)
   sync     Regenerate the component, props, token, and page data from source
   dev      Sync, then serve the catalog on a local web address and keep it current as files change
+           [--port <number>]
+           Pin the catalog (and its update endpoint's restart handoff) to this port
   doctor   Check every page for drift and coverage gaps
            --json          print the machine-readable report instead
            --ci            exit 1 when any error was found (never on a warning alone)
@@ -26,23 +32,25 @@ Commands:
            Print why a page's specimens are laid out the way they are
            --heights <first>,<second>  check side-by-side placement with these measured heights
            --json          print the machine-readable report instead
+  kit diff <Component>
+           Show the user's kit file(s) for <Component> against the installed kit's copy
+  migrate --from <version>
+           Run every migration introduced after <version>
+           --dry-run       report the changes without writing them
+           --json          print the machine-readable report instead
+  update  [--dry-run]     Build and show the update plan; stop without installing
+          [--yes]         Skip the confirmation prompt
+          [--force]       Install even if planned files have uncommitted changes
 
 Options:
   -h, --help     Show this help
   -v, --version  Show the installed version`;
 
-/** Walks up from this file (cli/ in source, dist/cli/ when installed) to the package's own package.json. */
 function packageVersion(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  while (true) {
-    const candidate = path.join(dir, 'package.json');
-    if (existsSync(candidate)) {
-      const pkg = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string; version?: string };
-      if (pkg.name === '@krapwoo/ds-viewer' && pkg.version) return pkg.version;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return 'unknown';
-    dir = parent;
+  try {
+    return readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
+  } catch {
+    return 'unknown';
   }
 }
 
@@ -121,10 +129,29 @@ export async function runInit(projectRoot: string, rest: string[], options: RunI
 /** Pulled out of `main()` for the same reason `runInit` was in 0.1/0.2 (Fable's review): testable
  *  without spawning a process. `--ci`'s exit code is read from `runDoctor`'s own `exitCode` — a
  *  plain `doctor` (no `--ci`) always returns 0 here regardless of errors found. */
-export function runDoctorCommand(projectRoot: string, rest: string[]): { output: string; exitCode: number } {
+export async function runDoctorCommand(
+  projectRoot: string,
+  rest: string[],
+  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv } = {},
+): Promise<{ output: string; exitCode: number }> {
   const config = resolveConfig(projectRoot);
   const result = runDoctor(config);
-  const output = rest.includes('--json') ? JSON.stringify(toDoctorJson(result), null, 2) : formatHuman(result);
+  // Design §4 "`--ci`: ... no update check." — `--ci` skips this whole block even when
+  // `updateCheck` is otherwise enabled; `result.update` stays `null`.
+  if (!rest.includes('--ci') && isUpdateCheckEnabled(config, options.env ?? process.env)) {
+    const ownVersion = readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
+    const updateResult = await (options.checkForUpdate ?? checkForUpdate)(ownVersion);
+    if (updateResult) {
+      result.update = { current: updateResult.current, latest: updateResult.latest, breaking: updateResult.breaking };
+    }
+  }
+  // The human formatter (`formatHuman`, unchanged) knows nothing about updates — it predates this
+  // release and every other release's own doctor output; appending one line here, rather than
+  // threading `update` through `formatHuman`'s own signature, keeps that function's existing
+  // tests untouched (Minor finding, Fable correction pass: the human path previously said nothing
+  // about an update `--json` already reported).
+  const updateLine = result.update ? `\nUpdate available: ${result.update.current} → ${result.update.latest}` : '';
+  const output = rest.includes('--json') ? JSON.stringify(toDoctorJson(result), null, 2) : `${formatHuman(result)}${updateLine}`;
   return { output, exitCode: rest.includes('--ci') ? result.exitCode : 0 };
 }
 
@@ -173,7 +200,7 @@ async function main(): Promise<void> {
   }
 
   if (command === 'doctor') {
-    const { output, exitCode } = runDoctorCommand(projectRoot, rest);
+    const { output, exitCode } = await runDoctorCommand(projectRoot, rest);
     console.log(output);
     if (exitCode) process.exitCode = exitCode;
     return;
@@ -187,9 +214,47 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'kit') {
+    const [sub, componentName] = rest;
+    if (sub !== 'diff' || !componentName) {
+      console.error(`Usage: ds-viewer kit diff <Component>\n\n${USAGE}`);
+      process.exitCode = 1;
+      return;
+    }
+    const config = resolveConfig(projectRoot);
+    const { output, exitCode } = runKitDiffCommand(config, componentName);
+    console.log(output);
+    if (exitCode) process.exitCode = exitCode;
+    return;
+  }
+
+  if (command === 'migrate') {
+    const fromIndex = rest.indexOf('--from');
+    const fromVersion = fromIndex !== -1 ? rest[fromIndex + 1] : undefined;
+    if (!fromVersion) {
+      console.error(`Usage: ds-viewer migrate --from <version> [--dry-run] [--json]\n\n${USAGE}`);
+      process.exitCode = 1;
+      return;
+    }
+    const result = runMigrate(projectRoot, fromVersion, { dryRun: rest.includes('--dry-run') });
+    console.log(rest.includes('--json') ? JSON.stringify(result, null, 2) : formatMigrateHuman(result));
+    return;
+  }
+
+  if (command === 'update') {
+    const config = resolveConfig(projectRoot);
+    const result = await runUpdate(config, { dryRun: rest.includes('--dry-run'), yes: rest.includes('--yes'), force: rest.includes('--force') });
+    console.log(result.output);
+    if (result.exitCode) process.exitCode = result.exitCode;
+    return;
+  }
+
   if (command === 'dev') {
     const config = resolveConfig(projectRoot);
-    await dev(config);
+    const portIndex = rest.indexOf('--port');
+    const parsedPort = portIndex !== -1 ? Number(rest[portIndex + 1]) : undefined;
+    const pinnedPort = parsedPort !== undefined && Number.isInteger(parsedPort) ? parsedPort : undefined;
+    await dev(config, { pinnedPort });
     return;
   }
 

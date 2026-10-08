@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Platform, ScrollView, StyleSheet, Text, View, findNodeHandle } from 'react-native';
+import { AccessibilityInfo, Platform, Pressable, ScrollView, StyleSheet, Text, View, findNodeHandle } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
-import { groupLabelFor, hashForId, idFromHash, neighbors, orderedIds } from './catalogNavigation';
-import type { NavGroup, PreviewWidths, SectionDef } from './types';
+import { UpdatePanel } from './UpdatePanel';
+import { groupLabelFor, hashForId, neighbors, orderedIds, resolveActiveFromHash, shouldShowMajorBanner, footerLabel, UPDATE_PAGE_ID } from './catalogNavigation';
+import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice } from './types';
+
+/** `active` can be a real page id, or the reserved update-page id — never both a generic `TId`
+ *  constraint and a hardcoded string literal type at once, which is why this is its own alias. */
+type ShellPageId<TId extends string> = TId | typeof UPDATE_PAGE_ID;
 
 function isWeb(): boolean {
   return Platform.OS === 'web' && typeof window !== 'undefined';
@@ -36,6 +41,62 @@ function resetMainScroll(scrollView: ScrollView | null): void {
   scrollView.scrollTo({ y: 0, animated: false });
 }
 
+/** The approved mockup's exact copy shape: `"⚠ DS Viewer <version> is available — includes
+ *  breaking changes · Migration guide · Review update"`, dismissible with an `×` labeled "Dismiss
+ *  for <version>". The release's own GitHub page stands in for a dedicated migration-guide URL,
+ *  which this plan's design text does not otherwise name.
+ *
+ *  Important finding, Fable correction pass: both links now carry a real `href` — `role="link"`
+ *  with only `onPress` (as `CatalogSidebar.tsx`'s own finding already documents) never activates on
+ *  Enter under react-native-web unless the element is a genuine anchor. `role="status"` (not
+ *  `"alert"`, the mockup's own choice) — a non-urgent notice should not interrupt assistive tech. */
+function MajorBanner({ update, onReviewUpdate, onDismiss }: { update: UpdateNotice; onReviewUpdate: () => void; onDismiss: () => void }) {
+  const releaseUrl = `https://github.com/krapwoo/design-system-viewer/releases/tag/v${update.latest}`;
+  return (
+    <View style={bannerStyles.banner} role="status">
+      <Text style={bannerStyles.text}>
+        {'⚠ '}
+        <Text style={bannerStyles.bold}>{`DS Viewer ${update.latest} is available`}</Text>
+        {' — includes breaking changes · '}
+        <Text
+          role="link"
+          style={bannerStyles.link}
+          {...({ href: releaseUrl, hrefAttrs: { target: '_blank', rel: 'noopener noreferrer' } } as Record<string, unknown>)}
+        >
+          Migration guide
+        </Text>
+        {' · '}
+        <Text role="link" style={bannerStyles.link} onPress={onReviewUpdate} {...({ href: hashForId(UPDATE_PAGE_ID) } as Record<string, unknown>)}>
+          Review update
+        </Text>
+      </Text>
+      <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel={`Dismiss for ${update.latest}`} style={bannerStyles.close}>
+        <Text style={bannerStyles.closeGlyph}>×</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const bannerStyles = StyleSheet.create({
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: CATALOG_SPACE.md,
+    backgroundColor: CATALOG_COLOR.warningSubtle,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.warningBorder,
+    borderRadius: CATALOG_RADIUS.md,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 18,
+  },
+  text: { flex: 1, fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.warning },
+  bold: { fontWeight: '700' },
+  link: { color: CATALOG_COLOR.warning, fontWeight: '700', textDecorationLine: 'underline' },
+  close: { width: 32, height: 32, borderRadius: CATALOG_RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
+  closeGlyph: { fontSize: 18, color: CATALOG_COLOR.warning },
+});
+
 /**
  * The whole catalog: a persistent, searchable sidebar plus ONE selected page. Selecting a page
  * replaces the main content (no long scrolling document, no scroll-spy). On web the page lives in
@@ -49,6 +110,8 @@ export function CatalogShell<TId extends string>({
   groups,
   sections,
   defaultPreviewWidths,
+  update,
+  updateEndpoint,
 }: {
   /** Short product/app name — the sidebar logo and the breadcrumb root. */
   appName: string;
@@ -62,11 +125,20 @@ export function CatalogShell<TId extends string>({
   /** Preview widths for component pages without their own `previewWidths`. Default: `[402]`
    *  (phone width). Pass 'full' for a catalog whose previews are not phone components. */
   defaultPreviewWidths?: PreviewWidths;
+  /** Design §5's update notice — `null`/`undefined` when no update is known (disabled, offline,
+   *  or already up to date; the viewer treats all three identically: no footer, no banner, no
+   *  update page content). */
+  update?: UpdateNotice | null;
+  /** The local endpoint's base URL and per-run secret — `dev` generates both (Task 18) and
+   *  `writeWorkspace`'s generated entry file bakes them in (Task 17). Absent in a build that
+   *  disables the endpoint entirely — `UpdatePanel` degrades to showing the plan/notice with no
+   *  **Update now** button when this is missing. */
+  updateEndpoint?: { baseUrl: string; secret: string };
 }) {
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
   const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
-  const [active, setActive] = useState<TId | undefined>(() =>
-    isWeb() ? idFromHash(window.location.hash, order) : order[0],
+  const [active, setActive] = useState<ShellPageId<TId> | undefined>(() =>
+    isWeb() ? resolveActiveFromHash(window.location.hash, order) : order[0],
   );
 
   const scrollRef = useRef<ScrollView>(null);
@@ -76,7 +148,7 @@ export function CatalogShell<TId extends string>({
   const pushHistoryNext = useRef(false);
   const focusHeadingNext = useRef(false);
 
-  const select = useCallback((id: TId) => {
+  const select = useCallback((id: ShellPageId<TId>) => {
     if (id === activeRef.current) {
       focusElement(headingRef.current);
       return;
@@ -90,7 +162,7 @@ export function CatalogShell<TId extends string>({
   useEffect(() => {
     if (!isWeb()) return;
     const onHashChange = () => {
-      const id = idFromHash(window.location.hash, order);
+      const id = resolveActiveFromHash(window.location.hash, order);
       if (id === undefined) return;
       if (id !== activeRef.current) {
         focusHeadingNext.current = true;
@@ -123,18 +195,40 @@ export function CatalogShell<TId extends string>({
     if (focus) focusElement(headingRef.current);
   }, [active]);
 
-  const activeDef = active !== undefined ? sectionsById.get(active) : undefined;
+  const activeDef = active !== undefined && active !== UPDATE_PAGE_ID ? sectionsById.get(active) : undefined;
+
+  const [dismissedMajor, setDismissedMajor] = useState<string | null>(() =>
+    isWeb() ? window.localStorage.getItem('ds-viewer-dismissed-major') : null,
+  );
+  const dismissMajorBanner = useCallback(() => {
+    if (!update) return;
+    if (isWeb()) window.localStorage.setItem('ds-viewer-dismissed-major', update.latest);
+    setDismissedMajor(update.latest);
+  }, [update]);
+  const footer = footerLabel(update)
+    ? { label: footerLabel(update)!, active: active === UPDATE_PAGE_ID, onPress: () => select(UPDATE_PAGE_ID) }
+    : undefined;
+  // Design: the banner shows on every *normal* page; once you're already looking at the update
+  // page there is nothing left for "Review update" to do, so it's hidden there (confirmed against
+  // the approved mockup's own `frame()`: the banner only ever renders when `!isPanel`).
+  const showBanner = active !== UPDATE_PAGE_ID && shouldShowMajorBanner(update, dismissedMajor);
 
   return (
     <View style={styles.root}>
-      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} active={active} onPress={select} />
+      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} active={active} onPress={select} footer={footer} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
-        {activeDef ? (
+        {active === UPDATE_PAGE_ID ? (
+          <UpdatePanel update={update ?? null} endpoint={updateEndpoint} appName={appName} headingRef={headingRef} />
+        ) : activeDef ? (
           <SectionBlock
             key={activeDef.id}
             def={activeDef}
             groupLabel={groupLabelFor(groups, activeDef.id)}
             breadcrumbRoot={appName}
+            // The approved mockup's own `PAGE_BG` order: crumb, then banner, then title — the
+            // banner used to render above the breadcrumb instead (Important finding, Fable
+            // correction pass).
+            banner={showBanner && update ? <MajorBanner update={update} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} /> : undefined}
             pager={{
               previousId: neighbors(order, activeDef.id).previous,
               nextId: neighbors(order, activeDef.id).next,

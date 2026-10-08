@@ -63,6 +63,10 @@ export const CATALOG_LAYOUT = {
   logoMark: 32,
   logoWordmarkHeight: 28,
   logoCaptionGap: 6,
+  /** Max width of the update page's content column (approved mockup: direction "C · Update
+   *  page", content at most 512px) — independent of `CATALOG_MAX_CONTENT_WIDTH` (1200px), which
+   *  is every other page's column width. */
+  updateContentMaxWidth: 512,
 } as const;
 
 /** Max width of the main content column. */
@@ -124,4 +128,15 @@ export const CATALOG_COLOR = {
   /** 3px keyboard focus ring on every catalog control. */
   focusRing: '#c9d7ff',
   code: 'Menlo',
+  /** Major-update banner background/border/text (design §5 "Viewer notice"). */
+  warning: '#8a4b00',
+  warningSubtle: '#fff4e0',
+  warningBorder: '#f0cf97',
+  /** "Can't prepare"/failure note-boxes on the update page. */
+  danger: '#b3261e',
+  dangerSubtle: '#fdecea',
+  dangerBorder: '#f2b8b5',
+  /** The update page's post-update success note-box and "Updated" pill. */
+  success: '#1e6b3a',
+  successSubtle: '#e8f5ec',
 } as const;

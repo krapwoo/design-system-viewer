@@ -6,6 +6,7 @@ import { preflight } from './preflight.ts';
 import { detectComponentFolders, detectTokenFiles, type DetectedComponentFolder, type DetectedTokenFile } from './detect.ts';
 import { ensureAgentsFileSection } from './agentsFile.ts';
 import { ensureGithubAction } from './githubAction.ts';
+import { readOwnVersion } from './packageVersion.ts';
 
 export interface InitResult {
   messages: string[];
@@ -65,8 +66,7 @@ function packageRoot(): string {
 }
 
 function ownVersion(): string {
-  const pkg = JSON.parse(readFileSync(path.join(packageRoot(), 'package.json'), 'utf8')) as { version: string };
-  return pkg.version;
+  return readOwnVersion(packageRoot());
 }
 
 /** Detects the existing indent of a JSON file's first indented line, so rewriting it (e.g.
@@ -258,7 +258,7 @@ export default defineConfig({
   tokens: ['${kitRoot}/tokens/index.ts'],
   pages: ['${kitRoot}/pages/*.catalog.tsx'],
   groupOrder: ${JSON.stringify(KIT_GROUP_ORDER)},
-  starterKit: { version: '${starterKitVersion}' },
+  starterKit: { version: '${starterKitVersion}', root: '${kitRoot}' },
 });
 `;
 }

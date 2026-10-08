@@ -52,7 +52,13 @@ module.exports = config;
  *  at bundle time, so a runtime try/catch `require` cannot skip it when the optional peer is
  *  missing. Importing and wrapping must instead be baked into the generated entry (design §1
  *  "Three parts", Viewer row). */
-function entryTsx(name: string, hasSafeArea: boolean, groupOrder: string[], logoRequirePath: string | undefined): string {
+function entryTsx(
+  name: string,
+  hasSafeArea: boolean,
+  groupOrder: string[],
+  logoRequirePath: string | undefined,
+  updateEndpoint: { baseUrl: string; secret: string } | undefined,
+): string {
   const safeAreaImport = hasSafeArea ? "import { SafeAreaProvider } from 'react-native-safe-area-context';\n" : '';
   // A literal `require(...)` with a path computed at generation time: Metro resolves every import
   // statically, so the logo's actual (arbitrary, user-configured) location must already be baked
@@ -64,13 +70,18 @@ function entryTsx(name: string, hasSafeArea: boolean, groupOrder: string[], logo
   // Fable's implementation review, cli/workspace.ts:65).
   const logoImport = logoRequirePath ? `const logoSource = require(${JSON.stringify(logoRequirePath)});\n` : '';
   const logoProp = logoRequirePath ? ' logoImageSource={logoSource}' : '';
-  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} />`;
+  // `JSON.stringify` of a plain `{ baseUrl, secret }` object is valid JS object-literal syntax too
+  // (no reserved words in either key) — the same reasoning the existing `logoRequirePath` baking
+  // already relies on, extended to a whole object instead of one string.
+  const endpointConst = `const updateEndpoint = ${updateEndpoint ? JSON.stringify(updateEndpoint) : 'undefined'};\n`;
+  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} update={updateNotice} updateEndpoint={updateEndpoint} />`;
   const root = hasSafeArea ? `<SafeAreaProvider>${viewer}</SafeAreaProvider>` : viewer;
   return `import { registerRootComponent } from 'expo';
 import { CatalogShell, buildCatalogSections } from '@krapwoo/ds-viewer';
 ${safeAreaImport}${logoImport}import pages from './generated/pages';
 import components from './generated/components.json';
-
+import updateNotice from './update.json';
+${endpointConst}
 function App() {
   const { sections, groups } = buildCatalogSections(pages, components, ${JSON.stringify(groupOrder)});
   return ${root};
@@ -102,7 +113,7 @@ function projectIncludeGlobs(config: ResolvedConfig): string[] {
 /** Writes the self-contained Expo web workspace at `.ds-viewer/` (design §2 "The preview
  *  workspace and `npx ds-viewer dev`"). Rewritten freely on every `dev` run — nothing here is
  *  user-owned. */
-export function writeWorkspace(config: ResolvedConfig): string {
+export function writeWorkspace(config: ResolvedConfig, updateEndpoint?: { baseUrl: string; secret: string }): string {
   const workspace = path.join(config.projectRoot, '.ds-viewer');
   mkdirSync(workspace, { recursive: true });
 
@@ -133,6 +144,6 @@ export function writeWorkspace(config: ResolvedConfig): string {
   const logoRequirePath = config.logo
     ? path.relative(workspace, path.resolve(config.projectRoot, config.logo)).split(path.sep).join('/')
     : undefined;
-  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? [], logoRequirePath));
+  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? [], logoRequirePath, updateEndpoint));
   return workspace;
 }

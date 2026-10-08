@@ -16,8 +16,10 @@ export interface DsViewerConfig {
   pages?: string[];
   /** Sidebar group display order; groups not listed here follow alphabetically. */
   groupOrder?: string[];
-  /** Starter-kit projects only. */
-  starterKit?: { version: string };
+  /** Starter-kit projects only. `root` is the folder `init --new` copied the kit into (default
+   *  `src/ds`); absent on a config written before 0.4, in which case `cli/kitRoot.ts` infers it
+   *  from the first `components` glob instead. */
+  starterKit?: { version: string; root?: string };
   /** @default true */
   updateCheck?: boolean;
   /** `strict: true` promotes `doctor` warnings to errors. */
