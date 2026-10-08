@@ -1,1 +1,0 @@
-`ds-viewer init` now supports starting a brand-new project: it installs `react-native-svg`/`react-native-safe-area-context` if missing (via `expo install`), then copies the starter kit — every component already documented with a finished example page — into `src/ds/` (`--kit-root` to change where).

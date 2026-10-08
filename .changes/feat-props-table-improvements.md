@@ -1,1 +1,0 @@
-The generated props table now keeps a prop's declared alias name even when it's optional, joins a wrapped multi-line JSDoc description into one line, and summarizes every inherited prop from the same source as a single "plus all `<Source>` props" row instead of one row per prop.

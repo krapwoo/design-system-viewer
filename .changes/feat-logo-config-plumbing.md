@@ -1,1 +1,0 @@
-The `logo` config field now works end to end: a missing file warns instead of silently doing nothing, and a valid image is bundled into the preview workspace and shown in the sidebar — a small mark beside the name, or a wide wordmark in place of it, depending on the image's own shape.
