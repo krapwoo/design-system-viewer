@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildUpdatePlan, type BuildPlanOptions, type UpdatePlan } from './updatePlan.ts';
+import { buildUpdatePlan, isAlreadyUpToDate, type BuildPlanOptions, type UpdatePlan } from './updatePlan.ts';
 import { detectPackageManager, installUpgradeCommand, platformCommand } from './packageManager.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { lastSummaryLine } from './doctor.ts';
@@ -52,7 +52,7 @@ function installedMainJs(projectRoot: string): string {
 export async function runUpdate(config: ResolvedConfig, options: UpdateRunOptions = {}): Promise<{ output: string; exitCode: number }> {
   const currentVersion = options.currentVersion ?? readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
   const plan = await (options.buildPlan ?? buildUpdatePlan)(config, currentVersion);
-  if ('error' in plan) return { output: plan.error, exitCode: 1 };
+  if ('error' in plan) return { output: plan.error, exitCode: isAlreadyUpToDate(plan.error) ? 0 : 1 };
 
   const planText = formatPlanHuman(plan);
   if (options.dryRun) return { output: planText, exitCode: 0 };
