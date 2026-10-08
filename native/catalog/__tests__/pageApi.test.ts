@@ -80,3 +80,20 @@ test('buildCatalogSections summarises props inherited from node_modules as one r
   const undocumented = buildCatalogSections([], [searchField]).sections[0];
   assert.equal(undocumented.props?.at(-1)?.name, 'TextInput props');
 });
+
+test('buildCatalogSections warns in development when two pages resolve to the same id', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const pageA = { ...defineCatalogPage({ id: 'Same', group: 'Components', description: 'A' }), file: 'a.catalog.tsx' };
+    const pageB = { ...defineCatalogPage({ id: 'Same', group: 'Components', description: 'B' }), file: 'b.catalog.tsx' };
+    buildCatalogSections([pageA, pageB], []);
+    assert.ok(warnings.some((w) => w.includes('Page id "Same"')));
+  } finally {
+    console.warn = originalWarn;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
