@@ -121,6 +121,67 @@ test('readComponents does not report a forwardRef component\'s inherited "ref" a
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
+test('readComponents reports the intersected node_modules type\'s own name, not its ancestors', () => {
+  // `type Props = TextInputProps & {...}` pulls TextInputProps in directly as an intersection
+  // member, not via a local interface's own `extends` clause — walking its heritage clauses (as
+  // the `extends TextInputProps` case does) would instead report TextInputProps's own ancestors
+  // ("View", "TouchableWithoutFeedback") (Fable's review, cli/props.ts:270-301).
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-intersection-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Field');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Field.tsx'),
+    [
+      "import React from 'react';",
+      "import { TextInput, type TextInputProps } from 'react-native';",
+      '',
+      'type FieldProps = TextInputProps & {',
+      '  label: string;',
+      '};',
+      '',
+      'export function Field({ label, ...rest }: FieldProps) {',
+      '  return <TextInput placeholder={label} {...rest} />;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Field } from './Field';\n");
+
+  const [field] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(field.inheritedFrom, ['TextInput']);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents resolves `extends Omit<NodeModulesType, ...>` to the omitted type\'s own name', () => {
+  // `Omit<TextInputProps, 'value'>`'s own declaration lives in typescript's lib, under
+  // `node_modules`, so without resolving to its first type argument the heritage name read back
+  // was "Omit" (Fable's review, cli/props.ts:270-301: '"plus all Omit props"').
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-omit-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Field');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Field.tsx'),
+    [
+      "import React from 'react';",
+      "import { TextInput, type TextInputProps } from 'react-native';",
+      '',
+      "export interface FieldProps extends Omit<TextInputProps, 'value'> {",
+      '  label: string;',
+      '}',
+      '',
+      'export function Field({ label, ...rest }: FieldProps) {',
+      '  return <TextInput placeholder={label} {...rest} />;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Field } from './Field';\n");
+
+  const [field] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(field.inheritedFrom, ['TextInput']);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
 test('readComponents merges props across a union of object types, tagging branch-only props', () => {
   const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-union-'));
   const componentsDir = path.join(projectRoot, 'components', 'Card');
@@ -193,6 +254,40 @@ test('readComponents keeps an optional prop\'s alias name when the alias\'s own 
   const [surface] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
   assert.equal(surface.props.find((p) => p.name === 'containerStyle')?.type, 'StyleLike<{ color: string; }>');
   assert.equal(surface.props.find((p) => p.name === 'children')?.type, 'ReactNode');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents strips `| undefined` from an optional prop whose type contains an arrow function', () => {
+  // `splitTopLevelUnion` walks the printed type counting `<`/`(`/`{`/`[` as depth; an arrow's `=>`
+  // was previously miscounted as a closing `>`, so the union split never saw the top-level ` | `
+  // and the `undefined` member survived (Fable's review, cli/props.ts:250).
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-arrow-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Arrow');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Arrow.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      '',
+      'export interface ArrowProps {',
+      '  onPress?: () => void;',
+      '  link?: { label: string; onPress: () => void };',
+      '  cb?: ((t: string) => void) | null;',
+      '}',
+      '',
+      'export function Arrow({ onPress }: ArrowProps) {',
+      '  return <Text onPress={onPress}>Arrow</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Arrow } from './Arrow';\n");
+
+  const [arrow] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.equal(arrow.props.find((p) => p.name === 'onPress')?.type, '() => void');
+  assert.equal(arrow.props.find((p) => p.name === 'link')?.type, '{ label: string; onPress: () => void; }');
+  assert.equal(arrow.props.find((p) => p.name === 'cb')?.type, '(t: string) => void');
   rmSync(projectRoot, { recursive: true, force: true });
 });
 

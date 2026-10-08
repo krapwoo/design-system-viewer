@@ -99,9 +99,8 @@ documenting the viewer framework's own pieces (`CatalogShell`, `SectionBlock`, `
 Several components look alike but solve different problems (InputField vs. SearchField vs.
 Dropdown, Toast vs. Banner, Dialog vs. BottomSheet, …). See **[WHEN_TO_USE.md](./starter-kit/WHEN_TO_USE.md)**
 for the deciding question behind each pair before reaching for the closest-looking one. For a
-component's exact props/variants/states as structured data (not prose), see
-`native/catalog/manifest.ts`'s `buildComponentManifest()`, also rendered live at the catalog's
-"Manifest" page.
+component's exact props as structured data (not prose), see `@krapwoo/ds-viewer/generated` (built
+live by `sync` from source), also rendered live at the catalog's "Manifest" page.
 
 ## The one rule
 
@@ -110,7 +109,7 @@ rebrand a two-file edit. Read tokens directly: `import { DS_SEMANTIC } from '...
 
 ## Peer dependencies
 
-`react`, `react-native` assumed, plus: `react-native-svg` (icons + LoadingCircle),
+`react`, `react-native` assumed, plus: `react-native-svg` (icons + Loading's circle variant),
 `react-native-safe-area-context` (catalog shell only — not required by the components themselves).
 
 ## Rebranding (make it yours)
@@ -207,13 +206,15 @@ path.
 
 ## What's included
 
-Tokens · Icons (44) · and generic components:
-Button · Badge · Divider · LoadingCircle · Card · NestedCard · SectionHeader · Banner · Status ·
-FieldContainer · InputField · TextArea · InputClearButton · SearchField · Pill · PillRow ·
-SegmentedToggle · UnderlineTabs · Toast · ProgressDots · Shimmer · Collapsible · AnimatedChevron.
+Tokens · Icons (45) · and generic components:
+AnimatedChevron · Avatar · Badge · Banner · BottomSheet · Button · ButtonGroup · Card · Checkbox ·
+Dialog · Divider · Dock · Dropdown · EmptyState · FieldContainer · InputClearButton · InputField ·
+List · ListItem · Loading · Pill · PillRow · ProgressDots · Radio · SearchField · SectionHeader ·
+SegmentedToggle · Shimmer · Surface · Switch · TextArea · Toast · Tooltip · TopNav · UnderlineTabs.
 
-Deliberately **not** included (app/overlay-specific, port per project): gesture bottom sheets, nav
-bars, modals, and any domain components. They depend on navigation/gesture stacks that vary by app.
+Deliberately **not** included: any domain-specific component. Everything here depends only on
+generic navigation/gesture stacks (`BottomSheet`, `Dialog`, `Dock`, `TopNav` are included) — what's
+left out is app content, not app chrome.
 
 ## Porting to another platform later
 

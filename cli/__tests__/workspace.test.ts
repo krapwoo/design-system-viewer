@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import * as ts from 'typescript';
 import { writeWorkspace } from '../workspace.ts';
 import type { ResolvedConfig } from '../types.ts';
 
@@ -124,8 +125,30 @@ test('writeWorkspace makes a validated logo available to the generated entry', (
   writeFileSync(path.join(projectRoot, 'assets', 'logo.png'), '');
   const workspace = writeWorkspace({ ...baseConfig(projectRoot), logo: './assets/logo.png' });
   const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
-  assert.match(entry, /require\('\.\.\/assets\/logo\.png'\)/);
+  assert.match(entry, /require\("\.\.\/assets\/logo\.png"\)/);
   assert.match(entry, /logoImageSource=\{logoSource\}/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace emits a syntactically valid require() for a logo file name containing a single quote', () => {
+  // The user's own file name, not guaranteed quote-free text (Minor finding, Fable's
+  // implementation review, cli/workspace.ts:65): a single-quoted literal built by string
+  // interpolation breaks the generated entry's syntax the moment the logo file name itself
+  // contains a `'`.
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, 'assets'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'assets', "it's.png"), '');
+  const workspace = writeWorkspace({ ...baseConfig(projectRoot), logo: "./assets/it's.png" });
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  const { diagnostics } = ts.transpileModule(entry, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    reportDiagnostics: true,
+  });
+  // Message text only, not the raw `ts.Diagnostic[]` — each diagnostic holds a full `SourceFile`
+  // with parent back-references, so a failing `assert.deepEqual` on the array itself would try to
+  // walk and print that whole (effectively circular) AST.
+  assert.deepEqual((diagnostics ?? []).map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n')), []);
+  assert.match(entry, /require\("\.\.\/assets\/it's\.png"\)/);
   rmSync(projectRoot, { recursive: true, force: true });
 });
 

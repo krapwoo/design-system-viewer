@@ -234,13 +234,22 @@ function displayTypeString(checker: ts.TypeChecker, prop: ts.Symbol, propType: t
   const printed = checker.typeToString(propType, undefined, ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope);
   if (!(prop.flags & ts.SymbolFlags.Optional)) return printed;
   const kept = splitTopLevelUnion(printed).filter((part) => part !== 'undefined' && part !== 'null');
-  return kept.length > 0 ? kept.join(' | ') : printed;
+  if (kept.length === 0) return printed;
+  // A single remaining part that is itself wrapped in one outer pair of parentheses (e.g. the
+  // `(() => void)` TypeScript prints around an arrow type that was a union member) no longer needs
+  // those parentheses once it is the only part left — `(t: string) => void`, not `((t: string) =>
+  // void)`.
+  if (kept.length === 1) return unwrapOuterParens(kept[0]);
+  return kept.join(' | ');
 }
 
 /** Splits a printed type's top-level ` | ` union members — skipping any `|` nested inside
  *  `<...>`, `(...)`, `{...}`, or `[...]` (e.g. the one inside `RecursiveArray<Falsy | ViewStyle>`)
  *  — so `displayTypeString` can drop a top-level `undefined`/`null` member without disturbing a
- *  union that appears only as part of a deeper type argument. */
+ *  union that appears only as part of a deeper type argument. An arrow type's `=>` prints a `>`
+ *  that is not a closing bracket, so it must not decrement `depth`: skip it whenever the previous
+ *  character was `=` (otherwise `(() => void) | undefined` goes to depth -1 at the arrow and the
+ *  top-level ` | ` before `undefined` is read as nested, never splitting it off). */
 function splitTopLevelUnion(typeString: string): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -248,14 +257,33 @@ function splitTopLevelUnion(typeString: string): string[] {
   for (let i = 0; i < typeString.length; i++) {
     const ch = typeString[i];
     if (ch === '<' || ch === '(' || ch === '{' || ch === '[') depth += 1;
-    else if (ch === '>' || ch === ')' || ch === '}' || ch === ']') depth -= 1;
-    else if (depth === 0 && typeString.startsWith(' | ', i)) {
+    else if (ch === '>' || ch === ')' || ch === '}' || ch === ']') {
+      if (ch === '>' && typeString[i - 1] === '=') continue;
+      depth -= 1;
+    } else if (depth === 0 && typeString.startsWith(' | ', i)) {
       parts.push(typeString.slice(start, i));
       start = i + 3;
     }
   }
   parts.push(typeString.slice(start));
   return parts;
+}
+
+/** Strips one outer `(...)` pair from `part` when it wraps the whole string — not just any
+ *  leading `(`, e.g. `(a) => (b)` has balanced outer parens only around `a`, not around the whole
+ *  expression, so this walks depth to confirm the first `(` closes at the very last character. */
+function unwrapOuterParens(part: string): string {
+  if (part[0] !== '(' || part[part.length - 1] !== ')') return part;
+  let depth = 0;
+  for (let i = 0; i < part.length; i++) {
+    const ch = part[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) return i === part.length - 1 ? part.slice(1, -1) : part;
+    }
+  }
+  return part;
 }
 
 /** Design §3 — "Inherited props declared in `node_modules` ... are summarised as one row: 'plus
@@ -271,9 +299,23 @@ function nodeModulesHeritageNames(checker: ts.TypeChecker, branches: readonly ts
   const names = new Set<string>();
   for (const branch of branches) {
     for (const declaration of heritageInterfaceDeclarations(branch)) {
+      const declarationFile = declaration.getSourceFile().fileName;
+      if (declarationFile.includes('node_modules')) {
+        // `declaration` was pulled in directly by the branch itself (e.g. `type Props =
+        // TextInputProps & {...}`), not named in a *local* interface's own `extends` clause —
+        // report its own name. Walking its `heritageClauses` below (as the `extends
+        // TextInputProps` case does) would instead report TextInputProps's own ancestors, e.g.
+        // "View"/"TouchableWithoutFeedback".
+        if (!isReactOnlyFile(declarationFile)) names.add(declaration.name.getText().replace(/Props$/, ''));
+        continue;
+      }
       for (const clause of declaration.heritageClauses ?? []) {
         for (const typeNode of clause.types) {
-          const heritageType = checker.getTypeAtLocation(typeNode.expression);
+          // `getTypeAtLocation` on the whole `ExpressionWithTypeArguments` node (not just its
+          // `.expression`) is required for `resolveUtilityTypeSource` below to see `Omit`/`Pick`'s
+          // actual instantiated type arguments — on `.expression` alone they come back as the
+          // utility type's own unbound generic parameters ("T", "K"), not `TextInputProps`.
+          const heritageType = resolveUtilityTypeSource(checker.getTypeAtLocation(typeNode));
           const heritageDeclaration = (heritageType.aliasSymbol ?? heritageType.symbol)?.declarations?.[0];
           if (!heritageDeclaration) continue;
           const file = heritageDeclaration.getSourceFile().fileName;
@@ -282,7 +324,7 @@ function nodeModulesHeritageNames(checker: ts.TypeChecker, branches: readonly ts
           // own `RefAttributes<T>`) is not a meaningful "inherited from" fact — every component
           // already uses React. A host-type package's own heritage (e.g. react-native's `View`,
           // reached through `TextInputProps`) is still reported as before.
-          if (/[/\\]@types[/\\]react[/\\]/.test(file) && !/[/\\]@types[/\\]react-native[/\\]/.test(file)) continue;
+          if (isReactOnlyFile(file)) continue;
           const rawName = (heritageType.aliasSymbol ?? heritageType.symbol)?.getName() ?? typeNode.expression.getText();
           names.add(rawName.replace(/Props$/, ''));
         }
@@ -290,6 +332,24 @@ function nodeModulesHeritageNames(checker: ts.TypeChecker, branches: readonly ts
     }
   }
   return [...names];
+}
+
+/** True for a declaration file under `@types/react` that is not also under `@types/react-native`
+ *  (react-native's own `@types` package path contains `react` as a substring). */
+function isReactOnlyFile(file: string): boolean {
+  return /[/\\]@types[/\\]react[/\\]/.test(file) && !/[/\\]@types[/\\]react-native[/\\]/.test(file);
+}
+
+/** `Omit<T, K>`/`Pick<T, K>` of a node_modules type prints its own alias symbol ("Omit"/"Pick")
+ *  rather than `T`'s name — resolve to `T` (the type's first alias type argument) instead, so
+ *  `extends Omit<TextInputProps, 'value'>` reports "TextInput", not "Omit" (Fable's review,
+ *  cli/props.ts:270-301). */
+function resolveUtilityTypeSource(type: ts.Type): ts.Type {
+  const aliasName = type.aliasSymbol?.getName();
+  if ((aliasName === 'Omit' || aliasName === 'Pick') && type.aliasTypeArguments?.[0]) {
+    return type.aliasTypeArguments[0];
+  }
+  return type;
 }
 
 /** Every `InterfaceDeclaration` backing `type` — itself if `type` is one, or (recursing) each

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, watch, type FSWatcher } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { resolveConfig } from './config.ts';
 import { sync } from './sync.ts';
 import { writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
@@ -48,20 +49,36 @@ export function watchTargetFolders(config: ResolvedConfig): string[] {
   return [...new Set(patterns.map((pattern) => path.join(config.projectRoot, globBaseFolder(pattern))))].filter((folder) => existsSync(folder));
 }
 
+/** Re-resolves `<projectRoot>/ds-viewer.config.ts` from disk, syncs from it, and rewrites the
+ *  generated workspace (entry.tsx, metro.config.js, …) from the freshly-resolved values — unlike
+ *  plain `sync(config)`, which only ever regenerates `.ds-viewer/generated/` from whatever
+ *  `ResolvedConfig` it was already given. `dev`'s config-file watcher (below) calls this instead
+ *  of `sync` directly: without it, a changed `name` or `logo` never reached the generated
+ *  workspace until `dev` was restarted, because `writeWorkspace` was never called again with the
+ *  new value (controller end-to-end finding E1). Returns the freshly-resolved config so `dev` can
+ *  keep watching with it. */
+export function reloadWorkspace(projectRoot: string): ResolvedConfig {
+  const config = resolveConfig(projectRoot);
+  sync(config);
+  writeWorkspace(config);
+  return config;
+}
+
 /** Design §2 "`dev`": checks the local install, runs `sync`, writes the workspace, starts Expo
  *  web on the first free port from 5181 bound to localhost only, and watches the project for
  *  component/token/page changes to re-run `sync`. Metro's own HMR updates the rendered component
  *  when its source changes, but not the generated props table or page list (Task 17 Step 4 relies
  *  on this: editing `Button.tsx` must update its props table, not just hot-reload the component). */
-export async function dev(config: ResolvedConfig): Promise<void> {
-  assertLocalInstall(config.projectRoot);
+export async function dev(initialConfig: ResolvedConfig): Promise<void> {
+  assertLocalInstall(initialConfig.projectRoot);
+  let config = initialConfig;
   sync(config);
   const workspace = writeWorkspace(config);
   const port = await findFreePort(5181, 5199);
   console.log(`Starting the catalog at http://localhost:${port}`);
 
   let debounceTimer: NodeJS.Timeout | undefined;
-  const onChange = (_eventType: string, relativePath: string | null) => {
+  const onSourceChange = (_eventType: string, relativePath: string | null) => {
     if (relativePath && !isWatchedPath(relativePath)) return;
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
@@ -73,9 +90,25 @@ export async function dev(config: ResolvedConfig): Promise<void> {
     }, 200);
   };
 
+  // A distinct debounce/handler from `onSourceChange` above: a config change needs
+  // `reloadWorkspace` (re-resolve, then rewrite the generated workspace too), not just `sync` with
+  // the config this closure already captured — otherwise a changed `name`/`logo` never reaches
+  // `entry.tsx`/`metro.config.js` until `dev` is restarted (controller end-to-end finding E1).
+  let configDebounceTimer: NodeJS.Timeout | undefined;
+  const onConfigChange = () => {
+    clearTimeout(configDebounceTimer);
+    configDebounceTimer = setTimeout(() => {
+      try {
+        config = reloadWorkspace(config.projectRoot);
+      } catch (error) {
+        console.warn(`Could not reload ds-viewer.config.ts after a change: ${(error as Error).message}`);
+      }
+    }, 200);
+  };
+
   const watchers: FSWatcher[] = [
-    ...watchTargetFolders(config).map((folder) => watch(folder, { recursive: true }, onChange)),
-    ...(existsSync(config.configPath) ? [watch(config.configPath, onChange)] : []),
+    ...watchTargetFolders(config).map((folder) => watch(folder, { recursive: true }, onSourceChange)),
+    ...(existsSync(config.configPath) ? [watch(config.configPath, onConfigChange)] : []),
   ];
   for (const watcher of watchers) {
     watcher.on('error', (error) => console.warn(`File watcher error: ${(error as Error).message}`));

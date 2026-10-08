@@ -87,11 +87,16 @@ export function CatalogSidebar<TId extends string>({
   const attemptingLogo = Boolean(logoImageSource) && !logoFailed;
   const header = attemptingLogo ? logoLayout(logoAspect) : 'text';
 
-  // Fallback only (see the comment above `staticSource`): on web, `ImageLoader.load`'s `onLoad`
-  // fires after `HTMLImageElement.decode()` resolves, by which point Chrome has already nulled the
-  // underlying DOM event's `target` — confirmed empirically (`event.target` reads non-null only
-  // when read synchronously inside `onload`, before any `await`). Native's real `Image` reports
-  // `source.{width,height}` on its `onLoad` nativeEvent instead, which this still reads correctly.
+  // Fallback only (see the comment above `staticSource`) — and native-only in practice: on web,
+  // `ImageLoader.load`'s `onLoad` fires after `HTMLImageElement.decode()` resolves, by which point
+  // Chrome has already nulled the underlying DOM event's `target`, so `native.source` below reads
+  // `undefined` on react-native-web (confirmed empirically — `event.target` reads non-null only
+  // when read synchronously inside `onload`, before any `await`) and this handler never sets
+  // `loadedAspect` there. Native's real `Image` reports `source.{width,height}` on its `onLoad`
+  // nativeEvent instead, which this still reads correctly. Kept rather than removed (Minor finding,
+  // Fable's implementation review) because a non-bundled source with no static dimensions (e.g. a
+  // bare `{ uri }`) is still possible on native, even though `cli/workspace.ts` only ever generates
+  // a bundled `require()` today.
   const onLogoLoad = (e: NativeSyntheticEvent<ImageLoadEventData>) => {
     const native = e.nativeEvent as unknown as { source?: { width: number; height: number } };
     const width = native.source?.width;

@@ -58,11 +58,11 @@ function entryTsx(name: string, hasSafeArea: boolean, groupOrder: string[], logo
   // statically, so the logo's actual (arbitrary, user-configured) location must already be baked
   // into this generated file, the same reasoning `hasSafeArea` above already follows for the
   // optional SafeAreaProvider import.
-  // A single-quoted literal, not `JSON.stringify` (which would emit double quotes and fail the
-  // workspace test's `require('../assets/logo.png')` assertion below) — `logoRequirePath` is
-  // always a `path.relative`-computed, forward-slash-joined relative path (Step 8), never
-  // arbitrary user text, so it never contains a `'`.
-  const logoImport = logoRequirePath ? `const logoSource = require('${logoRequirePath}');\n` : '';
+  // `JSON.stringify`, not a plain single-quoted template literal: `logoRequirePath` carries the
+  // user's own logo file name, which may contain a `'` (e.g. `assets/it's.png`) — a bare
+  // `'${logoRequirePath}'` breaks the generated file's syntax the moment it does (Minor finding,
+  // Fable's implementation review, cli/workspace.ts:65).
+  const logoImport = logoRequirePath ? `const logoSource = require(${JSON.stringify(logoRequirePath)});\n` : '';
   const logoProp = logoRequirePath ? ' logoImageSource={logoSource}' : '';
   const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} />`;
   const root = hasSafeArea ? `<SafeAreaProvider>${viewer}</SafeAreaProvider>` : viewer;

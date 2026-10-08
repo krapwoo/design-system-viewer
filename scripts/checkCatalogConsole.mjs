@@ -15,6 +15,11 @@ if (!projectRoot) {
 // A cold Metro bundle of every kit + Viewer page can take a while on a CI runner — comfortably
 // over the 30s this script originally used (Important finding, Fable correction pass).
 const COLD_BUNDLE_TIMEOUT_MS = 120_000;
+// The very first page load bundles every kit + Viewer page (67 on a GitHub runner) before Metro
+// has anything cached — a budget distinct from, and larger than, every later per-page navigation
+// (Minor finding, Fable's implementation review: 120s risked a Puppeteer TimeoutError on a cold
+// runner).
+const FIRST_LOAD_TIMEOUT_MS = 300_000;
 
 function startDev() {
   return new Promise((resolve, reject) => {
@@ -62,10 +67,13 @@ function killDevGroup(child) {
 }
 
 async function main() {
-  const { child, port } = await startDev();
-  const browser = await puppeteer.launch({ headless: true });
+  let child;
+  let browser;
   let exitCode = 0;
   try {
+    let port;
+    ({ child, port } = await startDev());
+    browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
     let messages = [];
     page.on('console', (msg) => messages.push({ type: msg.type(), text: msg.text() }));
@@ -73,10 +81,10 @@ async function main() {
 
     // A retry loop, not a single `page.goto` (Errata 3): `dev` prints its URL before Expo is
     // actually listening, so the very first connection attempt can see ECONNREFUSED.
-    const firstLoadDeadline = Date.now() + COLD_BUNDLE_TIMEOUT_MS;
+    const firstLoadDeadline = Date.now() + FIRST_LOAD_TIMEOUT_MS;
     for (;;) {
       try {
-        await page.goto(`http://localhost:${port}`, { waitUntil: 'networkidle0', timeout: COLD_BUNDLE_TIMEOUT_MS });
+        await page.goto(`http://localhost:${port}`, { waitUntil: 'networkidle0', timeout: FIRST_LOAD_TIMEOUT_MS });
         break;
       } catch (error) {
         if (!String(error).includes('ERR_CONNECTION_REFUSED') || Date.now() > firstLoadDeadline) throw error;
@@ -123,8 +131,12 @@ async function main() {
     console.error(error.message);
     exitCode = 1;
   } finally {
-    await browser.close();
-    killDevGroup(child);
+    // `browser`/`child` may still be unset here (e.g. `startDev` itself rejected), hence the
+    // guards — previously `puppeteer.launch` ran outside this `try`, so a `startDev` timeout left
+    // the detached `dev` process group (and the Metro it bound a port to) running forever (Minor
+    // finding, Fable's implementation review).
+    if (browser) await browser.close();
+    if (child) killDevGroup(child);
   }
   // Explicit, not just `process.exitCode =` (Important finding, Fable correction pass): the
   // grandchild Metro/Expo process can keep this script's own stdout pipe open even after
@@ -132,4 +144,11 @@ async function main() {
   process.exit(exitCode);
 }
 
-main();
+// A safety net around `main`'s own `try/catch`, which already turns every error it sees into a
+// non-zero `exitCode` — this only matters if a future change throws before that `try` runs, so
+// the process still exits non-zero instead of hanging on an unhandled rejection (Minor finding,
+// Fable's implementation review).
+main().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});

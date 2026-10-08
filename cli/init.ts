@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, type Dirent } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { execFileSync } from 'node:child_process';
@@ -189,6 +189,15 @@ function ensureSharedProjectFiles(projectRoot: string): string[] {
 
 const KIT_REQUIRED_PACKAGES = ['react-native-svg', 'react-native-safe-area-context'];
 
+/** The starter kit's own intended sidebar order (the same list kit-host/ds-viewer.config.ts
+ *  declares, minus "Viewer" — that group only holds kit-host's own framework-docs pages under
+ *  `viewer-pages/`, which `init --new` never copies). Written into a fresh project's config so its
+ *  sidebar isn't left alphabetical (controller end-to-end finding E3). */
+const KIT_GROUP_ORDER = [
+  'Actions', 'Surfaces', 'Inputs', 'Controls', 'Selection', 'Feedback', 'Navigation',
+  'Overlays', 'Layout', 'Sub-Parts', 'Recipes', 'Tokens', 'Reference',
+];
+
 /** Default `installer` — a real `npx expo install`, run only for whichever of
  *  `KIT_REQUIRED_PACKAGES` the project doesn't already depend on. Test-injected in every unit test
  *  (this plan's Global Constraints: never run a real `expo install` in tests). */
@@ -201,11 +210,24 @@ function defaultInstaller(projectRoot: string, missingPackages: string[]): void 
 
 /** Copies every file under `srcDir` into `destDir`, skipping any destination file that already
  *  exists (design's "never overwrites user files" rule — Global Constraints) and reporting, not
- *  throwing on, one unreadable source file (Error-handling rule). Returns every path it wrote. */
-function copyKitIfMissing(srcDir: string, destDir: string): string[] {
+ *  throwing on, one unreadable source file (Error-handling rule). Also reports, rather than
+ *  throwing on, an unreadable nested folder — the same `readdirSync` call recurses, so wrapping it
+ *  here covers every depth — so files already copied before it are still returned, and skips a
+ *  symlinked entry (neither a plain file nor a directory `copyKitIfMissing` should recurse into)
+ *  instead of copying through it (Minor finding, Fable's implementation review,
+ *  cli/init.ts:205-224). Returns every path it wrote. */
+export function copyKitIfMissing(srcDir: string, destDir: string): string[] {
   const written: string[] = [];
   mkdirSync(destDir, { recursive: true });
-  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(srcDir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(`Could not read ${srcDir}: ${(error as Error).message}`);
+    return written;
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
     const srcPath = path.join(srcDir, entry.name);
     const destPath = path.join(destDir, entry.name);
     if (entry.isDirectory()) {
@@ -231,6 +253,7 @@ export default defineConfig({
   components: ['${kitRoot}/components/*/index.ts'],
   tokens: ['${kitRoot}/tokens/index.ts'],
   pages: ['${kitRoot}/pages/*.catalog.tsx'],
+  groupOrder: ${JSON.stringify(KIT_GROUP_ORDER)},
   starterKit: { version: '${starterKitVersion}' },
 });
 `;
@@ -255,6 +278,11 @@ export async function initNewProject(projectRoot: string, options: NewProjectOpt
 
   const kitRoot = options.kitRoot ?? 'src/ds';
   const written = copyKitIfMissing(path.join(packageRoot(), 'starter-kit'), path.join(projectRoot, kitRoot));
+  // Read before `ensureSharedProjectFiles`/the config write below add their own entries — this is
+  // only true when `copyKitIfMissing` itself wrote nothing, i.e. a rerun found every kit file
+  // already present (controller end-to-end finding E2: a second `init --new` claimed to have
+  // copied the kit even though nothing changed on disk).
+  const copiedKitFiles = written.length > 0;
 
   const configPath = path.join(projectRoot, 'ds-viewer.config.ts');
   if (!existsSync(configPath)) {
@@ -267,7 +295,7 @@ export async function initNewProject(projectRoot: string, options: NewProjectOpt
   const messages = [
     ...warnings.map((issue) => `Warning: ${issue.package} not found. Run: ${issue.installCommand}`),
     ...(missingKitPackages.length > 0 ? [`Installed ${missingKitPackages.join(', ')}.`] : []),
-    `Copied the starter kit into ${kitRoot}/.`,
+    copiedKitFiles ? `Copied the starter kit into ${kitRoot}/.` : `Starter kit already present in ${kitRoot}/ — nothing copied.`,
     'Next: npm install, then npm run ds-viewer dev',
   ];
   return { messages, written };
