@@ -142,18 +142,24 @@ test('performUpdate: a full success runs install, migrate, doctor, then restart 
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
   const config: ResolvedConfig = { name: 'X', components: [], tokens: [], updateCheck: true, doctor: { strict: false }, projectRoot: dir, configPath: path.join(dir, 'x.ts') };
   const calls: string[] = [];
+  // The real `doctor` command's own multi-line human report (Minor finding, raised to Important by
+  // the controller): only its last, non-empty summary line belongs in the success state.
+  const DOCTOR_REPORT = 'Button\n  [warning] option-not-covered: "size" option "lg" has no bound or tagged example. (Button.catalog.tsx)\n    Fix: Bind a grid axis to "size", or add a tagged example.\n\n0 errors, 1 warning — 12 components (12 with examples), 3 unbound examples.';
   const execImpl = async (command: string, args: string[]) => {
     const key = command === 'node' ? `node ${args[1]}` : `${command} ${args[0]}`;
     calls.push(key);
-    if (key === 'node doctor') return '0 errors, 0 warnings';
+    if (key === 'node doctor') return DOCTOR_REPORT;
     return '';
   };
   const deps = recordingDeps();
   const plan = samplePlan({ files: [{ path: 'package.json', reason: 'version', dirty: false }] });
   await performUpdate(config, '0.4.0', plan, { execImpl, onStatus: deps.onStatus, restart: deps.restart, delayMs: 0 });
   assert.ok(calls.some((c) => c.startsWith('npm') || c.startsWith('pnpm') || c.startsWith('yarn')));
-  // Errata 1b: `restart`'s result includes `latest: plan.latest`.
-  assert.deepEqual(deps.restartCalls, [{ doctorSummary: '0 errors, 0 warnings', files: ['package.json'], latest: '0.5.0' }]);
+  // M10 (Minor, Fable correction pass): install, migrate, then doctor, in that exact order.
+  assert.deepEqual(calls, ['npm install', 'node migrate', 'node doctor']);
+  // Errata 1b: `restart`'s result includes `latest: plan.latest`. `doctorSummary` is only the
+  // report's own last summary line, not the whole multi-line report.
+  assert.deepEqual(deps.restartCalls, [{ doctorSummary: '0 errors, 1 warning — 12 components (12 with examples), 3 unbound examples.', files: ['package.json'], latest: '0.5.0' }]);
   // Errata 4: the *last* recorded status is 'restarting' (not the second-to-last).
   assert.equal(deps.statuses[deps.statuses.length - 1].phase, 'restarting');
   rmSync(dir, { recursive: true, force: true });
@@ -167,7 +173,10 @@ test('performUpdate: an install failure reports it as the failed step and never 
   await performUpdate(config, '0.4.0', samplePlan(), { execImpl, onStatus: deps.onStatus, restart: deps.restart, delayMs: 0 });
   const last = deps.statuses[deps.statuses.length - 1];
   assert.equal(last.phase, 'failure');
-  if (last.phase === 'failure') assert.match(last.failedStep, /Installed with/);
+  // Minor finding, Fable correction pass: the mockup's own failure state reads "Install with npm
+  // failed" (present tense), not "Installed with npm failed" — a distinct `failLabel` from the
+  // step list's own past-tense "Installed with npm" (done) or "Installing with npm…" (in flight).
+  if (last.phase === 'failure') assert.equal(last.failedStep, 'Install with npm');
   assert.deepEqual(deps.restartCalls, []);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -224,7 +233,13 @@ test('performUpdate: step labels name the detected package manager and the real 
   await performUpdate(config, '0.4.0', plan, { execImpl, onStatus: deps.onStatus, restart: deps.restart, delayMs: 0 });
   const firstReport = deps.statuses[0];
   if (firstReport.phase !== 'updating') throw new Error('unreachable');
-  assert.ok(firstReport.steps.some((s) => s.label === 'Installed with npm'));
+  // The install step is still in flight at this first report — its own present-tense
+  // `progressLabel` (Minor finding, Fable correction pass: it previously read "Installed with
+  // npm…", already past tense, while still running).
+  assert.ok(firstReport.steps.some((s) => s.label === 'Installing with npm'));
   assert.ok(firstReport.steps.some((s) => s.label === 'Applying 1 migration'));
+  const secondReport = deps.statuses[1];
+  if (secondReport.phase !== 'updating') throw new Error('unreachable');
+  assert.ok(secondReport.steps.some((s) => s.label === 'Installed with npm' && s.state === 'done'));
   rmSync(dir, { recursive: true, force: true });
 });

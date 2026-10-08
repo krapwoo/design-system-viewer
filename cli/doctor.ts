@@ -544,3 +544,14 @@ export function formatHuman(result: DoctorJsonResult): string {
   );
   return lines.join('\n');
 }
+
+/** `formatHuman`'s own output always ends with its one summary line (design §4's own example: "0
+ *  errors, 15 warnings — 37 components (37 with examples), 130 unbound examples.") — every issue
+ *  and its fix come before it. Used by `dev.ts`/`update.ts` to shrink the `doctor` step's captured
+ *  stdout down to that one line for the update panel's success state (Minor finding, raised to
+ *  Important by the controller: the mockup's own success page shows one line, not the whole
+ *  report). Never throws on empty input — falls back to the trimmed input itself. */
+export function lastSummaryLine(output: string): string {
+  const lines = output.split('\n').map((line) => line.trimEnd()).filter((line) => line.length > 0);
+  return lines.length > 0 ? lines[lines.length - 1] : output.trim();
+}

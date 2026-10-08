@@ -1,8 +1,9 @@
 // cli/updatePlan.ts
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { detectPackageManager, type PackageManager } from './packageManager.ts';
 import { listKitFileDiffs } from './kitDiff.ts';
 import { extractSummaryBullets, fetchWithTimeout } from './updateCheck.ts';
@@ -33,7 +34,12 @@ export interface UpdatePlan {
 }
 
 export interface BuildPlanOptions {
-  execImpl?: (command: string, args: string[], options: { cwd: string; encoding: 'utf8' }) => string;
+  /** Important finding, Fable correction pass: the real default below is `execFile`, promisified —
+   *  never `execFileSync`. This now runs inside the endpoint's own request handler (Task 12); the
+   *  synchronous version blocked the whole event loop (including `/update/status` polls, and any
+   *  other request) for the entire download. `timeout` (used only for `npm view`/`npm pack` below)
+   *  lets a real, unreachable registry fail in ~20s instead of hanging for minutes. */
+  execImpl?: (command: string, args: string[], options: { cwd: string; encoding: 'utf8'; timeout?: number }) => Promise<string>;
   fetchImpl?: typeof fetch;
   tmpDirImpl?: () => string;
   /** Returns `git status --porcelain`'s output for exactly `plannedPaths` (relative to
@@ -79,7 +85,7 @@ function parseDirtyPaths(porcelain: string): Set<string> {
 /** Strips the repository-root prefix `git rev-parse --show-prefix` reports from every path in a
  *  `git status --porcelain` listing (both sides of a rename), so the result reads relative to
  *  `projectRoot` the same way every test's injected fake already does. */
-function stripRepoPrefix(porcelain: string, prefix: string): string {
+export function stripRepoPrefix(porcelain: string, prefix: string): string {
   if (!prefix) return porcelain;
   return porcelain
     .split('\n')
@@ -92,16 +98,37 @@ function stripRepoPrefix(porcelain: string, prefix: string): string {
     .join('\n');
 }
 
+/** Thrown by `defaultGitStatus` for any git failure that is *not* "not a git repository" (or git
+ *  missing) — `buildUpdatePlan` below catches exactly this to return a plan `{ error }`, naming
+ *  git, instead of silently treating the failure as "outside a git repository" (Minor finding,
+ *  Fable correction pass: `fatal: detected dubious ownership`, a corrupt repo, or any other
+ *  non-zero exit previously fell into the same `undefined` branch as genuinely being outside a
+ *  repository, fail-open on the feature's one core safeguard — the dirty-file check — the CLI then
+ *  printing the misleading "(Not a git repository …)" note over a real error). */
+export class GitStatusError extends Error {}
+
+function isMissingRepo(error: unknown): boolean {
+  const e = error as NodeJS.ErrnoException & { stderr?: string };
+  if (e.code === 'ENOENT') return true;
+  return /not a git repository/i.test(e.stderr ?? e.message ?? '');
+}
+
 function defaultGitStatus(projectRoot: string, plannedPaths: string[]): string | undefined {
+  let prefix: string;
   try {
-    const prefix = execFileSync('git', ['rev-parse', '--show-prefix'], { cwd: projectRoot, encoding: 'utf8' }).trim();
+    prefix = execFileSync('git', ['rev-parse', '--show-prefix'], { cwd: projectRoot, encoding: 'utf8' }).trim();
+  } catch (error) {
+    if (isMissingRepo(error)) return undefined;
+    throw new GitStatusError(`git rev-parse failed: ${(error as Error).message}`);
+  }
+  try {
     // Errata 6: pathspecs are relative to the cwd (`projectRoot`), so they are passed unprefixed
     // — only the *output* paths (which `git status --porcelain` always reports relative to the
     // repository root) need `stripRepoPrefix` below.
     const porcelain = execFileSync('git', ['status', '--porcelain', '--', ...plannedPaths], { cwd: projectRoot, encoding: 'utf8' });
     return stripRepoPrefix(porcelain, prefix);
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new GitStatusError(`git status failed: ${(error as Error).message}`);
   }
 }
 
@@ -113,14 +140,22 @@ export async function buildUpdatePlan(
   currentVersion: string,
   options: BuildPlanOptions = {},
 ): Promise<UpdatePlan | { error: string }> {
-  const execImpl = options.execImpl ?? ((cmd, args, opts) => execFileSync(cmd, args, { ...opts, encoding: 'utf8' }) as unknown as string);
+  const execFileAsync = promisify(execFile);
+  const execImpl = options.execImpl ?? (async (cmd, args, opts) => (await execFileAsync(cmd, args, opts)).stdout);
   const fetchImpl = options.fetchImpl ?? fetch;
   const tmpDirImpl = options.tmpDirImpl ?? (() => mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-')));
   const gitStatusImpl = options.gitStatusImpl ?? defaultGitStatus;
 
+  // Important finding, Fable correction pass: a real, unreachable registry otherwise hangs `npm
+  // view`/`npm pack` for minutes (observed: "Checking…" sat for 140s, with `/update/status` not
+  // answering at all in that time — this whole function runs inside the endpoint's own request
+  // handler). 20s is generous for a real, reachable registry, and short enough that offline reaches
+  // "Couldn't prepare" in a bounded time instead of hanging.
+  const NETWORK_TIMEOUT_MS = 20_000;
+
   let targetVersion: string;
   try {
-    targetVersion = execImpl('npm', ['view', PACKAGE_NAME, 'version'], { cwd: config.projectRoot, encoding: 'utf8' }).trim();
+    targetVersion = (await execImpl('npm', ['view', PACKAGE_NAME, 'version'], { cwd: config.projectRoot, encoding: 'utf8', timeout: NETWORK_TIMEOUT_MS })).trim();
   } catch {
     return { error: OFFLINE_MESSAGE };
   }
@@ -132,14 +167,19 @@ export async function buildUpdatePlan(
   }
 
   let migrateResult: MigrateResult;
+  // M4 (Minor, Fable correction pass): compared against the *downloaded target version's* own
+  // `starter-kit/`, not the currently-installed one — the copy ("differ from {latest}'s kit") and
+  // design §5 both name the target, never what's already on disk. Computed here, before the
+  // `finally` below cleans the extracted tarball up.
+  let kitFilesDiffering = 0;
   let tmp: string | undefined;
   try {
     tmp = tmpDirImpl();
     // Step 1: "Download the target version into a temporary folder" — `npm pack` is an ordinary
     // install-shaped request (it honors the project's own `.npmrc`/registry config exactly like
     // `npm install` would), never a URL this file hardcodes.
-    execImpl('npm', ['pack', `${PACKAGE_NAME}@${targetVersion}`, '--silent', '--pack-destination', tmp], { cwd: config.projectRoot, encoding: 'utf8' });
-    execImpl('tar', ['-xzf', path.join(tmp, tarballFileName(targetVersion)), '-C', tmp], { cwd: tmp, encoding: 'utf8' });
+    await execImpl('npm', ['pack', `${PACKAGE_NAME}@${targetVersion}`, '--silent', '--pack-destination', tmp], { cwd: config.projectRoot, encoding: 'utf8', timeout: NETWORK_TIMEOUT_MS });
+    await execImpl('tar', ['-xzf', path.join(tmp, tarballFileName(targetVersion)), '-C', tmp], { cwd: tmp, encoding: 'utf8' });
     // Step 2: the *downloaded* version's own migrations, never the currently-running one — so the
     // plan always reflects the migrations the version being installed actually ships. This runs
     // `migrateEntry.js`, never `main.js` (Critical finding, Fable correction pass, spiked for real
@@ -147,12 +187,13 @@ export async function buildUpdatePlan(
     // `main.js`'s own import chain pulls in the `typescript` npm package at module load, which
     // would fail there with `ERR_MODULE_NOT_FOUND`; `migrateEntry.js` imports nothing but
     // `migrate.ts`/`migrations/`/`semver.ts`, none of which may ever import `typescript`.
-    const migrateOutput = execImpl(
+    const migrateOutput = await execImpl(
       'node',
       [path.join(tmp, 'package', 'dist', 'cli', 'migrateEntry.js'), '--from', currentVersion, '--dry-run', '--json'],
       { cwd: config.projectRoot, encoding: 'utf8' },
     );
     migrateResult = JSON.parse(migrateOutput) as MigrateResult;
+    kitFilesDiffering = listKitFileDiffs(config, path.join(tmp, 'package', 'starter-kit')).filter((d) => d.status !== 'identical').length;
   } catch {
     return { error: OFFLINE_MESSAGE };
   } finally {
@@ -171,9 +212,18 @@ export async function buildUpdatePlan(
   // Scoped to exactly the files above (decision 4 (brief): "limited to planned files") — called
   // only now that `files` is known, so the real `defaultGitStatus` can pass their paths as `git
   // status`'s own pathspec.
-  const porcelain = gitStatusImpl(config.projectRoot, files.map((f) => f.path));
+  // M9 (Minor, Fable correction pass): `gitStatusImpl` throwing (rather than returning `undefined`,
+  // reserved for "outside a git repository") means a real git failure — fail closed with a plan
+  // `{ error }` naming git, never silently fall back to "outside a git repository, nothing is
+  // dirty" the way returning `undefined` here would.
+  let porcelain: string | undefined;
+  try {
+    porcelain = gitStatusImpl(config.projectRoot, files.map((f) => f.path));
+  } catch (error) {
+    return { error: `Couldn't check for uncommitted changes (git): ${(error as Error).message}` };
+  }
   const outsideGitRepo = porcelain === undefined;
-  const dirtyPaths = outsideGitRepo ? new Set<string>() : parseDirtyPaths(porcelain);
+  const dirtyPaths = porcelain === undefined ? new Set<string>() : parseDirtyPaths(porcelain);
   for (const file of files) file.dirty = dirtyPaths.has(file.path);
 
   let summary: string[] = [];
@@ -202,7 +252,7 @@ export async function buildUpdatePlan(
     releasedAt,
     files,
     dirtyFiles: files.filter((f) => f.dirty).map((f) => f.path),
-    kitFilesDiffering: listKitFileDiffs(config).filter((d) => d.status !== 'identical').length,
+    kitFilesDiffering,
     outsideGitRepo,
   };
 }

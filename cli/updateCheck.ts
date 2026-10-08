@@ -117,47 +117,56 @@ export interface UpdateCheckOptions {
  *  usable result or `undefined`, so every caller can treat "no update known" as the one, uniform
  *  outcome of being offline, blocked, or genuinely up to date with nothing cached yet. */
 export async function checkForUpdate(currentVersion: string, options: UpdateCheckOptions = {}): Promise<UpdateCheckResult | undefined> {
-  const now = options.now ?? Date.now;
-  const cacheDir = options.cacheDir ?? cacheDirFor(process.platform, process.env, process.env.HOME ?? process.env.USERPROFILE ?? '');
-  const cached = readCache(cacheDir);
-  if (cached && isCacheFresh(cached, now())) return toResultOrUndefined(cached, currentVersion);
-
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 900;
-  let latest: string;
+  // M5 (Minor, Fable correction pass): this function is documented — and relied on by `dev()`,
+  // which `await`s it before starting anything else — as never throwing. `parseVersion` (inside
+  // `toResultOrUndefined`) throws on a non-semver `latest`, whether from a parseable-but-malformed
+  // cache file or an unexpected 200 body with no real `version`; either would otherwise stop `dev`
+  // from starting at all.
   try {
-    const registryResponse = (await fetchWithTimeout(REGISTRY_URL, fetchImpl, timeoutMs)) as { version: string };
-    latest = registryResponse.version;
-  } catch {
-    // A stale cache is still better than nothing once offline — still run through the same
-    // not-actually-newer guard, never a raw passthrough.
-    return cached ? toResultOrUndefined(cached, currentVersion) : undefined;
-  }
+    const now = options.now ?? Date.now;
+    const cacheDir = options.cacheDir ?? cacheDirFor(process.platform, process.env, process.env.HOME ?? process.env.USERPROFILE ?? '');
+    const cached = readCache(cacheDir);
+    if (cached && isCacheFresh(cached, now())) return toResultOrUndefined(cached, currentVersion);
 
-  let summary: string[] = [];
-  let releasedAt: string | undefined;
-  try {
-    const release = (await fetchWithTimeout(
-      `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${latest}`,
-      fetchImpl,
-      timeoutMs,
-    )) as { body?: string; published_at?: string };
-    summary = release.body ? extractSummaryBullets(release.body) : [];
-    releasedAt = release.published_at;
-  } catch {
-    // The version comparison is the half that matters for the footer/banner; a missing release
-    // summary (private repo hiccup, a tag pushed slightly before its release note) degrades to an
-    // empty "What's new" list, never a failed check.
-  }
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const timeoutMs = options.timeoutMs ?? 900;
+    let latest: string;
+    try {
+      const registryResponse = (await fetchWithTimeout(REGISTRY_URL, fetchImpl, timeoutMs)) as { version: string };
+      latest = registryResponse.version;
+    } catch {
+      // A stale cache is still better than nothing once offline — still run through the same
+      // not-actually-newer guard, never a raw passthrough.
+      return cached ? toResultOrUndefined(cached, currentVersion) : undefined;
+    }
 
-  const cachedResult: CachedUpdateCheck = { latest, summary, releasedAt, checkedAt: new Date(now()).toISOString() };
-  // compareVersions is used only to decide *whether* this is worth caching as "the latest" at all
-  // — a registry that (briefly, during its own propagation) reports an older "latest" than what
-  // is already cached never regresses the cache.
-  if (!cached || compareVersions(parseVersion(cachedResult.latest), parseVersion(cached.latest)) >= 0) {
-    writeCache(cacheDir, cachedResult);
+    let summary: string[] = [];
+    let releasedAt: string | undefined;
+    try {
+      const release = (await fetchWithTimeout(
+        `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${latest}`,
+        fetchImpl,
+        timeoutMs,
+      )) as { body?: string; published_at?: string };
+      summary = release.body ? extractSummaryBullets(release.body) : [];
+      releasedAt = release.published_at;
+    } catch {
+      // The version comparison is the half that matters for the footer/banner; a missing release
+      // summary (private repo hiccup, a tag pushed slightly before its release note) degrades to an
+      // empty "What's new" list, never a failed check.
+    }
+
+    const cachedResult: CachedUpdateCheck = { latest, summary, releasedAt, checkedAt: new Date(now()).toISOString() };
+    // compareVersions is used only to decide *whether* this is worth caching as "the latest" at all
+    // — a registry that (briefly, during its own propagation) reports an older "latest" than what
+    // is already cached never regresses the cache.
+    if (!cached || compareVersions(parseVersion(cachedResult.latest), parseVersion(cached.latest)) >= 0) {
+      writeCache(cacheDir, cachedResult);
+    }
+    return toResultOrUndefined(cachedResult, currentVersion);
+  } catch {
+    return undefined;
   }
-  return toResultOrUndefined(cachedResult, currentVersion);
 }
 
 /** Design §5: "`dev` writes the result to `.ds-viewer/update.json`; the viewer reads it." Always

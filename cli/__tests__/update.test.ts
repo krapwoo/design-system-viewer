@@ -119,3 +119,32 @@ test('a failed migrate step names the exact recovery command, including --from',
   assert.equal(result.exitCode, 1);
   rmSync(dir, { recursive: true, force: true });
 });
+
+// M6 (Minor, Fable correction pass): mirrors `performUpdate`'s own identical guard — a doctor
+// crash must not lose the "installed and migrated successfully" context.
+test('a doctor crash after a successful install and migrate reports it without losing the success context, exit 1', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl } = recordingExec({ 'npm install': '', 'node migrate': '' }); // no 'node doctor' entry — throws "Unexpected exec", simulating a crash.
+  const buildPlan = async () => samplePlan();
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, yes: true, currentVersion: '0.4.0' });
+  assert.match(result.output, /Installed and migrated to 0\.5\.0/);
+  assert.match(result.output, /doctor failed to run/);
+  assert.match(result.output, /npx ds-viewer doctor/);
+  assert.equal(result.exitCode, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// I5 (Important, raised from Minor by the controller): the success output carries only doctor's
+// own last summary line, never the whole multi-line human report.
+test('a successful update\'s output carries only doctor\'s last summary line, not the whole report', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const DOCTOR_REPORT = 'Button\n  [warning] option-not-covered: "size" option "lg" has no bound or tagged example.\n    Fix: Bind a grid axis to "size".\n\n0 errors, 1 warning — 12 components (12 with examples), 3 unbound examples.';
+  const { execImpl } = recordingExec({ 'npm install': '', 'node migrate': '', 'node doctor': DOCTOR_REPORT });
+  const buildPlan = async () => samplePlan();
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, yes: true, currentVersion: '0.4.0' });
+  assert.match(result.output, /Updated to 0\.5\.0/);
+  assert.ok(result.output.endsWith('0 errors, 1 warning — 12 components (12 with examples), 3 unbound examples.'));
+  assert.ok(!result.output.includes('option-not-covered'));
+  assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
+});

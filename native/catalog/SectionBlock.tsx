@@ -213,6 +213,7 @@ export function SectionBlock<TId extends string>({
   def,
   groupLabel,
   breadcrumbRoot,
+  banner,
   pager,
   headingRef,
   headingLevel = 1,
@@ -221,6 +222,9 @@ export function SectionBlock<TId extends string>({
   def: SectionDef<TId>;
   groupLabel?: string;
   breadcrumbRoot?: string;
+  /** The major-update banner (`CatalogShell`'s own `MajorBanner`), rendered between the breadcrumb
+   *  and the title — the approved mockup's own `PAGE_BG` order: crumb, then banner, then title. */
+  banner?: React.ReactNode;
   pager?: SectionPager<TId>;
   headingRef?: React.Ref<View>;
   headingLevel?: 1 | 2;
@@ -238,6 +242,7 @@ export function SectionBlock<TId extends string>({
       {groupLabel && (
         <Text style={styles.breadcrumb}>{breadcrumbRoot ? `${breadcrumbRoot} / ${groupLabel}` : groupLabel}</Text>
       )}
+      {banner}
       <View style={styles.titlebar}>
         <View style={styles.titleText}>
           {/* The focus target is the heading itself, so assistive tech announces its role and level. */}

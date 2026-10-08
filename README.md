@@ -309,8 +309,10 @@ Files that would change
 
 **Update now** asks the running `dev` process to apply the same steps `update` runs below, over a
 local endpoint that only ever answers the viewer's own page (random port, a per-run secret, exact
-origin match). The viewer restarts itself on the new version and reloads automatically; nothing is
-committed.
+origin match). The secret itself is baked into the generated viewer bundle alongside it — it's the
+endpoint's own Host and exact-Origin checks, not the secret being unguessable, that stop any other
+web page from using it. The viewer restarts itself on the new version and reloads automatically;
+nothing is committed.
 
 If any file the update would touch has uncommitted changes, the panel refuses and names them —
 there's no override in the viewer; commit or stash first, or use `update --force` below. Outside a

@@ -28,12 +28,17 @@ function installedKitDir(projectRoot: string): string {
 /** Design §5 "Starter-kit changes": every kit file on both sides, compared by exact content —
  *  never applied, only reported. `undefined` from `resolveKitRoot` (no `starterKit` configured at
  *  all) means "not a kit project", not an error: `[]` either way (Task 9 reads this directly for
- *  its `kitFilesDiffering` count, which is simply 0 for a non-kit project). */
-export function listKitFileDiffs(config: Pick<ResolvedConfig, 'starterKit' | 'components' | 'projectRoot'>): KitFileDiff[] {
+ *  its `kitFilesDiffering` count, which is simply 0 for a non-kit project).
+ *
+ *  `compareDir` overrides the "other side" of the comparison — the currently-*installed* kit
+ *  (`node_modules/@krapwoo/ds-viewer/starter-kit`) by default, used by `kit diff`; `buildUpdatePlan`
+ *  (M4, Fable correction pass) instead passes the *downloaded target version's* own extracted
+ *  `starter-kit/`, matching its own copy ("differ from {latest}'s kit") and design §5. */
+export function listKitFileDiffs(config: Pick<ResolvedConfig, 'starterKit' | 'components' | 'projectRoot'>, compareDir?: string): KitFileDiff[] {
   const kitRoot = resolveKitRoot(config);
   if (!kitRoot) return [];
   const userDir = path.join(config.projectRoot, kitRoot);
-  const installedDir = installedKitDir(config.projectRoot);
+  const installedDir = compareDir ?? installedKitDir(config.projectRoot);
   const userFiles = new Set(listFilesRecursively(userDir));
   const installedFiles = new Set(listFilesRecursively(installedDir));
   const diffs: KitFileDiff[] = [];

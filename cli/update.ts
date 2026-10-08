@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { buildUpdatePlan, type BuildPlanOptions, type UpdatePlan } from './updatePlan.ts';
 import { detectPackageManager, installUpgradeCommand } from './packageManager.ts';
 import { readOwnVersion } from './packageVersion.ts';
+import { lastSummaryLine } from './doctor.ts';
 import type { ResolvedConfig } from './types.ts';
 
 type ExecImpl = (command: string, args: string[], options: { cwd: string; encoding: 'utf8' }) => string;
@@ -90,6 +91,19 @@ export async function runUpdate(config: ResolvedConfig, options: UpdateRunOption
     };
   }
 
-  const doctorOutput = execImpl('node', [installedMainJs(config.projectRoot), 'doctor'], { cwd: config.projectRoot, encoding: 'utf8' });
-  return { output: `Updated to ${plan.latest}. Changes are not committed — review them in your editor.\n\n${doctorOutput}`, exitCode: 0 };
+  // M6 (Minor, Fable correction pass): the doctor step wasn't wrapped in try/catch — a crash here
+  // rejected `runUpdate` itself, losing the "installed and migrated successfully" context and
+  // leaving `main` to print only the raw error, mirroring `performUpdate`'s own identical guard.
+  let doctorOutput: string;
+  try {
+    doctorOutput = execImpl('node', [installedMainJs(config.projectRoot), 'doctor'], { cwd: config.projectRoot, encoding: 'utf8' });
+  } catch (error) {
+    return {
+      output: `Installed and migrated to ${plan.latest}, but doctor failed to run.\n${(error as Error).message}\n\nRecover with: npx ds-viewer doctor`,
+      exitCode: 1,
+    };
+  }
+  // I5 (Important, raised from Minor by the controller): only the report's own last summary line —
+  // the mockup's success page shows one line, not the whole doctor report.
+  return { output: `Updated to ${plan.latest}. Changes are not committed — review them in your editor.\n\n${lastSummaryLine(doctorOutput)}`, exitCode: 0 };
 }

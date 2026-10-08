@@ -150,6 +150,18 @@ test('checkForUpdate resolves undefined when the cached/fetched latest is not ne
   rmSync(dir, { recursive: true, force: true });
 });
 
+// M5 (Minor, Fable correction pass): `checkForUpdate` is documented as never throwing — a cached
+// `latest` that isn't valid semver (a corrupted write, or a cache from some future, differently
+// shaped release) must not propagate `parseVersion`'s own throw up through `dev()`'s own `await`.
+test('checkForUpdate resolves undefined, never throws, for a fresh cache whose "latest" is not valid semver', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-cache-'));
+  writeFileSync(path.join(dir, 'update-check.json'), JSON.stringify({ latest: 'not-a-version', summary: [], checkedAt: new Date().toISOString() }));
+  const fetchImpl = (async () => { throw new Error('must not be called'); }) as unknown as typeof fetch;
+  const result = await checkForUpdate('0.4.0', { cacheDir: dir, fetchImpl });
+  assert.equal(result, undefined);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('checkForUpdate overlays the current version it is called with onto a cache a different project wrote (the cache never carries current/breaking)', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-cache-'));
   writeFileSync(path.join(dir, 'update-check.json'), JSON.stringify({ latest: '0.5.0', summary: [], checkedAt: new Date().toISOString() }));

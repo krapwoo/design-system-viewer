@@ -208,6 +208,11 @@ export function UpdatePanel({
 }) {
   const [status, setStatus] = useState<UpdateStatusView>({ phase: 'idle' });
   const [planResult, setPlanResult] = useState<UpdatePlanView | { error: string } | undefined>(undefined);
+  // Critical finding, Fable correction pass: while this is true, the endpoint's own `/update` POST
+  // is in flight (re-planning before it can even start) — **Update now** must disable itself for
+  // that whole window, not just once the server reports `'updating'`, or a second click fires a
+  // second `POST /update` the endpoint's own `starting` flag would otherwise have to refuse.
+  const [starting, setStarting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const fetchStatus = useCallback(async () => {
@@ -224,8 +229,16 @@ export function UpdatePanel({
 
   const fetchPlan = useCallback(async () => {
     if (!endpoint || !isWeb()) return;
-    const res = await authedFetch(endpoint, '/plan', { method: 'POST' });
-    setPlanResult((await res.json()) as UpdatePlanView | { error: string });
+    // Important finding, Fable correction pass: an unhandled rejection here (the endpoint
+    // unreachable, CORS-blocked, or mid-restart) previously left `planResult` `undefined` forever
+    // — the panel sat on "Checking…" with no way out. The same error shape `buildUpdatePlan`
+    // itself returns on failure drives the existing `offline` phase.
+    try {
+      const res = await authedFetch(endpoint, '/plan', { method: 'POST' });
+      setPlanResult((await res.json()) as UpdatePlanView | { error: string });
+    } catch {
+      setPlanResult({ error: "Couldn't prepare the update. You may be offline, or npm didn't respond. Nothing was changed." });
+    }
   }, [endpoint]);
 
   useEffect(() => {
@@ -270,16 +283,25 @@ export function UpdatePanel({
 
   const startUpdate = useCallback(async () => {
     if (!endpoint) return;
-    const res = await authedFetch(endpoint, '/update', { method: 'POST' });
-    // A non-202 (409 dirty, or 502 "couldn't prepare") means a file was dirtied — or the plan went
-    // stale — after this panel's own `ready` plan was fetched; re-fetching the plan surfaces the
-    // `dirty`/`offline` phase instead of silently staying on `ready` forever (Minor finding, Fable
-    // correction pass).
-    if (res.status !== 202) {
-      fetchPlan();
-      return;
+    setStarting(true);
+    try {
+      const res = await authedFetch(endpoint, '/update', { method: 'POST' });
+      // A non-202 (409 dirty/already-running, or 502 "couldn't prepare") means a file was dirtied
+      // — or the plan went stale — after this panel's own `ready` plan was fetched; re-fetching the
+      // plan surfaces the `dirty`/`offline` phase instead of silently staying on `ready` forever
+      // (Minor finding, Fable correction pass).
+      if (res.status !== 202) {
+        await fetchPlan();
+        return;
+      }
+      await fetchStatus();
+    } catch {
+      // Important finding, Fable correction pass: same reasoning as `fetchPlan` above — a failed
+      // `POST /update` must not leave the panel stuck mid-click with no way forward.
+      setPlanResult({ error: "Couldn't prepare the update. You may be offline, or npm didn't respond. Nothing was changed." });
+    } finally {
+      setStarting(false);
     }
-    fetchStatus();
   }, [endpoint, fetchPlan, fetchStatus]);
 
   const plan = planResult && !('error' in planResult) ? planResult : undefined;
@@ -319,11 +341,20 @@ export function UpdatePanel({
               'They’re yours and are never changed. Compare with npx ds-viewer kit diff <Component>.'}
           </Text>
         )}
+        {plan.outsideGitRepo && (
+          <Text style={styles.muted}>Not a git repository, so uncommitted changes couldn’t be checked.</Text>
+        )}
         <View style={styles.actions}>
-          <Pressable onPress={startUpdate} accessibilityRole="button" style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Update now</Text>
+          <Pressable
+            onPress={startUpdate}
+            disabled={starting}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: starting }}
+            style={[styles.primaryButton, starting && styles.disabledButton]}
+          >
+            <Text style={[styles.primaryButtonText, starting && styles.disabledButtonText]}>Update now</Text>
           </Pressable>
-          <Text style={styles.muted}>or run <Code>npx ds-viewer update</Code></Text>
+          {starting ? <Text style={styles.muted}>Starting…</Text> : <Text style={styles.muted}>or run <Code>npx ds-viewer update</Code></Text>}
         </View>
       </>
     );
@@ -347,7 +378,7 @@ export function UpdatePanel({
       <>
         <VersionsHeader current={update.current} latest={update.latest} breaking={update.breaking} releasedAt={update.releasedAt} />
         <NoteBox variant="warn">
-          <Text style={styles.noteBoxBold}>{`${plan.dirtyFiles.length} file${plan.dirtyFiles.length === 1 ? '' : 's'} have uncommitted changes.`}</Text>
+          <Text style={styles.noteBoxBold}>{`${plan.dirtyFiles.length} file${plan.dirtyFiles.length === 1 ? '' : 's'} ${plan.dirtyFiles.length === 1 ? 'has' : 'have'} uncommitted changes.`}</Text>
           {' Commit or stash them, then check again.'}
         </NoteBox>
         <FilesList files={plan.files} />
@@ -391,7 +422,7 @@ export function UpdatePanel({
     content = (
       <>
         <VersionsHeader current={update.current} latest={update.latest} breaking={update.breaking} releasedAt={update.releasedAt} />
-        <Text style={styles.h3}>Updating</Text>
+        <Text style={[styles.h3, styles.block]}>Updating</Text>
         <Steps steps={status.steps} />
         <Text style={styles.muted}>Keep this tab open. The viewer restarts on its own when the update finishes.</Text>
       </>

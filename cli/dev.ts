@@ -14,6 +14,7 @@ import { checkForUpdate, isUpdateCheckEnabled, writeUpdateFile, type UpdateCheck
 import { readOwnVersion } from './packageVersion.ts';
 import { createUpdateEndpoint, type EndpointDeps, type UpdateStatus } from './endpoint.ts';
 import { buildUpdatePlan, type UpdatePlan } from './updatePlan.ts';
+import { lastSummaryLine } from './doctor.ts';
 import { detectPackageManager, installUpgradeCommand, type PackageManager } from './packageManager.ts';
 import type { ResolvedConfig } from './types.ts';
 
@@ -128,13 +129,17 @@ export async function performUpdate(
   const pm = detectPackageManager(config.projectRoot);
   // Names the detected package manager and the real migration count (Important finding, Fable
   // correction pass: the approved mockup's own `updating` state reads "Installed with npm" and
-  // "Applying 1 migration…", never a generic placeholder).
-  const stepLabels = [
-    `Downloaded ${plan.latest}`,
-    `Installed with ${packageManagerLabel(pm)}`,
-    migrationCount > 0 ? `Applying ${migrationCount} migration${migrationCount === 1 ? '' : 's'}` : 'No migrations to apply',
-    'Checking pages (doctor)',
-    'Restarting the viewer',
+  // "Applying 1 migration…", never a generic placeholder). The install step carries its own
+  // present-tense `progressLabel` (Minor finding, Fable correction pass: the in-flight step
+  // previously read "Installed with npm…" — already past tense — while still running) and its own
+  // `failLabel` (the mockup's failure state reads "Install with npm failed", not "Installed with
+  // npm failed" — a different, plain-present phrasing from either the done or in-flight label).
+  const stepDefs = [
+    { label: `Downloaded ${plan.latest}` },
+    { label: `Installed with ${packageManagerLabel(pm)}`, progressLabel: `Installing with ${packageManagerLabel(pm)}`, failLabel: `Install with ${packageManagerLabel(pm)}` },
+    { label: migrationCount > 0 ? `Applying ${migrationCount} migration${migrationCount === 1 ? '' : 's'}` : 'No migrations to apply' },
+    { label: 'Checking pages (doctor)' },
+    { label: 'Restarting the viewer' },
   ];
   // `completedCount` steps are 'done', the next one is 'now' (in flight), the rest 'todo' — a
   // three-way state, not a boolean (Important finding, Fable correction pass; Task 12/15 share
@@ -143,7 +148,10 @@ export async function performUpdate(
   const report = (completedCount: number) =>
     deps.onStatus({
       phase: 'updating',
-      steps: stepLabels.map((label, i) => ({ label, state: i < completedCount ? 'done' : i === completedCount ? 'now' : 'todo' })),
+      steps: stepDefs.map((def, i) => ({
+        label: i === completedCount && def.progressLabel ? def.progressLabel : def.label,
+        state: i < completedCount ? 'done' : i === completedCount ? 'now' : 'todo',
+      })),
     });
   report(1);
 
@@ -151,7 +159,7 @@ export async function performUpdate(
   try {
     await deps.execImpl(command, args, { cwd: config.projectRoot, encoding: 'utf8' });
   } catch (error) {
-    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepLabels[1] });
+    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[1].failLabel ?? stepDefs[1].label });
     return;
   }
   report(2);
@@ -159,19 +167,22 @@ export async function performUpdate(
   try {
     await deps.execImpl('node', [installedMainJs(config.projectRoot), 'migrate', '--from', currentVersion], { cwd: config.projectRoot, encoding: 'utf8' });
   } catch (error) {
-    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepLabels[2] });
+    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[2].label });
     return;
   }
   report(3);
 
-  let doctorSummary: string;
+  let doctorOutput: string;
   try {
-    doctorSummary = await deps.execImpl('node', [installedMainJs(config.projectRoot), 'doctor'], { cwd: config.projectRoot, encoding: 'utf8' });
+    doctorOutput = await deps.execImpl('node', [installedMainJs(config.projectRoot), 'doctor'], { cwd: config.projectRoot, encoding: 'utf8' });
   } catch (error) {
-    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepLabels[3] });
+    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[3].label });
     return;
   }
   report(4);
+  // Fable Minor finding, raised to Important by the controller: the success page showed the whole
+  // doctor report (30+ lines for a real project) — the mockup's own success state shows one line.
+  const doctorSummary = lastSummaryLine(doctorOutput);
 
   deps.onStatus({ phase: 'restarting' });
   // Errata 2c: wait before actually restarting, so the browser's next `/update/status` poll can
@@ -245,11 +256,18 @@ export async function performRestart(
   // Errata 7a: remove `dev()`'s own SIGINT/SIGTERM/SIGHUP listeners (Step 5, below) first, before
   // anything else — otherwise a signal sent to this supervisor mid-restart exits through that old
   // handler (which tries to kill the already-exiting old child and calls `process.exit(0)`),
-  // orphaning the restarted `dev` and its Metro. `targetChild` starts `undefined` so a signal
-  // delivered before `newChild` exists below is safely a no-op rather than reaching a stale child.
+  // orphaning the restarted `dev` and its Metro. `targetChild` starts `undefined`; a signal
+  // delivered before `newChild` exists below used to be silently swallowed instead of cancelling
+  // the restart (Minor finding, Fable correction pass: Ctrl-C in that up-to-15s window brought the
+  // viewer back up instead of stopping it) — `cancelledBeforeSpawn` remembers it instead, so the
+  // new `dev` is never spawned once the old child is gone.
   let targetChild: ReturnType<typeof spawn> | undefined;
+  let cancelledBeforeSpawn = false;
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.removeAllListeners(signal);
-  const forward = (signal: NodeJS.Signals) => targetChild?.kill(signal);
+  const forward = (signal: NodeJS.Signals) => {
+    if (targetChild) targetChild.kill(signal);
+    else cancelledBeforeSpawn = true;
+  };
   process.on('SIGINT', forward);
   process.on('SIGTERM', forward);
   process.on('SIGHUP', forward);
@@ -272,6 +290,14 @@ export async function performRestart(
 
     await waitForPortFree(handoff.port, deps.probePortFree ?? defaultProbePortFree);
 
+    // The old child is gone and the port is free — if a signal arrived in the window above (before
+    // there was anything to forward it to), this restart is itself cancelled: the user asked to
+    // stop, not to come back up on the new version.
+    if (cancelledBeforeSpawn) {
+      process.exit(0);
+      return;
+    }
+
     const newChild = spawn(
       process.execPath,
       [...process.execArgv, process.argv[1], 'dev', '--port', String(handoff.port)],
@@ -283,12 +309,16 @@ export async function performRestart(
     if (exitCode !== 0) {
       console.error(`The restarted viewer exited unexpectedly (code ${exitCode}).`);
       console.error('Recover with: npx ds-viewer dev');
+      // Important finding, Fable correction pass: design §5 restart step 5 asks for "the recovery
+      // command and the result of the update" — previously only the recovery command printed here,
+      // losing the install/migrate/doctor result (never shown anywhere else; it ran in-process).
+      console.error(`The update itself finished: ${handoff.doctorSummary}; changed: ${handoff.files.join(', ') || '(none)'}.`);
     }
     process.exit(exitCode);
   } catch (error) {
     console.error(`Restart failed: ${(error as Error).message}`);
     console.error('Recover with: npx ds-viewer dev');
-    console.error(`Last known good state — doctor: ${handoff.doctorSummary}; files: ${handoff.files.join(', ') || '(none)'}`);
+    console.error(`The update itself finished: ${handoff.doctorSummary}; changed: ${handoff.files.join(', ') || '(none)'}.`);
     process.exit(1);
   }
 }
@@ -345,6 +375,12 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
           writeFileSync(statusFile, JSON.stringify({ phase: 'success', ...result }));
           await performRestart({ projectRoot: config.projectRoot, port, child, watchers, endpointServer, doctorSummary: result.doctorSummary, files: result.files });
         },
+      }).catch((error) => {
+        // Minor finding, Fable correction pass: `performUpdate` only ever reports `'failure'` from
+        // its own guarded steps — a throw outside them (e.g. `writeFileSync(statusFile)` itself
+        // failing) previously became an unhandled rejection with nothing watching for it.
+        updateStatus = { phase: 'failure', log: (error as Error).message, failedStep: 'Updating' };
+        watchersPaused = false;
       });
     },
     getStatus: () => updateStatus,
@@ -425,4 +461,17 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       process.exit(0);
     });
   }
+
+  // Minor finding, Fable correction pass: with Expo now spawned `detached: true`, any uncaught
+  // throw or unhandled rejection in this process (outside the guarded steps above) would otherwise
+  // crash `dev` with no terminal left to send Metro a signal, leaving it bound to the port.
+  const killExpoAndExit = (error: unknown) => {
+    console.error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+    for (const watcher of watchers) watcher.close();
+    endpointServer.close();
+    killGroup(child, 'SIGTERM');
+    process.exit(1);
+  };
+  process.on('uncaughtException', killExpoAndExit);
+  process.on('unhandledRejection', killExpoAndExit);
 }

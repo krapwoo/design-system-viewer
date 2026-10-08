@@ -77,6 +77,14 @@ test('a request from the correct Origin with a missing or wrong secret is reject
   });
 });
 
+test('a same-length wrong secret is rejected too — timingSafeEqual is actually reached, not short-circuited by a length mismatch', async () => {
+  await withServer({}, async (baseUrl) => {
+    const sameLength = 'x'.repeat(SECRET.length);
+    const res = await fetch(`${baseUrl}/plan`, { method: 'POST', headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: sameLength } });
+    assert.equal(res.status, 401);
+  });
+});
+
 test('POST /plan with the correct Origin and secret returns the built plan as JSON', async () => {
   await withServer({}, async (baseUrl, calls) => {
     const res = await fetch(`${baseUrl}/plan`, { method: 'POST', headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET } });
@@ -111,6 +119,53 @@ test('POST /update is refused while one is already running — "one update at a 
     assert.deepEqual(calls.startUpdate, []);
     assert.equal(calls.buildPlan, 0); // never even re-plans once one is already in flight.
   });
+});
+
+test('two concurrent POST /update requests: only the first starts the update, the second is refused — "one update at a time" during re-planning, not just once status is "updating"', async () => {
+  let buildPlanCalls = 0;
+  await withServer(
+    {
+      buildPlan: async () => {
+        buildPlanCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return samplePlan();
+      },
+    },
+    async (baseUrl, calls) => {
+      const post = () => fetch(`${baseUrl}/update`, { method: 'POST', headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET } });
+      const first = post();
+      const second = await new Promise<Response>((resolve) => setTimeout(() => resolve(post()), 10));
+      const firstRes = await first;
+      const statuses = [firstRes.status, second.status].sort();
+      assert.deepEqual(statuses, [202, 409]);
+      // `startUpdate` runs via `setImmediate`, scheduled only after the 202 response is already
+      // written — give it a turn of the event loop before counting calls, the same gap `fetch`'s
+      // own promise resolution doesn't reliably wait out on its own.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(calls.startUpdate.length, 1);
+      assert.equal(buildPlanCalls, 1); // the second request never re-plans either — refused before that.
+    },
+  );
+});
+
+test('a rejected buildPlan answers 502 and does not leave later updates refused', async () => {
+  let attempt = 0;
+  await withServer(
+    {
+      buildPlan: async () => {
+        attempt += 1;
+        if (attempt === 1) throw new Error('npm exploded');
+        return samplePlan();
+      },
+    },
+    async (baseUrl, calls) => {
+      const post = () => fetch(`${baseUrl}/update`, { method: 'POST', headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET } });
+      assert.equal((await post()).status, 502);
+      assert.equal((await post()).status, 202);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(calls.startUpdate.length, 1);
+    },
+  );
 });
 
 test('GET /update/status requires the secret and returns getStatus() verbatim', async () => {

@@ -46,6 +46,16 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown, allow
  *  call `.listen()` itself — Task 18's `dev.ts` owns the real port (`0` → OS-assigned, `127.0.0.1`
  *  only) and this task's own tests each pick their own ephemeral port the same way. */
 export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
+  // Critical finding, Fable correction pass: the "one update at a time" refusal only ever checked
+  // `getStatus()`, which doesn't become `'updating'` until `startUpdate` runs — but `buildPlan`
+  // (re-downloading the tarball) can take seconds, and the panel leaves **Update now** enabled
+  // throughout, so a second click during that window passed the same check twice. This flag closes
+  // exactly that window: set synchronously before the plan is even (re-)built, reset on every path
+  // that does *not* hand the plan to `startUpdate` — the 502/409 refusals below. Once `startUpdate`
+  // is actually called, `getStatus()` already reports `'updating'` (set synchronously inside it, by
+  // every real caller), so resetting this flag right after is safe and lets a later retry (after a
+  // `'failure'`, in the same process) through again.
+  let starting = false;
   return http.createServer(async (req, res) => {
     // Controller decision 1 (required, not optional): reject a request whose `Host` header is not
     // this very socket's own `127.0.0.1:<port>` — a DNS-rebinding defence, since `req.socket`'s own
@@ -100,12 +110,22 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
       // §5) — checked before even building a fresh plan, so a second click never re-downloads
       // anything while the first update is still in flight.
       const status = deps.getStatus();
-      if (status.phase === 'updating' || status.phase === 'restarting') {
+      if (starting || status.phase === 'updating' || status.phase === 'restarting') {
         sendJson(res, 409, { error: 'An update is already running.' }, deps.allowedOrigin);
         return;
       }
-      const plan = await deps.buildPlan();
+      starting = true;
+      let plan: Awaited<ReturnType<EndpointDeps['buildPlan']>>;
+      try {
+        plan = await deps.buildPlan();
+      } catch (error) {
+        // A rejected plan must not leave `starting` stuck, or every later Update now is refused.
+        starting = false;
+        sendJson(res, 502, { error: (error as Error).message }, deps.allowedOrigin);
+        return;
+      }
       if ('error' in plan) {
+        starting = false;
         sendJson(res, 502, { error: plan.error }, deps.allowedOrigin);
         return;
       }
@@ -113,6 +133,7 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
       // this is the one, authoritative refusal: even if the panel's own UI somehow let a dirty
       // plan through, the endpoint itself still never starts.
       if (plan.dirtyFiles.length > 0) {
+        starting = false;
         sendJson(res, 409, { error: 'dirty-files', dirtyFiles: plan.dirtyFiles }, deps.allowedOrigin);
         return;
       }
@@ -131,6 +152,8 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
           deps.startUpdate(plan);
         } catch (error) {
           console.warn('Update could not start: ' + (error as Error).message);
+        } finally {
+          starting = false;
         }
       });
       return;

@@ -41,28 +41,32 @@ function resetMainScroll(scrollView: ScrollView | null): void {
   scrollView.scrollTo({ y: 0, animated: false });
 }
 
-/** The approved mockup's exact copy shape: `"DS Viewer <version> is available — includes
- *  breaking changes · Review update"`, dismissible with an `×` labeled `"Dismiss for <version>"`.
- *  The release's own GitHub page stands in for a dedicated migration-guide URL, which this plan's
- *  design text does not otherwise name. */
+/** The approved mockup's exact copy shape: `"⚠ DS Viewer <version> is available — includes
+ *  breaking changes · Migration guide · Review update"`, dismissible with an `×` labeled "Dismiss
+ *  for <version>". The release's own GitHub page stands in for a dedicated migration-guide URL,
+ *  which this plan's design text does not otherwise name.
+ *
+ *  Important finding, Fable correction pass: both links now carry a real `href` — `role="link"`
+ *  with only `onPress` (as `CatalogSidebar.tsx`'s own finding already documents) never activates on
+ *  Enter under react-native-web unless the element is a genuine anchor. `role="status"` (not
+ *  `"alert"`, the mockup's own choice) — a non-urgent notice should not interrupt assistive tech. */
 function MajorBanner({ update, onReviewUpdate, onDismiss }: { update: UpdateNotice; onReviewUpdate: () => void; onDismiss: () => void }) {
   const releaseUrl = `https://github.com/krapwoo/design-system-viewer/releases/tag/v${update.latest}`;
   return (
-    <View style={bannerStyles.banner} role="alert">
+    <View style={bannerStyles.banner} role="status">
       <Text style={bannerStyles.text}>
+        {'⚠ '}
         <Text style={bannerStyles.bold}>{`DS Viewer ${update.latest} is available`}</Text>
         {' — includes breaking changes · '}
         <Text
           role="link"
           style={bannerStyles.link}
-          onPress={() => {
-            if (isWeb()) window.open(releaseUrl, '_blank');
-          }}
+          {...({ href: releaseUrl, hrefAttrs: { target: '_blank', rel: 'noopener noreferrer' } } as Record<string, unknown>)}
         >
           Migration guide
         </Text>
         {' · '}
-        <Text role="link" style={bannerStyles.link} onPress={onReviewUpdate}>
+        <Text role="link" style={bannerStyles.link} onPress={onReviewUpdate} {...({ href: hashForId(UPDATE_PAGE_ID) } as Record<string, unknown>)}>
           Review update
         </Text>
       </Text>
@@ -213,9 +217,6 @@ export function CatalogShell<TId extends string>({
     <View style={styles.root}>
       <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} active={active} onPress={select} footer={footer} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
-        {showBanner && update && (
-          <MajorBanner update={update} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} />
-        )}
         {active === UPDATE_PAGE_ID ? (
           <UpdatePanel update={update ?? null} endpoint={updateEndpoint} appName={appName} headingRef={headingRef} />
         ) : activeDef ? (
@@ -224,6 +225,10 @@ export function CatalogShell<TId extends string>({
             def={activeDef}
             groupLabel={groupLabelFor(groups, activeDef.id)}
             breadcrumbRoot={appName}
+            // The approved mockup's own `PAGE_BG` order: crumb, then banner, then title — the
+            // banner used to render above the breadcrumb instead (Important finding, Fable
+            // correction pass).
+            banner={showBanner && update ? <MajorBanner update={update} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} /> : undefined}
             pager={{
               previousId: neighbors(order, activeDef.id).previous,
               nextId: neighbors(order, activeDef.id).next,

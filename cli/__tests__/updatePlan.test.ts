@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { buildUpdatePlan } from '../updatePlan.ts';
+import { buildUpdatePlan, stripRepoPrefix } from '../updatePlan.ts';
 import type { ResolvedConfig } from '../types.ts';
 
 function baseConfig(dir: string, overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -92,16 +92,26 @@ test('buildUpdatePlan: outside a git repository, every file is treated as not di
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('buildUpdatePlan counts differing kit files via listKitFileDiffs', async () => {
+test('buildUpdatePlan counts kit files differing from the downloaded target version\'s kit, not the installed one (M4)', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-plan-'));
+  const tmp = mkdtempSync(path.join(tmpdir(), 'ds-viewer-plan-tmp-'));
   const userKit = path.join(dir, 'src', 'ds', 'components', 'Button');
+  // The installed kit (currently on disk) matches the user's file exactly — if `kitFilesDiffering`
+  // were still comparing against this (the pre-M4 bug), it would read 0.
   const installedKit = path.join(dir, 'node_modules', '@krapwoo', 'ds-viewer', 'starter-kit', 'components', 'Button');
+  // The *downloaded* target version's kit (what `npm pack` + `tar` would have extracted into `tmp`
+  // before this function's own `finally` cleans it up) differs from the user's file.
+  const downloadedKit = path.join(tmp, 'package', 'starter-kit', 'components', 'Button');
   mkdirSync(userKit, { recursive: true });
   mkdirSync(installedKit, { recursive: true });
+  mkdirSync(downloadedKit, { recursive: true });
   writeFileSync(path.join(userKit, 'index.ts'), 'export const a = 1;\n');
-  writeFileSync(path.join(installedKit, 'index.ts'), 'export const a = 2;\n');
+  writeFileSync(path.join(installedKit, 'index.ts'), 'export const a = 1;\n');
+  writeFileSync(path.join(downloadedKit, 'index.ts'), 'export const a = 2;\n');
   const config = baseConfig(dir, { starterKit: { version: '0.4.0', root: 'src/ds' }, components: ['src/ds/components/*/index.ts'] });
-  const plan = await buildUpdatePlan(config, '0.4.0', { execImpl: fakeExec(), fetchImpl: fakeFetchWithRelease, gitStatusImpl: () => '' });
+  const plan = await buildUpdatePlan(config, '0.4.0', {
+    execImpl: fakeExec(), fetchImpl: fakeFetchWithRelease, gitStatusImpl: () => '', tmpDirImpl: () => tmp,
+  });
   if ('error' in plan) throw new Error('unreachable');
   assert.equal(plan.kitFilesDiffering, 1);
   rmSync(dir, { recursive: true, force: true });
@@ -115,4 +125,47 @@ test('buildUpdatePlan treats a renamed planned file as dirty by its new path, no
   if ('error' in plan) throw new Error('unreachable');
   assert.deepEqual(plan.dirtyFiles, ['package.json']);
   rmSync(dir, { recursive: true, force: true });
+});
+
+// Important finding, Fable correction pass (I1): the production default `execImpl` now gives `npm
+// view`/`npm pack` their own 20s timeout so a real, unreachable registry fails fast instead of
+// hanging `dev`'s whole event loop for minutes — simulated here by an injected `execImpl` that
+// rejects the way a timed-out `execFile` would (its `killSignal`, never a resolved value).
+test('buildUpdatePlan: an execImpl that rejects with a timeout error yields the offline { error }, never hangs', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-plan-'));
+  const execImpl = async (command: string) => {
+    if (command === 'npm') throw new Error('Command failed: npm view — ETIMEDOUT');
+    return '';
+  };
+  const plan = await buildUpdatePlan(baseConfig(dir), '0.4.0', { execImpl, gitStatusImpl: () => '' });
+  assert.deepEqual(plan, { error: "Couldn't prepare the update. You may be offline, or npm didn't respond. Nothing was changed." });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// M9 (Minor, Fable correction pass): `defaultGitStatus` fails *closed* now — a real git failure
+// that isn't "not a git repository" (or git missing) must surface as a plan `{ error }`, never
+// silently degrade to "outside a git repository, nothing is dirty". Exercised here through
+// `gitStatusImpl` throwing the same `GitStatusError`-shaped failure the real default would, since
+// forcing the real `git` binary itself to fail in a controlled, portable way isn't practical.
+test('buildUpdatePlan: a gitStatusImpl failure other than "not a repository" returns a plan { error } naming git, not a silent "outside a git repository"', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-plan-'));
+  const gitStatusImpl = () => { throw new Error('git status failed: fatal: detected dubious ownership in repository'); };
+  const plan = await buildUpdatePlan(baseConfig(dir), '0.4.0', { execImpl: fakeExec(), fetchImpl: fakeFetchWithRelease, gitStatusImpl });
+  assert.ok('error' in plan);
+  if (!('error' in plan)) throw new Error('unreachable');
+  assert.match(plan.error, /git/i);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('stripRepoPrefix: strips the repo-root prefix from a plain path and from both sides of a rename', () => {
+  const porcelain = ' M apps/mobile/package.json\nR  apps/mobile/old-name.json -> apps/mobile/package-lock.json\n';
+  assert.equal(
+    stripRepoPrefix(porcelain, 'apps/mobile/'),
+    ' M package.json\nR  old-name.json -> package-lock.json\n',
+  );
+});
+
+test('stripRepoPrefix: a project at the repository root (empty prefix) returns the porcelain output unchanged', () => {
+  const porcelain = ' M package.json\n';
+  assert.equal(stripRepoPrefix(porcelain, ''), porcelain);
 });
