@@ -44,3 +44,18 @@ test('resolveGlob with no wildcards returns the single file when it exists', () 
   assert.deepEqual(resolveGlob(root, 'src/tokens/missing.ts'), []);
   rmSync(root, { recursive: true, force: true });
 });
+
+test('resolveGlob resolves a pattern that climbs out of root with ".."', () => {
+  const root = makeFixture();
+  const parent = path.dirname(root);
+  const siblingName = path.basename(root);
+  const matches = resolveGlob(path.join(root, 'src'), `../../${siblingName}/src/tokens/index.ts`).sort();
+  assert.deepEqual(matches, [path.join(root, 'src/tokens/index.ts')]);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('resolveGlob treats a leading "." segment as the root itself', () => {
+  const root = makeFixture();
+  assert.deepEqual(resolveGlob(root, './src/tokens/index.ts'), [path.join(root, 'src/tokens/index.ts')]);
+  rmSync(root, { recursive: true, force: true });
+});

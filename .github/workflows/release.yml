@@ -30,8 +30,15 @@ jobs:
               process.exit(1);
             }
           "
+      # Nothing in this job runs a headless browser (that's `check:catalog`, in ci.yml only) — skip
+      # Puppeteer's Chrome for Testing download, which `npm ci` would otherwise still fetch here
+      # (Minor finding, Fable's implementation review).
       - run: npm ci
-      - run: npm ci --prefix native-preview
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 1
+      - run: npm ci --prefix kit-host
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 1
       - run: npm test
       - run: npm run build
       # Trusted publishing (OIDC) needs npm 11.5.1+; both Node 20 and 22 currently bundle npm 10,

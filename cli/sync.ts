@@ -45,7 +45,25 @@ export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOpti
   const components: ComponentRecord[] = [];
   const componentRefs: { name: string; entryFile: string }[] = [];
   const seenNames = new Set<string>();
-  const readComponent = createComponentReader(componentEntryFiles, { ...resolveOptions, optionRoots });
+  // A component entry file can live outside `config.projectRoot` (e.g. kit-host's sibling
+  // `../starter-kit/`) — `createComponentReader`'s own host-tsconfig lookup walks up from the
+  // entry file, never reaching `config.projectRoot`'s own node_modules. This fallback (lowest
+  // priority — a real host `paths`, or `resolveOptions.paths`, still wins) is what lets such a
+  // file still resolve `react`/`react-native` against the project that actually declares them.
+  // `@types/*` is listed BEFORE the plain package deliberately (confirmed by spike,
+  // `spikes/README.md` "sync-fallback-paths"): once `paths` redirects a bare specifier to an
+  // on-disk folder, TypeScript resolves it there and never falls through to a second entry just
+  // because the first has no types — the reverse order left `react`/`react-native` both
+  // resolving to "implicitly any", because the plain package folder matched first. Only computed
+  // when at least one entry file actually lies outside `config.projectRoot` — normal projects
+  // (every entry file under projectRoot) keep standard TypeScript resolution untouched.
+  const hasEntryOutsideProjectRoot = componentEntryFiles.some(
+    (file) => !file.startsWith(`${config.projectRoot}${path.sep}`),
+  );
+  const fallbackPaths = hasEntryOutsideProjectRoot
+    ? { '*': [path.join(config.projectRoot, 'node_modules', '@types', '*'), path.join(config.projectRoot, 'node_modules', '*')] }
+    : undefined;
+  const readComponent = createComponentReader(componentEntryFiles, { ...resolveOptions, optionRoots, fallbackPaths });
   for (const entryFile of componentEntryFiles) {
     try {
       for (const record of readComponent(entryFile)) {

@@ -4,8 +4,9 @@ import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
 
 /**
  * Wraps one token's rendered example with a grounded "when to use this" note beneath it — the
- * shared shape behind every token-gallery row (Spacing, Type Scale, …) in both CatalogExample.tsx
- * and CatalogFrameworkExample.tsx. The row's own content (a spacing bar, a type sample, …) is
+ * shared shape behind every token-gallery row (Spacing, Type Scale, …) in both the starter kit's
+ * own token pages and the catalog framework's own `kit-host/viewer-pages/` pages. The row's own
+ * content (a spacing bar, a type sample, …) is
  * freeform `children`; only the value-plus-use-note stacking is standardized here.
  *
  * Draws a 1px `CATALOG_COLOR.border` bottom divider by default (the same divider PropsTable's rows use) so a stack of TokenRows

@@ -1,15 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { initExistingProject } from '../init.ts';
+import { copyKitIfMissing, initExistingProject, initNewProject } from '../init.ts';
 
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, '../../fixtures/existing-project');
+const NEW_PROJECT_FIXTURE_ROOT = path.resolve(import.meta.dirname, '../../fixtures/new-project');
 
 function copyFixture(): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-init-'));
   cpSync(FIXTURE_ROOT, dir, { recursive: true });
+  return dir;
+}
+
+function copyNewProjectFixture(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-new-project-'));
+  cpSync(NEW_PROJECT_FIXTURE_ROOT, dir, { recursive: true });
   return dir;
 }
 
@@ -143,5 +150,130 @@ test('initExistingProject proceeds when the injected confirmation answers yes', 
   });
   assert.match(promptedWith, /Badge/);
   assert.ok(result.written.length > 0);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('initNewProject installs missing kit packages via the injected installer, copies the real starter kit, and writes config/script/gitignore', async () => {
+  const projectRoot = copyNewProjectFixture();
+  const installed: string[] = [];
+  const result = await initNewProject(projectRoot, {
+    installer: (_root, missing) => {
+      installed.push(...missing);
+    },
+  });
+  assert.deepEqual(installed.sort(), ['react-native-safe-area-context', 'react-native-svg']);
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/components/Button/index.ts')));
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/tokens/index.ts')));
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/icons/index.ts')));
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/WHEN_TO_USE.md')));
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/components/Button/Button.catalog.tsx')));
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/pages/Colors.catalog.tsx')));
+  const config = readFileSync(path.join(projectRoot, 'ds-viewer.config.ts'), 'utf8');
+  assert.match(config, /components: \['src\/ds\/components\/\*\/index\.ts'\]/);
+  assert.match(config, /pages: \['src\/ds\/pages\/\*\.catalog\.tsx'\]/);
+  assert.match(config, /starterKit: \{ version: '\d+\.\d+\.\d+' \}/);
+  const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+  assert.equal(packageJson.scripts['ds-viewer'], 'ds-viewer');
+  assert.match(packageJson.devDependencies['@krapwoo/ds-viewer'], /^\^\d+\.\d+\.\d+$/);
+  assert.equal(readFileSync(path.join(projectRoot, '.gitignore'), 'utf8'), '.ds-viewer/\n');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('initNewProject writes the kit\'s own sidebar groupOrder, instead of leaving the sidebar alphabetical', async () => {
+  // Controller end-to-end finding E3: a fresh project's sidebar fell back to alphabetical order
+  // (Actions, Controls, Feedback, Inputs, …) because `init --new` wrote no `groupOrder` at all,
+  // losing the kit's intended order (as kit-host's own config declares, minus the "Viewer" group
+  // that only applies to kit-host's own framework-docs pages, which `init --new` never copies).
+  const projectRoot = copyNewProjectFixture();
+  await initNewProject(projectRoot, { installer: () => {} });
+  const config = readFileSync(path.join(projectRoot, 'ds-viewer.config.ts'), 'utf8');
+  const groupOrderSection = config.match(/groupOrder: \[([\s\S]*?)\]/)?.[1] ?? '';
+  const groups = [...groupOrderSection.matchAll(/["']([^"']+)["']/g)].map((m) => m[1]);
+  assert.deepEqual(groups, [
+    'Actions', 'Surfaces', 'Inputs', 'Controls', 'Selection', 'Feedback', 'Navigation',
+    'Overlays', 'Layout', 'Sub-Parts', 'Recipes', 'Tokens', 'Reference',
+  ]);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('initNewProject copies the kit into a custom --kit-root', async () => {
+  const projectRoot = copyNewProjectFixture();
+  await initNewProject(projectRoot, { kitRoot: 'design', installer: () => {} });
+  assert.ok(existsSync(path.join(projectRoot, 'design/components/Button/index.ts')));
+  assert.ok(!existsSync(path.join(projectRoot, 'src/ds')));
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('initNewProject never overwrites a kit file the user already edited, on rerun', async () => {
+  const projectRoot = copyNewProjectFixture();
+  await initNewProject(projectRoot, { installer: () => {} });
+  const buttonPath = path.join(projectRoot, 'src/ds/components/Button/Button.tsx');
+  writeFileSync(buttonPath, '// user-edited\n');
+  const second = await initNewProject(projectRoot, { installer: () => {} });
+  assert.ok(!second.written.includes(buttonPath));
+  assert.equal(readFileSync(buttonPath, 'utf8'), '// user-edited\n');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('initNewProject reports nothing copied on a second run, instead of repeating "Copied the starter kit"', async () => {
+  // Controller end-to-end finding E2: a second `init --new` printed "Copied the starter kit into
+  // src/ds/." even though every kit file already existed and `copyKitIfMissing` wrote nothing.
+  const projectRoot = copyNewProjectFixture();
+  const first = await initNewProject(projectRoot, { installer: () => {} });
+  assert.ok(first.messages.includes('Copied the starter kit into src/ds/.'));
+  const second = await initNewProject(projectRoot, { installer: () => {} });
+  assert.ok(!second.messages.some((message) => message.includes('Copied the starter kit')));
+  assert.ok(second.messages.includes('Starter kit already present in src/ds/ — nothing copied.'));
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('initNewProject stops and installs/writes nothing when a required package is missing', async () => {
+  const projectRoot = copyNewProjectFixture();
+  const packageJsonPath = path.join(projectRoot, 'package.json');
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+  delete packageJson.dependencies['react-dom'];
+  writeFileSync(packageJsonPath, JSON.stringify(packageJson));
+  let installerCalled = false;
+  const result = await initNewProject(projectRoot, { installer: () => { installerCalled = true; } });
+  assert.equal(installerCalled, false);
+  assert.deepEqual(result.written, []);
+  assert.equal(result.exitCode, 1);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('copyKitIfMissing reports the files it already wrote instead of throwing when a nested folder is unreadable', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-copy-unreadable-'));
+  const srcDir = path.join(projectRoot, 'src');
+  const destDir = path.join(projectRoot, 'dest');
+  mkdirSync(path.join(srcDir, 'locked'), { recursive: true });
+  writeFileSync(path.join(srcDir, 'readable.txt'), 'ok\n');
+  writeFileSync(path.join(srcDir, 'locked', 'secret.txt'), 'nope\n');
+  chmodSync(path.join(srcDir, 'locked'), 0o000);
+
+  let written: string[] = [];
+  try {
+    assert.doesNotThrow(() => {
+      written = copyKitIfMissing(srcDir, destDir);
+    });
+  } finally {
+    chmodSync(path.join(srcDir, 'locked'), 0o755);
+  }
+  assert.ok(written.includes(path.join(destDir, 'readable.txt')), 'the readable file copied before the unreadable folder should still be reported');
+  assert.ok(existsSync(path.join(destDir, 'readable.txt')));
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('copyKitIfMissing skips a symlinked entry rather than copying through it', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-copy-symlink-'));
+  const srcDir = path.join(projectRoot, 'src');
+  const destDir = path.join(projectRoot, 'dest');
+  mkdirSync(srcDir, { recursive: true });
+  writeFileSync(path.join(srcDir, 'real.txt'), 'ok\n');
+  symlinkSync(path.join(srcDir, 'real.txt'), path.join(srcDir, 'link.txt'));
+
+  const written = copyKitIfMissing(srcDir, destDir);
+  assert.ok(!written.includes(path.join(destDir, 'link.txt')));
+  assert.ok(!existsSync(path.join(destDir, 'link.txt')));
+  assert.ok(existsSync(path.join(destDir, 'real.txt')));
   rmSync(projectRoot, { recursive: true, force: true });
 });

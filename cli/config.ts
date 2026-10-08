@@ -66,11 +66,35 @@ export function loadConfig(configPath: string): LoadConfigResult {
   return { config, warnings };
 }
 
+/** Design §1 Ownership table — a missing `logo` file is a warning, never a hard error: the
+ *  sidebar simply falls back to the name-only header. Resolved relative to `projectRoot` with
+ *  `path.resolve` — the same way `cli/workspace.ts` resolves `config.logo` to actually `require`
+ *  it — not `path.join`, which nests an absolute `logo` value *under* `projectRoot` instead of
+ *  using it directly, misreporting a real file as "not found" (Minor finding, Fable's
+ *  implementation review, cli/config.ts:74 vs cli/workspace.ts:134). A `logo` that resolves
+ *  outside `projectRoot` is also rejected here, with its own clear warning: `cli/workspace.ts`
+ *  only watches folders under `projectRoot`, so letting it through would surface later as an
+ *  unclear Metro bundling error instead. */
+export function validateLogo(projectRoot: string, logo: string | undefined): { logo?: string; warning?: string } {
+  if (!logo) return {};
+  const resolved = path.resolve(projectRoot, logo);
+  if (!existsSync(resolved)) {
+    return { warning: `Logo not found: ${logo} — showing the name instead.` };
+  }
+  const relativeToRoot = path.relative(projectRoot, resolved);
+  if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+    return { warning: `Logo is outside the project root: ${logo} — showing the name instead.` };
+  }
+  return { logo };
+}
+
 /** Loads `<projectRoot>/ds-viewer.config.ts`, attaches where it came from, and prints any
  *  "unknown field" warning so every CLI command that resolves a config reports them the same way. */
 export function resolveConfig(projectRoot: string): ResolvedConfig {
   const configPath = path.join(projectRoot, 'ds-viewer.config.ts');
   const { config, warnings } = loadConfig(configPath);
   for (const warning of warnings) console.warn(warning);
-  return { ...config, projectRoot, configPath };
+  const { logo, warning: logoWarning } = validateLogo(projectRoot, config.logo);
+  if (logoWarning) console.warn(logoWarning);
+  return { ...config, logo, projectRoot, configPath };
 }

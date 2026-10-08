@@ -4,7 +4,7 @@
 # Local agent configuration
 .claude/
 
-# Dependencies and build output (native-preview has its own, more detailed .gitignore)
+# Dependencies and build output, shared across the repo root, kit-host/, and starter-kit/
 node_modules/
 .expo/
 dist/

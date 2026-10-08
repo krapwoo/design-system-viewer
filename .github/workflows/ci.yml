@@ -15,10 +15,15 @@ jobs:
           # (Task 1): end users run compiled `dist/cli/main.js`, which needs no type stripping.
           node-version: '22'
       - run: npm ci
-      # `npm test` needs native-preview/node_modules for its @types/react and react-native type
+      # `npm test` needs kit-host/node_modules for its @types/react and react-native type
       # roots (cli/__tests__/props.test.ts, sync.test.ts) — without this, every component vanishes
       # from the catalog's test fixtures and `const [button] = []` throws (Important finding 1).
-      - run: npm ci --prefix native-preview
+      - run: npm ci --prefix kit-host
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      # ubuntu-latest (24.04) blocks unprivileged user namespaces through AppArmor, so headless
+      # Chrome cannot start its sandbox. Lift the restriction on the runner instead of passing
+      # --no-sandbox, so the check runs Chrome exactly as on a developer machine.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: npm run check:catalog

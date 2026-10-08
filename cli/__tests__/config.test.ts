@@ -61,3 +61,94 @@ test('resolveConfig attaches the project root and config path', () => {
   assert.equal(resolved.configPath, FIXTURE_CONFIG);
   assert.equal(resolved.name, 'Fixture App');
 });
+
+test('resolveConfig warns and drops a logo path that does not exist, falling back to no logo', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-logo-'));
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', logo: './missing.png', components: [], tokens: [] });\n",
+  );
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const resolved = resolveConfig(dir);
+    assert.equal(resolved.logo, undefined);
+    // Exact wording from the controller's binding visual spec below, not an ad-hoc message —
+    // `cli/init.ts`'s existing warnings follow the same "quote the controller's exact text" rule.
+    assert.ok(warnings.some((w) => w === 'Logo not found: ./missing.png — showing the name instead.'));
+  } finally {
+    console.warn = originalWarn;
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('resolveConfig keeps a logo path that does exist', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-logo-'));
+  writeFileSync(path.join(dir, 'logo.png'), '');
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', logo: './logo.png', components: [], tokens: [] });\n",
+  );
+  const resolved = resolveConfig(dir);
+  assert.equal(resolved.logo, './logo.png');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('resolveConfig resolves an absolute logo path the same way cli/workspace.ts does, not nested under the project root', () => {
+  // `validateLogo` used `path.join` while `cli/workspace.ts` (which actually requires the file)
+  // uses `path.resolve` — `path.join(projectRoot, absolutePath)` nests the absolute path *under*
+  // `projectRoot` instead of using it directly, so a real file at an absolute, in-root path was
+  // reported "not found" (Minor finding, Fable's implementation review, cli/config.ts:74 vs
+  // cli/workspace.ts:134).
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-logo-abs-'));
+  const logoPath = path.join(dir, 'logo.png');
+  writeFileSync(logoPath, '');
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', logo: ${JSON.stringify(logoPath)}, components: [], tokens: [] });\n`,
+  );
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const resolved = resolveConfig(dir);
+    assert.equal(resolved.logo, logoPath);
+    assert.deepEqual(warnings, []);
+  } finally {
+    console.warn = originalWarn;
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('resolveConfig warns and drops a logo path that resolves outside the project root', () => {
+  // A logo outside `projectRoot` is not among Metro's watch folders (cli/workspace.ts), so letting
+  // it through here would surface as an unclear Metro bundling error later instead of this clear,
+  // upfront warning (Minor finding, Fable's implementation review).
+  const outsideDir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-logo-outside-'));
+  writeFileSync(path.join(outsideDir, 'logo.png'), '');
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-logo-project-'));
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', logo: '../../etc-does-not-matter/logo.png', components: [], tokens: [] });\n",
+  );
+  // Replace the placeholder with a real relative path from `dir` to `outsideDir`'s logo, computed
+  // here (not hardcoded) since `mkdtempSync`'s suffix makes every run's paths different.
+  const relativeToOutside = path.relative(dir, path.join(outsideDir, 'logo.png')).split(path.sep).join('/');
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', logo: ${JSON.stringify(relativeToOutside)}, components: [], tokens: [] });\n`,
+  );
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const resolved = resolveConfig(dir);
+    assert.equal(resolved.logo, undefined);
+    assert.ok(warnings.some((w) => w.includes('outside the project root')));
+  } finally {
+    console.warn = originalWarn;
+  }
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(outsideDir, { recursive: true, force: true });
+});

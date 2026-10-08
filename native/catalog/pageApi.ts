@@ -59,13 +59,22 @@ export interface GeneratedComponent {
 }
 
 function mergePropNotes(component: GeneratedComponent, propNotes: Record<string, string> | undefined): PropDef[] {
-  return component.props.map((prop) => ({
+  const own = component.props.map((prop) => ({
     name: prop.name,
     type: prop.type,
     required: prop.required,
     default: prop.default,
     desc: propNotes?.[prop.name] ? `${prop.desc} ${propNotes[prop.name]}`.trim() : prop.desc,
   }));
+  // Design §3: props inherited from node_modules (e.g. `extends TextInputProps`) are summarised as
+  // one row per source instead of being listed individually.
+  const inherited = component.inheritedFrom.map((source) => ({
+    name: `${source} props`,
+    type: 'inherited',
+    required: true,
+    desc: `Plus all ${source} props, not listed individually.`,
+  }));
+  return [...own, ...inherited];
 }
 
 function orderGroups(groupIds: Map<string, string[]>, groupOrder: string[] | undefined): { label: string; ids: string[] }[] {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import * as ts from 'typescript';
 import { writeWorkspace } from '../workspace.ts';
 import type { ResolvedConfig } from '../types.ts';
 
@@ -92,5 +93,81 @@ test('writeWorkspace re-exports the project\'s own babel.config.js when one exis
   const workspace = writeWorkspace(baseConfig(projectRoot));
   const babelConfig = readFileSync(path.join(workspace, 'babel.config.js'), 'utf8');
   assert.equal(babelConfig, "module.exports = require('../babel.config.js');\n");
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace watches every configured glob\'s base folder, including ones outside projectRoot', () => {
+  const projectRoot = copyFixture();
+  const config = {
+    ...baseConfig(projectRoot),
+    components: ['../starter-kit/components/*/index.ts'],
+    tokens: ['../starter-kit/tokens/index.ts'],
+    pages: ['viewer-pages/*.catalog.tsx'],
+  };
+  const workspace = writeWorkspace(config);
+  const metroConfig = readFileSync(path.join(workspace, 'metro.config.js'), 'utf8');
+  assert.match(metroConfig, /EXTRA_WATCH_FOLDERS = \["\.\.\/starter-kit\/components","\.\.\/starter-kit\/tokens","viewer-pages"\]/);
+  assert.match(metroConfig, /extraWatchFolders\.map/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace still watches a same-root project\'s own folders (0.1 behavior unchanged)', () => {
+  const projectRoot = copyFixture();
+  const workspace = writeWorkspace(baseConfig(projectRoot));
+  const metroConfig = readFileSync(path.join(workspace, 'metro.config.js'), 'utf8');
+  assert.match(metroConfig, /EXTRA_WATCH_FOLDERS = \["src\/components","src\/tokens"\]/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace makes a validated logo available to the generated entry', () => {
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, 'assets'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'assets', 'logo.png'), '');
+  const workspace = writeWorkspace({ ...baseConfig(projectRoot), logo: './assets/logo.png' });
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  assert.match(entry, /require\("\.\.\/assets\/logo\.png"\)/);
+  assert.match(entry, /logoImageSource=\{logoSource\}/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace emits a syntactically valid require() for a logo file name containing a single quote', () => {
+  // The user's own file name, not guaranteed quote-free text (Minor finding, Fable's
+  // implementation review, cli/workspace.ts:65): a single-quoted literal built by string
+  // interpolation breaks the generated entry's syntax the moment the logo file name itself
+  // contains a `'`.
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, 'assets'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'assets', "it's.png"), '');
+  const workspace = writeWorkspace({ ...baseConfig(projectRoot), logo: "./assets/it's.png" });
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  const { diagnostics } = ts.transpileModule(entry, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    reportDiagnostics: true,
+  });
+  // Message text only, not the raw `ts.Diagnostic[]` — each diagnostic holds a full `SourceFile`
+  // with parent back-references, so a failing `assert.deepEqual` on the array itself would try to
+  // walk and print that whole (effectively circular) AST.
+  assert.deepEqual((diagnostics ?? []).map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n')), []);
+  assert.match(entry, /require\("\.\.\/assets\/it's\.png"\)/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace omits logoImageSource entirely when no logo is configured', () => {
+  const projectRoot = copyFixture();
+  const workspace = writeWorkspace(baseConfig(projectRoot));
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  assert.doesNotMatch(entry, /logoImageSource/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeWorkspace\'s generated metro config only watches extra folders that exist on disk, so a missing pages folder does not break every bundle', () => {
+  const projectRoot = copyFixture();
+  // `viewer-pages` is configured but never created — the real bug (a config's `pages`/`components`/
+  // `tokens` glob pointing at a folder that doesn't exist yet) that made every Metro bundle request
+  // return HTTP 500, because Metro refuses to watch a nonexistent folder.
+  const config = { ...baseConfig(projectRoot), pages: ['viewer-pages/*.catalog.tsx'] };
+  const workspace = writeWorkspace(config);
+  const metroConfig = readFileSync(path.join(workspace, 'metro.config.js'), 'utf8');
+  assert.match(metroConfig, /extraWatchFolders\.map\(\(f\) => path\.resolve\(projectRoot, f\)\)\.filter\(\(f\) => fs\.existsSync\(f\)\)/);
   rmSync(projectRoot, { recursive: true, force: true });
 });

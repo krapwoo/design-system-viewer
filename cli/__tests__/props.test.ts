@@ -6,7 +6,7 @@ import path from 'node:path';
 import { readComponents } from '../props.ts';
 
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, '../../fixtures/existing-project');
-const TYPE_ROOT = path.resolve(import.meta.dirname, '../../native-preview/node_modules');
+const TYPE_ROOT = path.resolve(import.meta.dirname, '../../kit-host/node_modules');
 const RESOLVE_OPTIONS = {
   paths: {
     react: [path.join(TYPE_ROOT, '@types/react')],
@@ -121,6 +121,67 @@ test('readComponents does not report a forwardRef component\'s inherited "ref" a
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
+test('readComponents reports the intersected node_modules type\'s own name, not its ancestors', () => {
+  // `type Props = TextInputProps & {...}` pulls TextInputProps in directly as an intersection
+  // member, not via a local interface's own `extends` clause — walking its heritage clauses (as
+  // the `extends TextInputProps` case does) would instead report TextInputProps's own ancestors
+  // ("View", "TouchableWithoutFeedback") (Fable's review, cli/props.ts:270-301).
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-intersection-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Field');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Field.tsx'),
+    [
+      "import React from 'react';",
+      "import { TextInput, type TextInputProps } from 'react-native';",
+      '',
+      'type FieldProps = TextInputProps & {',
+      '  label: string;',
+      '};',
+      '',
+      'export function Field({ label, ...rest }: FieldProps) {',
+      '  return <TextInput placeholder={label} {...rest} />;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Field } from './Field';\n");
+
+  const [field] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(field.inheritedFrom, ['TextInput']);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents resolves `extends Omit<NodeModulesType, ...>` to the omitted type\'s own name', () => {
+  // `Omit<TextInputProps, 'value'>`'s own declaration lives in typescript's lib, under
+  // `node_modules`, so without resolving to its first type argument the heritage name read back
+  // was "Omit" (Fable's review, cli/props.ts:270-301: '"plus all Omit props"').
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-omit-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Field');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Field.tsx'),
+    [
+      "import React from 'react';",
+      "import { TextInput, type TextInputProps } from 'react-native';",
+      '',
+      "export interface FieldProps extends Omit<TextInputProps, 'value'> {",
+      '  label: string;',
+      '}',
+      '',
+      'export function Field({ label, ...rest }: FieldProps) {',
+      '  return <TextInput placeholder={label} {...rest} />;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Field } from './Field';\n");
+
+  const [field] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(field.inheritedFrom, ['TextInput']);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
 test('readComponents merges props across a union of object types, tagging branch-only props', () => {
   const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-union-'));
   const componentsDir = path.join(projectRoot, 'components', 'Card');
@@ -157,5 +218,111 @@ test('readComponents merges props across a union of object types, tagging branch
   );
   assert.equal(card.props.find((p) => p.name === 'title')?.desc, 'The card\'s heading.');
   assert.match(card.props.find((p) => p.name === 'href')?.desc ?? '', /Only with some variants of this prop's type\./);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents keeps an optional prop\'s alias name when the alias\'s own definition already includes `undefined`', () => {
+  // `StyleLike<T>` mirrors react-native's `StyleProp<T>`: a generic alias whose own expansion
+  // already contains `undefined`/`null`, so making the prop optional never adds a fresh top-level
+  // `| undefined` — `checker.getNonNullableType` then has to tear the alias open to drop that
+  // nested `undefined`, losing the alias name (design §3: "Type column: keeps alias names").
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-alias-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Surface');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Surface.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text, type ReactNode } from 'react';",
+      '',
+      "type Falsy = false | '' | null | undefined;",
+      'type StyleLike<T> = T | Falsy;',
+      '',
+      'export interface SurfaceProps {',
+      '  containerStyle?: StyleLike<{ color: string }>;',
+      '  children?: ReactNode;',
+      '}',
+      '',
+      'export function Surface({ children }: SurfaceProps) {',
+      '  return <Text>{children}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Surface } from './Surface';\n");
+
+  const [surface] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.equal(surface.props.find((p) => p.name === 'containerStyle')?.type, 'StyleLike<{ color: string; }>');
+  assert.equal(surface.props.find((p) => p.name === 'children')?.type, 'ReactNode');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents strips `| undefined` from an optional prop whose type contains an arrow function', () => {
+  // `splitTopLevelUnion` walks the printed type counting `<`/`(`/`{`/`[` as depth; an arrow's `=>`
+  // was previously miscounted as a closing `>`, so the union split never saw the top-level ` | `
+  // and the `undefined` member survived (Fable's review, cli/props.ts:250).
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-arrow-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Arrow');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Arrow.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      '',
+      'export interface ArrowProps {',
+      '  onPress?: () => void;',
+      '  link?: { label: string; onPress: () => void };',
+      '  cb?: ((t: string) => void) | null;',
+      '}',
+      '',
+      'export function Arrow({ onPress }: ArrowProps) {',
+      '  return <Text onPress={onPress}>Arrow</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Arrow } from './Arrow';\n");
+
+  const [arrow] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.equal(arrow.props.find((p) => p.name === 'onPress')?.type, '() => void');
+  assert.equal(arrow.props.find((p) => p.name === 'link')?.type, '{ label: string; onPress: () => void; }');
+  assert.equal(arrow.props.find((p) => p.name === 'cb')?.type, '(t: string) => void');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents joins a multi-line JSDoc paragraph\'s hard-wrapped source lines with single spaces', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-jsdoc-wrap-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Wrapped');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Wrapped.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      '',
+      'export interface WrappedProps {',
+      '  /** Disabled state, dimmed icon and text, a step past the hint tone, so it reads as',
+      '   * inactive rather than merely empty. Forces the field non-editable regardless',
+      '   * of the editable prop.',
+      '   *',
+      '   * A second paragraph that must stay on its own line.',
+      '   */',
+      '  disabled?: boolean;',
+      '}',
+      '',
+      'export function Wrapped({ disabled }: WrappedProps) {',
+      '  return <Text>{disabled}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Wrapped } from './Wrapped';\n");
+
+  const [wrapped] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.equal(
+    wrapped.props.find((p) => p.name === 'disabled')?.desc,
+    'Disabled state, dimmed icon and text, a step past the hint tone, so it reads as inactive rather than merely empty. Forces the field non-editable regardless of the editable prop.\n\nA second paragraph that must stay on its own line.',
+  );
   rmSync(projectRoot, { recursive: true, force: true });
 });

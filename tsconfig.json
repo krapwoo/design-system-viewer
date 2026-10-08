@@ -15,5 +15,5 @@
     "types": ["node"]
   },
   "include": ["cli/**/*.ts", "config/**/*.ts"],
-  "exclude": ["**/__tests__/**", "fixtures/**", "native/**", "native-preview/**"]
+  "exclude": ["**/__tests__/**", "fixtures/**", "native/**", "starter-kit/**", "kit-host/**"]
 }

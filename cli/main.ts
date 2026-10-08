@@ -3,15 +3,18 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig } from './config.ts';
-import { initExistingProject } from './init.ts';
+import { initExistingProject, initNewProject, promptInitMode, type InitOptions, type InitResult, type NewProjectOptions } from './init.ts';
 import { dev } from './dev.ts';
 import { sync } from './sync.ts';
 
 const USAGE = `Usage: ds-viewer <command>
 
 Commands:
-  init     Set up the viewer in this project: config, draft catalog pages, and an npm script
-           --yes  accept the detected components and tokens without asking
+  init     Set up the viewer in this project: config, catalog pages, and an npm script
+           --new           start from the starter kit (new project)
+           --existing      detect this project's own components/tokens (existing project)
+           --kit-root DIR  where to copy the starter kit (--new only; default src/ds)
+           --yes           accept the detected components and tokens without asking (--existing only)
   sync     Regenerate the component, props, token, and page data from source
   dev      Sync, then serve the catalog on a local web address and keep it current as files change
 
@@ -34,6 +37,78 @@ function packageVersion(): string {
   }
 }
 
+/** `--kit-root`'s raw CLI value, normalized to a project-root-relative, forward-slash path — or an
+ *  error when the value can't be made into one. Without this: an absolute value was silently
+ *  relocated *under* the project root by `path.join` (which never does `path.resolve`'s "a later
+ *  absolute segment replaces everything before it" — it just concatenates), a trailing slash
+ *  produced a doubled-slash glob (`src/ds//components/*`), and a quote broke the generated
+ *  config's TypeScript string literal (Minor finding, Fable's implementation review,
+ *  cli/main.ts:59-60 & cli/init.ts:231-233,257). */
+export function parseKitRoot(projectRoot: string, rawValue: string): { value: string; error?: undefined } | { value?: undefined; error: string } {
+  if (rawValue.includes("'") || rawValue.includes('"')) {
+    return { error: `--kit-root cannot contain a quote (got "${rawValue}")` };
+  }
+  const relative = path.relative(projectRoot, path.resolve(projectRoot, rawValue));
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return { error: `--kit-root must stay inside the project root (got "${rawValue}")` };
+  }
+  return { value: relative.split(path.sep).join('/') };
+}
+
+export interface RunInitOptions {
+  /** Test-only: forwarded to `initNewProject` so a `--new` dispatch test never runs a real `expo
+   *  install`. */
+  installer?: NewProjectOptions['installer'];
+  /** Test-only: forwarded to `initExistingProject`'s confirmation prompt. */
+  confirm?: InitOptions['confirm'];
+  /** Test-only: replaces `promptInitMode` when neither `--new`/`--existing`/`--yes` was passed. */
+  promptMode?: () => Promise<'new' | 'existing' | undefined>;
+  /** Test-only: replaces `process.stdin.isTTY` for the "could not parse the answer" message
+   *  below, so that message is reachable without a real TTY. */
+  isTTY?: boolean;
+}
+
+/** Parses `init`'s flags and dispatches to `initNewProject`/`initExistingProject` — pulled out of
+ *  `main` so the dispatch (which flags pick which project path, `--yes`'s 0.1-compatible default,
+ *  `--kit-root`'s normalization) is unit-testable with an injected installer, never a real `expo
+ *  install` (Minor finding, Fable's implementation review: "No CLI test covers `--yes` defaulting
+ *  to existing, `--kit-root` parsing, or `--new` dispatch"). */
+export async function runInit(projectRoot: string, rest: string[], options: RunInitOptions = {}): Promise<InitResult> {
+  const kitRootIndex = rest.indexOf('--kit-root');
+  // Validated, not just indexed: a bare trailing `--kit-root` (no value) or `--kit-root --yes`
+  // (the next token is itself a flag) would otherwise silently pass `undefined`/`'--yes'` as the
+  // kit root. Both are treated as "no value given", the same as omitting the flag entirely.
+  const kitRootValue = kitRootIndex !== -1 ? rest[kitRootIndex + 1] : undefined;
+  const kitRootRaw = kitRootValue && !kitRootValue.startsWith('--') ? kitRootValue : undefined;
+  let kitRoot: string | undefined;
+  if (kitRootRaw !== undefined) {
+    const parsed = parseKitRoot(projectRoot, kitRootRaw);
+    if (parsed.error) return { messages: [parsed.error], written: [], exitCode: 1 };
+    kitRoot = parsed.value;
+  }
+
+  let mode: 'new' | 'existing' | undefined = rest.includes('--new') ? 'new' : rest.includes('--existing') ? 'existing' : undefined;
+  // 0.1 had only one `init` path (today's `initExistingProject`) and no mode question at all —
+  // `--yes` alone must keep working exactly as it did for a 0.1 user or script, so `--yes` with
+  // neither `--new` nor `--existing` defaults to `existing`, the same path 0.1's `--yes` always
+  // ran, instead of prompting (which would hang/exit 1 on non-interactive stdin and break them).
+  if (!mode && rest.includes('--yes')) mode = 'existing';
+  if (!mode) mode = await (options.promptMode ?? promptInitMode)();
+  if (!mode) {
+    const isTTY = options.isTTY ?? Boolean(process.stdin.isTTY);
+    // A non-interactive stdin (CI, piped npx) never got to ask the question at all — but a TTY
+    // whose answer `promptInitMode` simply couldn't parse did ask, so it needs its own message,
+    // not the "non-interactive" one (Minor finding, Fable's implementation review).
+    const message = isTTY
+      ? 'Could not parse that answer. Specify --new or --existing directly.'
+      : 'Specify --new or --existing (non-interactive stdin cannot be asked).';
+    return { messages: [`${message}\n\n${USAGE}`], written: [], exitCode: 1 };
+  }
+  return mode === 'new'
+    ? initNewProject(projectRoot, { kitRoot, installer: options.installer })
+    : initExistingProject(projectRoot, { yes: rest.includes('--yes'), confirm: options.confirm });
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const projectRoot = process.cwd();
@@ -49,7 +124,7 @@ async function main(): Promise<void> {
   }
 
   if (command === 'init') {
-    const result = await initExistingProject(projectRoot, { yes: rest.includes('--yes') });
+    const result = await runInit(projectRoot, rest);
     for (const message of result.messages) console.log(message);
     for (const file of result.written) console.log(`Wrote ${path.relative(projectRoot, file)}`);
     if (result.exitCode) process.exitCode = result.exitCode;

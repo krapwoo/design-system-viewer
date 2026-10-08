@@ -6,11 +6,11 @@
  * token group, each with a `render()` that uses that app's real components) and a `NavGroup[]`
  * (how to bucket those sections in the sidebar), then render a single `<CatalogShell />`.
  *
- * See ./CatalogExample.tsx ("Native App DS Template") for a full worked example, built from this
- * template's own components. See ./CatalogFrameworkExample.tsx ("Design System DS Catalog") for a
- * worked example documenting this framework's own eleven pieces — the same catalog shape, one level
- * up. Neither is re-exported here, on purpose: this barrel stays free of any specific component
- * (including its own) so it can be copied into a different app's repo as-is.
+ * A page is written with `defineCatalogPage()` from this barrel and placed next to its component
+ * (or standalone, for tokens/recipes) — see the starter kit under `starter-kit/` for worked
+ * examples, and `kit-host/viewer-pages/` for pages documenting this framework's own pieces. This
+ * barrel itself stays free of any specific component (including its own) so it can be copied into
+ * a different app's repo as-is.
  */
 export { CatalogShell } from './CatalogShell';
 export { CatalogSidebar } from './CatalogSidebar';
@@ -33,6 +33,7 @@ export type { ComponentManifestEntry, ManifestExample } from './manifest';
 export { defineCatalogPage, buildCatalogSections } from './pageApi';
 export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
 export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, PreviewWidths } from './types';
+export type { ListGroup, ListItem } from './comparison';
 export {
   CATALOG_TYPE,
   CATALOG_TYPE_USE,

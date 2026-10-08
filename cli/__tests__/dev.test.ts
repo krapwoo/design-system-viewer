@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { assertLocalInstall, isWatchedPath, LocalInstallMissingError, watchTargetFolders } from '../dev.ts';
+import { assertLocalInstall, isWatchedPath, LocalInstallMissingError, reloadWorkspace, watchTargetFolders } from '../dev.ts';
 import type { ResolvedConfig } from '../types.ts';
 
 test('isWatchedPath ignores .ds-viewer/, node_modules/, and .git/', () => {
@@ -64,4 +64,32 @@ test('assertLocalInstall passes when @krapwoo/ds-viewer is a devDependency and i
   writeFileSync(path.join(dir, 'node_modules', '@krapwoo', 'ds-viewer', 'package.json'), JSON.stringify({ name: '@krapwoo/ds-viewer', version: '0.1.0' }));
   assert.doesNotThrow(() => assertLocalInstall(dir));
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('reloadWorkspace re-resolves the config and rewrites entry.tsx from the new values', () => {
+  // Controller end-to-end finding E1: `dev` watched `config.configPath` but only re-ran `sync`
+  // with the *same*, already-captured `ResolvedConfig` object on a change — a changed `name` (or
+  // `logo`) never reached the generated workspace (entry.tsx/metro.config.js) until `dev` was
+  // restarted.
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-reload-'));
+  const configPath = path.join(projectRoot, 'ds-viewer.config.ts');
+  writeFileSync(
+    configPath,
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'First', components: [], tokens: [] });\n",
+  );
+
+  const first = reloadWorkspace(projectRoot);
+  assert.equal(first.name, 'First');
+  const entryPath = path.join(projectRoot, '.ds-viewer', 'entry.tsx');
+  assert.match(readFileSync(entryPath, 'utf8'), /appName=\{"First"\}/);
+
+  writeFileSync(
+    configPath,
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'Second', components: [], tokens: [] });\n",
+  );
+  const second = reloadWorkspace(projectRoot);
+  assert.equal(second.name, 'Second');
+  assert.match(readFileSync(entryPath, 'utf8'), /appName=\{"Second"\}/);
+
+  rmSync(projectRoot, { recursive: true, force: true });
 });
