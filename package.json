@@ -1,6 +1,6 @@
 {
   "name": "@krapwoo/ds-viewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "type": "module",
   "description": "A browsable, always-current catalog for an Expo / React Native design system.",
@@ -43,7 +43,9 @@
     "react-native-safe-area-context": "*"
   },
   "peerDependenciesMeta": {
-    "react-native-safe-area-context": { "optional": true }
+    "react-native-safe-area-context": {
+      "optional": true
+    }
   },
   "dependencies": {
     "typescript": "^6.0.0"
