@@ -171,3 +171,21 @@ test('writeWorkspace\'s generated metro config only watches extra folders that e
   assert.match(metroConfig, /extraWatchFolders\.map\(\(f\) => path\.resolve\(projectRoot, f\)\)\.filter\(\(f\) => fs\.existsSync\(f\)\)/);
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('entry.tsx always imports update.json and defaults updateEndpoint to undefined', () => {
+  const projectRoot = copyFixture();
+  const workspace = writeWorkspace(baseConfig(projectRoot));
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  assert.match(entry, /import updateNotice from '\.\/update\.json';/);
+  assert.match(entry, /const updateEndpoint = undefined;/);
+  assert.match(entry, /update=\{updateNotice\} updateEndpoint=\{updateEndpoint\}/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('entry.tsx bakes in the endpoint base URL and secret when given one', () => {
+  const projectRoot = copyFixture();
+  const workspace = writeWorkspace(baseConfig(projectRoot), { baseUrl: 'http://127.0.0.1:54321', secret: 'abc123' });
+  const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
+  assert.match(entry, /const updateEndpoint = \{"baseUrl":"http:\/\/127\.0\.0\.1:54321","secret":"abc123"\};/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});

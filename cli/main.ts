@@ -23,6 +23,8 @@ Commands:
            --yes           accept the detected components and tokens without asking (--existing only)
   sync     Regenerate the component, props, token, and page data from source
   dev      Sync, then serve the catalog on a local web address and keep it current as files change
+           [--port <number>]
+           Pin the catalog (and its update endpoint's restart handoff) to this port
   doctor   Check every page for drift and coverage gaps
            --json          print the machine-readable report instead
            --ci            exit 1 when any error was found (never on a warning alone)
@@ -249,7 +251,10 @@ async function main(): Promise<void> {
 
   if (command === 'dev') {
     const config = resolveConfig(projectRoot);
-    await dev(config);
+    const portIndex = rest.indexOf('--port');
+    const parsedPort = portIndex !== -1 ? Number(rest[portIndex + 1]) : undefined;
+    const pinnedPort = parsedPort !== undefined && Number.isInteger(parsedPort) ? parsedPort : undefined;
+    await dev(config, { pinnedPort });
     return;
   }
 
