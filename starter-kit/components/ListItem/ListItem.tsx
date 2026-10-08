@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, type StyleProp, type ViewStyle } fro
 import { DS_SEMANTIC, DS_SPACING, DS_TYPOGRAPHY, DS_A11Y_MIN_TOUCH_TARGET } from '../../tokens';
 
 export interface ListItemProps {
+  /** Primary text. */
   title: string;
   /** Small secondary line below the title. */
   subtitle?: string;
@@ -22,6 +23,7 @@ export interface ListItemProps {
   trailing?: ReactNode;
   /** Makes the whole row tappable. */
   onPress?: () => void;
+  /** Non-interactive, dimmed. */
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }

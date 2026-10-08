@@ -4,8 +4,11 @@ import type { IconName } from '../../icons';
 export type BannerVariant = 'neutral' | 'info' | 'positive' | 'warning' | 'negative';
 
 export interface BannerProps {
+  /** Semantic color scheme. */
   variant?: BannerVariant;
+  /** Header text. */
   title?: string;
+  /** Body text. */
   description?: string;
   /** When true, the header row (title + chevron) toggles the description open/closed. */
   collapsible?: boolean;

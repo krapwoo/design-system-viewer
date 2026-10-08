@@ -10,8 +10,11 @@ import { DS_SEMANTIC, DS_SPACING, DS_TYPOGRAPHY } from '../../tokens';
 import { FieldContainer } from '../FieldContainer';
 
 export interface TextAreaProps {
+  /** Current text. */
   value: string;
+  /** Change handler. */
   onChangeText: (text: string) => void;
+  /** Shown when empty. */
   placeholder?: string;
   /** Min height of the field before it grows with content (default 96). */
   minHeight?: number;

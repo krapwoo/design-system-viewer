@@ -13,6 +13,7 @@ export interface FieldContainerProps {
   /** Caller-driven pressed state — applies the same pressed treatment without an `onPress` Pressable
    *  (e.g. an editable field that drives this from the TextInput's onPressIn/onPressOut). */
   pressed?: boolean;
+  /** Only used when onPress is set. */
   accessibilityLabel?: string;
   /** Forwarded to the container (Pressable or plain View) — lets a picker-style consumer announce
    *  `{ disabled, expanded }`. When set (or when `accessibilityLabel` is), even the non-Pressable
@@ -21,5 +22,6 @@ export interface FieldContainerProps {
   accessibilityState?: AccessibilityState;
   /** Layout the consumer adds on top of the shared chrome (height, padding, flex direction…). */
   style?: StyleProp<ViewStyle>;
+  /** The field's own layout, height, padding, and content. */
   children: React.ReactNode;
 }

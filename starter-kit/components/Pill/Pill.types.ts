@@ -6,7 +6,9 @@ import type { IconName } from '../../icons';
 export type PillVariant = 'selected' | 'not_selected';
 
 export interface PillProps {
+  /** Chip text. */
   label?: string;
+  /** Selection state. */
   variant?: PillVariant;
   /** Screen-reader name. Strongly recommended for an icon-only pill (`showText={false}`) — it is not
    *  enforced, so omitting it means the placeholder `label` default gets announced instead. Defaults
@@ -20,6 +22,7 @@ export interface PillProps {
   iconSize?: number;
   /** Custom leading node — sizes naturally; takes precedence over the default menu icon. */
   icon?: ReactNode;
+  /** Tap handler. */
   onPress?: () => void;
   disabled?: boolean;
   loading?: boolean;

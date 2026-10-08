@@ -159,3 +159,75 @@ test('readComponents merges props across a union of object types, tagging branch
   assert.match(card.props.find((p) => p.name === 'href')?.desc ?? '', /Only with some variants of this prop's type\./);
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('readComponents keeps an optional prop\'s alias name when the alias\'s own definition already includes `undefined`', () => {
+  // `StyleLike<T>` mirrors react-native's `StyleProp<T>`: a generic alias whose own expansion
+  // already contains `undefined`/`null`, so making the prop optional never adds a fresh top-level
+  // `| undefined` — `checker.getNonNullableType` then has to tear the alias open to drop that
+  // nested `undefined`, losing the alias name (design §3: "Type column: keeps alias names").
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-alias-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Surface');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Surface.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text, type ReactNode } from 'react';",
+      '',
+      "type Falsy = false | '' | null | undefined;",
+      'type StyleLike<T> = T | Falsy;',
+      '',
+      'export interface SurfaceProps {',
+      '  containerStyle?: StyleLike<{ color: string }>;',
+      '  children?: ReactNode;',
+      '}',
+      '',
+      'export function Surface({ children }: SurfaceProps) {',
+      '  return <Text>{children}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Surface } from './Surface';\n");
+
+  const [surface] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.equal(surface.props.find((p) => p.name === 'containerStyle')?.type, 'StyleLike<{ color: string; }>');
+  assert.equal(surface.props.find((p) => p.name === 'children')?.type, 'ReactNode');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents joins a multi-line JSDoc paragraph\'s hard-wrapped source lines with single spaces', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-jsdoc-wrap-'));
+  const componentsDir = path.join(projectRoot, 'components', 'Wrapped');
+  mkdirSync(componentsDir, { recursive: true });
+  writeFileSync(
+    path.join(componentsDir, 'Wrapped.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      '',
+      'export interface WrappedProps {',
+      '  /** Disabled state, dimmed icon and text, a step past the hint tone, so it reads as',
+      '   * inactive rather than merely empty. Forces the field non-editable regardless',
+      '   * of the editable prop.',
+      '   *',
+      '   * A second paragraph that must stay on its own line.',
+      '   */',
+      '  disabled?: boolean;',
+      '}',
+      '',
+      'export function Wrapped({ disabled }: WrappedProps) {',
+      '  return <Text>{disabled}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(componentsDir, 'index.ts'), "export { Wrapped } from './Wrapped';\n");
+
+  const [wrapped] = readComponents(path.join(componentsDir, 'index.ts'), RESOLVE_OPTIONS);
+  assert.equal(
+    wrapped.props.find((p) => p.name === 'disabled')?.desc,
+    'Disabled state, dimmed icon and text, a step past the hint tone, so it reads as inactive rather than merely empty. Forces the field non-editable regardless of the editable prop.\n\nA second paragraph that must stay on its own line.',
+  );
+  rmSync(projectRoot, { recursive: true, force: true });
+});

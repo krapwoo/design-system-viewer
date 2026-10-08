@@ -4,10 +4,13 @@ import { DS_SEMANTIC, DS_SPACING, DS_RADIUS, DS_TYPOGRAPHY, DS_A11Y_MIN_TOUCH_TA
 import { usePressScale } from './usePressScale';
 
 export interface RadioProps {
+  /** Whether this radio is the selected one. */
   selected: boolean;
+  /** Tap handler — select this option in the consumer's state. */
   onPress: () => void;
   /** Optional inline label rendered to the right of the circle. */
   label?: string;
+  /** Non-interactive, dimmed. */
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }

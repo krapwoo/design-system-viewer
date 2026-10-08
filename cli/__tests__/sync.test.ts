@@ -171,3 +171,30 @@ test('sync resolves a component entry file outside config.projectRoot, falling b
   assert.deepEqual(components.map((c: { name: string }) => c.name), ['Widget']);
   rmSync(outer, { recursive: true, force: true });
 });
+
+test('sync summarizes a component\'s node_modules heritage as one clean name for an entry file outside config.projectRoot — no `paths` injected', () => {
+  // Mirrors kit-host exactly: `config.projectRoot` is `kit-host/`, the component entry lives in
+  // the sibling `starter-kit/`, and no `paths` are injected — real `sync` callers never pass
+  // `resolveOptions`, only tests do (see this file's `RESOLVE_OPTIONS`), so this is the only case
+  // that exercises the production `fallbackPaths` path end to end for a real `extends TextInputProps`.
+  const kitHostRoot = path.join(REPO_ROOT, 'kit-host');
+  const config: ResolvedConfig = {
+    name: 'Starter Kit',
+    components: ['../starter-kit/components/SearchField/index.ts'],
+    tokens: [],
+    pages: [],
+    updateCheck: true,
+    doctor: { strict: false },
+    projectRoot: kitHostRoot,
+    configPath: path.join(kitHostRoot, 'ds-viewer.config.ts'),
+  };
+  const result = sync(config); // no RESOLVE_OPTIONS
+  const components = JSON.parse(readFileSync(path.join(result.generatedDir, 'components.json'), 'utf8'));
+  const searchField = components.find((c: { name: string }) => c.name === 'SearchField');
+  assert.deepEqual(searchField.inheritedFrom, ['TextInput']);
+  assert.deepEqual(
+    searchField.props.map((p: { name: string }) => p.name).sort(),
+    ['containerStyle', 'disabled', 'iconName'],
+  );
+  rmSync(path.join(kitHostRoot, '.ds-viewer'), { recursive: true, force: true });
+});

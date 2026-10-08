@@ -30,6 +30,7 @@ export interface SectionHeaderLabelIcon {
 }
 
 export interface SectionHeaderProps {
+  /** Section label text. */
   title: string;
   /**
    * Icon shown right after the title text with a 4 px gap.

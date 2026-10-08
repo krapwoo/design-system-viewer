@@ -137,7 +137,10 @@ export function SkeletonGroup({
 }: {
   /** Accessible name for the whole loading region. @default 'Loading' */
   label?: string;
+  /** Layout for the group (flexDirection, gap, …) — it renders a plain View, so styles land where
+   *  you'd expect. */
   style?: StyleProp<ViewStyle>;
+  /** The Shimmers making up the skeleton. */
   children: ReactNode;
 }) {
   return (
