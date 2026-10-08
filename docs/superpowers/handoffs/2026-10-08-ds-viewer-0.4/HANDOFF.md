@@ -53,6 +53,7 @@ Written 2026-10-08 by the App Design controller, session `20261007_205910_31e7a4
 
 ## 6. Lessons to apply (from 0.2 and 0.3)
 
+- **From 0.5, follow `docs/superpowers/release-workflow.md`** (owner-approved 2026-10-08): runtime spikes and flow-state analysis before the plan review, a controller coverage check before any re-review, and a one-plan-review trial. For 0.4, write the build-review counts from step 5 into that file as the baseline.
 - Count expected test totals from the actual files; RED steps must fail for the stated reason.
 - Native files imported by the CLI: type-only `.ts` imports only; never a value re-export with a `.ts` extension (consumer `tsc` TS5097). Any `.tsx` change must pass `npm run check:types` (strict consumer check through `kit-host/tsconfig.json`).
 - Never trust "renders the same" without a rendered comparison: `tools/capture.mjs <port> <out.json>` captures every page's heading, body text, props text, console errors and overflow in headless Chrome. Capture `main` (via `npm run kit:dev`) before and after, then diff.
