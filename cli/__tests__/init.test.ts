@@ -153,10 +153,6 @@ test('initExistingProject proceeds when the injected confirmation answers yes', 
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
-// The following assertions check structural kit files (a component folder, tokens, icons,
-// WHEN_TO_USE.md) rather than any specific `.catalog.tsx` page, because the per-page catalog files
-// (Tasks 6-7) are being added to starter-kit/ in parallel elsewhere and this worktree's starter-kit/
-// does not yet contain them.
 test('initNewProject installs missing kit packages via the injected installer, copies the real starter kit, and writes config/script/gitignore', async () => {
   const projectRoot = copyNewProjectFixture();
   const installed: string[] = [];
@@ -170,6 +166,8 @@ test('initNewProject installs missing kit packages via the injected installer, c
   assert.ok(existsSync(path.join(projectRoot, 'src/ds/tokens/index.ts')));
   assert.ok(existsSync(path.join(projectRoot, 'src/ds/icons/index.ts')));
   assert.ok(existsSync(path.join(projectRoot, 'src/ds/WHEN_TO_USE.md')));
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/components/Button/Button.catalog.tsx')));
+  assert.ok(existsSync(path.join(projectRoot, 'src/ds/pages/Colors.catalog.tsx')));
   const config = readFileSync(path.join(projectRoot, 'ds-viewer.config.ts'), 'utf8');
   assert.match(config, /components: \['src\/ds\/components\/\*\/index\.ts'\]/);
   assert.match(config, /pages: \['src\/ds\/pages\/\*\.catalog\.tsx'\]/);
