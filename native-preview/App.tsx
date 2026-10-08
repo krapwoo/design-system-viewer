@@ -6,6 +6,7 @@
 //   http://localhost:5181/                   → CatalogExample ("Native App DS Template")
 //   http://localhost:5181/?catalog=framework → CatalogFrameworkExample ("Design System DS Catalog")
 import { useEffect } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { CatalogExample } from '../native/catalog/CatalogExample';
 import { CatalogFrameworkExample } from '../native/catalog/CatalogFrameworkExample';
 
@@ -19,5 +20,6 @@ export default function App() {
     }
   }, []);
 
-  return isFrameworkCatalog ? <CatalogFrameworkExample /> : <CatalogExample />;
+  // CatalogShell no longer provides safe-area insets itself (Task 12 Step 4); Dock needs them.
+  return <SafeAreaProvider>{isFrameworkCatalog ? <CatalogFrameworkExample /> : <CatalogExample />}</SafeAreaProvider>;
 }

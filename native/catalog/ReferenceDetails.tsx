@@ -51,7 +51,7 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
     return (
       <View style={styles.card}>
         <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-        <Fact label="Source" value={def.path} mono />
+        {def.path && <Fact label="Source" value={def.path} mono />}
       </View>
     );
   }
@@ -65,7 +65,7 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
           </View>
           <View style={styles.column}>
             <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-            <Fact label="Source" value={def.path} mono />
+            {def.path && <Fact label="Source" value={def.path} mono />}
             {!hide.accessibility && <Fact label="Accessibility" value={def.a11y ?? 'No accessibility notes documented.'} />}
           </View>
         </View>

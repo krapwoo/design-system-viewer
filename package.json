@@ -1,0 +1,60 @@
+{
+  "name": "@krapwoo/ds-viewer",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "A browsable, always-current catalog for an Expo / React Native design system.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/krapwoo/design-system-viewer.git"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "bin": {
+    "ds-viewer": "dist/cli/main.js"
+  },
+  "exports": {
+    ".": "./native/catalog/index.ts",
+    "./config": {
+      "types": "./config/index.ts",
+      "default": "./dist/config/index.js"
+    },
+    "./generated": "./native/catalog/generated.d.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "native/catalog",
+    "!native/catalog/CatalogExample.tsx",
+    "!native/catalog/CatalogFrameworkExample.tsx",
+    "!native/catalog/**/__tests__",
+    "dist/cli",
+    "dist/config",
+    "config/index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-dom": "*",
+    "react-native": "*",
+    "react-native-web": "*",
+    "react-native-safe-area-context": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-native-safe-area-context": { "optional": true }
+  },
+  "dependencies": {
+    "typescript": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test 'cli/**/*.test.ts' 'config/**/*.test.ts' 'native/catalog/__tests__/*.test.ts'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "release": "node scripts/release.mjs"
+  }
+}
