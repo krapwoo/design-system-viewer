@@ -48,12 +48,17 @@ export function neighbors<TId extends string>(
 }
 
 /** Sidebar filter: case-insensitive substring match, sorted ids, empty groups removed. */
-export function filterGroups<TId extends string>(groups: readonly NavGroup<TId>[], query: string): NavGroup<TId>[] {
+export function filterGroups<TId extends string>(
+  groups: readonly NavGroup<TId>[],
+  query: string,
+  /** Display titles by id; a page matches on its id or its title. */
+  labels?: ReadonlyMap<string, string>,
+): NavGroup<TId>[] {
   const q = query.trim().toLowerCase();
   return groups
     .map((group) => ({
       label: group.label,
-      ids: sortIds(q ? group.ids.filter((id) => id.toLowerCase().includes(q)) : group.ids),
+      ids: sortIds(q ? group.ids.filter((id) => id.toLowerCase().includes(q) || (labels?.get(id)?.toLowerCase().includes(q) ?? false)) : group.ids),
     }))
     .filter((group) => group.ids.length > 0);
 }

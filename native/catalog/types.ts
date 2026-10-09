@@ -102,6 +102,13 @@ export interface ComparisonDef {
  *  typed to the app's real section list without this file needing to know what they are. */
 export interface SectionDef<TId extends string = string> {
   id: TId;
+  /** Display name for the heading, sidebar and search (e.g. "Control heights"). Defaults to `id`,
+   *  which stays the page's address (`#ControlHeights`) and its name in `explain`. */
+  title?: string;
+  /** Marks a component that is, or contains, a native platform control rather than a custom one:
+   *  `'full'` shows an "OS component" badge under the title, `'partial'` "Partly OS component".
+   *  Say in `description` which part is native and how it differs on web. */
+  osComponent?: 'full' | 'partial';
   description: string;
   path: string;
   /** One sentence disambiguating this component from its closest look-alike(s) — the deciding

@@ -67,7 +67,8 @@ export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOpti
   const fallbackPaths = hasEntryOutsideProjectRoot
     ? { '*': [path.join(config.projectRoot, 'node_modules', '@types', '*'), path.join(config.projectRoot, 'node_modules', '*')] }
     : undefined;
-  const readComponent = createComponentReader(componentEntryFiles, { ...resolveOptions, optionRoots, fallbackPaths });
+  const componentRoots = [...new Set(config.components.map((pattern) => path.join(config.projectRoot, globBaseFolder(pattern))))];
+  const readComponent = createComponentReader(componentEntryFiles, { ...resolveOptions, optionRoots, componentRoots, fallbackPaths });
   const warnings: string[] = [];
   for (const entryFile of componentEntryFiles) {
     try {

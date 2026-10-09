@@ -46,23 +46,27 @@ export interface SectionPager<TId extends string> {
   previousId: TId | null;
   nextId: TId | null;
   onNavigate: (id: TId) => void;
+  /** Display title for a page id, for the buttons' accessible names. */
+  labelOf?: (id: TId) => string;
 }
 
 function PagerButton<TId extends string>({
   direction,
   targetId,
   onNavigate,
+  labelOf,
 }: {
   direction: 'previous' | 'next';
   targetId: TId | null;
   onNavigate: (id: TId) => void;
+  labelOf?: (id: TId) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const disabled = targetId == null;
   const label = disabled
     ? direction === 'previous' ? 'No previous page' : 'No next page'
-    : `${direction === 'previous' ? 'Previous' : 'Next'}: ${targetId}`;
+    : `${direction === 'previous' ? 'Previous' : 'Next'}: ${labelOf ? labelOf(targetId) : targetId}`;
   return (
     <Pressable
       onPress={() => {
@@ -250,14 +254,19 @@ export function SectionBlock<TId extends string>({
         <View style={styles.titleText}>
           {/* The focus target is the heading itself, so assistive tech announces its role and level. */}
           <View ref={headingRef} tabIndex={-1} role="heading" {...headingLevelProps} style={styles.headingTarget}>
-            <Text style={styles.title}>{def.id}</Text>
+            <Text style={styles.title}>{def.title ?? def.id}</Text>
           </View>
+          {def.osComponent && (
+            <View style={styles.osBadge}>
+              <Text style={styles.osBadgeText}>{def.osComponent === 'full' ? 'OS component' : 'Partly OS component'}</Text>
+            </View>
+          )}
           <Text style={styles.desc}>{def.description}</Text>
         </View>
         {pager && (
           <View style={styles.pager}>
-            <PagerButton direction="previous" targetId={pager.previousId} onNavigate={pager.onNavigate} />
-            <PagerButton direction="next" targetId={pager.nextId} onNavigate={pager.onNavigate} />
+            <PagerButton direction="previous" targetId={pager.previousId} onNavigate={pager.onNavigate} labelOf={pager.labelOf} />
+            <PagerButton direction="next" targetId={pager.nextId} onNavigate={pager.onNavigate} labelOf={pager.labelOf} />
           </View>
         )}
       </View>
@@ -281,6 +290,17 @@ const styles = StyleSheet.create({
   },
   titleText: { flex: 1 },
   headingTarget: { alignSelf: 'flex-start' },
+  osBadge: {
+    alignSelf: 'flex-start',
+    marginBottom: CATALOG_SPACE.sm,
+    paddingHorizontal: CATALOG_SPACE.sm,
+    paddingVertical: 3,
+    borderRadius: CATALOG_RADIUS.control,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.borderStrong,
+    backgroundColor: CATALOG_COLOR.surface,
+  },
+  osBadgeText: { fontSize: CATALOG_TYPE.xs, fontWeight: '700', letterSpacing: 0.4, color: CATALOG_COLOR.text },
   title: { fontSize: CATALOG_TYPE.pageTitle, fontWeight: '700', color: CATALOG_COLOR.text, marginBottom: 5 },
   desc: { fontSize: CATALOG_TYPE.md, lineHeight: 20, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   pager: { flexDirection: 'row', gap: 6, flexShrink: 0 },

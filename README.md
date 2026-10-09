@@ -217,10 +217,19 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   width is what you're checking, such as truncation or full-screen sheets. 4 columns is too narrow
   for these components.
 - **Mark OS components.** When a component is, or contains, a native platform control rather than
-  a custom one (a native date picker, iOS Liquid Glass), start its `description` with
-  `OS component · ` or `Partly OS component · `, then say which part is native and how it
-  differs on web. Custom replacements styled after a platform control (a custom switch or spinner)
-  are not OS components.
+  a custom one (a native date picker, iOS Liquid Glass), set `osComponent: 'full'` or
+  `'partial'`. The page shows an "OS component" or "Partly OS component" badge under its title;
+  say in `description` which part is native and how it differs on web, where the native part
+  usually can't render. Custom replacements styled after a platform control (a custom switch or
+  spinner) are not OS components.
+- **Readable titles.** The page id is its address (`#ControlHeights`) and comes from the file
+  name; set `title: 'Control heights'` for the heading, sidebar and search. Pages still sort by id.
+- **Point token pages at their token file.** A token page has no component, so its Source would be
+  the page file; set `source: 'src/design-system/tokens.ts'` (project-relative) instead.
+- **Coverage only counts the component's own options.** `doctor`'s `option-not-covered` checks
+  string-literal unions declared in the component's own folder or a token folder. A union
+  declared in another component's folder, such as a shared `IconName`, is that component's
+  options, so a Banner page never needs one example per icon.
 
 ### Token pages
 

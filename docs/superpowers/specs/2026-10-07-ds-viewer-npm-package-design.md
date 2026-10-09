@@ -207,7 +207,7 @@ Any export from a matched folder's entry whose type is a React component: a func
 - **Defaults:** read from the innermost component function's parameter destructuring or `@default`; shown as source text, plus the resolved value when it is static (`duration = DS_MOTION_DURATION.base` → "DS_MOTION_DURATION.base (240)").
 - **Type column:** keeps alias names (`IconName`), not expanded unions.
 - **Descriptions:** from JSDoc. Pages may add `propNotes`; a note for a prop that no longer exists is a `doctor` error.
-- **Options for coverage:** string-literal unions declared inside the configured component or token folders. Unions from elsewhere (e.g. 44 icon names) are not coverage targets.
+- **Options for coverage:** string-literal unions declared inside the configured component or token folders, and, for a component folder, only in the component's own subfolder. Unions from elsewhere (e.g. 44 icon names, or an `IconName` declared in a sibling `Icon/` component) are not coverage targets (0.4.3, owner-approved after the Skiffr test).
 
 ### Tokens
 

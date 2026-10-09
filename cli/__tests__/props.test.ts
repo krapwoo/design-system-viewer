@@ -92,6 +92,31 @@ test('readComponents records options only for a 2+-member string-literal union d
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
+test('readComponents skips a union declared in another component\'s folder (e.g. a sibling Icon component\'s IconName)', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-sibling-options-'));
+  const root = path.join(projectRoot, 'components');
+  mkdirSync(path.join(root, 'Widget'), { recursive: true });
+  mkdirSync(path.join(root, 'Icon'), { recursive: true });
+  writeFileSync(path.join(root, 'Icon', 'Icon.types.ts'), "export type IconName = 'home' | 'pin' | 'bell';\n");
+  writeFileSync(path.join(root, 'Widget', 'Widget.types.ts'), "export type Variant = 'primary' | 'ghost';\n");
+  writeFileSync(
+    path.join(root, 'Widget', 'Widget.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      "import type { Variant } from './Widget.types';",
+      "import type { IconName } from '../Icon/Icon.types';",
+      'export interface WidgetProps { variant?: Variant; icon?: IconName; }',
+      'export function Widget({ variant, icon }: WidgetProps) { return <Text>{variant}{icon}</Text>; }',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(root, 'Widget', 'index.ts'), "export { Widget } from './Widget';\nexport type { WidgetProps } from './Widget';\n");
+  const [widget] = readComponents(path.join(root, 'Widget', 'index.ts'), { ...RESOLVE_OPTIONS, optionRoots: [root], componentRoots: [root] });
+  assert.deepEqual(widget.props.map((p) => [p.name, p.options]), [['variant', ['primary', 'ghost']], ['icon', undefined]]);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
 test('readComponents does not report a forwardRef component\'s inherited "ref" as a react prop', () => {
   const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-forwardref-'));
   const componentsDir = path.join(projectRoot, 'components', 'Field');

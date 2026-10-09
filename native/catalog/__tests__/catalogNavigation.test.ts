@@ -100,3 +100,9 @@ test('footerLabel: undefined with no update, when already on latest, or when lat
   // doesn't make Number() produce NaN — 0.4.1-verify must still compare newer than 0.4.0.
   assert.equal(footerLabel({ current: '0.4.0', latest: '0.4.1-verify', breaking: false, summary: [] }), 'Update available · 0.4.1-verify');
 });
+
+test('filterGroups also matches a page\'s display title', () => {
+  const labels = new Map([['Spacing', 'Spacing scale'], ['Colors', 'Colour roles']]);
+  assert.deepEqual(filterGroups(groups, 'colour', labels), [{ label: 'Tokens', ids: ['Colors'] }]);
+  assert.deepEqual(filterGroups(groups, 'scale', labels), [{ label: 'Tokens', ids: ['Spacing'] }]);
+});

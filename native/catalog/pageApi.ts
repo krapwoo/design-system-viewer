@@ -9,6 +9,14 @@ export interface CatalogPageInput<TId extends string = string> {
    *  default when writing the generated page index, so an authored page never has to repeat a name
    *  already implied by its file. */
   id?: TId;
+  /** Display name; see `SectionDef.title`. */
+  title?: string;
+  /** Project-relative file shown as the page's Source when the page documents something other
+   *  than a component, e.g. a token page pointing at `src/design-system/tokens.ts`. A component's
+   *  own file always wins. */
+  source?: string;
+  /** See `SectionDef.osComponent`. */
+  osComponent?: 'full' | 'partial';
   description: string;
   whenToUse?: string;
   a11y?: string;
@@ -123,8 +131,10 @@ export function buildCatalogSections<TId extends string>(
     // to the page's own file as its Source instead of an empty path.
     return {
       id: page.id,
+      title: page.title,
+      osComponent: page.osComponent,
       description: page.description,
-      path: component?.file ?? page.file,
+      path: component?.file ?? page.source ?? page.file,
       whenToUse: page.whenToUse,
       props: component ? mergePropNotes(component, page.propNotes) : undefined,
       a11y: page.a11y,

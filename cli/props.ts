@@ -19,6 +19,10 @@ export interface ReadComponentsOptions {
    *  §3 — "Options for coverage"). Omit to record no options at all (e.g. when a caller has no
    *  config to derive folders from). */
   optionRoots?: string[];
+  /** Absolute component root folders (each component in its own subfolder). A union declared in a
+   *  *different* component's subfolder (e.g. a sibling `Icon/`'s `IconName`) is that component's
+   *  options, not a coverage target for this one. */
+  componentRoots?: string[];
 }
 
 const COMPONENT_RETURN_HINT = /Element|ReactNode/;
@@ -127,7 +131,7 @@ export function createComponentReader(entryFiles: string[], options: ReadCompone
       if (!declaration) continue;
       const type = checker.getTypeOfSymbolAtLocation(resolved, declaration);
       if (!isComponentType(checker, type)) continue;
-      records.push(readComponentRecord(checker, exportSymbol.getName(), type, declaration, options.optionRoots ?? []));
+      records.push(readComponentRecord(checker, exportSymbol.getName(), type, declaration, options.optionRoots ?? [], options.componentRoots ?? []));
     }
     return records.sort((a, b) => a.name.localeCompare(b.name));
   };
@@ -193,6 +197,7 @@ function readComponentRecord(
   type: ts.Type,
   declaration: ts.Declaration,
   optionRoots: string[],
+  componentRoots: string[] = [],
 ): ComponentRecord {
   const sourceFile = declaration.getSourceFile();
   const signature = type.getCallSignatures()[0];
@@ -223,7 +228,7 @@ function readComponentRecord(
         required: !isPartial && merged.requiredInEvery,
         default: implementationDefaults.get(prop.getName()) ?? (jsDocDefault ? ts.displayPartsToString(jsDocDefault.text) : undefined),
         desc: isPartial ? `${baseDesc} Only with some variants of this prop's type.`.trim() : baseDesc,
-        options: readOptions(checker, propType, propFile, optionRoots),
+        options: readOptions(checker, propType, propFile, optionRoots, componentRoots),
       });
     }
   }
@@ -430,9 +435,10 @@ function mergeUnionProps(checker: ts.TypeChecker, branches: readonly ts.Type[]):
  * 2 or more string literals, AND that union is declared inside one of `optionRoots` — checked
  * against the union's alias symbol's declaration file (a named type like `Variant`), or the prop's
  * own declaration file for an inline union with no alias. A single string literal is never
- * options; an out-of-root union (e.g. a 44-member `IconName` from `icons/`) is skipped.
+ * options; an out-of-root union (e.g. a 44-member `IconName` from `icons/`) is skipped, and so is a
+ * union declared in a different component's folder under a component root (a sibling `Icon/`).
  */
-function readOptions(checker: ts.TypeChecker, propType: ts.Type, propDeclarationFile: string, optionRoots: string[]): string[] | undefined {
+function readOptions(checker: ts.TypeChecker, propType: ts.Type, propDeclarationFile: string, optionRoots: string[], componentRoots: string[] = []): string[] | undefined {
   if (optionRoots.length === 0) return undefined;
   const nonNullable = checker.getNonNullableType(propType);
   if (!nonNullable.isUnion() || nonNullable.types.length < 2 || !nonNullable.types.every((t) => t.isStringLiteral())) {
@@ -442,7 +448,21 @@ function readOptions(checker: ts.TypeChecker, propType: ts.Type, propDeclaration
   const declarationFile = aliasDeclaration ? aliasDeclaration.getSourceFile().fileName : propDeclarationFile;
   const isLocal = optionRoots.some((root) => declarationFile === root || declarationFile.startsWith(`${root}${path.sep}`));
   if (!isLocal) return undefined;
+  if (declarationFile !== propDeclarationFile && isInOtherComponent(declarationFile, propDeclarationFile, componentRoots)) return undefined;
   return nonNullable.types.map((t) => (t as ts.StringLiteralType).value);
+}
+
+/** True when `file` sits in a different component subfolder than `ownFile` under the same root. */
+function isInOtherComponent(file: string, ownFile: string, componentRoots: string[]): boolean {
+  const componentOf = (target: string, root: string) => {
+    const rel = path.relative(root, target);
+    return rel.startsWith('..') || path.isAbsolute(rel) ? undefined : rel.split(path.sep)[0];
+  };
+  return componentRoots.some((root) => {
+    const theirs = componentOf(file, root);
+    const ours = componentOf(ownFile, root);
+    return theirs !== undefined && ours !== undefined && theirs !== ours && path.extname(theirs) === '';
+  });
 }
 
 /** Finds the real implementation function behind a `React.memo(Impl)` / `forwardRef(function
