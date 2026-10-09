@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.3
+
+- Pages can set a display `title`, a `source` file for pages that document something other than a component (e.g. a token file), and `osComponent: 'full' | 'partial'`, which shows an "OS component" badge under the title.
+- Token pages can now split into titled sections (`tokenSections`, side by side with `tokenColumns`), show tokens as tiles in columns (`TokenGrid`, `TokenTile`), and put a token's note beside a narrow sample (`TokenRow notePlacement="right"`). The README's page guide covers token-page layouts, catalog grouping, column counts for wide components, and marking OS components.
+- `doctor` no longer asks for one example per icon: a string-literal union declared in another component's folder (such as a shared `IconName`) is not a coverage target for the component using it.
+
 ## 0.4.2
 
 - ds-viewer now supports Expo SDK 54 and later (it required 57). The starter kit type-checks on React Native 0.81 as well as 0.86, and `init` explains an Expo SDK that is too old instead of calling it missing.
