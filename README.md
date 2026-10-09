@@ -204,7 +204,49 @@ renders in a Preview card (phone width for components). For a token-gallery sect
 data, not a component — see `ColorsGallery`/`SpacingGallery`/`TypographyGallery`), set
 `tokenGallery: true` instead of `props`/`a11y`/`states` — `SectionBlock` then renders `render()`'s
 output full width under a "Tokens" label and shows only a Quick reference card with the source
-path.
+path. For anything beyond a single list of tokens, use the token-page layouts below.
+
+### Organising the catalog
+
+- **Two sidebar groups: `Tokens`, then `Components`** (`groupOrder: ['Tokens', 'Components']`).
+  Pages sort A–Z inside each group. Category groups ("Actions", "Status") make readers guess
+  where a component lives; search and A–Z already find it.
+- **Wide components at 3 columns.** Give block-level components (Banner, Card, Toast,
+  InputField) `specimenSize: 'regular'`, so Variants and States sit 3 across on a laptop
+  (about 316px each). `'wide'` (2 columns, phone width) is only for pages where the full phone
+  width is what you're checking, such as truncation or full-screen sheets. 4 columns is too narrow
+  for these components.
+- **Mark OS components.** When a component is, or contains, a native platform control rather than
+  a custom one (a native date picker, iOS Liquid Glass), start its `description` with
+  `OS component · ` or `Partly OS component · `, then say which part is native and how it
+  differs on web. Custom replacements styled after a platform control (a custom switch or spinner)
+  are not OS components.
+
+### Token pages
+
+A token page shows each token at its real value with its role. Pick the layout by the token's
+shape:
+
+| Token shape | Layout | Example |
+|---|---|---|
+| Small, self-contained preview (radius, shadow, control height, a single colour) | `TokenGrid` of `TokenTile`s: equal tiles in as many columns as fit | Radius, Shadow, ControlHeights |
+| Narrow sample with a long note (icon size, spacing) | `TokenRow` with `notePlacement="right"`: one line per token | IconSizes |
+| Several kinds of token on one page | `tokenSections`: one titled card per kind | Colors (semantic vs palette) |
+| A scale with families (type) | `tokenSections` with `tokenColumns: 2` or `3`, one section per family | Typography (label, body, emphasis…) |
+
+- **`tokenSections: [{ title, desc?, wide?, render }]`** replaces `render`. Each section is its
+  own titled card. Keep different kinds of token in different sections, never mixed: semantic roles
+  apart from raw palette ramps, each type family apart.
+- **`tokenColumns: 1 | 2 | 3`** places sections side by side. Use 2–3 for narrow sections (type
+  families); the page drops a column rather than squeeze a section under 280px. `wide: true`
+  gives a section its own full row, for wide content such as palette ramps.
+- **Show each token's role, not its category.** The note says where or why the token is used, in
+  that order of preference: the token file's own comments, then a usage scan of the code (name the
+  main components and how many files use it, and say so when a token is unused). Never invent
+  advice, and never write a generic category such as "Regular reading text" when the name and
+  value already say it. If there's nothing grounded to say, leave the note out.
+- **Label each sample with its name and real value** (`bodyMd · 16/22 · 400`, `medium · 12px`).
+  Use realistic sample text from the product, short enough to fit its column at the largest size.
 
 ## Keeping the catalog current
 

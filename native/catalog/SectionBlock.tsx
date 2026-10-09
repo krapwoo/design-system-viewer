@@ -5,6 +5,7 @@ import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { ReferenceDetails } from './ReferenceDetails';
+import { TokenSections } from './TokenLayouts';
 import { choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
 import type { PreviewWidths, SectionDef } from './types';
 
@@ -127,6 +128,8 @@ function BlockContent<TId extends string>({ block, def }: { block: PresentationB
       return <ComparisonList items={block.items} size={block.size} label={`${def.id}: ${block.title}`} />;
     case 'preview':
       return def.render ? <Preview render={def.render} widths={block.widths} /> : null;
+    case 'tokenSections':
+      return <TokenSections sections={block.sections} columns={block.columns} />;
     default:
       return (
         <View style={styles.previewCard}>
@@ -191,11 +194,11 @@ function Blocks<TId extends string>({ blocks, def }: { blocks: PresentationBlock
     <View onLayout={onContainerLayout} style={[styles.blocks, side && styles.blocksSide]}>
       {blocks.map((block, i) => (
         <View
-          key={block.title}
+          key={block.title || block.kind}
           onLayout={onBlockLayout(i)}
           style={side ? (i === 0 ? { width: blockWidth(block, available), flexShrink: 0 } : styles.blockFill) : undefined}
         >
-          <Text style={styles.blockLabel}>{block.title}</Text>
+          {block.title ? <Text style={styles.blockLabel}>{block.title}</Text> : null}
           <BlockContent block={block} def={def} />
         </View>
       ))}

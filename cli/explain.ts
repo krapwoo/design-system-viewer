@@ -7,6 +7,7 @@ import {
   type PlacementBlock, type PresentationBlock,
 } from '../native/catalog/comparison.ts';
 import { CATALOG_LAYOUT } from '../native/catalog/tokens.ts';
+import { sectionColumns } from '../native/catalog/tokenLayout.ts';
 import type { ComparisonDef, SectionDef, SpecimenSize } from '../native/catalog/types.ts';
 import type { ResolvedConfig } from './types.ts';
 
@@ -65,6 +66,8 @@ function toSectionDef(page: StaticPage): SectionDef {
     states: page.statesItems ? { itemsFill: page.statesItemsFill, items: page.statesItems.map(placeholderItem) } : undefined,
     comparison,
     render: page.hasRender ? () => null : undefined,
+    tokenSections: page.tokenSectionTitles?.map((title, i) => ({ title, wide: page.tokenSectionWide?.[i] || undefined, render: () => null })),
+    tokenColumns: page.tokenColumns === 2 || page.tokenColumns === 3 ? page.tokenColumns : undefined,
     hide: (page.hideVariants || page.hideStates) ? { variants: page.hideVariants, states: page.hideStates } : undefined,
   };
 }
@@ -94,6 +97,17 @@ function explainBlock(block: PresentationBlock): ExplainBlockResult {
   if (block.kind === 'preview') {
     const widths = block.widths === 'full' ? 'full width' : `${block.widths.join('/')}px`;
     return { kind: 'preview', title: block.title, reason: `render() content at ${widths}.` };
+  }
+  if (block.kind === 'tokenSections') {
+    const n = block.sections.length;
+    const titles = block.sections.every((s) => s.title) ? ` (${block.sections.map((s) => s.title).join(', ')})` : '';
+    const wide = block.sections.filter((s) => s.wide).length;
+    const narrow = n - wide;
+    const fit = sectionColumns(MATRIX_LAYOUT.laptopContentWidth, block.columns);
+    const parts = [];
+    if (narrow > 0) parts.push(narrow > 1 && fit > 1 ? `${Math.min(fit, narrow)} side by side on a 1280px laptop` : 'one per row');
+    if (wide > 0) parts.push(`${wide} full width`);
+    return { kind: 'tokenSections', title: 'Token sections', reason: `${n} section${n === 1 ? '' : 's'}${titles}: ${parts.join('; ')}.` };
   }
   return { kind: 'empty', title: block.title, reason: block.message };
 }

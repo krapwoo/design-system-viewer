@@ -8,7 +8,7 @@
  * It also decides whether two blocks sit side by side (choosePlacement) and how many columns the
  * Props box uses (propsColumns). ComparisonGrid, ComparisonGroups, and ComparisonList render it.
  */
-import type { ComparisonAxisItem, ComparisonDef, GridAxis, PreviewWidths, SectionDef, SpecimenSize, VariantSlot } from './types.ts';
+import type { ComparisonAxisItem, ComparisonDef, GridAxis, PreviewWidths, SectionDef, SpecimenSize, TokenSection, VariantSlot } from './types.ts';
 import type React from 'react';
 
 /** Approved geometry. `cellPadding` equals CATALOG_SPACE.lg (asserted in tests). The laptop
@@ -230,6 +230,7 @@ export type PresentationBlock =
   | { kind: 'grouped'; title: string; size: SpecimenSize; groups: ListGroup[] }
   | { kind: 'list'; title: string; size: SpecimenSize; items: ListItem[] }
   | { kind: 'preview'; title: string; widths: PreviewWidths }
+  | { kind: 'tokenSections'; title: string; sections: TokenSection[]; columns: 1 | 2 | 3 }
   | { kind: 'empty'; title: string; message: string };
 
 export interface PresentationOptions {
@@ -280,6 +281,10 @@ function groupStates(variants: VariantSlot, states: VariantSlot): { groups: List
  *  never shows an empty block next to a real one; with nothing documented at all it shows one
  *  "No examples documented." block. */
 export function presentationBlocks<TId extends string>(def: SectionDef<TId>, options: PresentationOptions = {}): PresentationBlock[] {
+  if (def.tokenSections && def.tokenSections.length > 0) {
+    // Each section carries its own label, so the block itself has none.
+    return [{ kind: 'tokenSections', title: '', sections: def.tokenSections, columns: def.tokenColumns ?? 1 }];
+  }
   if (def.tokenGallery) {
     const title = def.fullWidthLabel ?? 'Tokens';
     return [def.render ? { kind: 'preview', title, widths: 'full' } : { kind: 'empty', title, message: 'Nothing to preview.' }];

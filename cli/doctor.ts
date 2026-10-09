@@ -83,7 +83,7 @@ function checkComponentExportRemoved(pages: StaticPage[], components: ComponentR
  *  `description` — in which case the viewer shows the exact same "No examples documented." an
  *  undocumented component would. */
 function pageHasExamples(page: StaticPage): boolean {
-  return Boolean(page.comparison) || Boolean(page.variantsItems?.length) || Boolean(page.statesItems?.length) || page.hasRender === true;
+  return Boolean(page.comparison) || Boolean(page.variantsItems?.length) || Boolean(page.statesItems?.length) || page.hasRender === true || Boolean(page.tokenSectionTitles?.length);
 }
 
 function checkComponentNoExamples(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {

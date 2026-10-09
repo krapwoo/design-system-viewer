@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { ComparisonDef, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, VariantSlot } from './types';
+import type { ComparisonDef, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, TokenSection, VariantSlot } from './types';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
  *  generated props), plus the three fields design §1 "Page shape" adds. */
@@ -16,6 +16,8 @@ export interface CatalogPageInput<TId extends string = string> {
   states?: VariantSlot;
   render?: () => React.ReactNode;
   tokenGallery?: boolean;
+  tokenSections?: TokenSection[];
+  tokenColumns?: 1 | 2 | 3;
   fullWidthLabel?: string;
   comparison?: ComparisonDef;
   specimenSize?: SpecimenSize;
@@ -129,7 +131,10 @@ export function buildCatalogSections<TId extends string>(
       variants: page.variants,
       states: page.states,
       render: page.render,
-      tokenGallery: page.tokenGallery,
+      // `tokenSections` makes a page a token gallery by itself.
+      tokenGallery: page.tokenGallery || (page.tokenSections !== undefined && page.tokenSections.length > 0) || undefined,
+      tokenSections: page.tokenSections,
+      tokenColumns: page.tokenColumns,
       fullWidthLabel: page.fullWidthLabel,
       comparison: page.comparison,
       specimenSize: page.specimenSize,
