@@ -1,0 +1,23 @@
+name: Improvement
+description: An idea that would make ds-viewer better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What's hard or missing today, and where you ran into it (app and page).
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How you'd solve it. For anything visual, a sketch or screenshot helps.
+  - type: dropdown
+    id: build
+    attributes:
+      label: Would you like to build it?
+      options:
+        - Yes, I'll open a pull request once we agree on the approach
+        - No, just suggesting it

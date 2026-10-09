@@ -96,6 +96,12 @@ npm run check:catalog    # the same headless check CI runs — every page, zero 
 documenting the viewer framework's own pieces (`CatalogShell`, `SectionBlock`, `ComparisonGrid`,
 …), shown under a "Viewer" group alongside the starter kit's own pages.
 
+## Contributing
+
+Found a bug or an improvement while using ds-viewer in your app? Open an issue or a pull request:
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to try a change in your own app before opening
+one, and what every pull request needs.
+
 ## Picking the right component
 
 Several components look alike but solve different problems (InputField vs. SearchField vs.

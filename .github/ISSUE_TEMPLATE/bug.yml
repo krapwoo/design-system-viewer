@@ -1,0 +1,29 @@
+name: Bug
+description: Something in ds-viewer is broken or confusing.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ds-viewer version
+      description: Output of `npx ds-viewer --version`.
+      placeholder: 0.4.3
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: App and Expo SDK
+      placeholder: Skiffr, Expo 54
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Output or screenshot
+      description: Paste the command output, or attach a screenshot of the page.
