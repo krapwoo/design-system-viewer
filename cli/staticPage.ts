@@ -43,6 +43,12 @@ export interface StaticPage {
   group?: string;
   specimenSize?: string;
   tokenGallery?: boolean;
+  /** `tokenSections`' titles, in order (a non-literal title reads as ""), and `tokenColumns` when
+   *  literal. A page with sections counts as a token gallery with examples. */
+  tokenSectionTitles?: string[];
+  /** Per section, whether `wide: true` is set literally (same order as the titles). */
+  tokenSectionWide?: boolean[];
+  tokenColumns?: number;
   /** Whether the page object has its own `whenToUse`/`a11y` property at all — a presence check
    *  only (design's literal-data list never requires these two to be literal, only that `doctor`
    *  can tell whether they were authored), so these are read with a plain property lookup, never
@@ -142,6 +148,26 @@ function readStaticPage(file: string): StaticPage {
   if (groupProp) page.group = stringLiteral(resolve(groupProp.initializer, consts, new Set()));
   if (specimenSizeProp) page.specimenSize = stringLiteral(resolve(specimenSizeProp.initializer, consts, new Set()));
   if (tokenGalleryProp) page.tokenGallery = resolve(tokenGalleryProp.initializer, consts, new Set()).kind === ts.SyntaxKind.TrueKeyword;
+  const tokenSectionsProp = findProp(pageObject, 'tokenSections');
+  if (tokenSectionsProp) {
+    const list = resolve(tokenSectionsProp.initializer, consts, new Set());
+    const items = ts.isArrayLiteralExpression(list) ? list.elements.map((element) => resolve(element, consts, new Set())) : [list];
+    const field = (item: ts.Node, name: string) => (ts.isObjectLiteralExpression(item) ? findProp(item, name) : undefined);
+    page.tokenSectionTitles = items.map((item) => {
+      const title = field(item, 'title');
+      return (title && stringLiteral(resolve(title.initializer, consts, new Set()))) ?? '';
+    });
+    page.tokenSectionWide = items.map((item) => {
+      const wide = field(item, 'wide');
+      return wide ? resolve(wide.initializer, consts, new Set()).kind === ts.SyntaxKind.TrueKeyword : false;
+    });
+    if (page.tokenSectionTitles.length > 0) page.tokenGallery = true;
+  }
+  const tokenColumnsProp = findProp(pageObject, 'tokenColumns');
+  if (tokenColumnsProp) {
+    const value = resolve(tokenColumnsProp.initializer, consts, new Set());
+    if (ts.isNumericLiteral(value)) page.tokenColumns = Number(value.text);
+  }
   page.hasWhenToUse = findProp(pageObject, 'whenToUse') !== undefined;
   page.hasA11y = findProp(pageObject, 'a11y') !== undefined;
   page.hasRender = findProp(pageObject, 'render') !== undefined;

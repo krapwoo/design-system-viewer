@@ -97,3 +97,19 @@ test('buildCatalogSections warns in development when two pages resolve to the sa
     (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
   }
 });
+
+test('buildCatalogSections carries a display title, a source override, and the OS-component marker', () => {
+  const pages = [
+    { ...defineCatalogPage({ id: 'ControlHeights', title: 'Control heights', source: 'src/tokens.ts', group: 'Tokens', description: 'x', tokenGallery: true }), file: 'pages/ControlHeights.catalog.tsx' },
+    { ...defineCatalogPage({ id: 'Button', group: 'Components', description: 'x', osComponent: 'partial' }), file: 'pages/Button.catalog.tsx' },
+  ];
+  const { sections } = buildCatalogSections(pages, [components[0]]);
+  const heights = sections.find((s) => s.id === 'ControlHeights')!;
+  assert.equal(heights.title, 'Control heights');
+  assert.equal(heights.path, 'src/tokens.ts');
+  const button = sections.find((s) => s.id === 'Button')!;
+  assert.equal(button.osComponent, 'partial');
+  assert.equal(button.title, undefined);
+  // A component's own file stays its Source; `source` only overrides it when the page sets one.
+  assert.equal(button.path, components[0].file);
+});

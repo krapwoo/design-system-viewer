@@ -13,7 +13,7 @@ function webLinkProps(id: string, active: boolean) {
 
 /** One nav link. Hover via onHoverIn/onHoverOut (react-native-web fires them; native never does);
  *  keyboard focus draws the catalog focus ring because react-native-web removes the browser's. */
-function NavItem<TId extends string>({ id, active, onPress }: { id: TId; active: boolean; onPress: () => void }) {
+function NavItem<TId extends string>({ id, label, active, onPress }: { id: TId; label: string; active: boolean; onPress: () => void }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   return (
@@ -38,7 +38,7 @@ function NavItem<TId extends string>({ id, active, onPress }: { id: TId; active:
         focused && styles.focusRing,
       ]}
     >
-      <Text style={[styles.label, active && styles.labelActive]}>{id}</Text>
+      <Text style={[styles.label, active && styles.labelActive]}>{label}</Text>
     </Pressable>
   );
 }
@@ -79,6 +79,7 @@ export function CatalogSidebar<TId extends string>({
   logoImageSource,
   caption,
   groups,
+  labels,
   active,
   onPress,
   footer,
@@ -91,6 +92,8 @@ export function CatalogSidebar<TId extends string>({
   logoImageSource?: ImageSourcePropType;
   caption: string;
   groups: NavGroup<TId>[];
+  /** Display titles by page id (`SectionDef.title`); pages without one show their id. */
+  labels?: ReadonlyMap<string, string>;
   active: string | undefined;
   onPress: (id: TId) => void;
   /** The quiet update-notice link below the nav list (design §5's footer line), or `undefined`
@@ -112,7 +115,7 @@ export function CatalogSidebar<TId extends string>({
   const [loadedAspect, setLoadedAspect] = useState<number | undefined>(undefined);
   const [logoFailed, setLogoFailed] = useState(false);
   const [nameWrapped, setNameWrapped] = useState(false);
-  const filtered = filterGroups(groups, query);
+  const filtered = filterGroups(groups, query, labels);
 
   const logoAspect = staticAspect ?? loadedAspect;
   const attemptingLogo = Boolean(logoImageSource) && !logoFailed;
@@ -191,7 +194,7 @@ export function CatalogSidebar<TId extends string>({
           <View key={group.label}>
             <Text style={styles.groupLabel}>{group.label}</Text>
             {group.ids.map((id) => (
-              <NavItem key={id} id={id} active={active === id} onPress={() => onPress(id)} />
+              <NavItem key={id} id={id} label={labels?.get(id) ?? id} active={active === id} onPress={() => onPress(id)} />
             ))}
           </View>
         ))}

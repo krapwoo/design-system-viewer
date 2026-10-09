@@ -136,6 +136,7 @@ export function CatalogShell<TId extends string>({
   updateEndpoint?: { baseUrl: string; secret: string };
 }) {
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
+  const labels = useMemo(() => new Map(sections.filter((def) => def.title).map((def) => [def.id as string, def.title as string])), [sections]);
   const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
   const [active, setActive] = useState<ShellPageId<TId> | undefined>(() =>
     isWeb() ? resolveActiveFromHash(window.location.hash, order) : order[0],
@@ -215,7 +216,7 @@ export function CatalogShell<TId extends string>({
 
   return (
     <View style={styles.root}>
-      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} active={active} onPress={select} footer={footer} />
+      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} labels={labels} active={active} onPress={select} footer={footer} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {active === UPDATE_PAGE_ID ? (
           <UpdatePanel update={update ?? null} endpoint={updateEndpoint} appName={appName} headingRef={headingRef} />
@@ -233,6 +234,7 @@ export function CatalogShell<TId extends string>({
               previousId: neighbors(order, activeDef.id).previous,
               nextId: neighbors(order, activeDef.id).next,
               onNavigate: select,
+              labelOf: (id) => labels.get(id) ?? id,
             }}
             headingRef={headingRef}
             defaultPreviewWidths={defaultPreviewWidths}

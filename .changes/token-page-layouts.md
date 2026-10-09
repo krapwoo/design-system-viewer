@@ -1,0 +1,1 @@
+Token pages can now split into titled sections (`tokenSections`, side by side with `tokenColumns`), show tokens as tiles in columns (`TokenGrid`, `TokenTile`), and put a token's note beside a narrow sample (`TokenRow notePlacement="right"`). The README's page guide covers token-page layouts, catalog grouping, column counts for wide components, and marking OS components.

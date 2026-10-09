@@ -102,6 +102,13 @@ export interface ComparisonDef {
  *  typed to the app's real section list without this file needing to know what they are. */
 export interface SectionDef<TId extends string = string> {
   id: TId;
+  /** Display name for the heading, sidebar and search (e.g. "Control heights"). Defaults to `id`,
+   *  which stays the page's address (`#ControlHeights`) and its name in `explain`. */
+  title?: string;
+  /** Marks a component that is, or contains, a native platform control rather than a custom one:
+   *  `'full'` shows an "OS component" badge under the title, `'partial'` "Partly OS component".
+   *  Say in `description` which part is native and how it differs on web. */
+  osComponent?: 'full' | 'partial';
   description: string;
   path: string;
   /** One sentence disambiguating this component from its closest look-alike(s) — the deciding
@@ -163,6 +170,14 @@ export interface SectionDef<TId extends string = string> {
    *  configurations list, and shows only a Quick reference card with the source path (there's no
    *  component behavior to document). */
   tokenGallery?: boolean;
+  /** Token pages with more than one kind of token: one titled card per section (e.g. "Semantic"
+   *  and "Palette", or "Body" and "Title"), instead of a single "Tokens" card. When set, `render`
+   *  is not used and the page counts as a token gallery. See `TokenSection`. */
+  tokenSections?: TokenSection[];
+  /** How many sections sit side by side (1–3, default 1). Narrow sections such as type families
+   *  use 2–3; the page drops columns rather than squeeze a section under 280px. A section with
+   *  `wide: true` always takes a full row. */
+  tokenColumns?: 1 | 2 | 3;
   /** Overrides the `tokenGallery` block's label (default `'Tokens'`) — e.g. `'Preview'` for a page
    *  that's a composed, realistic usage example rather than a list of raw token values. Ignored
    *  unless `tokenGallery` is also set. */
@@ -205,4 +220,15 @@ export interface UpdateNotice {
   breaking: boolean;
   summary: string[];
   releasedAt?: string;
+}
+
+/** One titled card on a token page (`SectionDef.tokenSections`). */
+export interface TokenSection {
+  /** The kind of token this card holds, e.g. "Semantic colours", "Palette", "Body". */
+  title: string;
+  /** One line under the title: what this kind of token is for. */
+  desc?: string;
+  /** Take a full row even when the page sets `tokenColumns` (e.g. palette ramps). */
+  wide?: boolean;
+  render: () => React.ReactNode;
 }

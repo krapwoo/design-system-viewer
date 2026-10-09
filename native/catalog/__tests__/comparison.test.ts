@@ -129,6 +129,14 @@ test('presentationBlocks plans grid, list, grouped, preview, and empty blocks', 
   assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, render }), [{ kind: 'preview', title: 'Tokens', widths: 'full' }]);
   assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, fullWidthLabel: 'Palette', render }), [{ kind: 'preview', title: 'Palette', widths: 'full' }]);
   assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true }), [{ kind: 'empty', title: 'Tokens', message: 'Nothing to preview.' }]);
+  // Token sections: one block holding every section, each with its own label and card.
+  const sections = [{ title: 'Semantic', render }, { title: 'Palette', desc: 'raw ramps', wide: true, render }];
+  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, tokenSections: sections, tokenColumns: 2 }), [
+    { kind: 'tokenSections', title: '', sections, columns: 2 },
+  ]);
+  assert.deepEqual(presentationBlocks({ ...base, tokenGallery: true, tokenSections: sections }), [
+    { kind: 'tokenSections', title: '', sections, columns: 1 },
+  ]);
 
   assert.deepEqual(summary({ ...base, variants, states, comparison: valid }), [
     ['grid', 'Variant × State', 'regular'],

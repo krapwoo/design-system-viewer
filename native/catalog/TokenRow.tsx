@@ -13,17 +13,41 @@ import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
  * reads as a list, not a loose pile of paragraphs. Pass `last` on the final row in a stack to drop
  * the divider, matching PropsTable's own `rowLast` convention.
  */
-export function TokenRow({ children, use, last = false }: { children: React.ReactNode; use: string; last?: boolean }) {
+export function TokenRow({
+  children,
+  use,
+  last = false,
+  notePlacement = 'below',
+  sampleWidth = 280,
+}: {
+  children: React.ReactNode;
+  use: string;
+  last?: boolean;
+  /** `'right'` puts the note beside a narrow sample (icon sizes, spacing, control heights) so each
+   *  token is one line; the sample keeps `sampleWidth` and the note takes the rest. */
+  notePlacement?: 'below' | 'right';
+  sampleWidth?: number;
+}) {
+  if (notePlacement === 'right') {
+    return (
+      <View style={[styles.itemRight, !last && styles.itemDivider]}>
+        <View style={{ width: sampleWidth, flexShrink: 0 }}>{children}</View>
+        {use ? <Text style={[styles.use, styles.useRight]}>{use}</Text> : null}
+      </View>
+    );
+  }
   return (
     <View style={[styles.item, !last && styles.itemDivider]}>
       {children}
-      <Text style={styles.use}>{use}</Text>
+      {use ? <Text style={styles.use}>{use}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   item: { gap: CATALOG_SPACE.xs },
+  itemRight: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.xl },
+  useRight: { flex: 1 },
   itemDivider: {
     paddingBottom: CATALOG_SPACE.md,
     borderBottomWidth: 1,

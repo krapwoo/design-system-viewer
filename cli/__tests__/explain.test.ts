@@ -84,6 +84,24 @@ test('explains a render()-only page as a preview block at its configured widths'
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('explains a token page with sections as one block naming each section and how many fit side by side', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Tokens', description: 'x', tokenColumns: 3,
+      tokenSections: [
+        { title: 'Body', render: () => null },
+        { title: 'Title', render: () => null },
+        { title: 'Palette', wide: true, render: () => null },
+      ],
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.deepEqual(result?.blocks.map((b) => b.kind), ['tokenSections']);
+  assert.equal(result!.blocks[0].reason, '3 sections (Body, Title, Palette): 2 side by side on a 1280px laptop; 1 full width.');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('explains a page with nothing documented as one empty block', () => {
   const dir = makeProject(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
