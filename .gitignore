@@ -9,6 +9,8 @@ node_modules/
 .expo/
 dist/
 web-build/
+# `npm pack` output (CONTRIBUTING.md: trying a change in your own app)
+*.tgz
 *.tsbuildinfo
 .env*.local
 
