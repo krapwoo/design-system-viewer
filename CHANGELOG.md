@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.4
+
+- Catalog pages can now cap a one-axis slot's columns with `maxColumns`, set a page-level `specimenSurface` ('neutral'/'white'/'dark'/'transparent') behind every live specimen, disclose structured composition via `composedOf` (shown as a "Composition" subsection in Quick reference), and demonstrate motion tokens with the new reusable `MotionSpecimen` (replay button, reduce-motion aware); `TokenRow` also gained balanced vertical padding.
+
 ## 0.4.3
 
 - Pages can set a display `title`, a `source` file for pages that document something other than a component (e.g. a token file), and `osComponent: 'full' | 'partial'`, which shows an "OS component" badge under the title.
