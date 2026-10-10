@@ -7,7 +7,8 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  # Creates the GitHub release whose notes the viewer's update page shows as "What's new".
+  contents: write
 
 jobs:
   publish:
@@ -46,3 +47,17 @@ jobs:
       # npm major can't change publish behavior out from under this workflow unannounced.
       - run: npm install -g npm@11
       - run: npm publish --provenance --access public
+      # The viewer's update page reads this release's bullets as "What's new" and its date as
+      # "Released …" (cli/updateCheck.ts). Runs after publishing, so a failure here never blocks npm;
+      # skips a release that already exists, so re-running the workflow is safe.
+      - name: Create the GitHub release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists."
+          else
+            node scripts/changelogSection.mjs "$VERSION" > release-notes.md
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md --verify-tag
+          fi
