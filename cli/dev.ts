@@ -10,7 +10,11 @@ import { sync } from './sync.ts';
 import { writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
-import { checkForUpdate, isUpdateCheckEnabled, writeUpdateFile, type UpdateCheckResult } from './updateCheck.ts';
+import {
+  buildVersionStatus, checkForUpdate, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck, runUpdateCheck, statusFromCheck,
+  writePersonalAutoCheck, writeUpdateFile, writeVersionFile,
+} from './updateCheck.ts';
+import type { VersionStatus } from '../native/catalog/types.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { createUpdateEndpoint, type EndpointDeps, type UpdateStatus } from './endpoint.ts';
 import { buildUpdatePlan, type UpdatePlan } from './updatePlan.ts';
@@ -82,12 +86,22 @@ export function reloadWorkspace(projectRoot: string, updateEndpoint?: { baseUrl:
 export async function refreshUpdateFile(
   config: ResolvedConfig,
   ownVersion: string,
-  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv } = {},
-): Promise<void> {
-  const result: UpdateCheckResult | undefined = isUpdateCheckEnabled(config, options.env ?? process.env)
-    ? await (options.checkForUpdate ?? checkForUpdate)(ownVersion)
-    : undefined;
-  writeUpdateFile(config.projectRoot, result);
+  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv; prefsDir?: string } = {},
+): Promise<VersionStatus> {
+  const env = options.env ?? process.env;
+  const personal = readPersonalAutoCheck(options.prefsDir ?? defaultPreferencesDir(), config.projectRoot);
+  const autoCheck = resolveAutoCheck(config, env, personal);
+  // An injected `checkForUpdate` (tests) stands in for the real check; it can't report "couldn't
+  // reach npm", so it always counts as answered.
+  const injected = options.checkForUpdate;
+  const status = injected
+    ? autoCheck.enabled
+      ? statusFromCheck(ownVersion, autoCheck, { result: await injected(ownVersion), reached: true })
+      : { current: ownVersion, autoCheck, lastOutcome: 'not-run' as const, update: null }
+    : await buildVersionStatus(ownVersion, autoCheck);
+  writeUpdateFile(config.projectRoot, status.update ? { ...status.update, checkedAt: status.lastCheckedAt ?? new Date().toISOString() } : undefined);
+  writeVersionFile(config.projectRoot, status);
+  return status;
 }
 
 // Promisified, not `execFileSync` — install/migrate/doctor each take real seconds, and this now
@@ -334,7 +348,7 @@ export async function performRestart(
 export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
-  await refreshUpdateFile(initialConfig, ownVersion);
+  let versionStatus = await refreshUpdateFile(initialConfig, ownVersion);
   let config = initialConfig;
   sync(config);
 
@@ -387,6 +401,22 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       });
     },
     getStatus: () => updateStatus,
+    getVersionStatus: () => versionStatus,
+    // **Check now**: always asks npm (ignoring the 24-hour cache), even with automatic checks off —
+    // you asked for this one check. The result lives only in this process; `update.json` and
+    // `version.json` are rewritten at the next start (rewriting them now would reload the page).
+    checkNow: async () => {
+      versionStatus = statusFromCheck(ownVersion, versionStatus.autoCheck, await runUpdateCheck(ownVersion, { force: true, timeoutMs: 5000 }));
+      return versionStatus;
+    },
+    // The update page's switch: your own setting for this project on this computer. Takes effect
+    // for automatic checks from the next start; the current status keeps any update already found.
+    setAutoCheck: (enabled) => {
+      const prefsDir = defaultPreferencesDir();
+      writePersonalAutoCheck(prefsDir, config.projectRoot, enabled);
+      versionStatus = { ...versionStatus, autoCheck: resolveAutoCheck(config, process.env, readPersonalAutoCheck(prefsDir, config.projectRoot)) };
+      return versionStatus;
+    },
   };
   const endpointServer = createUpdateEndpoint(endpointDeps);
   await new Promise<void>((resolve) => endpointServer.listen(0, '127.0.0.1', resolve));

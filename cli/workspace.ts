@@ -74,13 +74,14 @@ function entryTsx(
   // (no reserved words in either key) — the same reasoning the existing `logoRequirePath` baking
   // already relies on, extended to a whole object instead of one string.
   const endpointConst = `const updateEndpoint = ${updateEndpoint ? JSON.stringify(updateEndpoint) : 'undefined'};\n`;
-  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} update={updateNotice} updateEndpoint={updateEndpoint} />`;
+  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} update={updateNotice} versionStatus={versionStatus} updateEndpoint={updateEndpoint} />`;
   const root = hasSafeArea ? `<SafeAreaProvider>${viewer}</SafeAreaProvider>` : viewer;
   return `import { registerRootComponent } from 'expo';
 import { CatalogShell, buildCatalogSections } from '@krapwoo/ds-viewer';
 ${safeAreaImport}${logoImport}import pages from './generated/pages';
 import components from './generated/components.json';
 import updateNotice from './update.json';
+import versionStatus from './version.json';
 ${endpointConst}
 function App() {
   const { sections, groups } = buildCatalogSections(pages, components, ${JSON.stringify(groupOrder)});

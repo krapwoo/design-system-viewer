@@ -3,6 +3,7 @@ import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { DS_VIEWER_SECRET_HEADER } from '../native/catalog/catalogNavigation.ts';
 import type { UpdatePlan } from './updatePlan.ts';
+import type { VersionStatus } from '../native/catalog/types.ts';
 
 /** A constant-time secret compare (Minor finding, Fable correction pass; controller decision 1
  *  makes this required, not optional) — `!==` on two strings short-circuits at the first
@@ -34,6 +35,37 @@ export interface EndpointDeps {
    *  `'failure'` phase, never as a rejected promise this endpoint would have to catch. */
   startUpdate: (plan: UpdatePlan) => void;
   getStatus: () => UpdateStatus;
+  /** The update page's version status (`GET /version`). Optional: without it, the three version
+   *  routes answer 404. */
+  getVersionStatus?: () => VersionStatus;
+  /** **Check now** (`POST /version/check`): asks npm, ignoring the 24-hour cache. One at a time. */
+  checkNow?: () => Promise<VersionStatus>;
+  /** The update page's switch (`POST /version/auto-check`, body `{ "enabled": boolean }`): saves
+   *  your own setting for this project on this computer. */
+  setAutoCheck?: (enabled: boolean) => VersionStatus;
+}
+
+/** Reads a small JSON request body (the switch's `{ enabled }`); anything over 1 KB is refused. */
+function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk: string) => {
+      body += chunk;
+      if (body.length > 1024) {
+        reject(new Error('Body too large.'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(body || 'null'));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown, allowedOrigin: string): void {
@@ -56,6 +88,7 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
   // every real caller), so resetting this flag right after is safe and lets a later retry (after a
   // `'failure'`, in the same process) through again.
   let starting = false;
+  let checking = false;
   return http.createServer(async (req, res) => {
     // Controller decision 1 (required, not optional): reject a request whose `Host` header is not
     // this very socket's own `127.0.0.1:<port>` — a DNS-rebinding defence, since `req.socket`'s own
@@ -80,7 +113,7 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
       res.writeHead(204, {
         'Access-Control-Allow-Origin': deps.allowedOrigin,
         'Access-Control-Allow-Methods': 'POST, GET',
-        'Access-Control-Allow-Headers': DS_VIEWER_SECRET_HEADER,
+        'Access-Control-Allow-Headers': `${DS_VIEWER_SECRET_HEADER}, Content-Type`,
       });
       res.end();
       return;
@@ -161,6 +194,47 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
 
     if (req.method === 'GET' && req.url === '/update/status') {
       sendJson(res, 200, deps.getStatus(), deps.allowedOrigin);
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/version' && deps.getVersionStatus) {
+      sendJson(res, 200, deps.getVersionStatus(), deps.allowedOrigin);
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/version/check' && deps.checkNow) {
+      if (checking) {
+        sendJson(res, 409, { error: 'A check is already running.' }, deps.allowedOrigin);
+        return;
+      }
+      checking = true;
+      try {
+        sendJson(res, 200, await deps.checkNow(), deps.allowedOrigin);
+      } catch (error) {
+        sendJson(res, 502, { error: (error as Error).message }, deps.allowedOrigin);
+      } finally {
+        checking = false;
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/version/auto-check' && deps.setAutoCheck) {
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        body = undefined;
+      }
+      const enabled = (body as { enabled?: unknown } | null)?.enabled;
+      if (typeof enabled !== 'boolean') {
+        sendJson(res, 400, { error: 'Expected { "enabled": true | false }.' }, deps.allowedOrigin);
+        return;
+      }
+      try {
+        sendJson(res, 200, deps.setAutoCheck(enabled), deps.allowedOrigin);
+      } catch (error) {
+        sendJson(res, 500, { error: (error as Error).message }, deps.allowedOrigin);
+      }
       return;
     }
 

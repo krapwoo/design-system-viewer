@@ -306,12 +306,14 @@ Runs on every pull request (no path filters): install dependencies, then `npx ds
 - Like any npm install, the requests disclose the user's IP address; nothing else about the user or project is sent.
 - `dev` writes the result to `.ds-viewer/update.json`; the viewer reads it. The browser never contacts the network for updates.
 - Offline or blocked: silent. Disabled by `updateCheck: false` or `DS_VIEWER_NO_UPDATE_CHECK=1`. Never runs with `--ci`.
+- Precedence (0.4.6, owner-approved 2026-10-10): `DS_VIEWER_NO_UPDATE_CHECK=1`, then the person's own switch on the update page (saved per project in the user settings folder, never in the project), then the project's `updateCheck`, then on. `dev` also writes `.ds-viewer/version.json` (installed version, setting and its source, last check, outcome); the local endpoint serves it live (`GET /version`) and handles **Check now** (`POST /version/check`, ignores the 24-hour cache) and the switch (`POST /version/auto-check`), behind the same Host, Origin and secret checks as **Update now**.
 
 ### Viewer notice and **Update now**
 
 The visual design requires a mockup and approval before implementation.
 
-- **Minor or patch:** a quiet line in the sidebar footer, "Update available · 0.5.0".
+- **Always:** a quiet sidebar footer line with the installed version, "DS Viewer 0.4.5", opening the update page. With no update known, the page states the situation (latest, checks off, couldn't reach npm), the last check, the automatic-check switch, and **Check now**. Mockup: `docs/design/2026-10-10-ds-viewer-update-page-always-approved.html`.
+- **Minor or patch:** the footer line becomes "Update available · 0.5.0".
 - **Major:** a top banner, "DS Viewer 2.0 is available — includes breaking changes · Migration guide", dismissible per version; the footer line remains.
 - Activating either opens an update panel. It requests the plan (§5 "Update plan") and shows current → latest, the release summary, and the files that would change, with **Update now**.
 - **Update now** asks the running `dev` process to apply the plan with the same steps as `update`. The panel shows progress, then the result: success with "Changes are not committed — review them in your editor", or failure with the log and the recovery command.

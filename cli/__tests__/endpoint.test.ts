@@ -213,3 +213,76 @@ test('POST /update replies 202 before startUpdate ever runs, even if startUpdate
     assert.equal(res.status, 202);
   });
 });
+
+const STATUS = {
+  current: '0.4.4', autoCheck: { enabled: false, source: 'project' as const }, lastOutcome: 'not-run' as const, update: null,
+};
+
+test('GET /version returns the version status, behind the same Origin and secret checks', async () => {
+  await withServer({ getVersionStatus: () => STATUS }, async (baseUrl) => {
+    const denied = await fetch(`${baseUrl}/version`, { headers: { Origin: ALLOWED_ORIGIN } });
+    assert.equal(denied.status, 401);
+    const wrongOrigin = await fetch(`${baseUrl}/version`, { headers: { Origin: 'http://evil.example', [DS_VIEWER_SECRET_HEADER]: SECRET } });
+    assert.equal(wrongOrigin.status, 403);
+    const res = await fetch(`${baseUrl}/version`, { headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), STATUS);
+  });
+});
+
+test('POST /version/check runs one check and answers with the new status; a second click while it runs is refused', async () => {
+  let release!: () => void;
+  let runs = 0;
+  const checkNow = () => {
+    runs += 1;
+    return new Promise<typeof STATUS & { lastOutcome: 'ok' }>((resolve) => { release = () => resolve({ ...STATUS, lastOutcome: 'ok' }); });
+  };
+  await withServer({ getVersionStatus: () => STATUS, checkNow }, async (baseUrl) => {
+    const headers = { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET };
+    const first = fetch(`${baseUrl}/version/check`, { method: 'POST', headers });
+    await new Promise((r) => setTimeout(r, 50));
+    const second = await fetch(`${baseUrl}/version/check`, { method: 'POST', headers });
+    assert.equal(second.status, 409);
+    release();
+    const res = await first;
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).lastOutcome, 'ok');
+    assert.equal(runs, 1);
+    // Free again once it finished.
+    const again = fetch(`${baseUrl}/version/check`, { method: 'POST', headers });
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    assert.equal((await again).status, 200);
+  });
+});
+
+test('POST /version/auto-check saves a boolean and answers with the new status; anything else is a 400', async () => {
+  const saved: boolean[] = [];
+  const setAutoCheck = (enabled: boolean) => { saved.push(enabled); return { ...STATUS, autoCheck: { enabled, source: 'personal' as const } }; };
+  await withServer({ getVersionStatus: () => STATUS, setAutoCheck }, async (baseUrl) => {
+    const headers = { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET, 'Content-Type': 'application/json' };
+    const res = await fetch(`${baseUrl}/version/auto-check`, { method: 'POST', headers, body: JSON.stringify({ enabled: true }) });
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).autoCheck, { enabled: true, source: 'personal' });
+    const bad = await fetch(`${baseUrl}/version/auto-check`, { method: 'POST', headers, body: JSON.stringify({ enabled: 'yes' }) });
+    assert.equal(bad.status, 400);
+    const noSecret = await fetch(`${baseUrl}/version/auto-check`, { method: 'POST', headers: { Origin: ALLOWED_ORIGIN, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: false }) });
+    assert.equal(noSecret.status, 401);
+    assert.deepEqual(saved, [true]);
+  });
+});
+
+test('the CORS preflight allows the JSON content type the switch sends', async () => {
+  await withServer({}, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/version/auto-check`, { method: 'OPTIONS', headers: { Origin: ALLOWED_ORIGIN } });
+    assert.equal(res.status, 204);
+    assert.match(res.headers.get('access-control-allow-headers') ?? '', /content-type/i);
+  });
+});
+
+test('the version routes are 404 when dev did not provide them', async () => {
+  await withServer({}, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/version`, { headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET } });
+    assert.equal(res.status, 404);
+  });
+});

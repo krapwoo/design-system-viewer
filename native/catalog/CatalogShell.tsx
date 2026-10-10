@@ -5,8 +5,8 @@ import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_RADIU
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
 import { UpdatePanel } from './UpdatePanel';
-import { groupLabelFor, hashForId, neighbors, orderedIds, resolveActiveFromHash, shouldShowMajorBanner, footerLabel, UPDATE_PAGE_ID } from './catalogNavigation';
-import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice } from './types';
+import { DS_VIEWER_SECRET_HEADER, footerLink, groupLabelFor, hashForId, neighbors, orderedIds, resolveActiveFromHash, shouldShowMajorBanner, UPDATE_PAGE_ID } from './catalogNavigation';
+import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice, VersionStatus } from './types';
 
 /** `active` can be a real page id, or the reserved update-page id — never both a generic `TId`
  *  constraint and a hardcoded string literal type at once, which is why this is its own alias. */
@@ -111,6 +111,7 @@ export function CatalogShell<TId extends string>({
   sections,
   defaultPreviewWidths,
   update,
+  versionStatus,
   updateEndpoint,
 }: {
   /** Short product/app name — the sidebar logo and the breadcrumb root. */
@@ -129,6 +130,12 @@ export function CatalogShell<TId extends string>({
    *  or already up to date; the viewer treats all three identically: no footer, no banner, no
    *  update page content). */
   update?: UpdateNotice | null;
+  /** The installed version, whether automatic checks are on (and why), and the last check —
+   *  `dev` writes it at startup (`.ds-viewer/version.json`), and the shell refreshes it from the
+   *  local endpoint. With it, the sidebar always shows a version line and the update page offers
+   *  **Check now** and the automatic-check switch. Without it (an older generated workspace), the
+   *  footer appears only when an update is known, as before. */
+  versionStatus?: VersionStatus | null;
   /** The local endpoint's base URL and per-run secret — `dev` generates both (Task 18) and
    *  `writeWorkspace`'s generated entry file bakes them in (Task 17). Absent in a build that
    *  disables the endpoint entirely — `UpdatePanel` degrades to showing the plan/notice with no
@@ -198,28 +205,56 @@ export function CatalogShell<TId extends string>({
 
   const activeDef = active !== undefined && active !== UPDATE_PAGE_ID ? sectionsById.get(active) : undefined;
 
+  // The live version status: starts from what `dev` wrote at startup, then follows the local
+  // endpoint (a reload after **Check now** must not fall back to the startup snapshot).
+  const [liveStatus, setLiveStatus] = useState<VersionStatus | null>(versionStatus ?? null);
+  useEffect(() => {
+    if (!updateEndpoint || !isWeb()) return;
+    let cancelled = false;
+    fetch(`${updateEndpoint.baseUrl}/version`, { headers: { [DS_VIEWER_SECRET_HEADER]: updateEndpoint.secret } })
+      .then((res) => (res.ok ? (res.json() as Promise<VersionStatus>) : undefined))
+      .then((next) => {
+        if (next && !cancelled) setLiveStatus(next);
+      })
+      .catch(() => {
+        // The startup snapshot stays; the endpoint may be restarting.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [updateEndpoint]);
+  // With a live status, it is the truth (it includes a **Check now** result); otherwise the
+  // startup notice, as before.
+  const effectiveUpdate: UpdateNotice | null = liveStatus ? liveStatus.update : update ?? null;
+
   const [dismissedMajor, setDismissedMajor] = useState<string | null>(() =>
     isWeb() ? window.localStorage.getItem('ds-viewer-dismissed-major') : null,
   );
   const dismissMajorBanner = useCallback(() => {
-    if (!update) return;
-    if (isWeb()) window.localStorage.setItem('ds-viewer-dismissed-major', update.latest);
-    setDismissedMajor(update.latest);
-  }, [update]);
-  const footer = footerLabel(update)
-    ? { label: footerLabel(update)!, active: active === UPDATE_PAGE_ID, onPress: () => select(UPDATE_PAGE_ID) }
-    : undefined;
+    if (!effectiveUpdate) return;
+    if (isWeb()) window.localStorage.setItem('ds-viewer-dismissed-major', effectiveUpdate.latest);
+    setDismissedMajor(effectiveUpdate.latest);
+  }, [effectiveUpdate]);
+  const link = footerLink(effectiveUpdate, liveStatus);
+  const footer = link ? { ...link, active: active === UPDATE_PAGE_ID, onPress: () => select(UPDATE_PAGE_ID) } : undefined;
   // Design: the banner shows on every *normal* page; once you're already looking at the update
   // page there is nothing left for "Review update" to do, so it's hidden there (confirmed against
   // the approved mockup's own `frame()`: the banner only ever renders when `!isPanel`).
-  const showBanner = active !== UPDATE_PAGE_ID && shouldShowMajorBanner(update, dismissedMajor);
+  const showBanner = active !== UPDATE_PAGE_ID && shouldShowMajorBanner(effectiveUpdate, dismissedMajor);
 
   return (
     <View style={styles.root}>
       <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} labels={labels} active={active} onPress={select} footer={footer} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {active === UPDATE_PAGE_ID ? (
-          <UpdatePanel update={update ?? null} endpoint={updateEndpoint} appName={appName} headingRef={headingRef} />
+          <UpdatePanel
+            update={effectiveUpdate}
+            versionStatus={liveStatus}
+            onVersionStatus={setLiveStatus}
+            endpoint={updateEndpoint}
+            appName={appName}
+            headingRef={headingRef}
+          />
         ) : activeDef ? (
           <SectionBlock
             key={activeDef.id}
@@ -229,7 +264,7 @@ export function CatalogShell<TId extends string>({
             // The approved mockup's own `PAGE_BG` order: crumb, then banner, then title — the
             // banner used to render above the breadcrumb instead (Important finding, Fable
             // correction pass).
-            banner={showBanner && update ? <MajorBanner update={update} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} /> : undefined}
+            banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} /> : undefined}
             pager={{
               previousId: neighbors(order, activeDef.id).previous,
               nextId: neighbors(order, activeDef.id).next,
