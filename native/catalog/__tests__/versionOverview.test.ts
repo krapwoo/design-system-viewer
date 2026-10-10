@@ -72,3 +72,10 @@ test('bumpLabel: Major for a breaking update, else Minor or Patch from the versi
   assert.equal(bumpLabel('1.2.3', '1.2.4-beta.1', false), 'Patch');
   assert.equal(bumpLabel('not', 'semver', false), 'Minor', 'unreadable versions keep the old label');
 });
+
+test('versionOverview: turned off after a check answered shows the Checks off pill (mockup 7b), not Latest', () => {
+  const offAfterCheck: VersionStatus = { ...base, autoCheck: { enabled: false, source: 'personal' }, lastOutcome: 'ok' };
+  assert.deepEqual(versionOverview(offAfterCheck, false, NOW), { pill: 'off', line: 'You’re on 0.4.5. Automatic checks are off.', action: 'check' });
+  // Right after Check now, the fresh answer still wins.
+  assert.equal(versionOverview(offAfterCheck, true, NOW).pill, 'latest');
+});

@@ -109,6 +109,10 @@ export function versionOverview(status: VersionStatus, justChecked: boolean, now
     }
     return { line: `You’re on ${status.current}. Not checked yet: automatic checks run when the viewer starts.`, action: 'check' };
   }
+  // Turned off after a check answered (approved mockup state 7b); a fresh Check now still wins.
+  if (!status.autoCheck.enabled && !justChecked) {
+    return { pill: 'off', line: `You’re on ${status.current}. Automatic checks are off.`, action: 'check' };
+  }
   return {
     pill: 'latest',
     line: 'You’re on the latest version.',

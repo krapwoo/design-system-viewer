@@ -286,3 +286,26 @@ test('the version routes are 404 when dev did not provide them', async () => {
     assert.equal(res.status, 404);
   });
 });
+
+test('POST /version/auto-check answers 400 (not a dropped connection) for malformed JSON or a body over 1 KB', async () => {
+  const saved: boolean[] = [];
+  await withServer({ getVersionStatus: () => STATUS, setAutoCheck: (enabled) => { saved.push(enabled); return STATUS; } }, async (baseUrl) => {
+    const headers = { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET, 'Content-Type': 'application/json' };
+    const malformed = await fetch(`${baseUrl}/version/auto-check`, { method: 'POST', headers, body: '{enabled:' });
+    assert.equal(malformed.status, 400);
+    const huge = await fetch(`${baseUrl}/version/auto-check`, { method: 'POST', headers, body: JSON.stringify({ enabled: true, pad: 'x'.repeat(4096) }) });
+    assert.equal(huge.status, 400);
+    assert.deepEqual(saved, []);
+  });
+});
+
+test('POST /version/check answers 502 when the check fails, and the next Check now still runs', async () => {
+  let fail = true;
+  const checkNow = async () => { if (fail) throw new Error('boom'); return STATUS; };
+  await withServer({ getVersionStatus: () => STATUS, checkNow }, async (baseUrl) => {
+    const headers = { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET };
+    assert.equal((await fetch(`${baseUrl}/version/check`, { method: 'POST', headers })).status, 502);
+    fail = false;
+    assert.equal((await fetch(`${baseUrl}/version/check`, { method: 'POST', headers })).status, 200);
+  });
+});

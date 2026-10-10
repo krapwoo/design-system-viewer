@@ -11,8 +11,8 @@ import { writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
 import {
-  buildVersionStatus, checkForUpdate, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck, runUpdateCheck, statusFromCheck,
-  writePersonalAutoCheck, writeUpdateFile, writeVersionFile,
+  buildVersionStatus, checkForUpdate, createVersionController, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck, runUpdateCheck,
+  statusFromCheck, writeUpdateFile, writeVersionFile,
 } from './updateCheck.ts';
 import type { VersionStatus } from '../native/catalog/types.ts';
 import { readOwnVersion } from './packageVersion.ts';
@@ -348,8 +348,19 @@ export async function performRestart(
 export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
-  let versionStatus = await refreshUpdateFile(initialConfig, ownVersion);
   let config = initialConfig;
+  const version = createVersionController({
+    ownVersion,
+    projectRoot: initialConfig.projectRoot,
+    prefsDir: defaultPreferencesDir(),
+    env: process.env,
+    initial: await refreshUpdateFile(initialConfig, ownVersion),
+    getConfig: () => config,
+    // **Check now** always asks npm, even with automatic checks off: you asked for this one check.
+    // The result lives only in this process; `update.json` and `version.json` are rewritten at
+    // the next start (rewriting them now would reload the page).
+    runCheck: () => runUpdateCheck(ownVersion, { force: true, timeoutMs: 5000 }),
+  });
   sync(config);
 
   // Restart handoff step 2/4: a status file left by the *previous* `dev` process (right before it
@@ -401,22 +412,9 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       });
     },
     getStatus: () => updateStatus,
-    getVersionStatus: () => versionStatus,
-    // **Check now**: always asks npm (ignoring the 24-hour cache), even with automatic checks off —
-    // you asked for this one check. The result lives only in this process; `update.json` and
-    // `version.json` are rewritten at the next start (rewriting them now would reload the page).
-    checkNow: async () => {
-      versionStatus = statusFromCheck(ownVersion, versionStatus.autoCheck, await runUpdateCheck(ownVersion, { force: true, timeoutMs: 5000 }));
-      return versionStatus;
-    },
-    // The update page's switch: your own setting for this project on this computer. Takes effect
-    // for automatic checks from the next start; the current status keeps any update already found.
-    setAutoCheck: (enabled) => {
-      const prefsDir = defaultPreferencesDir();
-      writePersonalAutoCheck(prefsDir, config.projectRoot, enabled);
-      versionStatus = { ...versionStatus, autoCheck: resolveAutoCheck(config, process.env, readPersonalAutoCheck(prefsDir, config.projectRoot)) };
-      return versionStatus;
-    },
+    getVersionStatus: version.getVersionStatus,
+    checkNow: version.checkNow,
+    setAutoCheck: version.setAutoCheck,
   };
   const endpointServer = createUpdateEndpoint(endpointDeps);
   await new Promise<void>((resolve) => endpointServer.listen(0, '127.0.0.1', resolve));
@@ -454,6 +452,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     configDebounceTimer = setTimeout(() => {
       try {
         config = reloadWorkspace(config.projectRoot, updateEndpoint);
+        version.refreshAutoCheck();
       } catch (error) {
         console.warn(`Could not reload ds-viewer.config.ts after a change: ${(error as Error).message}`);
       }

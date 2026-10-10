@@ -1,5 +1,5 @@
 // cli/updateCheck.ts
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { compareVersions, isBreakingUpgrade, parseVersion } from './semver.ts';
 import type { AutoCheckSource, VersionStatus } from '../native/catalog/types.ts';
@@ -231,7 +231,12 @@ export function writePersonalAutoCheck(dir: string, projectRoot: string, enabled
   const projects = { ...(prefs.projects ?? {}) };
   projects[path.resolve(projectRoot)] = { ...projects[path.resolve(projectRoot)], autoCheck: enabled };
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, PREFERENCES_FILE_NAME), `${JSON.stringify({ ...prefs, projects }, null, 2)}\n`);
+  // Write then rename, so a crash mid-write never leaves a half file that would read as "no
+  // settings" and silently reset every project's switch.
+  const target = path.join(dir, PREFERENCES_FILE_NAME);
+  const temp = `${target}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify({ ...prefs, projects }, null, 2)}\n`);
+  renameSync(temp, target);
 }
 
 /** Which setting decides automatic checks, strongest first: CI's environment variable, your own
@@ -296,4 +301,41 @@ export function writeUpdateFile(projectRoot: string, result: UpdateCheckResult |
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(result ?? null));
   return file;
+}
+
+/** The live version status behind the local endpoint (`GET /version`, **Check now**, the switch),
+ *  kept outside `dev()` so its ordering rules are testable. */
+export function createVersionController(deps: {
+  ownVersion: string;
+  projectRoot: string;
+  prefsDir: string;
+  env: NodeJS.ProcessEnv;
+  initial: VersionStatus;
+  /** The current project config (it can change while `dev` runs). */
+  getConfig: () => { updateCheck?: boolean };
+  runCheck: () => Promise<{ result?: UpdateCheckResult; reached: boolean; cached?: CachedUpdateCheck }>;
+}) {
+  let status = deps.initial;
+  const resolveNow = () => resolveAutoCheck(deps.getConfig(), deps.env, readPersonalAutoCheck(deps.prefsDir, deps.projectRoot));
+  return {
+    getVersionStatus: () => status,
+    /** **Check now**: asks npm ignoring the cache. Reads the switch *after* the check, so a change
+     *  made while it ran is kept. */
+    checkNow: async () => {
+      const outcome = await deps.runCheck();
+      status = statusFromCheck(deps.ownVersion, status.autoCheck, outcome);
+      return status;
+    },
+    /** The switch: your own setting for this project on this computer. Takes effect for automatic
+     *  checks from the next start; the current status keeps any update already found. */
+    setAutoCheck: (enabled: boolean) => {
+      writePersonalAutoCheck(deps.prefsDir, deps.projectRoot, enabled);
+      status = { ...status, autoCheck: resolveNow() };
+      return status;
+    },
+    /** After `ds-viewer.config.ts` changes while `dev` runs. */
+    refreshAutoCheck: () => {
+      status = { ...status, autoCheck: resolveNow() };
+    },
+  };
 }

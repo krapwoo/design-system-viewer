@@ -1,11 +1,11 @@
 // cli/__tests__/versionStatus.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
-  buildVersionStatus, preferencesDirFor, readPersonalAutoCheck, resolveAutoCheck, runUpdateCheck, writePersonalAutoCheck,
+  buildVersionStatus, createVersionController, preferencesDirFor, readPersonalAutoCheck, resolveAutoCheck, runUpdateCheck, writePersonalAutoCheck,
 } from '../updateCheck.ts';
 
 const REGISTRY = 'https://registry.npmjs.org/@krapwoo%2Fds-viewer/latest';
@@ -116,4 +116,48 @@ test('buildVersionStatus: checks on reports the update, or "unreachable" when np
   assert.equal(down.update, null);
   assert.equal(down.lastCheckedAt, undefined);
   rmSync(emptyCache, { recursive: true, force: true });
+});
+
+test('createVersionController: a switch flipped while Check now runs is not undone when the check finishes', async () => {
+  const prefsDir = tmp('prefs');
+  let release!: (value: { reached: boolean }) => void;
+  const controller = createVersionController({
+    ownVersion: '0.4.5', projectRoot: '/work/skiffr', prefsDir, env: {},
+    initial: { current: '0.4.5', autoCheck: { enabled: false, source: 'project' }, lastOutcome: 'not-run', update: null },
+    getConfig: () => ({ updateCheck: false }),
+    runCheck: () => new Promise((resolve) => { release = resolve; }),
+  });
+  const pending = controller.checkNow();
+  controller.setAutoCheck(true);
+  release({ reached: true });
+  const after = await pending;
+  assert.deepEqual(after.autoCheck, { enabled: true, source: 'personal' });
+  assert.equal(after.lastOutcome, 'ok');
+  assert.deepEqual(controller.getVersionStatus().autoCheck, { enabled: true, source: 'personal' });
+  rmSync(prefsDir, { recursive: true, force: true });
+});
+
+test('createVersionController: an edited project config is reflected without a restart', () => {
+  const prefsDir = tmp('prefs');
+  let updateCheck: boolean | undefined = false;
+  const controller = createVersionController({
+    ownVersion: '0.4.5', projectRoot: '/work/skiffr', prefsDir, env: {},
+    initial: { current: '0.4.5', autoCheck: { enabled: false, source: 'project' }, lastOutcome: 'not-run', update: null },
+    getConfig: () => ({ updateCheck }),
+    runCheck: async () => ({ reached: true }),
+  });
+  updateCheck = undefined;
+  controller.refreshAutoCheck();
+  assert.deepEqual(controller.getVersionStatus().autoCheck, { enabled: true, source: 'default' });
+  rmSync(prefsDir, { recursive: true, force: true });
+});
+
+test('the preferences file is replaced atomically (no partial file left behind)', () => {
+  const dir = tmp('prefs');
+  writePersonalAutoCheck(dir, '/work/a', true);
+  writePersonalAutoCheck(dir, '/work/b', false);
+  const files = readdirSync(dir);
+  assert.deepEqual(files.sort(), ['preferences.json']);
+  assert.equal(readPersonalAutoCheck(dir, '/work/a'), true);
+  rmSync(dir, { recursive: true, force: true });
 });

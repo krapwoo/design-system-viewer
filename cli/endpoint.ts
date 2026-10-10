@@ -49,15 +49,23 @@ export interface EndpointDeps {
 function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let tooLarge = false;
     req.setEncoding('utf8');
+    // Keep draining past the cap (without storing it) so the handler can still answer 400 —
+    // destroying the socket would drop that answer.
     req.on('data', (chunk: string) => {
+      if (tooLarge) return;
       body += chunk;
       if (body.length > 1024) {
-        reject(new Error('Body too large.'));
-        req.destroy();
+        tooLarge = true;
+        body = '';
       }
     });
     req.on('end', () => {
+      if (tooLarge) {
+        reject(new Error('Body too large.'));
+        return;
+      }
       try {
         resolve(JSON.parse(body || 'null'));
       } catch (error) {

@@ -284,14 +284,16 @@ function VersionDetails({
           </View>
           <View style={styles.factRow}>
             <View style={styles.switchText}>
-              <Text style={styles.switchLabel} nativeID="ds-viewer-auto-check-label">Check for updates automatically</Text>
+              <Text style={styles.switchLabel}>Check for updates automatically</Text>
               <Text style={styles.switchHelp}>{help.text}</Text>
             </View>
             <Switch
               value={status.autoCheck.enabled}
               onValueChange={setAutoCheck}
-              disabled={!live || help.locked || saving}
-              accessibilityLabel="Check for updates automatically"
+              disabled={!live || help.locked || saving || checking}
+              // React Native web passes only the label to the real input (no description), so the
+              // helper text rides in the accessible name: a screen reader hears why it's on or off.
+              accessibilityLabel={`Check for updates automatically. ${help.text}`}
               trackColor={{ false: '#c9c9c9', true: CATALOG_COLOR.accent }}
               thumbColor="#ffffff"
               // The approved mockup's 44 × 26 switch; React Native web's default is 40 × 20, below
