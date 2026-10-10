@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
-import { motionTranslatesDirectly, motionValueTarget, type MotionValueRange } from './motionValueDomain';
+import { motionReplayLabel, motionTranslatesDirectly, motionValueTarget, type MotionValueRange } from './motionValueDomain';
 
 /** `Animated.spring`'s physics fields — the same shape as a design system's own spring-config
  *  token (e.g. `DS_MOTION_SPRING`), kept local here rather than imported from any app's tokens so
@@ -21,7 +21,7 @@ export type MotionSpecimenProps =
       /** Duration in ms, e.g. a page's own `DS_MOTION_DURATION.base`. */
       duration: number;
       /** A real `Easing` function, e.g. `Easing.bezier(...DS_MOTION_EASING.standard)`. Defaults to
-       *  linear when omitted. */
+       *  `Animated.timing`'s own ease-in-out when omitted; pass `Easing.linear` for linear. */
       easing?: (value: number) => number;
       /** Track length in px the dot travels, start to end. @default 160 */
       distance?: number;
@@ -112,7 +112,7 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
         <Pressable
           onPress={() => play(reduceMotion)}
           accessibilityRole="button"
-          accessibilityLabel="Replay"
+          accessibilityLabel={motionReplayLabel({ kind: props.kind, duration: props.kind === 'timing' ? props.duration : undefined, label })}
           style={({ pressed }) => [styles.replayButton, pressed && styles.replayButtonPressed]}
         >
           <Text style={styles.replayText}>Replay</Text>

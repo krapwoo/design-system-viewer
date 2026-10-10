@@ -78,9 +78,9 @@ export type SpecimenSurfaceKind = 'neutral' | 'white' | 'dark' | 'transparent';
  *  "Composition" subsection in Quick reference. `relationship` is `'built-in'` for a component
  *  always present (e.g. Toast is built from a Banner internally), `'slot'` for an optional
  *  caller-supplied child (e.g. a `leadingIcon` prop), or `'related'` for a component commonly used
- *  alongside this one without either containing the other. `component` is validated at catalog-
- *  build time against the known page/component inventory (`buildCatalogSections`); an unknown name
- *  only ever warns in development, it never fails the build. */
+ *  alongside this one without either containing the other. In development, `buildCatalogSections`
+ *  warns in the browser console when `component` isn't a known component or page id. `doctor`
+ *  doesn't check it, and it never fails a build. */
 export interface ComposedOfEntry {
   component: string;
   role: string;

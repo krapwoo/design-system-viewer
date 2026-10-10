@@ -207,9 +207,10 @@ actually apply:
   composed with, shown as a "Composition" subsection in Quick reference. `relationship` is
   `'built-in'` for a component always present inside this one (e.g. Toast is built from a Banner),
   `'slot'` for an optional caller-supplied child (e.g. a `leadingIcon` prop), or `'related'` for a
-  component commonly used alongside this one without either containing the other. `component` is
-  checked against every real component and page in the catalog at build time (`sync`/`dev`); an
-  unknown name only warns in development, it never fails the build — e.g.
+  component commonly used alongside this one without either containing the other. `component` should be
+  a real component or page id: while you browse the catalog in development, an unknown name logs a
+  `[Catalog]` warning in the browser console. `doctor` doesn't check it, and it never fails a
+  build — e.g.
   `composedOf: [{ component: 'Icon', role: 'Leading glyph', relationship: 'slot' }]`.
 - `previewWidths: [402, 320]` — extra preview widths for a `render()` page (each capped at 402).
   `CatalogShell`'s `defaultPreviewWidths="full"` keeps a catalog's previews full width.

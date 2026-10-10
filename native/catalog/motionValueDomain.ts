@@ -4,10 +4,9 @@
  * `native/catalog/__tests__/motionValueDomain.test.ts`).
  *
  * A spring's `restDisplacementThreshold`/`restSpeedThreshold` are in the units of the value being
- * animated — a config built for pixel-space points (e.g. Skiffr's `SHEET_SPRING_CONFIG`) stops
+ * animated — a config built for pixel-space points (e.g. a bottom sheet's snap-point spring) stops
  * within a fraction of a pixel of its target, which is invisible; the same thresholds applied to a
- * normalized 0-to-1 progress would end the animation before it ever emits a frame (see
- * `UNIT_SPRING_CONFIG`'s own comment). `MotionSpecimen` must animate the domain the config was
+ * normalized 0-to-1 progress would end the animation before it ever emits a frame. `MotionSpecimen` must animate the domain the config was
  * actually tuned for, rather than always normalizing to 0–1, or it misrepresents any spring whose
  * production value is pixel-space.
  *
@@ -17,6 +16,13 @@
  * easing and duration are independent of the animated value's units.
  */
 export type MotionValueRange = 'distance' | 'unit';
+
+/** The Replay button's accessible name. A motion page shows many specimens, so each name must say
+ *  which one it replays: the specimen's visible label, else its duration (timing) or "spring". */
+export function motionReplayLabel(specimen: { kind: 'timing' | 'spring'; duration?: number; label?: string }): string {
+  if (specimen.label) return `Replay ${specimen.label}`;
+  return specimen.kind === 'timing' ? `Replay ${specimen.duration}ms timing` : 'Replay spring';
+}
 
 /** The `Animated.Value` target to animate toward — and the value a reduced-motion replay jumps to
  *  instantly — for a given domain and pixel distance. */
