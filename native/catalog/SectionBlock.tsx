@@ -6,6 +6,7 @@ import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { ReferenceDetails } from './ReferenceDetails';
 import { SpecimenSurface } from './SpecimenSurface';
+import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
 import { choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
 import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
@@ -246,7 +247,7 @@ export function SectionBlock<TId extends string>({
   checkCompleteness(def);
   // Memoized so Blocks' placement effect runs on real changes, not on every render.
   const blocks = useMemo(() => presentationBlocks(def, { defaultPreviewWidths }), [def, defaultPreviewWidths]);
-  const surface = def.specimenSurface ?? 'neutral';
+  const surface = def.specimenSurface ?? DEFAULT_SPECIMEN_SURFACE;
   // react-native-web reads `aria-level`; React Native's prop types do not declare it.
   const headingLevelProps = { 'aria-level': headingLevel } as Record<string, unknown>;
 

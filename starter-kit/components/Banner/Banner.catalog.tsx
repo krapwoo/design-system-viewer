@@ -5,6 +5,8 @@ import { Banner } from './Banner';
 export default defineCatalogPage({
   component: 'Banner',
   group: 'Surfaces',
+  // White or near-white component: a gray stage shows its edges.
+  specimenSurface: 'neutral',
   description: 'An inline callout for status/announcements — five semantic variants, optional collapsible body, inline link, and action button.',
   whenToUse: "Persistent and in-flow, describing a standing condition about the screen's content. For a transient, self-contained event notification, use Toast instead.",
   a11y: 'When onPress/action is set the header/button are Pressables; the collapsible header toggles the description with a chevron affordance.',

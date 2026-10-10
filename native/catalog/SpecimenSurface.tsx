@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE } from './tokens';
-import { SPECIMEN_SURFACE_WIDTH_STYLE } from './specimenSurfaceStyle';
+import { DEFAULT_SPECIMEN_SURFACE, SPECIMEN_SURFACE_WIDTH_STYLE, specimenSurfaceHasInset } from './specimenSurfaceStyle';
 import type { SpecimenSurfaceKind } from './types';
 
 /**
@@ -15,7 +15,7 @@ import type { SpecimenSurfaceKind } from './types';
  * the real comparison-cell width instead of collapsing to 0px.
  */
 export function SpecimenSurface({
-  surface = 'neutral',
+  surface = DEFAULT_SPECIMEN_SURFACE,
   style,
   children,
 }: {
@@ -23,7 +23,7 @@ export function SpecimenSurface({
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
 }) {
-  return <View style={[styles.base, SURFACE_FILL[surface], style]}>{children}</View>;
+  return <View style={[styles.base, SURFACE_FILL[surface], specimenSurfaceHasInset(surface) && styles.inset, style]}>{children}</View>;
 }
 
 // 'dark' reuses CATALOG_COLOR.text (the catalog's own darkest token) rather than adding a new
@@ -40,7 +40,6 @@ const styles = StyleSheet.create({
     ...SPECIMEN_SURFACE_WIDTH_STYLE,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: CATALOG_RADIUS.sm,
-    padding: CATALOG_SPACE.md,
   },
+  inset: { borderRadius: CATALOG_RADIUS.sm, padding: CATALOG_SPACE.md },
 });

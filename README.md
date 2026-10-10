@@ -192,11 +192,12 @@ actually apply:
 - `specimenSize: 'compact' | 'regular' | 'wide'` — the page's specimen width class.
 - `specimenSurface: 'neutral' | 'white' | 'dark' | 'transparent'` — the catalog-owned background
   behind every live specimen on this page (list/grouped/grid cells, and a non-token `render()`
-  preview). Defaults to `'neutral'` (a light gray stage, visibly distinct from the surrounding
-  white card) — reach for `'dark'` to check a low-contrast component against a dark background, or
-  `'transparent'` when the surface itself would be misleading (e.g. a component whose own
-  elevation/shadow needs to read against the page, not a chip). Token galleries and sections always
-  keep their current, unstaged presentation regardless of this setting.
+  preview). Defaults to `'transparent'`: no backdrop, so most pages need nothing. Turn one on
+  where it helps: `'neutral'` (a light gray stage) for a component that is itself white or near-white
+  (a white card or sheet, a neutral banner), so its edges show; `'dark'` to check a light or
+  low-contrast component against a dark background; `'white'` to force a white stage. The viewer
+  never looks at a component's colours, so this is the page author's call. Token galleries and
+  sections never get a stage.
 - `variants`/`states`' own `maxColumns: 1 | 2 | 3 | 4 | 5` — caps how many columns that slot's list
   ever wraps into (e.g. a 3-item size scale that should always read as one row of exactly 3, never
   more just because a laptop is wide). A narrow window still drops below the cap when it has to —

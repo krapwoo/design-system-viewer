@@ -12,6 +12,8 @@ const styles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'Surface',
   group: 'Surfaces',
+  // White or near-white component: a gray stage shows its edges.
+  specimenSurface: 'neutral',
   description:
     "Declares \"this subtree's background is tone\" — renders a plain View filled with the matching token (surface.white or surface.main) and provides that tone to descendants via context, so a tone-aware component inside (e.g. FieldContainer/InputField) can automatically pick a fill that contrasts with it instead of assuming white.",
   whenToUse:

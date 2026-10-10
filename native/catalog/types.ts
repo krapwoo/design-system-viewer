@@ -66,10 +66,9 @@ export type SpecimenSize = 'compact' | 'regular' | 'wide';
 export type PreviewWidths = readonly number[] | 'full';
 
 /** Background behind a live component specimen (the list/grouped/grid cell, or the preview frame)
- *  — a neutral (default), explicit white, dark, or transparent catalog-owned stage, so a specimen
- *  reads as visibly separate from the surrounding white card rather than floating on it, which
- *  matters most for a low-contrast or motion-only component that could otherwise blend into a
- *  plain white background. Purely a fixed catalog-chrome backdrop: it never inspects or infers the
+ *  — none by default (`'transparent'`), or a neutral gray, white, or dark catalog-owned stage a
+ *  page opts in to when its component would otherwise blend into the white cell (a white card or
+ *  sheet, a neutral banner) or needs checking on a dark background. Purely a fixed catalog-chrome backdrop: it never inspects or infers the
  *  wrapped component's own colors, and is never applied to token galleries/sections, which keep
  *  their current full-width, unstaged presentation regardless of this setting. */
 export type SpecimenSurfaceKind = 'neutral' | 'white' | 'dark' | 'transparent';
@@ -218,7 +217,7 @@ export interface SectionDef<TId extends string = string> {
    *  and everything else is 'regular'. */
   specimenSize?: SpecimenSize;
   /** Background stage behind every live component specimen on this page (list/grouped/grid cells,
-   *  and a `render()` preview that isn't a token gallery). Defaults to `'neutral'`. See
+   *  and a `render()` preview that isn't a token gallery). Defaults to `'transparent'` (no backdrop). See
    *  `SpecimenSurfaceKind`. */
   specimenSurface?: SpecimenSurfaceKind;
   /** Widths for this page's `render()` preview, e.g. `[402, 320]` to add a small-phone example.

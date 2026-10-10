@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
 import { SpecimenSurface } from './SpecimenSurface';
+import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 
 /**
@@ -16,7 +17,7 @@ export function ComparisonGroups({
   groups,
   size,
   label,
-  surface = 'neutral',
+  surface = DEFAULT_SPECIMEN_SURFACE,
 }: {
   groups: ListGroup[];
   size: SpecimenSize;

@@ -1,3 +1,5 @@
+import type { SpecimenSurfaceKind } from './types.ts';
+
 /**
  * `SpecimenSurface`'s width policy, kept free of any `react-native` import so `node --test` can
  * assert on it directly (see `native/catalog/__tests__/specimenSurfaceStyle.test.ts`).
@@ -13,3 +15,15 @@
 export const SPECIMEN_SURFACE_WIDTH_STYLE = {
   alignSelf: 'stretch',
 } as const;
+
+/** No backdrop unless a page asks for one: most examples already read clearly on the white cell.
+ *  Set `specimenSurface: 'neutral'` on a page whose component is itself white or near-white (a
+ *  white card, sheet or neutral banner) so its edges show. */
+export const DEFAULT_SPECIMEN_SURFACE: SpecimenSurfaceKind = 'transparent';
+
+/** Whether the stage gets its own padding and rounded corners. A transparent surface gets none, so
+ *  an example sits exactly where it did before surfaces existed (the comparison cell already pads
+ *  it); a coloured stage needs them so the example doesn't touch its edges. */
+export function specimenSurfaceHasInset(surface: SpecimenSurfaceKind): boolean {
+  return surface !== 'transparent';
+}

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { MATRIX_LAYOUT, listGeometry, type ListItem } from './comparison';
 import { SpecimenSurface } from './SpecimenSurface';
+import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 
 /**
@@ -17,7 +18,7 @@ export function ComparisonList({
   size,
   label,
   maxColumns,
-  surface = 'neutral',
+  surface = DEFAULT_SPECIMEN_SURFACE,
 }: {
   items: ListItem[];
   size: SpecimenSize;
