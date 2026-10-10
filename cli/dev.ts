@@ -10,7 +10,11 @@ import { sync } from './sync.ts';
 import { writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
-import { checkForUpdate, isUpdateCheckEnabled, writeUpdateFile, type UpdateCheckResult } from './updateCheck.ts';
+import {
+  buildVersionStatus, checkForUpdate, createVersionController, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck, runUpdateCheck,
+  statusFromCheck, writeUpdateFile, writeVersionFile,
+} from './updateCheck.ts';
+import type { VersionStatus } from '../native/catalog/types.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { createUpdateEndpoint, type EndpointDeps, type UpdateStatus } from './endpoint.ts';
 import { buildUpdatePlan, type UpdatePlan } from './updatePlan.ts';
@@ -82,12 +86,22 @@ export function reloadWorkspace(projectRoot: string, updateEndpoint?: { baseUrl:
 export async function refreshUpdateFile(
   config: ResolvedConfig,
   ownVersion: string,
-  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv } = {},
-): Promise<void> {
-  const result: UpdateCheckResult | undefined = isUpdateCheckEnabled(config, options.env ?? process.env)
-    ? await (options.checkForUpdate ?? checkForUpdate)(ownVersion)
-    : undefined;
-  writeUpdateFile(config.projectRoot, result);
+  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv; prefsDir?: string } = {},
+): Promise<VersionStatus> {
+  const env = options.env ?? process.env;
+  const personal = readPersonalAutoCheck(options.prefsDir ?? defaultPreferencesDir(), config.projectRoot);
+  const autoCheck = resolveAutoCheck(config, env, personal);
+  // An injected `checkForUpdate` (tests) stands in for the real check; it can't report "couldn't
+  // reach npm", so it always counts as answered.
+  const injected = options.checkForUpdate;
+  const status = injected
+    ? autoCheck.enabled
+      ? statusFromCheck(ownVersion, autoCheck, { result: await injected(ownVersion), reached: true })
+      : { current: ownVersion, autoCheck, lastOutcome: 'not-run' as const, update: null }
+    : await buildVersionStatus(ownVersion, autoCheck);
+  writeUpdateFile(config.projectRoot, status.update ? { ...status.update, checkedAt: status.lastCheckedAt ?? new Date().toISOString() } : undefined);
+  writeVersionFile(config.projectRoot, status);
+  return status;
 }
 
 // Promisified, not `execFileSync` — install/migrate/doctor each take real seconds, and this now
@@ -334,8 +348,19 @@ export async function performRestart(
 export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
-  await refreshUpdateFile(initialConfig, ownVersion);
   let config = initialConfig;
+  const version = createVersionController({
+    ownVersion,
+    projectRoot: initialConfig.projectRoot,
+    prefsDir: defaultPreferencesDir(),
+    env: process.env,
+    initial: await refreshUpdateFile(initialConfig, ownVersion),
+    getConfig: () => config,
+    // **Check now** always asks npm, even with automatic checks off: you asked for this one check.
+    // The result lives only in this process; `update.json` and `version.json` are rewritten at
+    // the next start (rewriting them now would reload the page).
+    runCheck: () => runUpdateCheck(ownVersion, { force: true, timeoutMs: 5000 }),
+  });
   sync(config);
 
   // Restart handoff step 2/4: a status file left by the *previous* `dev` process (right before it
@@ -387,6 +412,9 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       });
     },
     getStatus: () => updateStatus,
+    getVersionStatus: version.getVersionStatus,
+    checkNow: version.checkNow,
+    setAutoCheck: version.setAutoCheck,
   };
   const endpointServer = createUpdateEndpoint(endpointDeps);
   await new Promise<void>((resolve) => endpointServer.listen(0, '127.0.0.1', resolve));
@@ -424,6 +452,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     configDebounceTimer = setTimeout(() => {
       try {
         config = reloadWorkspace(config.projectRoot, updateEndpoint);
+        version.refreshAutoCheck();
       } catch (error) {
         console.warn(`Could not reload ds-viewer.config.ts after a change: ${(error as Error).message}`);
       }

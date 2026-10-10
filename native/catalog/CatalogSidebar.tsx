@@ -43,7 +43,7 @@ function NavItem<TId extends string>({ id, label, active, onPress }: { id: TId; 
   );
 }
 
-function FooterLink({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function FooterLink({ label, kind, active, onPress }: { label: string; kind: 'update' | 'version'; active: boolean; onPress: () => void }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   return (
@@ -63,7 +63,8 @@ function FooterLink({ label, active, onPress }: { label: string; active: boolean
         focused && styles.focusRing,
       ]}
     >
-      <View style={styles.footerDot} />
+      {/* The dot marks an available update; the everyday version line is quiet. */}
+      {kind === 'update' && <View style={styles.footerDot} />}
       <Text style={[styles.footerLabel, active && styles.footerLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -96,10 +97,10 @@ export function CatalogSidebar<TId extends string>({
   labels?: ReadonlyMap<string, string>;
   active: string | undefined;
   onPress: (id: TId) => void;
-  /** The quiet update-notice link below the nav list (design §5's footer line), or `undefined`
-   *  when there is no update to show. `active` is true while the update page itself is open — it
-   *  gets the same active styling a selected nav item would. */
-  footer?: { label: string; active: boolean; onPress: () => void };
+  /** The link below the nav list that opens the update page: the installed version (`'version'`),
+   *  or the update notice with a dot (`'update'`, design §5's footer line). `active` is true while
+   *  the update page itself is open — it gets the same active styling a selected nav item would. */
+  footer?: { label: string; kind?: 'update' | 'version'; active: boolean; onPress: () => void };
 }) {
   const [query, setQuery] = useState('');
   // A bundled local image (the only kind `cli/workspace.ts` ever produces — see its doc comment
@@ -201,7 +202,7 @@ export function CatalogSidebar<TId extends string>({
       </ScrollView>
       {footer && (
         <View style={styles.footerContainer}>
-          <FooterLink label={footer.label} active={footer.active} onPress={footer.onPress} />
+          <FooterLink label={footer.label} kind={footer.kind ?? 'update'} active={footer.active} onPress={footer.onPress} />
         </View>
       )}
     </View>

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { DS_VIEWER_SECRET_HEADER } from './catalogNavigation';
-import { daysAgoLabel, isAlreadyUpToDateError, resolvePanelPhase, type UpdatePlanView, type UpdateStatusView } from './updatePanelState';
-import type { UpdateNotice } from './types';
+import {
+  autoCheckHelp, bumpLabel, checkedAgoLabel, daysAgoLabel, isAlreadyUpToDateError, resolvePanelPhase, versionOverview, type UpdatePlanView, type UpdateStatusView,
+} from './updatePanelState';
+import type { UpdateNotice, VersionStatus } from './types';
 
 function isWeb(): boolean {
   return Platform.OS === 'web' && typeof window !== 'undefined';
@@ -25,7 +27,7 @@ function VersionsHeader({ current, latest, breaking, releasedAt }: { current: st
         <Text style={styles.arrow}>→</Text>
         <Text style={styles.versionsText}>{latest}</Text>
         <View style={[styles.pill, breaking && styles.pillMajor]}>
-          <Text style={[styles.pillText, breaking && styles.pillTextMajor]}>{breaking ? 'Major' : 'Minor'}</Text>
+          <Text style={[styles.pillText, breaking && styles.pillTextMajor]}>{bumpLabel(current, latest, breaking)}</Text>
         </View>
       </View>
       <Text style={styles.muted}>{`You’re on ${current}.${releasedAt ? ` ${daysAgoLabel(releasedAt, Date.now())}` : ''}`}</Text>
@@ -191,6 +193,140 @@ function failureCopy(failedStep: string, current: string): { headline: string; b
 }
 
 /**
+ * The update page when no newer version is known (approved mockup
+ * docs/design/2026-10-10-ds-viewer-update-page-always-approved.html, states 3, 4, 6, 7 and 8): the
+ * installed version and which situation applies, when it last checked, the automatic-check
+ * switch, and **Check now**. Without an endpoint (a static build) it shows the status only.
+ */
+function VersionDetails({
+  status,
+  endpoint,
+  onStatus,
+}: {
+  status: VersionStatus;
+  endpoint?: Endpoint;
+  onStatus: (next: VersionStatus) => void;
+}) {
+  const [checking, setChecking] = useState(false);
+  const [justChecked, setJustChecked] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState<string | undefined>(undefined);
+  const live = Boolean(endpoint) && isWeb();
+  const overview = versionOverview(status, justChecked, Date.now());
+  const help = autoCheckHelp(status.autoCheck);
+
+  const checkNow = async () => {
+    if (!endpoint || checking) return;
+    setChecking(true);
+    setJustChecked(false);
+    setLocalError(undefined);
+    try {
+      const res = await authedFetch(endpoint, '/version/check', { method: 'POST' });
+      if (!res.ok) throw new Error(String(res.status));
+      const next = (await res.json()) as VersionStatus;
+      // A newer version moves the whole page into the update flow (the parent re-renders with it).
+      setJustChecked(next.lastOutcome === 'ok' && !next.update);
+      onStatus(next);
+    } catch {
+      setLocalError('Couldn’t reach the viewer’s local server. If this keeps happening, restart npx ds-viewer dev.');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const setAutoCheck = async (enabled: boolean) => {
+    if (!endpoint || saving) return;
+    setSaving(true);
+    setLocalError(undefined);
+    try {
+      const res = await authedFetch(endpoint, '/version/auto-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      onStatus((await res.json()) as VersionStatus);
+    } catch {
+      setLocalError('Couldn’t save the setting. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const unreachable = status.lastOutcome === 'unreachable';
+  return (
+    <>
+      <View style={styles.versionsRow}>
+        <Text style={styles.versionsText}>{status.current}</Text>
+        {overview.pill === 'latest' && (
+          <View style={[styles.pill, styles.pillSuccess]}>
+            <Text style={[styles.pillText, styles.pillTextSuccess]}>Latest</Text>
+          </View>
+        )}
+        {overview.pill === 'off' && (
+          <View style={[styles.pill, styles.pillOff]}>
+            <Text style={[styles.pillText, styles.pillTextOff]}>Checks off</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.muted}>{overview.line}</Text>
+      {overview.note && (
+        <NoteBox variant={overview.note.variant}>
+          {overview.note.bold ? <Text style={styles.noteBoxBold}>{overview.note.bold}</Text> : null}
+          {overview.note.text}
+        </NoteBox>
+      )}
+      {!unreachable && (
+        <View style={styles.facts}>
+          <View style={styles.factRow}>
+            <Text style={styles.factLabel}>Last checked</Text>
+            <Text style={styles.factValue}>{checkedAgoLabel(status.lastCheckedAt, Date.now())}</Text>
+          </View>
+          <View style={styles.factRow}>
+            <View style={styles.switchText}>
+              <Text style={styles.switchLabel}>Check for updates automatically</Text>
+              <Text style={styles.switchHelp}>{help.text}</Text>
+            </View>
+            <Switch
+              value={status.autoCheck.enabled}
+              onValueChange={setAutoCheck}
+              disabled={!live || help.locked || saving || checking}
+              // React Native web passes only the label to the real input (no description), so the
+              // helper text rides in the accessible name: a screen reader hears why it's on or off.
+              accessibilityLabel={`Check for updates automatically. ${help.text}`}
+              trackColor={{ false: '#c9c9c9', true: CATALOG_COLOR.accent }}
+              thumbColor="#ffffff"
+              // The approved mockup's 44 × 26 switch; React Native web's default is 40 × 20, below
+              // the 24px minimum hit target.
+              style={styles.switch}
+              {...({ activeThumbColor: '#ffffff' } as Record<string, unknown>)}
+            />
+          </View>
+        </View>
+      )}
+      {localError && <NoteBox variant="err">{localError}</NoteBox>}
+      {live && (
+        <View style={styles.actions}>
+          <Pressable
+            onPress={checkNow}
+            disabled={checking}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: checking, busy: checking }}
+            style={[styles.secondaryButton, styles.buttonRow, checking && styles.busyButton]}
+          >
+            {checking && <ActivityIndicator size="small" color={CATALOG_COLOR.textMuted} />}
+            <Text style={[styles.secondaryButtonText, checking && styles.busyButtonText]}>
+              {checking ? 'Checking…' : overview.action === 'retry' ? 'Try again' : 'Check now'}
+            </Text>
+          </Pressable>
+          {unreachable && !checking && <Text style={styles.muted}>or run <Code>npm view @krapwoo/ds-viewer version</Code></Text>}
+        </View>
+      )}
+    </>
+  );
+}
+
+/**
  * Design §5's update page (`#ds-viewer-update`), approved mockup direction "C · Update page".
  * Fetches `/update/status` once on mount, then `/plan` — `resolvePanelPhase` (Task 15) picks which
  * of the mockup's 10 states to render from those two pieces of data, polled (never pushed) at a
@@ -203,11 +339,16 @@ function failureCopy(failedStep: string, current: string): { headline: string; b
  */
 export function UpdatePanel({
   update,
+  versionStatus,
+  onVersionStatus,
   endpoint,
   appName,
   headingRef,
 }: {
   update: UpdateNotice | null;
+  /** When present, the no-update view shows the version, the switch and **Check now**. */
+  versionStatus?: VersionStatus | null;
+  onVersionStatus?: (next: VersionStatus) => void;
   endpoint?: Endpoint;
   appName: string;
   headingRef?: React.Ref<View>;
@@ -325,6 +466,8 @@ export function UpdatePanel({
     content =
       status.phase === 'success' ? (
         <SuccessContent status={status} />
+      ) : versionStatus ? (
+        <VersionDetails status={versionStatus} endpoint={endpoint} onStatus={onVersionStatus ?? (() => {})} />
       ) : (
         <NoteBox variant="ok">You’re already up to date.</NoteBox>
       );
@@ -486,7 +629,7 @@ export function UpdatePanel({
       {/* react-native-web reads `aria-level`; React Native's own prop types do not declare it —
        *  the same cast `SectionBlock.tsx`'s own heading target already uses. */}
       <View ref={headingRef} tabIndex={-1} role="heading" {...({ 'aria-level': 1 } as Record<string, unknown>)} style={styles.headingTarget}>
-        <Text style={styles.title}>Update DS Viewer</Text>
+        <Text style={styles.title}>DS Viewer updates</Text>
       </View>
       {content}
     </View>
@@ -517,6 +660,19 @@ const styles = StyleSheet.create({
   pillText: { fontSize: CATALOG_TYPE.sm, fontWeight: '700', color: CATALOG_COLOR.accent },
   pillTextMajor: { color: CATALOG_COLOR.warning },
   pillTextSuccess: { color: CATALOG_COLOR.success },
+  pillOff: { backgroundColor: CATALOG_COLOR.chip },
+  pillTextOff: { color: CATALOG_COLOR.textMuted },
+  facts: { marginTop: 18, borderTopWidth: 1, borderTopColor: CATALOG_COLOR.border },
+  factRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: CATALOG_SPACE.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },
+  factLabel: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted },
+  factValue: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.text },
+  switchText: { flex: 1, gap: 2 },
+  switchLabel: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
+  switch: { width: 44, height: 26 },
+  switchHelp: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  buttonRow: { flexDirection: 'row', gap: CATALOG_SPACE.sm },
+  busyButton: { borderColor: CATALOG_COLOR.border },
+  busyButtonText: { color: CATALOG_COLOR.textMuted },
   muted: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, marginTop: 4 },
   block: { marginTop: 18 },
   h3: { fontSize: CATALOG_TYPE.panelHeading, textTransform: 'uppercase', letterSpacing: 0.5, color: CATALOG_COLOR.text, marginBottom: 8 },

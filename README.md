@@ -400,9 +400,17 @@ markers or its own file.
 
 ## Updating
 
-A quiet line appears in the sidebar footer when a new version is published — a banner too, for a
-major version, dismissible per version. Either opens the update page (`#ds-viewer-update`), which
-shows what would change and one **Update now** button:
+The sidebar footer always shows the installed version ("DS Viewer 0.4.5") and opens the update
+page (`#ds-viewer-update`). With no newer version known, that page says which situation you're in —
+on the latest version, automatic checks off, or npm unreachable — and offers **Check now** (asks npm
+right away, even with automatic checks off) and a **Check for updates automatically** switch. The
+switch saves your own choice for this project on this computer (in your user settings folder, not in
+the project), overriding the project's `updateCheck` for you only; `DS_VIEWER_NO_UPDATE_CHECK=1`
+(CI) still wins over both. `doctor` follows the same setting.
+
+When a new version is published, the footer turns into "Update available · 0.5.0" — a banner too,
+for a major version, dismissible per version. Either opens the same page, which then shows what would
+change and one **Update now** button:
 
 ```
 0.4.0 → 0.5.0  Minor

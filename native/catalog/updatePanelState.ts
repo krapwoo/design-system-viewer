@@ -1,3 +1,5 @@
+import type { AutoCheckSource, VersionStatus } from './types.ts';
+
 /** The same shape as `cli/updatePlan.ts`'s `UpdatePlan` — duplicated, not imported: `native/catalog/`
  *  is the published package root and never imports from `cli/` (the reverse is normal: `cli/`
  *  already imports `native/catalog/` throughout). The endpoint's `POST /plan` response is this
@@ -71,4 +73,74 @@ export function daysAgoLabel(releasedAt: string, nowMs: number): string {
   if (days <= 0) return 'Released today.';
   if (days === 1) return 'Released 1 day ago.';
   return `Released ${days} days ago.`;
+}
+
+/** "Last checked" on the update page. */
+export function checkedAgoLabel(at: string | undefined, nowMs: number): string {
+  if (!at) return 'Never';
+  const minutes = Math.floor((nowMs - Date.parse(at)) / 60_000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+export interface VersionOverview {
+  pill?: 'latest' | 'off';
+  line: string;
+  note?: { variant: 'ok' | 'err'; bold?: string; text: string };
+  /** **Check now**, or **Try again** after npm didn't answer. */
+  action: 'check' | 'retry';
+}
+
+/** The update page when no newer version is known: which of "latest", "checks off", "not checked
+ *  yet" and "couldn't reach npm" applies. Only a check that actually answered may say "latest".
+ *  `justChecked` is true right after **Check now** found nothing newer. */
+export function versionOverview(status: VersionStatus, justChecked: boolean, nowMs: number): VersionOverview {
+  if (status.lastOutcome === 'unreachable') {
+    const last = status.lastCheckedAt ? ` The last successful check, ${checkedAgoLabel(status.lastCheckedAt, nowMs).toLowerCase()}, found no newer version.` : '';
+    return { line: `You’re on ${status.current}.`, action: 'retry', note: { variant: 'err', bold: 'Couldn’t reach npm.', text: ` You may be offline.${last}` } };
+  }
+  if (status.lastOutcome === 'not-run') {
+    if (!status.autoCheck.enabled) {
+      return { pill: 'off', line: `You’re on ${status.current}. Automatic checks are off, so this can’t tell whether a newer version exists.`, action: 'check' };
+    }
+    return { line: `You’re on ${status.current}. Not checked yet: automatic checks run when the viewer starts.`, action: 'check' };
+  }
+  // Turned off after a check answered (approved mockup state 7b); a fresh Check now still wins.
+  if (!status.autoCheck.enabled && !justChecked) {
+    return { pill: 'off', line: `You’re on ${status.current}. Automatic checks are off.`, action: 'check' };
+  }
+  return {
+    pill: 'latest',
+    line: 'You’re on the latest version.',
+    action: 'check',
+    ...(justChecked ? { note: { variant: 'ok' as const, text: 'Checked just now. No newer version.' } } : {}),
+  };
+}
+
+/** The switch's helper text: where the setting in effect comes from. Only CI's environment
+ *  variable locks the switch. */
+export function autoCheckHelp(autoCheck: { enabled: boolean; source: AutoCheckSource }): { text: string; locked: boolean } {
+  if (autoCheck.source === 'env') return { text: 'Off in this environment (DS_VIEWER_NO_UPDATE_CHECK=1).', locked: true };
+  if (autoCheck.source === 'personal') {
+    return { text: autoCheck.enabled ? 'Once a day, when the viewer starts. Saved for you on this computer.' : 'Turned off by you on this computer.', locked: false };
+  }
+  if (!autoCheck.enabled) {
+    return { text: 'Off for this project (updateCheck: false in ds-viewer.config.ts). Turning it on here applies to you only.', locked: false };
+  }
+  return { text: 'Once a day, when the viewer starts.', locked: false };
+}
+
+/** The update's size pill. Breaking updates are always "Major" (the CLI decides that); otherwise
+ *  a change in the second number is "Minor" and anything smaller "Patch". */
+export function bumpLabel(current: string, latest: string, breaking: boolean): 'Major' | 'Minor' | 'Patch' {
+  if (breaking) return 'Major';
+  const parts = (v: string) => /^(\d+)\.(\d+)\.(\d+)/.exec(v)?.slice(1, 4).map(Number);
+  const a = parts(current);
+  const b = parts(latest);
+  if (!a || !b) return 'Minor';
+  return a[0] === b[0] && a[1] === b[1] ? 'Patch' : 'Minor';
 }

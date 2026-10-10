@@ -8,7 +8,7 @@ import { sync } from './sync.ts';
 import { formatHuman, runDoctor, toDoctorJson } from './doctor.ts';
 import { explainPage, formatExplain, parseHeights } from './explain.ts';
 import { readOwnVersion } from './packageVersion.ts';
-import { checkForUpdate, isUpdateCheckEnabled } from './updateCheck.ts';
+import { checkForUpdate, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck } from './updateCheck.ts';
 import { runKitDiffCommand } from './kitDiff.ts';
 import { formatMigrateHuman, runMigrate } from './migrate.ts';
 import { runUpdate } from './update.ts';
@@ -132,13 +132,15 @@ export async function runInit(projectRoot: string, rest: string[], options: RunI
 export async function runDoctorCommand(
   projectRoot: string,
   rest: string[],
-  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv } = {},
+  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv; prefsDir?: string } = {},
 ): Promise<{ output: string; exitCode: number }> {
   const config = resolveConfig(projectRoot);
   const result = runDoctor(config);
   // Design §4 "`--ci`: ... no update check." — `--ci` skips this whole block even when
   // `updateCheck` is otherwise enabled; `result.update` stays `null`.
-  if (!rest.includes('--ci') && isUpdateCheckEnabled(config, options.env ?? process.env)) {
+  // Same precedence as the viewer: CI's environment variable, your own switch, the project config.
+  const autoCheck = resolveAutoCheck(config, options.env ?? process.env, readPersonalAutoCheck(options.prefsDir ?? defaultPreferencesDir(), config.projectRoot));
+  if (!rest.includes('--ci') && autoCheck.enabled) {
     const ownVersion = readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
     const updateResult = await (options.checkForUpdate ?? checkForUpdate)(ownVersion);
     if (updateResult) {

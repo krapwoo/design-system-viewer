@@ -256,6 +256,26 @@ export interface UpdateNotice {
   releasedAt?: string;
 }
 
+/** Where the "check automatically" setting in effect comes from, strongest first: the
+ *  `DS_VIEWER_NO_UPDATE_CHECK=1` environment variable (CI), your own switch on the update page
+ *  (saved per project on this computer), the project's `updateCheck` config, or the default (on). */
+export type AutoCheckSource = 'env' | 'personal' | 'project' | 'default';
+
+/** What the update page and the sidebar's version line show. Written by `dev` at startup
+ *  (`.ds-viewer/version.json`) and kept current by the local endpoint (`GET /version`,
+ *  `POST /version/check`, `POST /version/auto-check`). */
+export interface VersionStatus {
+  /** The installed ds-viewer version. */
+  current: string;
+  autoCheck: { enabled: boolean; source: AutoCheckSource };
+  /** The last successful check on this computer (any project), when known. */
+  lastCheckedAt?: string;
+  /** This run's most recent check: answered, npm unreachable, or not run (checks off). */
+  lastOutcome: 'ok' | 'unreachable' | 'not-run';
+  /** A newer version, when one is known. */
+  update: UpdateNotice | null;
+}
+
 /** One titled card on a token page (`SectionDef.tokenSections`). */
 export interface TokenSection {
   /** The kind of token this card holds, e.g. "Semantic colours", "Palette", "Body". */

@@ -1,7 +1,8 @@
 // cli/updateCheck.ts
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { compareVersions, isBreakingUpgrade, parseVersion } from './semver.ts';
+import type { AutoCheckSource, VersionStatus } from '../native/catalog/types.ts';
 
 /** Exactly what the user-wide cache file holds — deliberately missing `current`/`breaking`
  *  (Critical finding, Fable correction pass): the cache is shared across every project on this
@@ -110,6 +111,76 @@ export interface UpdateCheckOptions {
   /** Each of the two requests' own timeout (design §5: "Timeout under 1 second each"). */
   timeoutMs?: number;
   now?: () => number;
+  /** Ask npm even when the 24-hour cache is fresh (the update page's **Check now**). */
+  force?: boolean;
+}
+
+/** One update check, with whether npm actually answered — `checkForUpdate` alone can't tell "no
+ *  newer version" from "couldn't reach npm", which the update page must say differently. Never
+ *  throws. `cached` is the cache as it stands afterwards (the last successful check on this
+ *  computer), when there is one. */
+export async function runUpdateCheck(
+  currentVersion: string,
+  options: UpdateCheckOptions = {},
+): Promise<{ result?: UpdateCheckResult; reached: boolean; cached?: CachedUpdateCheck }> {
+  const now = options.now ?? Date.now;
+  const cacheDir = options.cacheDir ?? cacheDirFor(process.platform, process.env, process.env.HOME ?? process.env.USERPROFILE ?? '');
+  const cached = readCache(cacheDir);
+  // `parseVersion` (inside `toResultOrUndefined`) throws on a non-semver `latest`, whether from a
+  // malformed cache file or an unexpected registry body; this function must never throw.
+  const safeResult = (entry: CachedUpdateCheck) => {
+    try {
+      return toResultOrUndefined(entry, currentVersion);
+    } catch {
+      return undefined;
+    }
+  };
+  if (cached && !options.force && isCacheFresh(cached, now())) return { result: safeResult(cached), reached: true, cached };
+
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 900;
+  let latest: string;
+  try {
+    const registryResponse = (await fetchWithTimeout(REGISTRY_URL, fetchImpl, timeoutMs)) as { version: string };
+    latest = registryResponse.version;
+    parseVersion(latest);
+  } catch {
+    // A stale cache is still better than nothing once offline — still run through the same
+    // not-actually-newer guard, never a raw passthrough.
+    return { result: cached ? safeResult(cached) : undefined, reached: false, cached };
+  }
+
+  let summary: string[] = [];
+  let releasedAt: string | undefined;
+  try {
+    const release = (await fetchWithTimeout(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${latest}`,
+      fetchImpl,
+      timeoutMs,
+    )) as { body?: string; published_at?: string };
+    summary = release.body ? extractSummaryBullets(release.body) : [];
+    releasedAt = release.published_at;
+  } catch {
+    // The version comparison is the half that matters for the footer/banner; a missing release
+    // summary (private repo hiccup, a tag pushed slightly before its release note) degrades to an
+    // empty "What's new" list, never a failed check.
+  }
+
+  const fresh: CachedUpdateCheck = { latest, summary, releasedAt, checkedAt: new Date(now()).toISOString() };
+  // A registry that (briefly, during its own propagation) reports an older "latest" than what is
+  // already cached never regresses the cache's version, but the check time still moves forward.
+  let stored = fresh;
+  try {
+    if (cached && compareVersions(parseVersion(fresh.latest), parseVersion(cached.latest)) < 0) stored = { ...cached, checkedAt: fresh.checkedAt };
+  } catch {
+    // An unreadable cached version is simply replaced.
+  }
+  try {
+    writeCache(cacheDir, stored);
+  } catch {
+    // A read-only cache folder must not turn a successful check into a failure.
+  }
+  return { result: safeResult(fresh), reached: true, cached: stored };
 }
 
 /** Design §5 "Update check" in full. Never throws — every failure (a stale/missing cache with no
@@ -117,56 +188,109 @@ export interface UpdateCheckOptions {
  *  usable result or `undefined`, so every caller can treat "no update known" as the one, uniform
  *  outcome of being offline, blocked, or genuinely up to date with nothing cached yet. */
 export async function checkForUpdate(currentVersion: string, options: UpdateCheckOptions = {}): Promise<UpdateCheckResult | undefined> {
-  // M5 (Minor, Fable correction pass): this function is documented — and relied on by `dev()`,
-  // which `await`s it before starting anything else — as never throwing. `parseVersion` (inside
-  // `toResultOrUndefined`) throws on a non-semver `latest`, whether from a parseable-but-malformed
-  // cache file or an unexpected 200 body with no real `version`; either would otherwise stop `dev`
-  // from starting at all.
   try {
-    const now = options.now ?? Date.now;
-    const cacheDir = options.cacheDir ?? cacheDirFor(process.platform, process.env, process.env.HOME ?? process.env.USERPROFILE ?? '');
-    const cached = readCache(cacheDir);
-    if (cached && isCacheFresh(cached, now())) return toResultOrUndefined(cached, currentVersion);
-
-    const fetchImpl = options.fetchImpl ?? fetch;
-    const timeoutMs = options.timeoutMs ?? 900;
-    let latest: string;
-    try {
-      const registryResponse = (await fetchWithTimeout(REGISTRY_URL, fetchImpl, timeoutMs)) as { version: string };
-      latest = registryResponse.version;
-    } catch {
-      // A stale cache is still better than nothing once offline — still run through the same
-      // not-actually-newer guard, never a raw passthrough.
-      return cached ? toResultOrUndefined(cached, currentVersion) : undefined;
-    }
-
-    let summary: string[] = [];
-    let releasedAt: string | undefined;
-    try {
-      const release = (await fetchWithTimeout(
-        `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${latest}`,
-        fetchImpl,
-        timeoutMs,
-      )) as { body?: string; published_at?: string };
-      summary = release.body ? extractSummaryBullets(release.body) : [];
-      releasedAt = release.published_at;
-    } catch {
-      // The version comparison is the half that matters for the footer/banner; a missing release
-      // summary (private repo hiccup, a tag pushed slightly before its release note) degrades to an
-      // empty "What's new" list, never a failed check.
-    }
-
-    const cachedResult: CachedUpdateCheck = { latest, summary, releasedAt, checkedAt: new Date(now()).toISOString() };
-    // compareVersions is used only to decide *whether* this is worth caching as "the latest" at all
-    // — a registry that (briefly, during its own propagation) reports an older "latest" than what
-    // is already cached never regresses the cache.
-    if (!cached || compareVersions(parseVersion(cachedResult.latest), parseVersion(cached.latest)) >= 0) {
-      writeCache(cacheDir, cachedResult);
-    }
-    return toResultOrUndefined(cachedResult, currentVersion);
+    return (await runUpdateCheck(currentVersion, options)).result;
   } catch {
     return undefined;
   }
+}
+
+/** A settings folder, not the cache folder (which the OS may clear): the personal switch must
+ *  survive. */
+export function preferencesDirFor(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, homedir: string): string {
+  if (platform === 'darwin') return path.posix.join(homedir, 'Library', 'Application Support', 'ds-viewer');
+  if (platform === 'win32') return path.win32.join(env.APPDATA ?? path.win32.join(homedir, 'AppData', 'Roaming'), 'ds-viewer');
+  return path.posix.join(env.XDG_CONFIG_HOME ?? path.posix.join(homedir, '.config'), 'ds-viewer');
+}
+
+export function defaultPreferencesDir(): string {
+  return preferencesDirFor(process.platform, process.env, process.env.HOME ?? process.env.USERPROFILE ?? '');
+}
+
+const PREFERENCES_FILE_NAME = 'preferences.json';
+type Preferences = { projects?: Record<string, { autoCheck?: boolean }> };
+
+function readPreferences(dir: string): Preferences {
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(dir, PREFERENCES_FILE_NAME), 'utf8')) as Preferences;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Your own "check automatically" switch for one project on this computer, or `undefined` when you
+ *  haven't set it (the project config then decides). */
+export function readPersonalAutoCheck(dir: string, projectRoot: string): boolean | undefined {
+  const value = readPreferences(dir).projects?.[path.resolve(projectRoot)]?.autoCheck;
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+export function writePersonalAutoCheck(dir: string, projectRoot: string, enabled: boolean): void {
+  const prefs = readPreferences(dir);
+  const projects = { ...(prefs.projects ?? {}) };
+  projects[path.resolve(projectRoot)] = { ...projects[path.resolve(projectRoot)], autoCheck: enabled };
+  mkdirSync(dir, { recursive: true });
+  // Write then rename, so a crash mid-write never leaves a half file that would read as "no
+  // settings" and silently reset every project's switch.
+  const target = path.join(dir, PREFERENCES_FILE_NAME);
+  const temp = `${target}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify({ ...prefs, projects }, null, 2)}\n`);
+  renameSync(temp, target);
+}
+
+/** Which setting decides automatic checks, strongest first: CI's environment variable, your own
+ *  switch, the project config, then on by default. */
+export function resolveAutoCheck(
+  config: { updateCheck?: boolean },
+  env: NodeJS.ProcessEnv,
+  personal: boolean | undefined,
+): { enabled: boolean; source: AutoCheckSource } {
+  if (env.DS_VIEWER_NO_UPDATE_CHECK === '1') return { enabled: false, source: 'env' };
+  if (personal !== undefined) return { enabled: personal, source: 'personal' };
+  if (config.updateCheck !== undefined) return { enabled: config.updateCheck, source: 'project' };
+  return { enabled: true, source: 'default' };
+}
+
+function toNotice(result: UpdateCheckResult | undefined): VersionStatus['update'] {
+  if (!result) return null;
+  return { current: result.current, latest: result.latest, breaking: result.breaking, summary: result.summary, releasedAt: result.releasedAt };
+}
+
+/** The version status `dev` starts with: runs the (cached) check only when automatic checks are on. */
+export async function buildVersionStatus(
+  currentVersion: string,
+  autoCheck: { enabled: boolean; source: AutoCheckSource },
+  options: UpdateCheckOptions = {},
+): Promise<VersionStatus> {
+  if (!autoCheck.enabled) {
+    const cacheDir = options.cacheDir ?? cacheDirFor(process.platform, process.env, process.env.HOME ?? process.env.USERPROFILE ?? '');
+    return { current: currentVersion, autoCheck, lastCheckedAt: readCache(cacheDir)?.checkedAt, lastOutcome: 'not-run', update: null };
+  }
+  return statusFromCheck(currentVersion, autoCheck, await runUpdateCheck(currentVersion, options));
+}
+
+/** Folds one check's outcome into a status (startup, or **Check now**). */
+export function statusFromCheck(
+  currentVersion: string,
+  autoCheck: { enabled: boolean; source: AutoCheckSource },
+  outcome: { result?: UpdateCheckResult; reached: boolean; cached?: CachedUpdateCheck },
+): VersionStatus {
+  return {
+    current: currentVersion,
+    autoCheck,
+    lastCheckedAt: outcome.cached?.checkedAt,
+    lastOutcome: outcome.reached ? 'ok' : 'unreachable',
+    update: toNotice(outcome.result),
+  };
+}
+
+/** `dev` writes this next to `update.json`; the generated entry file imports it. */
+export function writeVersionFile(projectRoot: string, status: VersionStatus): string {
+  const file = path.join(projectRoot, '.ds-viewer', 'version.json');
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(status));
+  return file;
 }
 
 /** Design §5: "`dev` writes the result to `.ds-viewer/update.json`; the viewer reads it." Always
@@ -177,4 +301,41 @@ export function writeUpdateFile(projectRoot: string, result: UpdateCheckResult |
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(result ?? null));
   return file;
+}
+
+/** The live version status behind the local endpoint (`GET /version`, **Check now**, the switch),
+ *  kept outside `dev()` so its ordering rules are testable. */
+export function createVersionController(deps: {
+  ownVersion: string;
+  projectRoot: string;
+  prefsDir: string;
+  env: NodeJS.ProcessEnv;
+  initial: VersionStatus;
+  /** The current project config (it can change while `dev` runs). */
+  getConfig: () => { updateCheck?: boolean };
+  runCheck: () => Promise<{ result?: UpdateCheckResult; reached: boolean; cached?: CachedUpdateCheck }>;
+}) {
+  let status = deps.initial;
+  const resolveNow = () => resolveAutoCheck(deps.getConfig(), deps.env, readPersonalAutoCheck(deps.prefsDir, deps.projectRoot));
+  return {
+    getVersionStatus: () => status,
+    /** **Check now**: asks npm ignoring the cache. Reads the switch *after* the check, so a change
+     *  made while it ran is kept. */
+    checkNow: async () => {
+      const outcome = await deps.runCheck();
+      status = statusFromCheck(deps.ownVersion, status.autoCheck, outcome);
+      return status;
+    },
+    /** The switch: your own setting for this project on this computer. Takes effect for automatic
+     *  checks from the next start; the current status keeps any update already found. */
+    setAutoCheck: (enabled: boolean) => {
+      writePersonalAutoCheck(deps.prefsDir, deps.projectRoot, enabled);
+      status = { ...status, autoCheck: resolveNow() };
+      return status;
+    },
+    /** After `ds-viewer.config.ts` changes while `dev` runs. */
+    refreshAutoCheck: () => {
+      status = { ...status, autoCheck: resolveNow() };
+    },
+  };
 }

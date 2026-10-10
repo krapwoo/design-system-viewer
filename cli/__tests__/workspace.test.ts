@@ -178,7 +178,8 @@ test('entry.tsx always imports update.json and defaults updateEndpoint to undefi
   const entry = readFileSync(path.join(workspace, 'entry.tsx'), 'utf8');
   assert.match(entry, /import updateNotice from '\.\/update\.json';/);
   assert.match(entry, /const updateEndpoint = undefined;/);
-  assert.match(entry, /update=\{updateNotice\} updateEndpoint=\{updateEndpoint\}/);
+  assert.match(entry, /import versionStatus from '\.\/version\.json';/);
+  assert.match(entry, /update=\{updateNotice\} versionStatus=\{versionStatus\} updateEndpoint=\{updateEndpoint\}/);
   rmSync(projectRoot, { recursive: true, force: true });
 });
 

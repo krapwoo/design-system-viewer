@@ -3,7 +3,7 @@
  * runner. CatalogShell, CatalogSidebar, and SectionBlock all derive page order from here, so the
  * sidebar order, previous/next order, and fragment fallback can never drift apart.
  */
-import type { NavGroup, UpdateNotice } from './types.ts';
+import type { NavGroup, UpdateNotice, VersionStatus } from './types.ts';
 
 /** THE canonical within-group ordering of section ids. */
 export function sortIds<TId extends string>(ids: readonly TId[]): TId[] {
@@ -148,4 +148,17 @@ export function shouldShowMajorBanner(update: UpdateNotice | null | undefined, d
 export function footerLabel(update: UpdateNotice | null | undefined): string | undefined {
   if (!update || !isNewerVersion(update.latest, update.current)) return undefined;
   return `Update available · ${update.latest}`;
+}
+
+/** The sidebar's footer line: the blue "Update available" notice when a newer version is known
+ *  (from startup or **Check now**), else the installed version, quietly. `undefined` only for a
+ *  workspace generated before version status existed, which keeps the old notice-only footer. */
+export function footerLink(
+  update: UpdateNotice | null | undefined,
+  status: VersionStatus | null | undefined,
+): { label: string; kind: 'update' | 'version' } | undefined {
+  const notice = footerLabel(update) ?? footerLabel(status?.update);
+  if (notice) return { label: notice, kind: 'update' };
+  if (status) return { label: `DS Viewer ${status.current}`, kind: 'version' };
+  return undefined;
 }

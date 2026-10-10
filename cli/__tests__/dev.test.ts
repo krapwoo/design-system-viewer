@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { writePersonalAutoCheck } from '../updateCheck.ts';
 import { assertLocalInstall, isWatchedPath, LocalInstallMissingError, performUpdate, reloadWorkspace, refreshUpdateFile, watchTargetFolders } from '../dev.ts';
 import type { UpdatePlan } from '../updatePlan.ts';
 import type { UpdateStatus } from '../endpoint.ts';
@@ -119,6 +120,41 @@ test('refreshUpdateFile writes the real result when enabled', async () => {
   await refreshUpdateFile(config, '0.4.0', { checkForUpdate, env: {} });
   assert.equal(JSON.parse(readFileSync(path.join(dir, '.ds-viewer', 'update.json'), 'utf8')).latest, '0.5.0');
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('refreshUpdateFile writes version.json too: checks off reports "not-run" with the installed version', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  const prefsDir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-prefs-'));
+  const config: ResolvedConfig = {
+    name: 'X', components: [], tokens: [], updateCheck: false, doctor: { strict: false },
+    projectRoot: dir, configPath: path.join(dir, 'ds-viewer.config.ts'),
+  };
+  const checkForUpdate = async () => { throw new Error('must not be called'); };
+  const status = await refreshUpdateFile(config, '0.4.4', { checkForUpdate, env: {}, prefsDir });
+  const written = JSON.parse(readFileSync(path.join(dir, '.ds-viewer', 'version.json'), 'utf8'));
+  assert.deepEqual(written, status);
+  assert.equal(written.current, '0.4.4');
+  assert.deepEqual(written.autoCheck, { enabled: false, source: 'project' });
+  assert.equal(written.lastOutcome, 'not-run');
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(prefsDir, { recursive: true, force: true });
+});
+
+test('refreshUpdateFile: your own switch overrides the project config and the check runs', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  const prefsDir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-prefs-'));
+  writePersonalAutoCheck(prefsDir, dir, true);
+  const config: ResolvedConfig = {
+    name: 'X', components: [], tokens: [], updateCheck: false, doctor: { strict: false },
+    projectRoot: dir, configPath: path.join(dir, 'ds-viewer.config.ts'),
+  };
+  const checkForUpdate = async () => ({ current: '0.4.4', latest: '0.4.5', breaking: false, summary: [], checkedAt: new Date().toISOString() });
+  const status = await refreshUpdateFile(config, '0.4.4', { checkForUpdate, env: {}, prefsDir });
+  assert.deepEqual(status.autoCheck, { enabled: true, source: 'personal' });
+  assert.equal(status.update?.latest, '0.4.5');
+  assert.equal(JSON.parse(readFileSync(path.join(dir, '.ds-viewer', 'update.json'), 'utf8')).latest, '0.4.5');
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(prefsDir, { recursive: true, force: true });
 });
 
 function samplePlan(overrides: Partial<UpdatePlan> = {}): UpdatePlan {
