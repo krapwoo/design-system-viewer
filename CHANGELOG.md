@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.5
+
+- Example cells now turn light gray automatically when their example is white or near-white with no visible border (a white card, sheet or neutral banner), instead of 0.4.4's gray backdrop behind every example. Other cells stay white, as in 0.4.3. `specimenSurface` defaults to `'auto'`; `'neutral'` forces every cell gray and `'transparent'` keeps them white.
+
 ## 0.4.4
 
 - Catalog pages can now cap a one-axis slot's columns with `maxColumns`, set a page-level `specimenSurface` ('neutral'/'white'/'dark'/'transparent') behind every live specimen, disclose structured composition via `composedOf` (shown as a "Composition" subsection in Quick reference), and demonstrate motion tokens with the new reusable `MotionSpecimen` (replay button, reduce-motion aware); `TokenRow` also gained balanced vertical padding.
