@@ -119,6 +119,8 @@ export const CATALOG_COLOR = {
   surfaceMuted: '#fafafa',
   /** Hover and pressed feedback on nav rows and buttons. */
   surfacePressed: '#f1f3f8',
+  /** An example's cell when the example itself is white (`specimenSurface`), darker than surfaceMuted so a white card's edges show. */
+  specimenStage: '#f2f2f2',
   pageBackground: '#f6f6f4',
   chip: '#eeeeee',
   /** Active nav label, prop types, scale bars. */

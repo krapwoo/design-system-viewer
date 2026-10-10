@@ -190,13 +190,15 @@ actually apply:
   within what fits a 1280px laptop: 5 compact, 3 regular, or 2 wide columns. `states` items whose
   key matches a row or column key are not repeated below the grid.
 - `specimenSize: 'compact' | 'regular' | 'wide'` — the page's specimen width class.
-- `specimenSurface: 'neutral' | 'white' | 'dark' | 'transparent'` — the catalog-owned background
-  behind every live specimen on this page (list/grouped/grid cells, and a non-token `render()`
-  preview). Defaults to `'neutral'` (a light gray stage, visibly distinct from the surrounding
-  white card) — reach for `'dark'` to check a low-contrast component against a dark background, or
-  `'transparent'` when the surface itself would be misleading (e.g. a component whose own
-  elevation/shadow needs to read against the page, not a chip). Token galleries and sections always
-  keep their current, unstaged presentation regardless of this setting.
+- `specimenSurface: 'auto' | 'neutral' | 'white' | 'dark' | 'transparent'` — the fill of each
+  example's cell (list, grouped and grid cells, and a non-token `render()` preview). Defaults to
+  `'auto'`: after the page draws, a cell turns light gray only when its own example would vanish
+  against white (its largest coloured box is near-white with no visible border, like a white card,
+  sheet or neutral banner; a shadow alone doesn't count). Neighbouring examples keep a white cell,
+  and most pages need nothing. Override it when the guess is wrong: `'neutral'` makes every example
+  cell gray, `'white'` or `'transparent'` keeps them all white, and `'dark'` checks a light
+  component on a dark fill. Detection runs in the browser viewer; elsewhere cells stay white.
+  Token galleries and sections are never filled.
 - `variants`/`states`' own `maxColumns: 1 | 2 | 3 | 4 | 5` — caps how many columns that slot's list
   ever wraps into (e.g. a 3-item size scale that should always read as one row of exactly 3, never
   more just because a laptop is wide). A narrow window still drops below the cap when it has to —

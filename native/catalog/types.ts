@@ -65,14 +65,12 @@ export type SpecimenSize = 'compact' | 'regular' | 'wide';
  *  content that is not a phone component (catalog chrome, token galleries). */
 export type PreviewWidths = readonly number[] | 'full';
 
-/** Background behind a live component specimen (the list/grouped/grid cell, or the preview frame)
- *  — a neutral (default), explicit white, dark, or transparent catalog-owned stage, so a specimen
- *  reads as visibly separate from the surrounding white card rather than floating on it, which
- *  matters most for a low-contrast or motion-only component that could otherwise blend into a
- *  plain white background. Purely a fixed catalog-chrome backdrop: it never inspects or infers the
- *  wrapped component's own colors, and is never applied to token galleries/sections, which keep
- *  their current full-width, unstaged presentation regardless of this setting. */
-export type SpecimenSurfaceKind = 'neutral' | 'white' | 'dark' | 'transparent';
+/** Fill of each example's cell. `'auto'` (default): a cell turns gray (#f2f2f2) only when its own
+ *  example would vanish against white — a near-white body with no visible border, like a white
+ *  card, sheet or neutral banner — so neighbouring examples keep a white cell. `'neutral'` makes
+ *  every example cell gray, `'white'` and `'transparent'` keep them white, `'dark'` checks light
+ *  components on a dark fill. Never applied to token galleries or sections. */
+export type SpecimenSurfaceKind = 'auto' | 'neutral' | 'white' | 'dark' | 'transparent';
 
 /** One real component this page's component is built from or composed with — rendered as a
  *  "Composition" subsection in Quick reference. `relationship` is `'built-in'` for a component
@@ -218,7 +216,7 @@ export interface SectionDef<TId extends string = string> {
    *  and everything else is 'regular'. */
   specimenSize?: SpecimenSize;
   /** Background stage behind every live component specimen on this page (list/grouped/grid cells,
-   *  and a `render()` preview that isn't a token gallery). Defaults to `'neutral'`. See
+   *  and a `render()` preview that isn't a token gallery). Defaults to `'auto'`. See
    *  `SpecimenSurfaceKind`. */
   specimenSurface?: SpecimenSurfaceKind;
   /** Widths for this page's `render()` preview, e.g. `[402, 320]` to add a small-phone example.

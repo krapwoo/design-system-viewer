@@ -25,6 +25,7 @@ test('colors match the approved visual system', () => {
       surface: '#ffffff',
       surfaceMuted: '#fafafa',
       surfacePressed: '#f1f3f8',
+      specimenStage: '#f2f2f2',
       pageBackground: '#f6f6f4',
       chip: '#eeeeee',
       accent: '#174dc6',

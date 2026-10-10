@@ -1,0 +1,1 @@
+Example cells now turn light gray automatically when their example is white or near-white with no visible border (a white card, sheet or neutral banner), instead of 0.4.4's gray backdrop behind every example. Other cells stay white, as in 0.4.3. `specimenSurface` defaults to `'auto'`; `'neutral'` forces every cell gray and `'transparent'` keeps them white.
