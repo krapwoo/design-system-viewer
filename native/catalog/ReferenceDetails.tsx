@@ -67,6 +67,14 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
             <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
             {def.path && <Fact label="Source" value={def.path} mono />}
             {!hide.accessibility && <Fact label="Accessibility" value={def.a11y ?? 'No accessibility notes documented.'} />}
+            {def.composedOf && def.composedOf.length > 0 && (
+              <>
+                <Text style={styles.subheading}>Composition</Text>
+                {def.composedOf.map((entry, i) => (
+                  <Fact key={`${entry.component}-${entry.relationship}-${i}`} label={`${entry.component} · ${entry.relationship}`} value={entry.role} />
+                ))}
+              </>
+            )}
           </View>
         </View>
       </View>
@@ -95,6 +103,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   body: { fontSize: CATALOG_TYPE.md, lineHeight: 20, color: CATALOG_COLOR.textMuted },
+  subheading: {
+    fontSize: CATALOG_TYPE.sm,
+    fontWeight: '700',
+    color: CATALOG_COLOR.text,
+    marginTop: CATALOG_SPACE.md,
+    marginBottom: CATALOG_SPACE.xs,
+  },
   fact: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -5,9 +5,10 @@ import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { ReferenceDetails } from './ReferenceDetails';
+import { SpecimenSurface } from './SpecimenSurface';
 import { TokenSections } from './TokenLayouts';
 import { choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
-import type { PreviewWidths, SectionDef } from './types';
+import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
 
 // Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
 // else (string, boolean, IconName, () => void, …) has no fixed enum to sweep and is skipped.
@@ -100,9 +101,11 @@ function frameLabel(width: number): string {
 }
 
 /** A component preview: one frame per width (each at most phone width), or full width for catalog
- *  chrome and token galleries. Every frame is its own live instance with its own state. */
-function Preview({ render, widths }: { render: () => React.ReactNode; widths: PreviewWidths }) {
-  if (widths === 'full') return <View style={styles.previewCard}>{render()}</View>;
+ *  chrome and token galleries. Every frame is its own live instance with its own state. `surface`
+ *  is omitted for token galleries, which keep their current, unstaged presentation. */
+function Preview({ render, widths, surface }: { render: () => React.ReactNode; widths: PreviewWidths; surface?: SpecimenSurfaceKind }) {
+  const stage = (node: React.ReactNode) => (surface ? <SpecimenSurface surface={surface}>{node}</SpecimenSurface> : node);
+  if (widths === 'full') return <View style={styles.previewCard}>{stage(render())}</View>;
   return (
     <View style={styles.previewCard}>
       <View style={styles.frames}>
@@ -114,7 +117,7 @@ function Preview({ render, widths }: { render: () => React.ReactNode; widths: Pr
             style={[styles.frame, { width }]}
           >
             {widths.length > 1 && <Text style={styles.frameLabel}>{frameLabel(width)}</Text>}
-            {render()}
+            {stage(render())}
           </View>
         ))}
       </View>
@@ -122,16 +125,18 @@ function Preview({ render, widths }: { render: () => React.ReactNode; widths: Pr
   );
 }
 
-function BlockContent<TId extends string>({ block, def }: { block: PresentationBlock; def: SectionDef<TId> }) {
+function BlockContent<TId extends string>({ block, def, surface }: { block: PresentationBlock; def: SectionDef<TId>; surface: SpecimenSurfaceKind }) {
   switch (block.kind) {
     case 'grid':
-      return <ComparisonGrid def={block.comparison} size={block.size} sectionId={def.id} />;
+      return <ComparisonGrid def={block.comparison} size={block.size} sectionId={def.id} surface={surface} />;
     case 'grouped':
-      return <ComparisonGroups groups={block.groups} size={block.size} label={def.id} />;
+      return <ComparisonGroups groups={block.groups} size={block.size} label={def.id} surface={surface} />;
     case 'list':
-      return <ComparisonList items={block.items} size={block.size} label={`${def.id}: ${block.title}`} />;
+      return <ComparisonList items={block.items} size={block.size} label={`${def.id}: ${block.title}`} maxColumns={block.maxColumns} surface={surface} />;
     case 'preview':
-      return def.render ? <Preview render={def.render} widths={block.widths} /> : null;
+      // A token gallery's `preview` block shows full-width raw token data, not a component
+      // specimen — it keeps its current, unstaged presentation.
+      return def.render ? <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} /> : null;
     case 'tokenSections':
       return <TokenSections sections={block.sections} columns={block.columns} />;
     default:
@@ -145,7 +150,7 @@ function BlockContent<TId extends string>({ block, def }: { block: PresentationB
 
 /** Width a block's card occupies: lists hug their columns; everything else fills the row. */
 function blockWidth(block: PresentationBlock, available: number): number {
-  return block.kind === 'list' ? listGeometry(block.items.length, available, block.size).containerWidth : available;
+  return block.kind === 'list' ? listGeometry(block.items.length, available, block.size, block.maxColumns).containerWidth : available;
 }
 
 /**
@@ -154,7 +159,7 @@ function blockWidth(block: PresentationBlock, available: number): number {
  * are never recorded while side by side, so the decision never feeds on its own result; a width
  * change returns to stacked and decides again.
  */
-function Blocks<TId extends string>({ blocks, def }: { blocks: PresentationBlock[]; def: SectionDef<TId> }) {
+function Blocks<TId extends string>({ blocks, def, surface }: { blocks: PresentationBlock[]; def: SectionDef<TId>; surface: SpecimenSurfaceKind }) {
   const [available, setAvailable] = useState(0);
   const [heights, setHeights] = useState<number[]>([]);
   const [placement, setPlacement] = useState<'side' | 'stacked'>('stacked');
@@ -187,7 +192,7 @@ function Blocks<TId extends string>({ blocks, def }: { blocks: PresentationBlock
       gap: CATALOG_LAYOUT.blockGap,
       first: { kind: first.kind, width: blockWidth(first, available), height: heights[0] },
       second: second.kind === 'list'
-        ? { kind: 'list', height: heights[1], itemCount: second.items.length, size: second.size }
+        ? { kind: 'list', height: heights[1], itemCount: second.items.length, size: second.size, maxColumns: second.maxColumns }
         : { kind: second.kind, height: heights[1] },
     });
     if (decision === 'side') setPlacement('side');
@@ -203,7 +208,7 @@ function Blocks<TId extends string>({ blocks, def }: { blocks: PresentationBlock
           style={side ? (i === 0 ? { width: blockWidth(block, available), flexShrink: 0 } : styles.blockFill) : undefined}
         >
           {block.title ? <Text style={styles.blockLabel}>{block.title}</Text> : null}
-          <BlockContent block={block} def={def} />
+          <BlockContent block={block} def={def} surface={surface} />
         </View>
       ))}
     </View>
@@ -241,6 +246,7 @@ export function SectionBlock<TId extends string>({
   checkCompleteness(def);
   // Memoized so Blocks' placement effect runs on real changes, not on every render.
   const blocks = useMemo(() => presentationBlocks(def, { defaultPreviewWidths }), [def, defaultPreviewWidths]);
+  const surface = def.specimenSurface ?? 'neutral';
   // react-native-web reads `aria-level`; React Native's prop types do not declare it.
   const headingLevelProps = { 'aria-level': headingLevel } as Record<string, unknown>;
 
@@ -271,7 +277,7 @@ export function SectionBlock<TId extends string>({
         )}
       </View>
 
-      {blocks.length > 0 && <Blocks blocks={blocks} def={def} />}
+      {blocks.length > 0 && <Blocks blocks={blocks} def={def} surface={surface} />}
 
       <ReferenceDetails def={def} />
     </View>

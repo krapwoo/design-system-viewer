@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatalogSections, defineCatalogPage } from '../pageApi.ts';
+import { buildCatalogSections, defineCatalogPage, validateComposedOf } from '../pageApi.ts';
 
 const components = [
   {
@@ -92,6 +92,52 @@ test('buildCatalogSections warns in development when two pages resolve to the sa
     const pageB = { ...defineCatalogPage({ id: 'Same', group: 'Components', description: 'B' }), file: 'b.catalog.tsx' };
     buildCatalogSections([pageA, pageB], []);
     assert.ok(warnings.some((w) => w.includes('Page id "Same"')));
+  } finally {
+    console.warn = originalWarn;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+test('validateComposedOf reports unknown component names deterministically, in declaration order', () => {
+  const known = new Set(['Button', 'Icon']);
+  assert.deepEqual(validateComposedOf(undefined, known), []);
+  assert.deepEqual(validateComposedOf([{ component: 'Button', role: 'r', relationship: 'built-in' }], known), []);
+  assert.deepEqual(
+    validateComposedOf(
+      [
+        { component: 'Ghost', role: 'r1', relationship: 'slot' },
+        { component: 'Icon', role: 'r2', relationship: 'built-in' },
+        { component: 'Ghost2', role: 'r3', relationship: 'related' },
+      ],
+      known,
+    ),
+    ['composedOf references unknown component "Ghost".', 'composedOf references unknown component "Ghost2".'],
+  );
+});
+
+test('buildCatalogSections carries composedOf metadata through to the section', () => {
+  const composedOf = [{ component: 'Button', role: 'Primary action', relationship: 'built-in' as const }];
+  const pages = [defineCatalogPage({ id: 'Toast', group: 'Components', description: 'x', composedOf })];
+  const { sections } = buildCatalogSections(pages, [components[0]]);
+  assert.deepEqual(sections.find((s) => s.id === 'Toast')?.composedOf, composedOf);
+  assert.equal(sections.find((s) => s.id === 'Button')?.composedOf, undefined);
+});
+
+test('buildCatalogSections warns in development about an unknown composedOf name, not a known one', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const composedOf = [
+      { component: 'Button', role: 'Primary action', relationship: 'built-in' as const },
+      { component: 'NoSuchThing', role: 'Ghost slot', relationship: 'related' as const },
+    ];
+    const pages = [defineCatalogPage({ id: 'Toast', group: 'Components', description: 'x', composedOf })];
+    buildCatalogSections(pages, [components[0]]);
+    assert.ok(warnings.some((w) => w.includes('composedOf') && w.includes('"NoSuchThing"')));
+    assert.ok(!warnings.some((w) => w.includes('"Button"')));
   } finally {
     console.warn = originalWarn;
     (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;

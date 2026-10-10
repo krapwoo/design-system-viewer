@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { ComparisonDef, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, TokenSection, VariantSlot } from './types';
+import type { ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
  *  generated props), plus the three fields design §1 "Page shape" adds. */
@@ -29,8 +29,10 @@ export interface CatalogPageInput<TId extends string = string> {
   fullWidthLabel?: string;
   comparison?: ComparisonDef;
   specimenSize?: SpecimenSize;
+  specimenSurface?: SpecimenSurfaceKind;
   previewWidths?: PreviewWidths;
   hide?: SectionDef['hide'];
+  composedOf?: ComposedOfEntry[];
   /** Export name this page documents; defaults to `id` for component pages. */
   component?: string;
   /** Sidebar group label. */
@@ -87,6 +89,17 @@ function mergePropNotes(component: GeneratedComponent, propNotes: Record<string,
   return [...own, ...inherited];
 }
 
+/** Human-readable problems with a page's `composedOf`, in declaration order: one line per entry
+ *  whose `component` isn't in `knownNames` (every real component name, documented or not, plus
+ *  every page id — the full catalog inventory `buildCatalogSections` already has on hand). Empty
+ *  when every name resolves, including when `composedOf` itself is omitted. */
+export function validateComposedOf(composedOf: ComposedOfEntry[] | undefined, knownNames: ReadonlySet<string>): string[] {
+  if (!composedOf) return [];
+  return composedOf
+    .filter((entry) => !knownNames.has(entry.component))
+    .map((entry) => `composedOf references unknown component "${entry.component}".`);
+}
+
 function orderGroups<TId extends string>(groupIds: Map<string, TId[]>, groupOrder: string[] | undefined): NavGroup<TId>[] {
   const listed = groupOrder ?? [];
   const labels = [...groupIds.keys()];
@@ -112,6 +125,10 @@ export function buildCatalogSections<TId extends string>(
   const documented = new Set(pages.map((page) => page.component ?? page.id));
   const groupIds = new Map<string, TId[]>();
   const addToGroup = (group: string, id: TId) => groupIds.set(group, [...(groupIds.get(group) ?? []), id]);
+  // Every name a page's `composedOf` could legitimately point at: every real component (documented
+  // or not — an undocumented one is still a real part of the design system) plus every page id
+  // (token pages, standalone recipes, …).
+  const knownComposedOfNames = new Set<string>([...componentByName.keys(), ...pages.map((page) => page.id)]);
 
   // Design §4 "duplicate-page-id" rule's viewer-side equivalent — this is the one place in the
   // whole viewer that already resolves every page's id to build sections/groups, so it costs
@@ -122,6 +139,7 @@ export function buildCatalogSections<TId extends string>(
     if ((globalThis as { __DEV__?: boolean }).__DEV__) {
       if (seenIds.has(page.id)) console.warn(`[Catalog] Page id "${page.id}" is used by more than one page; only the last one will show. Give one of them its own "id".`);
       seenIds.add(page.id);
+      for (const issue of validateComposedOf(page.composedOf, knownComposedOfNames)) console.warn(`[Catalog] ${page.id}: ${issue}`);
     }
     const componentName = page.component ?? page.id;
     const component = componentByName.get(componentName);
@@ -148,8 +166,10 @@ export function buildCatalogSections<TId extends string>(
       fullWidthLabel: page.fullWidthLabel,
       comparison: page.comparison,
       specimenSize: page.specimenSize,
+      specimenSurface: page.specimenSurface,
       previewWidths: page.previewWidths,
       hide: component ? page.hide : { ...page.hide, props: true },
+      composedOf: page.composedOf,
     };
   });
 

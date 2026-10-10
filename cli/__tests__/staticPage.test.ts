@@ -123,14 +123,14 @@ test('a row axis given as a same-file top-level const reference resolves through
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
 
-test('reads variants/states list items, including a props tag, and ignores each item\'s node', () => {
+test('reads variants/states list items, including a props tag and maxColumns, and ignores each item\'s node', () => {
   const file = writePage(`
     import React from 'react';
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
     export default defineCatalogPage({
       component: 'Widget', group: 'Components', description: 'x',
-      variants: { items: [{ key: 'primary', name: 'Primary', props: { variant: 'primary' }, node: <Widget variant="primary" /> }] },
-      states: { items: [{ key: 'disabled', name: 'Disabled', group: 'primary', node: <Widget disabled /> }] },
+      variants: { maxColumns: 3, items: [{ key: 'primary', name: 'Primary', props: { variant: 'primary' }, node: <Widget variant="primary" /> }] },
+      states: { maxColumns: 2, items: [{ key: 'disabled', name: 'Disabled', group: 'primary', node: <Widget disabled /> }] },
     });
   `);
   const [page] = readStaticPages([file]);
@@ -141,9 +141,11 @@ test('reads variants/states list items, including a props tag, and ignores each 
   assert.equal(page.variantsItems?.[0].key, 'primary');
   assert.equal(page.variantsItems?.[0].name, 'Primary');
   assert.deepEqual(page.variantsItems?.[0].props, { variant: 'primary' });
+  assert.equal(page.variantsMaxColumns, 3);
   assert.equal(page.statesItems?.[0].key, 'disabled');
   assert.equal(page.statesItems?.[0].name, 'Disabled');
   assert.equal(page.statesItems?.[0].group, 'primary');
+  assert.equal(page.statesMaxColumns, 2);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
 

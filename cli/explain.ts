@@ -40,10 +40,8 @@ function placeholderItem(item: StaticListItem) {
 /** A throwaway `SectionDef` built from a `StaticPage` (Task 3) — every specimen's `node` is `null`
  *  (design §4: specimen nodes are never evaluated), since none of the layout functions below ever
  *  look at it; only the counts/keys/sizes they do look at are carried over. Every field Task 3
- *  reads is carried through here, including `previewWidths`/`fullWidthLabel`/`hide`/`itemsFill` —
- *  an earlier draft dropped these four, so `explain` reported different geometry than the real
- *  viewer for any page that set one of them (25 kit pages set `itemsFill`; every `kit-host`
- *  Viewer page sets `hide`). */
+ *  reads is carried through here, including `previewWidths`/`fullWidthLabel`/`hide`/`itemsFill`/
+ *  `maxColumns` — dropping any of them makes `explain` report different geometry than the viewer. */
 function toSectionDef(page: StaticPage): SectionDef {
   const comparison: ComparisonDef | undefined = page.comparison && {
     rowLabel: page.comparison.rowLabel ?? '',
@@ -62,8 +60,8 @@ function toSectionDef(page: StaticPage): SectionDef {
     fullWidthLabel: page.fullWidthLabel,
     specimenSize: page.specimenSize as SpecimenSize | undefined,
     previewWidths: page.previewWidths,
-    variants: page.variantsItems ? { itemsFill: page.variantsItemsFill, items: page.variantsItems.map(placeholderItem) } : undefined,
-    states: page.statesItems ? { itemsFill: page.statesItemsFill, items: page.statesItems.map(placeholderItem) } : undefined,
+    variants: page.variantsItems ? { itemsFill: page.variantsItemsFill, maxColumns: page.variantsMaxColumns, items: page.variantsItems.map(placeholderItem) } : undefined,
+    states: page.statesItems ? { itemsFill: page.statesItemsFill, maxColumns: page.statesMaxColumns, items: page.statesItems.map(placeholderItem) } : undefined,
     comparison,
     render: page.hasRender ? () => null : undefined,
     tokenSections: page.tokenSectionTitles?.map((title, i) => ({ title, wide: page.tokenSectionWide?.[i] || undefined, render: () => null })),
@@ -84,7 +82,7 @@ function explainBlock(block: PresentationBlock): ExplainBlockResult {
     };
   }
   if (block.kind === 'list') {
-    const geometry = listGeometry(block.items.length, MATRIX_LAYOUT.laptopContentWidth, block.size);
+    const geometry = listGeometry(block.items.length, MATRIX_LAYOUT.laptopContentWidth, block.size, block.maxColumns);
     return {
       kind: 'list', title: block.title,
       reason: `${block.items.length} items (${block.size}) → ${geometry.columns} columns × ${geometry.rows} row${geometry.rows === 1 ? '' : 's'}` +
@@ -119,7 +117,14 @@ function explainBlock(block: PresentationBlock): ExplainBlockResult {
  *  computed uniformly here for either role, since setting it on `second` is simply unused, not wrong. */
 function toPlacementBlock(block: PresentationBlock, height: number, available: number): PlacementBlock {
   if (block.kind === 'list') {
-    return { kind: 'list', height, itemCount: block.items.length, size: block.size, width: listGeometry(block.items.length, available, block.size).containerWidth };
+    return {
+      kind: 'list',
+      height,
+      itemCount: block.items.length,
+      size: block.size,
+      maxColumns: block.maxColumns,
+      width: listGeometry(block.items.length, available, block.size, block.maxColumns).containerWidth,
+    };
   }
   return { kind: block.kind, height };
 }

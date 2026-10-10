@@ -11,7 +11,9 @@ import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
  *
  * Draws a 1px `CATALOG_COLOR.border` bottom divider by default (the same divider PropsTable's rows use) so a stack of TokenRows
  * reads as a list, not a loose pile of paragraphs. Pass `last` on the final row in a stack to drop
- * the divider, matching PropsTable's own `rowLast` convention.
+ * the divider, matching PropsTable's own `rowLast` convention. Balanced `CATALOG_SPACE.md` padding
+ * sits above and below both the content and its use-note, so a stack of rows breathes evenly
+ * instead of only the divider-adjacent gap existing.
  */
 export function TokenRow({
   children,
@@ -45,11 +47,10 @@ export function TokenRow({
 }
 
 const styles = StyleSheet.create({
-  item: { gap: CATALOG_SPACE.xs },
-  itemRight: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.xl },
+  item: { gap: CATALOG_SPACE.xs, paddingVertical: CATALOG_SPACE.md },
+  itemRight: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.xl, paddingVertical: CATALOG_SPACE.md },
   useRight: { flex: 1 },
   itemDivider: {
-    paddingBottom: CATALOG_SPACE.md,
     borderBottomWidth: 1,
     borderBottomColor: CATALOG_COLOR.border,
   },
