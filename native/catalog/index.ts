@@ -24,6 +24,9 @@ export { ReferenceDetails } from './ReferenceDetails';
 export { PropsTable } from './PropsTable';
 export { VariantGroup } from './VariantGroup';
 export { TokenRow } from './TokenRow';
+export { MotionSpecimen } from './MotionSpecimen';
+export type { MotionSpecimenProps, MotionSpecimenSpringConfig } from './MotionSpecimen';
+export { SpecimenSurface } from './SpecimenSurface';
 export { TokenSections, TokenGrid, TokenTile } from './TokenLayouts';
 export { DividedStack } from './DividedStack';
 export { Swatch } from './Swatch';
@@ -34,7 +37,10 @@ export { buildComponentManifest } from './manifest';
 export type { ComponentManifestEntry, ManifestExample } from './manifest';
 export { defineCatalogPage, buildCatalogSections } from './pageApi';
 export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
-export type { PropDef, SectionDef, NavGroup, SpecimenSize, ComparisonDef, ComparisonCell, ComparisonAxisItem, GridAxis, PreviewWidths, TokenSection } from './types';
+export type {
+  PropDef, SectionDef, NavGroup, SpecimenSize, SpecimenSurfaceKind, ComparisonDef, ComparisonCell, ComparisonAxisItem, GridAxis,
+  PreviewWidths, TokenSection, ComposedOfEntry,
+} from './types';
 export { UpdatePanel } from './UpdatePanel';
 export { UPDATE_PAGE_ID } from './catalogNavigation';
 export type { UpdateNotice } from './types';

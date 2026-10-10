@@ -190,8 +190,27 @@ actually apply:
   within what fits a 1280px laptop: 5 compact, 3 regular, or 2 wide columns. `states` items whose
   key matches a row or column key are not repeated below the grid.
 - `specimenSize: 'compact' | 'regular' | 'wide'` — the page's specimen width class.
+- `specimenSurface: 'neutral' | 'white' | 'dark' | 'transparent'` — the catalog-owned background
+  behind every live specimen on this page (list/grouped/grid cells, and a non-token `render()`
+  preview). Defaults to `'neutral'` (a light gray stage, visibly distinct from the surrounding
+  white card) — reach for `'dark'` to check a low-contrast component against a dark background, or
+  `'transparent'` when the surface itself would be misleading (e.g. a component whose own
+  elevation/shadow needs to read against the page, not a chip). Token galleries and sections always
+  keep their current, unstaged presentation regardless of this setting.
+- `variants`/`states`' own `maxColumns: 1 | 2 | 3 | 4 | 5` — caps how many columns that slot's list
+  ever wraps into (e.g. a 3-item size scale that should always read as one row of exactly 3, never
+  more just because a laptop is wide). A narrow window still drops below the cap when it has to —
+  `maxColumns` only ever lowers the natural, width-based column count, never raises it.
 - `group` on a `states` item — the `variants` key it belongs to (a size that only exists for one
   variant). Grouped states render one row per variant; ungrouped ones go to "Other configurations".
+- `composedOf: [{ component, role, relationship }]` — what this component is built from or
+  composed with, shown as a "Composition" subsection in Quick reference. `relationship` is
+  `'built-in'` for a component always present inside this one (e.g. Toast is built from a Banner),
+  `'slot'` for an optional caller-supplied child (e.g. a `leadingIcon` prop), or `'related'` for a
+  component commonly used alongside this one without either containing the other. `component` is
+  checked against every real component and page in the catalog at build time (`sync`/`dev`); an
+  unknown name only warns in development, it never fails the build — e.g.
+  `composedOf: [{ component: 'Icon', role: 'Leading glyph', relationship: 'slot' }]`.
 - `previewWidths: [402, 320]` — extra preview widths for a `render()` page (each capped at 402).
   `CatalogShell`'s `defaultPreviewWidths="full"` keeps a catalog's previews full width.
 - `variants: { desc?, align?, itemsFill?, items: [{ key, name, node }] }` — one item per prop enum
@@ -214,9 +233,18 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
 
 ### Organising the catalog
 
-- **Two sidebar groups: `Tokens`, then `Components`** (`groupOrder: ['Tokens', 'Components']`).
-  Pages sort A–Z inside each group. Category groups ("Actions", "Status") make readers guess
-  where a component lives; search and A–Z already find it.
+- **`group`/`groupOrder` accept any semantic category you want** — not just `Tokens` and
+  `Components`. A page's `group` is a plain string shown as its sidebar section label;
+  `groupOrder` (e.g. `['Tokens', 'Components', 'Patterns', 'Recipes', 'Experiences']`) only
+  controls which order those sections appear in, top to bottom — any group not listed sorts
+  alphabetically after the ones that are. This starter kit's own two groups (`Tokens`, then
+  `Components`) are one valid shape, not the only one: a larger catalog might add `Patterns`
+  (reusable combinations like a settings row), `Recipes` (worked end-to-end screens), or
+  `Experiences` (full flows) alongside them. Pages sort A–Z inside each group regardless of how
+  many groups you have. Avoid splitting `Components` into finer categories such as "Actions" or
+  "Status" purely to browse by — that makes readers guess where a component lives; search and A–Z
+  already find it. A distinct semantic group (Tokens vs. Components vs. Patterns) is a different
+  decision from that, since it changes what the reader expects to find there.
 - **Wide components at 3 columns.** Give block-level components (Banner, Card, Toast,
   InputField) `specimenSize: 'regular'`, so Variants and States sit 3 across on a laptop
   (about 316px each). `'wide'` (2 columns, phone width) is only for pages where the full phone
@@ -248,6 +276,7 @@ shape:
 | Narrow sample with a long note (icon size, spacing) | `TokenRow` with `notePlacement="right"`: one line per token | IconSizes |
 | Several kinds of token on one page | `tokenSections`: one titled card per kind | Colors (semantic vs palette) |
 | A scale with families (type) | `tokenSections` with `tokenColumns: 2` or `3`, one section per family | Typography (label, body, emphasis…) |
+| A duration/easing or spring value | `MotionSpecimen` next to the token's value | Motion (duration, easing, spring) |
 
 - **`tokenSections: [{ title, desc?, wide?, render }]`** replaces `render`. Each section is its
   own titled card. Keep different kinds of token in different sections, never mixed: semantic roles
@@ -262,6 +291,29 @@ shape:
   value already say it. If there's nothing grounded to say, leave the note out.
 - **Label each sample with its name and real value** (`bodyMd · 16/22 · 400`, `medium · 12px`).
   Use realistic sample text from the product, short enough to fit its column at the largest size.
+- **`MotionSpecimen`** demonstrates a duration/easing or spring token as a real, bounded
+  start-to-end slide — a dot travels a fixed track once when it mounts, with a named Replay button
+  to play it again. Give it `kind: 'timing'` with `duration` (and optionally a real `Easing`
+  function, e.g. `Easing.bezier(...DS_MOTION_EASING.standard)`) for a duration/easing token, or
+  `kind: 'spring'` with a `spring` config shaped for `Animated.spring` (e.g. `DS_MOTION_SPRING`) for
+  a spring token. It respects the platform's reduce-motion preference automatically — with it on,
+  every play (including the initial one) shows the end state immediately instead of animating, so
+  it never needs its own per-page reduce-motion handling:
+  ```tsx
+  <MotionSpecimen kind="timing" duration={DS_MOTION_DURATION.base} easing={Easing.bezier(...DS_MOTION_EASING.standard)} />
+  <MotionSpecimen kind="spring" spring={DS_MOTION_SPRING} />
+  ```
+  A spring's `valueRange` says which domain its `spring` config's rest thresholds are scaled for,
+  so the specimen animates the same domain the real config does rather than always normalizing to
+  0–1. `'distance'` (default) is for a config tuned for pixel-space points, e.g. a `BottomSheet`'s
+  snap-point spring — the `Animated.Value` animates directly from `0` to the track's pixel
+  distance. `'unit'` is for a config whose production value is a normalized 0-to-1 progress or
+  blend factor — the `Animated.Value` animates `0` to `1` and is interpolated to the pixel
+  distance; `'distance'`'s pixel-scale thresholds would otherwise end a unit-valued spring before
+  it ever moves:
+  ```tsx
+  <MotionSpecimen kind="spring" spring={UNIT_SPRING_CONFIG} valueRange="unit" />
+  ```
 
 ## Keeping the catalog current
 

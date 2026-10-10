@@ -2,16 +2,31 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { MATRIX_LAYOUT, listGeometry, type ListItem } from './comparison';
-import type { SpecimenSize } from './types';
+import { SpecimenSurface } from './SpecimenSurface';
+import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 
 /**
  * One-axis examples inside ONE shared card. Cells wrap into balanced rows (listGeometry); each cell
  * has its own caption strip so labels stay attached when rows wrap. Blank cells complete an uneven
- * last row. Wide specimens use fixed 402px cells and the card hugs its columns.
+ * last row. Wide specimens use fixed 402px cells and the card hugs its columns. `maxColumns` caps
+ * how many columns a row ever wraps into (from `VariantSlot.maxColumns`); `surface` is the page's
+ * `specimenSurface` behind each item.
  */
-export function ComparisonList({ items, size, label }: { items: ListItem[]; size: SpecimenSize; label: string }) {
+export function ComparisonList({
+  items,
+  size,
+  label,
+  maxColumns,
+  surface = 'neutral',
+}: {
+  items: ListItem[];
+  size: SpecimenSize;
+  label: string;
+  maxColumns?: 1 | 2 | 3 | 4 | 5;
+  surface?: SpecimenSurfaceKind;
+}) {
   const [available, setAvailable] = useState<number>(MATRIX_LAYOUT.laptopContentWidth);
-  const geometry = listGeometry(items.length, available, size);
+  const geometry = listGeometry(items.length, available, size, maxColumns);
   const onLayout = (event: LayoutChangeEvent) => {
     const width = Math.round(event.nativeEvent.layout.width);
     if (width > 0 && width !== available) setAvailable(width);
@@ -46,7 +61,9 @@ export function ComparisonList({ items, size, label }: { items: ListItem[]; size
                     <Text style={styles.captionText}>{item.label}</Text>
                   </View>
                   <View style={styles.specimen}>
-                    <View style={item.fill ? styles.fill : styles.center}>{item.node as React.ReactNode}</View>
+                    <SpecimenSurface surface={surface} style={item.fill && styles.fill}>
+                      {item.node as React.ReactNode}
+                    </SpecimenSurface>
                   </View>
                 </View>
               );
@@ -84,6 +101,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  center: { alignItems: 'center' },
   fill: { alignSelf: 'stretch' },
 });

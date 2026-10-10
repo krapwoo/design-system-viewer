@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage, DividedStack, VariantGroup, TokenRow } from '@krapwoo/ds-viewer';
+import { View, Text, StyleSheet, Easing } from 'react-native';
+import { defineCatalogPage, DividedStack, VariantGroup, TokenRow, MotionSpecimen } from '@krapwoo/ds-viewer';
 import {
   DS_MOTION_DURATION,
   DS_MOTION_DURATION_STEPS,
@@ -21,6 +21,7 @@ import {
 
 const styles = StyleSheet.create({
   tokenStack: { gap: DS_SPACING[800] },
+  rowContent: { gap: DS_SPACING[400] },
   previewRow: { flexDirection: 'row', alignItems: 'center', gap: DS_SPACING[600] },
   previewLabel: { minWidth: 64, ...DS_TYPOGRAPHY.labelSm, color: DS_SEMANTIC.text.regular },
   previewValue: { ...DS_TYPOGRAPHY.bodyXs, color: DS_SEMANTIC.text.muted },
@@ -41,10 +42,18 @@ function MotionGallery() {
         <View style={styles.tokenStack}>
           {DS_MOTION_DURATION_STEPS.map((step, i) => (
             <TokenRow key={step} use={DS_MOTION_DURATION_USE[step]} last={i === DS_MOTION_DURATION_STEPS.length - 1}>
-              <View style={styles.previewRow}>
-                <Text style={styles.previewLabel}>{step}</Text>
-                <View style={[styles.durationBar, { width: (DS_MOTION_DURATION[step] / maxDuration) * 120 }]} />
-                <Text style={styles.previewValue}>{DS_MOTION_DURATION[step]}ms</Text>
+              <View style={styles.rowContent}>
+                <View style={styles.previewRow}>
+                  <Text style={styles.previewLabel}>{step}</Text>
+                  <View style={[styles.durationBar, { width: (DS_MOTION_DURATION[step] / maxDuration) * 120 }]} />
+                  <Text style={styles.previewValue}>{DS_MOTION_DURATION[step]}ms</Text>
+                </View>
+                <MotionSpecimen
+                  kind="timing"
+                  duration={DS_MOTION_DURATION[step]}
+                  easing={Easing.bezier(...DS_MOTION_EASING.standard)}
+                  label={`${DS_MOTION_DURATION[step]}ms · standard easing`}
+                />
               </View>
             </TokenRow>
           ))}
@@ -54,10 +63,18 @@ function MotionGallery() {
         <View style={styles.tokenStack}>
           {DS_MOTION_LOOP_DURATION_STEPS.map((step, i) => (
             <TokenRow key={step} use={DS_MOTION_LOOP_DURATION_USE[step]} last={i === DS_MOTION_LOOP_DURATION_STEPS.length - 1}>
-              <View style={styles.previewRow}>
-                <Text style={styles.previewLabel}>{step}</Text>
-                <View style={[styles.durationBar, { width: (DS_MOTION_LOOP_DURATION[step] / maxLoopDuration) * 120 }]} />
-                <Text style={styles.previewValue}>{DS_MOTION_LOOP_DURATION[step]}ms</Text>
+              <View style={styles.rowContent}>
+                <View style={styles.previewRow}>
+                  <Text style={styles.previewLabel}>{step}</Text>
+                  <View style={[styles.durationBar, { width: (DS_MOTION_LOOP_DURATION[step] / maxLoopDuration) * 120 }]} />
+                  <Text style={styles.previewValue}>{DS_MOTION_LOOP_DURATION[step]}ms</Text>
+                </View>
+                <MotionSpecimen
+                  kind="timing"
+                  duration={DS_MOTION_LOOP_DURATION[step]}
+                  easing={Easing.bezier(...DS_MOTION_EASING.standard)}
+                  label={`${DS_MOTION_LOOP_DURATION[step]}ms · one cycle`}
+                />
               </View>
             </TokenRow>
           ))}
@@ -67,9 +84,17 @@ function MotionGallery() {
         <View style={styles.tokenStack}>
           {DS_MOTION_EASING_STEPS.map((step, i) => (
             <TokenRow key={step} use={DS_MOTION_EASING_USE[step]} last={i === DS_MOTION_EASING_STEPS.length - 1}>
-              <View style={styles.previewRow}>
-                <Text style={styles.previewLabel}>{step}</Text>
-                <Text style={styles.easingValue}>cubic-bezier({DS_MOTION_EASING[step].join(', ')})</Text>
+              <View style={styles.rowContent}>
+                <View style={styles.previewRow}>
+                  <Text style={styles.previewLabel}>{step}</Text>
+                  <Text style={styles.easingValue}>cubic-bezier({DS_MOTION_EASING[step].join(', ')})</Text>
+                </View>
+                <MotionSpecimen
+                  kind="timing"
+                  duration={DS_MOTION_DURATION.base}
+                  easing={Easing.bezier(...DS_MOTION_EASING[step])}
+                  label={`${DS_MOTION_DURATION.base}ms · ${step}`}
+                />
               </View>
             </TokenRow>
           ))}
@@ -78,13 +103,16 @@ function MotionGallery() {
       <VariantGroup name="Spring" desc="for Animated.spring(value, DS_MOTION_SPRING) — snap-point transitions, not fixed-duration timing">
         <View style={styles.tokenStack}>
           <TokenRow use={DS_MOTION_SPRING_USE} last>
-            <View style={styles.springGrid}>
-              {(Object.entries(DS_MOTION_SPRING) as [string, number | boolean][]).map(([key, value]) => (
-                <View key={key} style={styles.springField}>
-                  <Text style={styles.previewLabel}>{key}</Text>
-                  <Text style={styles.previewValue}>{String(value)}</Text>
-                </View>
-              ))}
+            <View style={styles.rowContent}>
+              <View style={styles.springGrid}>
+                {(Object.entries(DS_MOTION_SPRING) as [string, number | boolean][]).map(([key, value]) => (
+                  <View key={key} style={styles.springField}>
+                    <Text style={styles.previewLabel}>{key}</Text>
+                    <Text style={styles.previewValue}>{String(value)}</Text>
+                  </View>
+                ))}
+              </View>
+              <MotionSpecimen kind="spring" spring={DS_MOTION_SPRING} label="Animated.spring(value, DS_MOTION_SPRING)" />
             </View>
           </TokenRow>
         </View>

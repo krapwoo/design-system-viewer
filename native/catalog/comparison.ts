@@ -115,12 +115,17 @@ export interface ListGeometry {
 /** Balanced wrapping for a one-axis list inside a single bordered card (1px outer border). Each
  *  cell's 1px divider sits inside its own width, so no cell is ever wider than 402px. Uses as few
  *  rows as fit, then spreads items evenly across them so a short last row leaves as little empty
- *  space as possible. `fillers` blank cells complete the last row. */
-export function listGeometry(itemCount: number, availableWidth: number, size: SpecimenSize): ListGeometry {
+ *  space as possible. `fillers` blank cells complete the last row. `columnCap` (from
+ *  `VariantSlot.maxColumns`) only ever lowers the natural, width-based column count — a narrow
+ *  container still drops below it when it has to, so the cap can never widen a row past what the
+ *  available width actually fits. */
+export function listGeometry(itemCount: number, availableWidth: number, size: SpecimenSize, columnCap?: number): ListGeometry {
   if (itemCount <= 0) return { columns: 0, rows: 0, fillers: 0, cellWidth: 0, containerWidth: 0 };
   const inner = Math.max(0, availableWidth - 2);
   const min = COLUMN_MIN_WIDTH[size];
-  const maxColumns = Math.max(1, Math.min(itemCount, Math.floor(inner / min)));
+  const widthLimit = Math.floor(inner / min);
+  const limit = columnCap !== undefined ? Math.min(widthLimit, columnCap) : widthLimit;
+  const maxColumns = Math.max(1, Math.min(itemCount, limit));
   const rows = Math.ceil(itemCount / maxColumns);
   const columns = Math.ceil(itemCount / rows);
   const fitted = Math.floor(inner / columns);
@@ -228,7 +233,7 @@ export interface ListGroup {
 export type PresentationBlock =
   | { kind: 'grid'; title: string; size: SpecimenSize; comparison: ComparisonDef }
   | { kind: 'grouped'; title: string; size: SpecimenSize; groups: ListGroup[] }
-  | { kind: 'list'; title: string; size: SpecimenSize; items: ListItem[] }
+  | { kind: 'list'; title: string; size: SpecimenSize; items: ListItem[]; maxColumns?: 1 | 2 | 3 | 4 | 5 }
   | { kind: 'preview'; title: string; widths: PreviewWidths }
   | { kind: 'tokenSections'; title: string; sections: TokenSection[]; columns: 1 | 2 | 3 }
   | { kind: 'empty'; title: string; message: string };
@@ -308,7 +313,13 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
       blocks.push({ kind: 'grouped', title: 'Variant × configuration', size: def.specimenSize ?? 'regular', groups: grouped.groups });
       states = grouped.leftovers;
     } else if (def.variants) {
-      blocks.push({ kind: 'list', title: 'Variants', size: slotSize(def, def.variants), items: slotItems(def.variants) });
+      blocks.push({
+        kind: 'list',
+        title: 'Variants',
+        size: slotSize(def, def.variants),
+        items: slotItems(def.variants),
+        ...(def.variants.maxColumns !== undefined ? { maxColumns: def.variants.maxColumns } : {}),
+      });
     } else if (def.render) {
       blocks.push({ kind: 'preview', title: 'Preview', widths: previewWidths(def.previewWidths, options.defaultPreviewWidths) });
     }
@@ -321,6 +332,7 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
       title: secondary ? 'Other configurations' : 'States / configurations',
       size: slotSize(def, states),
       items: slotItems(states),
+      ...(states.maxColumns !== undefined ? { maxColumns: states.maxColumns } : {}),
     });
   }
 
@@ -336,9 +348,11 @@ export interface PlacementBlock {
   width?: number;
   /** Measured height of the whole block, label included, while stacked. */
   height: number;
-  /** For a list: item count and specimen size, so its side-by-side height can be predicted. */
+  /** For a list: item count, specimen size, and any explicit column cap, so its side-by-side
+   *  height can be predicted from the same geometry the rendered list uses. */
   itemCount?: number;
   size?: SpecimenSize;
+  maxColumns?: 1 | 2 | 3 | 4 | 5;
 }
 
 /** Side by side or stacked, for a page with exactly two blocks. Tries both and keeps the shorter;
@@ -351,8 +365,8 @@ export function choosePlacement({ available, gap, first, second }: { available: 
   const room = available - firstWidth - gap;
   const minCell = second.size === 'wide' ? MATRIX_LAYOUT.columnMaxWidth : COLUMN_MIN_WIDTH[second.size];
   if (room < minCell + 2) return 'stacked';
-  const stackedRows = listGeometry(second.itemCount, available, second.size).rows;
-  const sideRows = listGeometry(second.itemCount, room, second.size).rows;
+  const stackedRows = listGeometry(second.itemCount, available, second.size, second.maxColumns).rows;
+  const sideRows = listGeometry(second.itemCount, room, second.size, second.maxColumns).rows;
   const rowHeight = second.height / Math.max(1, stackedRows);
   const sideHeight = Math.max(first.height, sideRows * rowHeight);
   const stackedHeight = first.height + gap + second.height;

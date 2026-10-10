@@ -2,15 +2,27 @@ import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
-import type { SpecimenSize } from './types';
+import { SpecimenSurface } from './SpecimenSurface';
+import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 
 /**
  * Grouped rows: one row per variant, headed by the variant's name, holding that variant's own
  * configurations. Each cell keeps its own caption because the rows do not share column meanings
  * (a circle's size is not a bar's thickness). Each row is its own labeled list. Shorter rows end
- * in blank cells; a card wider than its container scrolls horizontally inside itself.
+ * in blank cells; a card wider than its container scrolls horizontally inside itself. `surface` is
+ * the page's `specimenSurface` behind each item.
  */
-export function ComparisonGroups({ groups, size, label }: { groups: ListGroup[]; size: SpecimenSize; label: string }) {
+export function ComparisonGroups({
+  groups,
+  size,
+  label,
+  surface = 'neutral',
+}: {
+  groups: ListGroup[];
+  size: SpecimenSize;
+  label: string;
+  surface?: SpecimenSurfaceKind;
+}) {
   const columns = Math.max(1, ...groups.map((g) => g.items.length));
   const min = COLUMN_MIN_WIDTH[size];
   const minWidth = MATRIX_LAYOUT.rowHeaderWidth + columns * min + 2;
@@ -35,7 +47,9 @@ export function ComparisonGroups({ groups, size, label }: { groups: ListGroup[];
                       <Text style={styles.captionText}>{item.label}</Text>
                     </View>
                     <View style={styles.specimen}>
-                      <View style={item.fill ? styles.fill : styles.center}>{item.node as React.ReactNode}</View>
+                      <SpecimenSurface surface={surface} style={item.fill && styles.fill}>
+                        {item.node as React.ReactNode}
+                      </SpecimenSurface>
                     </View>
                   </View>
                 );
@@ -88,6 +102,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  center: { alignItems: 'center' },
   fill: { alignSelf: 'stretch' },
 });

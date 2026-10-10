@@ -28,12 +28,13 @@ export interface StaticListItem {
 
 export interface StaticPage {
   file: string;
-  /** False when some piece of this page's layout-relevant data (design §4's list: `specimenSize`,
-   *  `group`, grid `rows`/`columns`, list items' `key`/`name`/`props`/`group`, `propNotes` keys)
-   *  wasn't a literal this reader can resolve. This does NOT mean every field below is absent —
-   *  only the specific field(s) that failed to read are left unset; a field that *was* read
-   *  successfully is still usable by a caller (e.g. `propNoteKeys` can be present even though
-   *  `comparison` is absent because only the comparison wasn't literal). */
+  /** False when some piece of this page's layout-relevant data (design §4's list plus the public
+   *  `maxColumns` cap: `specimenSize`, `group`, grid `rows`/`columns`, slots' `maxColumns`, list
+   *  items' `key`/`name`/`props`/`group`, `propNotes` keys) wasn't a literal this reader can resolve.
+   *  This does NOT mean every field below is absent — only the specific field(s) that failed to
+   *  read are left unset; a field that *was* read successfully is still usable by a caller (e.g.
+   *  `propNoteKeys` can be present even though `comparison` is absent because only the comparison
+   *  wasn't literal). */
   checkable: boolean;
   /** Set only when the file failed to parse (a syntax error) — distinct from `checkable: false`,
    *  which also covers a page that parsed fine but has non-literal layout data. */
@@ -68,17 +69,20 @@ export interface StaticPage {
   comparison?: StaticComparison;
   variantsItems?: StaticListItem[];
   statesItems?: StaticListItem[];
-  /** None of these four are in design §4's literal-checkable list, so a non-literal value for any
-   *  of them is simply left unset here — never a reason to flip `checkable` to false. `cli/explain.ts`
-   *  (Task 6) needs them to avoid reporting different geometry than the real viewer for a page that
-   *  sets any of them (Important finding: `itemsFill`, `hide.variants`/`hide.states`, and
-   *  `fullWidthLabel` were dropped by an earlier draft's `toSectionDef`). */
+  /** None of the first four fields below are in design §4's original literal-checkable list, so a
+   *  non-literal value is simply left unset here. `maxColumns` is the exception: it changes the
+   *  list geometry `cli/explain.ts` reports, so a non-literal or out-of-range cap makes the page not
+   *  checkable rather than letting the CLI drift from the viewer. */
   previewWidths?: readonly number[] | 'full';
   fullWidthLabel?: string;
   hideVariants?: boolean;
   hideStates?: boolean;
   variantsItemsFill?: boolean;
   statesItemsFill?: boolean;
+  /** Literal `VariantSlot.maxColumns` values. Unlike `itemsFill`, a non-literal cap makes the page
+   *  not checkable because `explain` would otherwise report different list geometry than the viewer. */
+  variantsMaxColumns?: 1 | 2 | 3 | 4 | 5;
+  statesMaxColumns?: 1 | 2 | 3 | 4 | 5;
 }
 
 const TRANSPILE_OPTIONS: ts.TranspileOptions = {
@@ -219,6 +223,7 @@ function readStaticPage(file: string): StaticPage {
   else {
     page.variantsItems = variants.items;
     page.variantsItemsFill = variants.itemsFill;
+    page.variantsMaxColumns = variants.maxColumns;
   }
 
   const states = readSlotItems(findProp(pageObject, 'states'), consts);
@@ -226,6 +231,7 @@ function readStaticPage(file: string): StaticPage {
   else {
     page.statesItems = states.items;
     page.statesItemsFill = states.itemsFill;
+    page.statesMaxColumns = states.maxColumns;
   }
 
   return page;
@@ -423,15 +429,16 @@ function readLiteralProps(node: ts.Expression, consts: Map<string, ts.Expression
   return result;
 }
 
-/** A `variants`/`states` field: `{ itemsFill?, items: [...] }`, `items` read by `readListItems`.
- *  Distinguishes "field absent" (always checkable, everything undefined) from "field present but
- *  not literal" (not checkable). `itemsFill` is read only if present and literal — like
- *  `previewWidths`/`fullWidthLabel`, it isn't in design §4's literal-checkable list, so a
- *  non-literal `itemsFill` is simply left unset, never a reason to reject the whole slot. */
+/** A `variants`/`states` field: `{ itemsFill?, maxColumns?, items: [...] }`, `items` read by
+ *  `readListItems`. Distinguishes "field absent" (always checkable, everything undefined) from
+ *  "field present but not literal" (not checkable). `itemsFill` is read only if present and
+ *  literal — like `previewWidths`/`fullWidthLabel`, it isn't in the original literal-checkable
+ *  list, so a non-literal `itemsFill` is simply left unset. `maxColumns` does affect the geometry
+ *  `explain` reports, so it must be a literal integer from 1–5 or the page is not checkable. */
 function readSlotItems(
   prop: ts.PropertyAssignment | undefined,
   consts: Map<string, ts.Expression>,
-): { items?: StaticListItem[]; itemsFill?: boolean; checkable: boolean } {
+): { items?: StaticListItem[]; itemsFill?: boolean; maxColumns?: 1 | 2 | 3 | 4 | 5; checkable: boolean } {
   if (!prop) return { checkable: true };
   const resolved = resolve(prop.initializer, consts, new Set());
   const itemsProp = ts.isObjectLiteralExpression(resolved) ? findProp(resolved, 'items') : undefined;
@@ -440,5 +447,14 @@ function readSlotItems(
   if (!items) return { checkable: false };
   const itemsFillProp = ts.isObjectLiteralExpression(resolved) ? findProp(resolved, 'itemsFill') : undefined;
   const itemsFill = itemsFillProp ? resolve(itemsFillProp.initializer, consts, new Set()).kind === ts.SyntaxKind.TrueKeyword : undefined;
-  return { items, itemsFill, checkable: true };
+  const maxColumnsProp = ts.isObjectLiteralExpression(resolved) ? findProp(resolved, 'maxColumns') : undefined;
+  let maxColumns: 1 | 2 | 3 | 4 | 5 | undefined;
+  if (maxColumnsProp) {
+    const value = resolve(maxColumnsProp.initializer, consts, new Set());
+    if (!ts.isNumericLiteral(value)) return { checkable: false };
+    const parsed = Number(value.text);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) return { checkable: false };
+    maxColumns = parsed as 1 | 2 | 3 | 4 | 5;
+  }
+  return { items, itemsFill, maxColumns, checkable: true };
 }

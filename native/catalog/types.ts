@@ -48,6 +48,12 @@ export interface VariantSlot {
    *  content width — for wide block-level components (Banner, Card, Toast, InputField) rather than
    *  small instances meant to sit centered (Button, Badge, Pill). @default false */
   itemsFill?: boolean;
+  /** Caps how many columns this slot's `ComparisonList` ever wraps into — e.g. a size scale that
+   *  must read as one row of exactly 3, never more, regardless of how much laptop width is free.
+   *  `listGeometry` still drops to fewer columns than this when the available width requires it;
+   *  it only ever lowers the natural, width-based column count, never raises it. Omit to let the
+   *  slot's specimen size and available width decide alone (today's behavior, unchanged). */
+  maxColumns?: 1 | 2 | 3 | 4 | 5;
   items: VariantExample[];
 }
 
@@ -58,6 +64,28 @@ export type SpecimenSize = 'compact' | 'regular' | 'wide';
 /** Widths for a component preview: one or more phone widths (each capped at 402px), or 'full' for
  *  content that is not a phone component (catalog chrome, token galleries). */
 export type PreviewWidths = readonly number[] | 'full';
+
+/** Background behind a live component specimen (the list/grouped/grid cell, or the preview frame)
+ *  — a neutral (default), explicit white, dark, or transparent catalog-owned stage, so a specimen
+ *  reads as visibly separate from the surrounding white card rather than floating on it, which
+ *  matters most for a low-contrast or motion-only component that could otherwise blend into a
+ *  plain white background. Purely a fixed catalog-chrome backdrop: it never inspects or infers the
+ *  wrapped component's own colors, and is never applied to token galleries/sections, which keep
+ *  their current full-width, unstaged presentation regardless of this setting. */
+export type SpecimenSurfaceKind = 'neutral' | 'white' | 'dark' | 'transparent';
+
+/** One real component this page's component is built from or composed with — rendered as a
+ *  "Composition" subsection in Quick reference. `relationship` is `'built-in'` for a component
+ *  always present (e.g. Toast is built from a Banner internally), `'slot'` for an optional
+ *  caller-supplied child (e.g. a `leadingIcon` prop), or `'related'` for a component commonly used
+ *  alongside this one without either containing the other. `component` is validated at catalog-
+ *  build time against the known page/component inventory (`buildCatalogSections`); an unknown name
+ *  only ever warns in development, it never fails the build. */
+export interface ComposedOfEntry {
+  component: string;
+  role: string;
+  relationship: 'built-in' | 'slot' | 'related';
+}
 
 /** One row or column heading in a grid. */
 export interface ComparisonAxisItem {
@@ -189,6 +217,10 @@ export interface SectionDef<TId extends string = string> {
   /** Width class for this page's specimens. Without it, full-width (`itemsFill`) slots are 'wide'
    *  and everything else is 'regular'. */
   specimenSize?: SpecimenSize;
+  /** Background stage behind every live component specimen on this page (list/grouped/grid cells,
+   *  and a `render()` preview that isn't a token gallery). Defaults to `'neutral'`. See
+   *  `SpecimenSurfaceKind`. */
+  specimenSurface?: SpecimenSurfaceKind;
   /** Widths for this page's `render()` preview, e.g. `[402, 320]` to add a small-phone example.
    *  Defaults to the catalog's default (CatalogShell `defaultPreviewWidths`), else `[402]`. */
   previewWidths?: PreviewWidths;
@@ -203,6 +235,10 @@ export interface SectionDef<TId extends string = string> {
     props?: boolean;
     accessibility?: boolean;
   };
+  /** What this component is built from or composed with — shown as a "Composition" subsection in
+   *  Quick reference. See `ComposedOfEntry`. Omit when the component has no meaningful composition
+   *  to disclose (most leaf components). */
+  composedOf?: ComposedOfEntry[];
 }
 
 /** A labeled group of section ids in the sidebar (e.g. "Components" vs "Tokens"). */

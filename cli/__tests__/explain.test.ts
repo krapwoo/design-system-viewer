@@ -58,6 +58,23 @@ test('explains a list page\'s column/row/filler geometry', () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('explains the same capped list geometry the viewer renders', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x', specimenSize: 'compact',
+      states: { maxColumns: 2, items: [
+        { key: 'a', name: 'A', node: null }, { key: 'b', name: 'B', node: null },
+        { key: 'c', name: 'C', node: null }, { key: 'd', name: 'D', node: null },
+      ] },
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.blocks[0].kind, 'list');
+  assert.match(result!.blocks[0].reason, /4 items \(compact\) → 2 columns × 2 rows\./);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('explains a grouped-rows page by its group count', () => {
   const dir = makeProject(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';

@@ -67,6 +67,29 @@ test('listGeometry balances rows inside one card', () => {
   assert.deepEqual(listGeometry(0, 952, 'regular'), { columns: 0, rows: 0, fillers: 0, cellWidth: 0, containerWidth: 0 });
 });
 
+test('listGeometry respects an explicit column cap, never exceeding it even with room to spare', () => {
+  // Baseline, no cap: 6 regular items on a 1280px laptop -> 3 columns (matches the uncapped test above).
+  assert.deepEqual(listGeometry(6, 952, 'regular'), { columns: 3, rows: 2, fillers: 0, cellWidth: 316, containerWidth: 950 });
+  // Capped to 2: same 6 items -> 2 columns × 3 rows, never 3, even though the width fits 3.
+  assert.deepEqual(listGeometry(6, 952, 'regular', 2), { columns: 2, rows: 3, fillers: 0, cellWidth: 402, containerWidth: 806 });
+  // A cap higher than what fits the width still drops to fewer columns when width requires it.
+  assert.deepEqual(listGeometry(3, 200, 'regular', 5), { columns: 1, rows: 3, fillers: 0, cellWidth: 240, containerWidth: 242 });
+  // A cap of 1 always stacks into a single column.
+  assert.deepEqual(listGeometry(4, 952, 'compact', 1), { columns: 1, rows: 4, fillers: 0, cellWidth: 402, containerWidth: 404 });
+});
+
+test('presentationBlocks propagates an explicit maxColumns onto list blocks, omitting it when not set', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = { maxColumns: 3, items: [{ key: 'a', name: 'A', node: 'a' }] };
+  const states = { maxColumns: 2, items: [{ key: 'disabled', name: 'Disabled', node: 'd' }] };
+  const [variantsBlock, statesBlock] = presentationBlocks({ ...base, variants, states });
+  assert.equal(variantsBlock.maxColumns, 3);
+  assert.equal(statesBlock.maxColumns, 2);
+
+  const plain = presentationBlocks({ ...base, variants: { items: variants.items } })[0];
+  assert.equal('maxColumns' in plain, false, 'uncapped slots never carry a maxColumns key at all');
+});
+
 test('a complete comparison validates cleanly and indexes every cell', () => {
   assert.deepEqual(validateComparison(valid), []);
   const index = indexCells(valid);
@@ -211,6 +234,9 @@ test('choosePlacement keeps the shorter arrangement and prefers stacking', () =>
   assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'grid', width: 952, height: 500 }, second }), 'stacked');
   // Switch at 1280: beside a 402px variant, four compact states wrap to two rows — no real saving.
   assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 4, size: 'compact', height: 230 } }), 'stacked');
+  // A column cap participates in the same placement calculation: four measured one-column rows
+  // remain four rows beside the first block, instead of being incorrectly predicted as two.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 4, size: 'compact', maxColumns: 1, height: 640 } }), 'side');
   // Two single-row blocks that both fit save a full row and go side by side.
   assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 1, size: 'wide', height: 230 } }), 'side');
   // Only lists reflow predictably beside another block.

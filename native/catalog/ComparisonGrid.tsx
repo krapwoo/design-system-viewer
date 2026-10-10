@@ -2,14 +2,26 @@ import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, axisItems, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
-import type { ComparisonDef, SpecimenSize } from './types';
+import { SpecimenSurface } from './SpecimenSurface';
+import type { ComparisonDef, SpecimenSize, SpecimenSurfaceKind } from './types';
 
 /**
  * A grid of two props that combine freely, rendered as an accessible table inside one card.
  * Columns grow with the window up to 402px and never shrink below the specimen size's minimum;
- * a grid wider than its container scrolls horizontally inside the card, never the page.
+ * a grid wider than its container scrolls horizontally inside the card, never the page. `surface`
+ * is the page's `specimenSurface` behind each cell's example.
  */
-export function ComparisonGrid({ def, size, sectionId }: { def: ComparisonDef; size: SpecimenSize; sectionId: string }) {
+export function ComparisonGrid({
+  def,
+  size,
+  sectionId,
+  surface = 'neutral',
+}: {
+  def: ComparisonDef;
+  size: SpecimenSize;
+  sectionId: string;
+  surface?: SpecimenSurfaceKind;
+}) {
   if (__DEV__) {
     for (const issue of validateComparison({ ...def, size })) console.warn(`[Catalog] ${sectionId}: ${issue}`);
   }
@@ -53,7 +65,9 @@ export function ComparisonGrid({ def, size, sectionId }: { def: ComparisonDef; s
               return (
                 <View key={c.key} role="cell" style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
                   {cell?.node !== undefined ? (
-                    <View style={cell.fill ? styles.fill : styles.center}>{cell.node}</View>
+                    <SpecimenSurface surface={surface} style={cell.fill && styles.fill}>
+                      {cell.node}
+                    </SpecimenSurface>
                   ) : (
                     <Text style={styles.unavailable}>
                       {cell?.unavailableReason ? `Not supported — ${cell.unavailableReason}` : 'Missing example'}
@@ -88,7 +102,6 @@ const styles = StyleSheet.create({
   headerCell: { backgroundColor: CATALOG_COLOR.surfaceMuted, justifyContent: 'center' },
   bodyRow: { minHeight: MATRIX_LAYOUT.rowMinHeight },
   specimenCell: { alignItems: 'center', justifyContent: 'center' },
-  center: { alignItems: 'center' },
   fill: { alignSelf: 'stretch' },
   headerText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
   rowHeaderText: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
