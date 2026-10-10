@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, axisItems, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
-import { SpecimenSurface } from './SpecimenSurface';
+import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import type { ComparisonDef, SpecimenSize, SpecimenSurfaceKind } from './types';
 
@@ -64,17 +64,17 @@ export function ComparisonGrid({
             {columns.map((c, ci) => {
               const cell = cells.get(cellKey(row.key, c.key));
               return (
-                <View key={c.key} role="cell" style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
-                  {cell?.node !== undefined ? (
-                    <SpecimenSurface surface={surface} style={cell.fill && styles.fill}>
-                      {cell.node}
-                    </SpecimenSurface>
-                  ) : (
+                cell?.node !== undefined ? (
+                  <SpecimenSurface key={c.key} role="cell" surface={surface} style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
+                    <SpecimenContent fill={cell.fill}>{cell.node}</SpecimenContent>
+                  </SpecimenSurface>
+                ) : (
+                  <View key={c.key} role="cell" style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
                     <Text style={styles.unavailable}>
                       {cell?.unavailableReason ? `Not supported — ${cell.unavailableReason}` : 'Missing example'}
                     </Text>
-                  )}
-                </View>
+                  </View>
+                )
               );
             })}
           </View>
@@ -103,7 +103,6 @@ const styles = StyleSheet.create({
   headerCell: { backgroundColor: CATALOG_COLOR.surfaceMuted, justifyContent: 'center' },
   bodyRow: { minHeight: MATRIX_LAYOUT.rowMinHeight },
   specimenCell: { alignItems: 'center', justifyContent: 'center' },
-  fill: { alignSelf: 'stretch' },
   headerText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
   rowHeaderText: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
   unavailable: { fontSize: CATALOG_TYPE.sm, fontStyle: 'italic', textAlign: 'center', color: CATALOG_COLOR.textMuted },

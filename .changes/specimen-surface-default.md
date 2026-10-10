@@ -1,1 +1,0 @@
-Specimens have no backdrop by default again (`specimenSurface` now defaults to `'transparent'`, with no extra padding), so pages look as they did in 0.4.3. Set `specimenSurface: 'neutral'` on pages whose component is white or near-white.

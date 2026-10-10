@@ -105,21 +105,23 @@ function frameLabel(width: number): string {
  *  chrome and token galleries. Every frame is its own live instance with its own state. `surface`
  *  is omitted for token galleries, which keep their current, unstaged presentation. */
 function Preview({ render, widths, surface }: { render: () => React.ReactNode; widths: PreviewWidths; surface?: SpecimenSurfaceKind }) {
-  const stage = (node: React.ReactNode) => (surface ? <SpecimenSurface surface={surface}>{node}</SpecimenSurface> : node);
-  if (widths === 'full') return <View style={styles.previewCard}>{stage(render())}</View>;
+  // Token galleries pass no surface: their card stays white.
+  const kind = surface ?? 'transparent';
+  if (widths === 'full') return <SpecimenSurface surface={kind} style={styles.previewCard}>{render()}</SpecimenSurface>;
   return (
     <View style={styles.previewCard}>
       <View style={styles.frames}>
         {widths.map((width, i) => (
-          <View
+          <SpecimenSurface
             key={`${width}-${i}`}
+            surface={kind}
             // Two live instances of the same component: name each so assistive tech can tell them apart.
             {...(widths.length > 1 ? ({ role: 'group', 'aria-label': frameLabel(width) } as Record<string, unknown>) : null)}
             style={[styles.frame, { width }]}
           >
             {widths.length > 1 && <Text style={styles.frameLabel}>{frameLabel(width)}</Text>}
-            {stage(render())}
-          </View>
+            {render()}
+          </SpecimenSurface>
         ))}
       </View>
     </View>

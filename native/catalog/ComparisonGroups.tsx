@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
-import { SpecimenSurface } from './SpecimenSurface';
+import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 
@@ -47,11 +47,9 @@ export function ComparisonGroups({
                     <View style={styles.caption}>
                       <Text style={styles.captionText}>{item.label}</Text>
                     </View>
-                    <View style={styles.specimen}>
-                      <SpecimenSurface surface={surface} style={item.fill && styles.fill}>
-                        {item.node as React.ReactNode}
-                      </SpecimenSurface>
-                    </View>
+                    <SpecimenSurface surface={surface} style={styles.specimen}>
+                      <SpecimenContent fill={item.fill}>{item.node as React.ReactNode}</SpecimenContent>
+                    </SpecimenSurface>
                   </View>
                 );
               })}
@@ -103,5 +101,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fill: { alignSelf: 'stretch' },
 });
