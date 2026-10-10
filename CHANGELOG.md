@@ -3,6 +3,11 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.6
+
+- The sidebar always shows the installed version and opens the update page, which now says whether you're on the latest version, automatic checks are off, or npm couldn't be reached, and offers **Check now** and a switch for automatic checks (saved per project, for you only, on this computer). `doctor` honours the same switch.
+- The viewer's update page now shows "What's new" and the release date: each release publishes its CHANGELOG notes as a GitHub release.
+
 ## 0.4.5
 
 - Example cells now turn light gray automatically when their example is white or near-white with no visible border (a white card, sheet or neutral banner), instead of 0.4.4's gray backdrop behind every example. Other cells stay white, as in 0.4.3. `specimenSurface` defaults to `'auto'`; `'neutral'` forces every cell gray and `'transparent'` keeps them white.

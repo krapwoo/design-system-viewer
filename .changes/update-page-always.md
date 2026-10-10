@@ -1,1 +1,0 @@
-The sidebar always shows the installed version and opens the update page, which now says whether you're on the latest version, automatic checks are off, or npm couldn't be reached, and offers **Check now** and a switch for automatic checks (saved per project, for you only, on this computer). `doctor` honours the same switch.
