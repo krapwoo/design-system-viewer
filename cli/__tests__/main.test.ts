@@ -345,3 +345,27 @@ test('"update --dry-run" dispatches through to resolveConfig and reports its err
   assert.match(result.stderr, /No ds-viewer\.config\.ts found/);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('doctor --render adds render findings to --json output and drives --ci; strict promotes layout warnings', async () => {
+  const dir = makeDoctorFixture(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x', whenToUse: 'w', a11y: 'a',
+      variants: { items: [
+        { key: 'primary', name: 'Primary', props: { variant: 'primary' }, node: null },
+        { key: 'secondary', name: 'Secondary', props: { variant: 'secondary' }, node: null },
+      ] },
+    });
+  `);
+  const layout = { id: 'render-layout', severity: 'warning' as const, page: 'Widget', message: 'Widget (a) is 300px wide in a 157px cell.', fix: 'f' };
+  const json = await runDoctorCommand(dir, ['--render', '--json'], { renderCheck: async () => [layout] });
+  const parsed = JSON.parse(json.output);
+  assert.ok(parsed.issues.some((i: { id: string }) => i.id === 'render-layout'));
+  const error = { id: 'render-error', severity: 'error' as const, page: 'Widget', message: 'Console error', fix: 'f' };
+  assert.equal((await runDoctorCommand(dir, ['--render', '--ci'], { renderCheck: async () => [error] })).exitCode, 1);
+  assert.equal((await runDoctorCommand(dir, ['--render', '--ci'], { renderCheck: async () => [layout] })).exitCode, 0);
+  writeFileSync(path.join(dir, 'ds-viewer.config.ts'), readFileSync(path.join(dir, 'ds-viewer.config.ts'), 'utf8').replace('defineConfig({', 'defineConfig({ doctor: { strict: true },'));
+  const strict = await runDoctorCommand(dir, ['--render', '--ci'], { renderCheck: async () => [layout] });
+  assert.equal(strict.exitCode, 1);
+  rmSync(dir, { recursive: true, force: true });
+});

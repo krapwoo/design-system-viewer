@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage, PhoneFrame } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, OverlayDemo } from '@krapwoo/ds-viewer';
 import { Button } from '../Button';
 import { ButtonGroup } from '../ButtonGroup';
 import { Dialog } from './Dialog';
@@ -13,21 +13,21 @@ const styles = StyleSheet.create({
 });
 
 function DialogDemo() {
-  const [visible, setVisible] = useState(false);
   return (
-    <PhoneFrame>
-      {!visible && <Button label="Open dialog" onPress={() => setVisible(true)} />}
-      <Dialog visible={visible} onDismiss={() => setVisible(false)}>
-        <Text style={styles.cardTitle}>Delete this trip?</Text>
-        <Text style={styles.cardBody}>This can't be undone.</Text>
-        <View style={styles.dialogActions}>
-          <ButtonGroup>
-            <Button label="Cancel" variant="tertiary" onPress={() => setVisible(false)} />
-            <Button label="Delete" onPress={() => setVisible(false)} />
-          </ButtonGroup>
-        </View>
-      </Dialog>
-    </PhoneFrame>
+    <OverlayDemo triggerLabel="Open dialog">
+      {({ open, close }) => (
+        <Dialog visible={open} onDismiss={close}>
+          <Text style={styles.cardTitle}>Delete this trip?</Text>
+          <Text style={styles.cardBody}>This can't be undone.</Text>
+          <View style={styles.dialogActions}>
+            <ButtonGroup>
+              <Button label="Cancel" variant="tertiary" onPress={close} />
+              <Button label="Delete" onPress={close} />
+            </ButtonGroup>
+          </View>
+        </Dialog>
+      )}
+    </OverlayDemo>
   );
 }
 

@@ -272,6 +272,28 @@ actually apply:
   in an iPhone SE viewport (375 × 667 points), scaled down only when its cell is narrower. In the
   browser viewer it opens that example in its own device-sized document, so overlays that portal
   to the page (React Native's `Modal`) open inside the phone, not over the catalog.
+- **`OverlayDemo`** — a phone with a catalog button that opens an overlay. Children get
+  `{ open, close }`; keep the overlay mounted and drive its own `visible` from `open`, so its
+  animations play. `keepTrigger` makes the button a toggle; `triggerLabel` can follow the state;
+  `initiallyOpen` starts it open.
+  ```tsx
+  <OverlayDemo triggerLabel="Open sheet">
+    {({ open, close }) => (
+      <BottomSheet visible={open} onDismiss={close} footer={<Dock><Button label="Confirm" onPress={close} /></Dock>}>
+        …
+      </BottomSheet>
+    )}
+  </OverlayDemo>
+  ```
+- **`PhoneScreen`** — a whole app screen inside a `PhoneFrame`: `header` stays at the top,
+  `footer` at the phone's bottom, and the children scroll between them instead of pushing the
+  footer off the screen. `floating` is a layer over the top for toasts (position its content
+  yourself); `bodyWrapper` puts your own surface around the scrolling body.
+  ```tsx
+  <PhoneFrame>
+    <PhoneScreen header={<TopNav title="Saved trips" />} footer={<Dock>…</Dock>}>…</PhoneScreen>
+  </PhoneFrame>
+  ```
 - Full-width (`itemsFill`) variants and states wrap at most **3** across; set `maxColumns` to
   change that. A filled example that keeps its own fixed width is centred in its cell.
   Default to one preview; add a second width only when a narrower (or wider) viewport actually
@@ -463,6 +485,27 @@ Button
   dynamically-constructed references remain uncheckable rather than being guessed at. A
   declared `intentionalStaticPreview` is taken as the author's own call, not independently
   verified; only a real browser check confirms actual behavior.
+- `overlay-without-device-frame` (warning) — the component imports React Native's `Modal`, which
+  opens over the whole catalog page on the web, but its page imports no `PhoneFrame`,
+  `OverlayDemo`, `PhoneScreen` or `BoundedOverlayViewport`. Conservative: it can't see
+  `import * as RN`, a re-exported `Modal`, or a Modal opened by a sub-component.
+
+### `doctor --render`
+
+`npx ds-viewer doctor --render` also starts the viewer, opens every page in a headless browser,
+and adds what only a real render shows:
+
+- `render-error` / `render-no-heading` (errors): a console error, or a page that didn't render.
+- `render-layout` (warning): an example wider than its cell (the viewer's own check), with the
+  page and file. `render-catalog-warning` (warning): any other `[Catalog]` warning, reported once.
+- `render-unavailable` / `render-failed` (errors): no browser, or the catalog didn't start.
+
+It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't
+install a browser. It takes about two minutes for 50 pages and works with `--json` (progress
+goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci`.
+It stops the viewer it started, including on Ctrl-C (exit codes 130, 143 or 129 for SIGINT,
+SIGTERM or SIGHUP). On Windows it stops the viewer with `taskkill`; that path is unit-tested, not
+run on a real Windows machine.
 
 ## Known gaps
 

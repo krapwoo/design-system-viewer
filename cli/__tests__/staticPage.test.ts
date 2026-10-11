@@ -579,3 +579,21 @@ test('composedOf stays undefined (but hasComposedOf true, and the page stays che
   assert.equal(page.composedOf, undefined);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
+
+test('viewerImports lists the imported names from @krapwoo/ds-viewer, even when the page is not literal-checkable', () => {
+  const literal = writePage(`
+    import { defineCatalogPage, PhoneFrame as Frame } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  assert.deepEqual(readStaticPages([literal])[0].viewerImports, ['defineCatalogPage', 'PhoneFrame']);
+  const notLiteral = writePage(`
+    import { defineCatalogPage, OverlayDemo } from '@krapwoo/ds-viewer';
+    const make = () => ({ group: 'Components', description: 'x' });
+    export default defineCatalogPage(make());
+  `);
+  const page = readStaticPages([notLiteral])[0];
+  assert.equal(page.checkable, false);
+  assert.deepEqual(page.viewerImports, ['defineCatalogPage', 'OverlayDemo']);
+  rmSync(path.dirname(literal), { recursive: true, force: true });
+  rmSync(path.dirname(notLiteral), { recursive: true, force: true });
+});

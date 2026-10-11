@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { applyComponentDefaults, checkPageTypeErrors, collectGlobalIssues, collectIssues, formatHuman, runDoctor, toDoctorJson } from '../doctor.ts';
+import { applyComponentDefaults, withExtraIssues, checkOverlaysFramed, checkPageTypeErrors, collectGlobalIssues, collectIssues, formatHuman, runDoctor, toDoctorJson } from '../doctor.ts';
 import type { ComponentRecord, ResolvedConfig } from '../types.ts';
 import type { StaticPage } from '../staticPage.ts';
 
@@ -628,4 +628,48 @@ test('missing-working-preview does not fire when the callback is an unknown expr
     ],
   })], [pillRow]);
   assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+});
+
+test('overlay-without-device-frame warns when a Modal-opening component\'s page has no device frame', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-overlay-'));
+  writeFileSync(path.join(dir, 'Picker.tsx'), "import { Modal as RNModal, View } from 'react-native';\nexport function Picker() { return null; }\n");
+  const picker = component({ name: 'Picker', file: 'Picker.tsx' });
+  const bare = checkOverlaysFramed([page({ component: 'Picker', viewerImports: ['defineCatalogPage'] })], [picker], dir);
+  assert.deepEqual(bare.map((i) => [i.id, i.severity]), [['overlay-without-device-frame', 'warning']]);
+  for (const frame of ['PhoneFrame', 'OverlayDemo', 'PhoneScreen', 'BoundedOverlayViewport']) {
+    assert.equal(checkOverlaysFramed([page({ component: 'Picker', viewerImports: ['defineCatalogPage', frame] })], [picker], dir).length, 0, frame);
+  }
+  assert.equal(checkOverlaysFramed([page({ component: 'Picker' })], [picker], dir).length, 0, 'unknown imports never count as missing');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('overlay-without-device-frame ignores components that never import Modal (a local name "Modal" is not RN\'s)', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-overlay-'));
+  writeFileSync(path.join(dir, 'Sheet.tsx'), "import { View as Modal } from 'react-native';\nexport function Sheet() { return null; }\n");
+  assert.equal(checkOverlaysFramed([page({ component: 'Sheet', viewerImports: [] })], [component({ name: 'Sheet', file: 'Sheet.tsx' })], dir).length, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('withExtraIssues adds findings, recounts the summary and exit code, and applies strict', () => {
+  const base = { version: 1 as const, summary: { errors: 0, warnings: 1, components: 3, withExamples: 3, unboundExamples: 0 }, update: null, issues: [{ id: 'a', severity: 'warning' as const, message: 'm', fix: 'f' }], exitCode: 0 };
+  const warn = { id: 'render-layout', severity: 'warning' as const, message: 'w', fix: 'f' };
+  const plain = withExtraIssues(base, [warn], false);
+  assert.deepEqual([plain.summary.errors, plain.summary.warnings, plain.exitCode, plain.summary.components], [0, 2, 0, 3]);
+  const strict = withExtraIssues(base, [warn], true);
+  assert.deepEqual([strict.summary.errors, strict.summary.warnings, strict.exitCode], [1, 1, 1]);
+});
+
+test('runDoctor maps each page id to its project-relative file', () => {
+  const dir = makeProject(FULLY_COVERED_PAGE);
+  assert.equal(runDoctor(configFor(dir)).pageFiles.get('Widget'), path.join('components', 'Widget', 'Widget.catalog.tsx'));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('overlay-without-device-frame ignores type-only Modal imports', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-overlay-'));
+  writeFileSync(path.join(dir, 'A.tsx'), "import type { Modal } from 'react-native';\nexport function A() { return null; }\n");
+  writeFileSync(path.join(dir, 'B.tsx'), "import { type Modal, View } from 'react-native';\nexport function B() { return null; }\n");
+  const pages = [page({ component: 'A', viewerImports: [] }), page({ component: 'B', viewerImports: [] })];
+  assert.equal(checkOverlaysFramed(pages, [component({ name: 'A', file: 'A.tsx' }), component({ name: 'B', file: 'B.tsx' })], dir).length, 0);
+  rmSync(dir, { recursive: true, force: true });
 });

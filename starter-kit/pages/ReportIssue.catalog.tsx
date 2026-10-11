@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage, PhoneFrame } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, OverlayDemo } from '@krapwoo/ds-viewer';
 import { Banner } from '../components/Banner';
 import { BottomSheet } from '../components/BottomSheet';
 import { Button } from '../components/Button';
@@ -51,7 +51,6 @@ const REPORT_ISSUE_TYPE_PILLS: PillRowItem[] = [
 ];
 
 function ReportIssueDemo() {
-  const [visible, setVisible] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [issueType, setIssueType] = useState('delay');
   const [line, setLine] = useState('4');
@@ -60,17 +59,19 @@ function ReportIssueDemo() {
   const [visibility, setVisibility] = useState('public');
   const [notify, setNotify] = useState(true);
 
-  const requestClose = () => setConfirmDiscard(true);
-  const discard = () => {
-    setConfirmDiscard(false);
-    setVisible(false);
-  };
-
   return (
-    <PhoneFrame>
-      {!visible && <Button label="Report an issue" onPress={() => setVisible(true)} />}
+    <OverlayDemo triggerLabel="Report an issue">
+      {({ open, close }) => {
+        // Closing asks first; discarding confirms and closes the sheet.
+        const requestClose = () => setConfirmDiscard(true);
+        const discard = () => {
+          setConfirmDiscard(false);
+          close();
+        };
+        return (
+          <>
       <BottomSheet
-        visible={visible}
+        visible={open}
         onDismiss={requestClose}
         header={
           <TopNav
@@ -82,7 +83,7 @@ function ReportIssueDemo() {
         }
         footer={
           <Dock>
-            <Button label="Submit report" onPress={() => setVisible(false)} />
+            <Button label="Submit report" onPress={close} />
           </Dock>
         }
       >
@@ -135,7 +136,10 @@ function ReportIssueDemo() {
           </ButtonGroup>
         </View>
       </Dialog>
-    </PhoneFrame>
+          </>
+        );
+      }}
+    </OverlayDemo>
   );
 }
 
