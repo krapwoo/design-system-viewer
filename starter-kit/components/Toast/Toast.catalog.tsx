@@ -32,6 +32,13 @@ export default defineCatalogPage({
   description: 'A transient confirmation bar. Without a variant it renders the dark surface with inverse text; a variant shifts to a pastel status color.',
   whenToUse: "Transient and self-contained, floating over the screen, expected to go away on its own or via its own action. For a persistent, in-flow message about a standing condition, use Banner.",
   a11y: 'Rendered with accessibilityRole="alert" so screen readers announce it when it appears.',
+  // Confirmed from Toast.tsx's own JSX, not inferred from its imports: it renders a Button itself
+  // (not a caller-supplied child) whenever `action` is set. Toast.tsx also renders an Icon for its
+  // status glyph, but Icon has no catalog page/known component name of its own to confirm against
+  // yet, so that entry is left out rather than logging an unknown-component warning.
+  composedOf: [
+    { component: 'Button', role: 'Renders the optional action button when `action` is set.', relationship: 'built-in' },
+  ],
   variants: {
     itemsFill: true,
     items: [

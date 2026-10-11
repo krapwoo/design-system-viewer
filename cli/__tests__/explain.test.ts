@@ -75,6 +75,82 @@ test('explains the same capped list geometry the viewer renders', () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+// Cross-path propagation: the same per-item `surface` override `native/catalog/comparison.ts`'s
+// `presentationBlocks` (the runtime path `SectionBlock.tsx` renders with) resolves onto a
+// `ListItem` must survive the static path (`staticPage.ts` → this file's `toSectionDef`) too, so
+// `explain` never reports a page as plainer than what the viewer actually shows.
+test('explains a list whose item carries its own surface override, the same per-item field the viewer renders with', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      states: { items: [
+        { key: 'a', name: 'A', node: null },
+        { key: 'b', name: 'B', surface: 'white', node: null },
+      ] },
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.blocks[0].kind, 'list');
+  assert.match(result!.blocks[0].reason, /1 item overrides the surface\./);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// Cross-path propagation for the new typed `align` override: same reasoning as the surface test
+// above — a per-item `align` must survive `staticPage.ts` → `toSectionDef` the same way the viewer
+// itself renders it, so `explain` never under-reports what the page actually shows.
+test('explains a list whose item carries its own align override, the same per-item field the viewer renders with', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      states: { items: [
+        { key: 'a', name: 'A', node: null },
+        { key: 'b', name: 'B', align: 'start', node: null },
+      ] },
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.blocks[0].kind, 'list');
+  assert.match(result!.blocks[0].reason, /1 item overrides the alignment\./);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('explains a grid whose directly-authored cells carry their own surface/align overrides', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      comparison: {
+        rowLabel: 'Variant', columnLabel: 'State',
+        rows: [{ key: 'primary', label: 'Primary' }],
+        columns: [{ key: 'default', label: 'Default' }],
+        cells: [{ rowKey: 'primary', columnKey: 'default', surface: 'white', align: 'end', node: null }],
+      },
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.blocks[0].kind, 'grid');
+  assert.match(result!.blocks[0].reason, /1 cell overrides the surface\./);
+  assert.match(result!.blocks[0].reason, /1 cell overrides the alignment\./);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('explains a grouped page\'s own-surface override the same way a plain list does', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'circle', name: 'Circle', node: null }] },
+      states: { items: [{ key: 'small', name: 'Small', group: 'circle', surface: 'neutral', node: null }] },
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.blocks[0].kind, 'grouped');
+  assert.match(result!.blocks[0].reason, /1 item overrides the surface\./);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('explains a grouped-rows page by its group count', () => {
   const dir = makeProject(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
@@ -181,6 +257,31 @@ test('explainPage reports a page that is not statically checkable as such, inste
   const result = explainPage(configFor(dir), 'Widget');
   assert.equal(result?.notCheckable, true);
   assert.deepEqual(result?.blocks, []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// Guided intelligence design §3 / plan Task 3 — the explicit intentional-static declaration's
+// bounded reason stays explainable rather than silently suppressing the advisory invisibly.
+test('explainPage surfaces an authored intentionalStaticPreview reason', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      intentionalStaticPreview: { reason: 'Already demonstrated by SegmentedToggle.' },
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.intentionalStaticPreviewReason, 'Already demonstrated by SegmentedToggle.');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('explainPage leaves intentionalStaticPreviewReason undefined with no declaration at all', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.intentionalStaticPreviewReason, undefined);
   rmSync(dir, { recursive: true, force: true });
 });
 

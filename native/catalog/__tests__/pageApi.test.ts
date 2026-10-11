@@ -144,6 +144,29 @@ test('buildCatalogSections warns in development about an unknown composedOf name
   }
 });
 
+test('buildCatalogSections carries intentionalStaticPreview through to the section (guided intelligence design §3)', () => {
+  const pages = [defineCatalogPage({
+    id: 'PillRow', group: 'Components', description: 'x',
+    intentionalStaticPreview: { reason: 'Selection is already demonstrated by SegmentedToggle\'s working preview.' },
+  })];
+  const { sections } = buildCatalogSections(pages, []);
+  assert.deepEqual(sections.find((s) => s.id === 'PillRow')?.intentionalStaticPreview, {
+    reason: 'Selection is already demonstrated by SegmentedToggle\'s working preview.',
+  });
+  const undeclared = buildCatalogSections([defineCatalogPage({ id: 'Other', group: 'Components', description: 'x' })], []).sections[0];
+  assert.equal(undeclared.intentionalStaticPreview, undefined);
+});
+
+test('buildCatalogSections carries previewLayout through to the section, omitted by default', () => {
+  const pages = [
+    defineCatalogPage({ id: 'Collapsible', group: 'Components', description: 'x', previewLayout: 'table' }),
+    defineCatalogPage({ id: 'Button', group: 'Components', description: 'x' }),
+  ];
+  const { sections } = buildCatalogSections(pages, [components[0]]);
+  assert.equal(sections.find((s) => s.id === 'Collapsible')?.previewLayout, 'table');
+  assert.equal(sections.find((s) => s.id === 'Button')?.previewLayout, undefined);
+});
+
 test('buildCatalogSections carries a display title, a source override, and the OS-component marker', () => {
   const pages = [
     { ...defineCatalogPage({ id: 'ControlHeights', title: 'Control heights', source: 'src/tokens.ts', group: 'Tokens', description: 'x', tokenGallery: true }), file: 'pages/ControlHeights.catalog.tsx' },

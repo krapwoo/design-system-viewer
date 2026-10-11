@@ -8,7 +8,7 @@ import {
 } from '../native/catalog/comparison.ts';
 import { CATALOG_LAYOUT } from '../native/catalog/tokens.ts';
 import { sectionColumns } from '../native/catalog/tokenLayout.ts';
-import type { ComparisonDef, SectionDef, SpecimenSize } from '../native/catalog/types.ts';
+import type { ComparisonDef, SectionDef, SpecimenAlign, SpecimenSize, SpecimenSurfaceKind } from '../native/catalog/types.ts';
 import type { ResolvedConfig } from './types.ts';
 
 export interface ExplainOptions {
@@ -31,10 +31,41 @@ export interface ExplainResult {
   notCheckable?: true;
   blocks: ExplainBlockResult[];
   placement?: { decision: 'side' | 'stacked' | 'decided-in-viewer'; reason: string };
+  /** The page's own authored `intentionalStaticPreview.reason` (guided intelligence design §3),
+   *  carried through so the declaration stays explainable rather than silently suppressing
+   *  `cli/doctor.ts`'s missing-working-preview advisory with no visible trace. Undefined with no
+   *  such declaration. */
+  intentionalStaticPreviewReason?: string;
 }
 
 function placeholderItem(item: StaticListItem) {
-  return { key: item.key, name: item.name, node: null, group: item.group };
+  return {
+    key: item.key, name: item.name, node: null, group: item.group,
+    fill: item.fill, surface: item.surface as SpecimenSurfaceKind | undefined, align: item.align as SpecimenAlign | undefined,
+  };
+}
+
+/** How many of a block's entries (list/grouped items, or grid cells, named by `noun`) override a
+ *  given `SpecimenPresentation` field, as a trailing sentence fragment — empty when none do, so an
+ *  unremarkable block's reason stays unchanged. Shared by every one of the four override-note
+ *  functions below so a list item's and a grid cell's own surface/alignment override are reported
+ *  identically. */
+function overrideNote<K extends string>(entries: Partial<Record<K, unknown>>[], field: K, label: string, noun: 'item' | 'cell'): string {
+  const overridden = entries.filter((entry) => entry[field] !== undefined).length;
+  return overridden > 0 ? ` ${overridden} ${noun}${overridden === 1 ? '' : 's'} override${overridden === 1 ? 's' : ''} the ${label}.` : '';
+}
+
+function surfaceOverrideNote(items: { surface?: SpecimenSurfaceKind }[]): string {
+  return overrideNote(items, 'surface', 'surface', 'item');
+}
+
+function alignOverrideNote(items: { align?: SpecimenAlign }[]): string {
+  return overrideNote(items, 'align', 'alignment', 'item');
+}
+
+/** Same pair of override notes, worded for a grid's cells rather than a list's items. */
+function cellOverrideNote(cells: { surface?: SpecimenSurfaceKind; align?: SpecimenAlign }[]): string {
+  return overrideNote(cells, 'surface', 'surface', 'cell') + overrideNote(cells, 'align', 'alignment', 'cell');
 }
 
 /** A throwaway `SectionDef` built from a `StaticPage` (Task 3) — every specimen's `node` is `null`
@@ -49,7 +80,13 @@ function toSectionDef(page: StaticPage): SectionDef {
     rows: page.comparison.rows.prop !== undefined ? { prop: page.comparison.rows.prop, items: page.comparison.rows.items } : page.comparison.rows.items,
     columns:
       page.comparison.columns.prop !== undefined ? { prop: page.comparison.columns.prop, items: page.comparison.columns.items } : page.comparison.columns.items,
-    cells: [],
+    // Present only for a direct object-literal `comparison` (never a `grid()` call, whose `cell`
+    // callback is unevaluated) whose `cells` array was itself literal — see `StaticComparison.cells`.
+    // `node: null` the same way every other placeholder specimen here is never evaluated.
+    cells: (page.comparison.cells ?? []).map((cell) => ({
+      rowKey: cell.rowKey, columnKey: cell.columnKey, node: null,
+      fill: cell.fill, surface: cell.surface as SpecimenSurfaceKind | undefined, align: cell.align as SpecimenAlign | undefined,
+    })),
     size: page.comparison.size as SpecimenSize | undefined,
   };
   return {
@@ -78,7 +115,7 @@ function explainBlock(block: PresentationBlock): ExplainBlockResult {
     return {
       kind: 'grid', title: block.title,
       reason: `${rows} rows × ${columns} columns (${block.size}); ${columns} of ${limit} max ${block.size} columns used — ` +
-        `${columns <= limit ? 'fits' : 'does NOT fit'} a 1280px laptop.`,
+        `${columns <= limit ? 'fits' : 'does NOT fit'} a 1280px laptop.` + cellOverrideNote(block.comparison.cells),
     };
   }
   if (block.kind === 'list') {
@@ -86,11 +123,16 @@ function explainBlock(block: PresentationBlock): ExplainBlockResult {
     return {
       kind: 'list', title: block.title,
       reason: `${block.items.length} items (${block.size}) → ${geometry.columns} columns × ${geometry.rows} row${geometry.rows === 1 ? '' : 's'}` +
-        (geometry.fillers > 0 ? ` (${geometry.fillers} filler${geometry.fillers === 1 ? '' : 's'})` : '') + '.',
+        (geometry.fillers > 0 ? ` (${geometry.fillers} filler${geometry.fillers === 1 ? '' : 's'})` : '') + '.' +
+        surfaceOverrideNote(block.items) + alignOverrideNote(block.items),
     };
   }
   if (block.kind === 'grouped') {
-    return { kind: 'grouped', title: block.title, reason: `${block.groups.length} variant row(s), each with its own configurations.` };
+    const items = block.groups.flatMap((group) => group.items);
+    return {
+      kind: 'grouped', title: block.title,
+      reason: `${block.groups.length} variant row(s), each with its own configurations.${surfaceOverrideNote(items)}${alignOverrideNote(items)}`,
+    };
   }
   if (block.kind === 'preview') {
     const widths = block.widths === 'full' ? 'full width' : `${block.widths.join('/')}px`;
@@ -178,7 +220,7 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
     }
   }
 
-  return { pageId, blocks: explained, placement };
+  return { pageId, blocks: explained, placement, intentionalStaticPreviewReason: page.intentionalStaticPreviewReason };
 }
 
 export function formatExplain(result: ExplainResult): string {
@@ -194,6 +236,11 @@ export function formatExplain(result: ExplainResult): string {
   if (result.placement) {
     lines.push('Placement');
     lines.push(`  ${result.placement.reason}`);
+    lines.push('');
+  }
+  if (result.intentionalStaticPreviewReason) {
+    lines.push('Intentionally static preview');
+    lines.push(`  ${result.intentionalStaticPreviewReason}`);
   }
   return lines.join('\n').replace(/\n+$/, '');
 }

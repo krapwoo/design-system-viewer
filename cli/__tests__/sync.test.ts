@@ -221,3 +221,24 @@ test('sync summarizes a component\'s node_modules heritage as one clean name for
   );
   rmSync(path.join(kitHostRoot, '.ds-viewer'), { recursive: true, force: true });
 });
+
+test('sync carries composedOfCandidates through components.json for a component that really renders another (Toast renders Button)', () => {
+  const config: ResolvedConfig = {
+    name: 'Starter Kit',
+    components: ['starter-kit/components/*/index.ts'],
+    tokens: ['starter-kit/tokens/index.ts'],
+    pages: [],
+    updateCheck: true,
+    doctor: { strict: false },
+    projectRoot: REPO_ROOT,
+    configPath: path.join(REPO_ROOT, 'ds-viewer.config.ts'),
+  };
+  const result = sync(config, RESOLVE_OPTIONS);
+  const components = JSON.parse(readFileSync(path.join(result.generatedDir, 'components.json'), 'utf8'));
+  const toast = components.find((c: { name: string }) => c.name === 'Toast');
+  assert.ok(toast.composedOfCandidates?.some((c: { component: string }) => c.component === 'Button'));
+  const candidate = toast.composedOfCandidates.find((c: { component: string }) => c.component === 'Button');
+  assert.match(candidate.file, /starter-kit[/\\]components[/\\]Toast[/\\]Toast\.tsx$/);
+  assert.equal(typeof candidate.line, 'number');
+  rmSync(path.join(REPO_ROOT, '.ds-viewer'), { recursive: true, force: true });
+});

@@ -351,3 +351,197 @@ test('readComponents joins a multi-line JSDoc paragraph\'s hard-wrapped source l
   );
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+// Guided intelligence design §4 / plan Task 3 — `ComponentRecord.composedOfCandidates`: optional,
+// additive source evidence of another known component actually rendered as JSX inside this
+// component's own implementation. Never a role/relationship claim — just `{ component, file, line }`.
+test('readComponents records a composedOfCandidate for a component rendered through an import alias and a barrel re-export', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-composed-alias-'));
+  const root = path.join(projectRoot, 'components');
+  mkdirSync(path.join(root, 'Icon'), { recursive: true });
+  mkdirSync(path.join(root, 'shared'), { recursive: true });
+  mkdirSync(path.join(root, 'Widget'), { recursive: true });
+  writeFileSync(path.join(root, 'Icon', 'Icon.tsx'), "import React from 'react';\nimport { View } from 'react-native';\nexport function Icon() { return <View />; }\n");
+  writeFileSync(path.join(root, 'Icon', 'index.ts'), "export { Icon } from './Icon';\n");
+  // A barrel that re-exports Icon under a different name — the alias chain a real design system
+  // often has (`shared/index.ts` fronting several components' own folders).
+  writeFileSync(path.join(root, 'shared', 'index.ts'), "export { Icon as SharedIcon } from '../Icon';\n");
+  writeFileSync(
+    path.join(root, 'Widget', 'Widget.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      "import { SharedIcon as Ico } from '../shared';",
+      '',
+      'export function Widget() {',
+      '  return <Text><Ico /></Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(root, 'Widget', 'index.ts'), "export { Widget } from './Widget';\n");
+
+  const [widget] = readComponents(path.join(root, 'Widget', 'index.ts'), RESOLVE_OPTIONS);
+  // Canonical identity ("Icon") comes from the real export, not either local alias ("SharedIcon"/"Ico").
+  assert.deepEqual(widget.composedOfCandidates?.map((c) => c.component), ['Icon']);
+  const candidate = widget.composedOfCandidates?.[0];
+  assert.equal(candidate?.file, path.relative(process.cwd(), path.join(root, 'Widget', 'Widget.tsx')));
+  assert.equal(candidate?.line, 6);
+  // A react-native primitive (`Text`) is also rendered here, but it lives under node_modules — not
+  // a "known canonical component export" of this project — so it must never become a candidate.
+  assert.ok(!widget.composedOfCandidates?.some((c) => c.component === 'Text'));
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents never promotes a type-only import of a component to a composedOfCandidate', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-composed-typeonly-'));
+  const root = path.join(projectRoot, 'components');
+  mkdirSync(path.join(root, 'Badge'), { recursive: true });
+  mkdirSync(path.join(root, 'Widget'), { recursive: true });
+  writeFileSync(path.join(root, 'Badge', 'Badge.tsx'), "import React from 'react';\nimport { View } from 'react-native';\nexport function Badge() { return <View />; }\n");
+  writeFileSync(path.join(root, 'Badge', 'index.ts'), "export { Badge } from './Badge';\n");
+  writeFileSync(
+    path.join(root, 'Widget', 'Widget.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      "import type { Badge } from '../Badge';",
+      '',
+      '// Used only as a type position — never rendered — so it must never become a candidate.',
+      'export function Widget({ ref }: { ref?: typeof Badge }) {',
+      '  return <Text>{String(Boolean(ref))}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(root, 'Widget', 'index.ts'), "export { Widget } from './Widget';\n");
+
+  const [widget] = readComponents(path.join(root, 'Widget', 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(widget.composedOfCandidates ?? [], []);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents never promotes an ordinary import that is referenced but never rendered as JSX', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-composed-unrendered-'));
+  const root = path.join(projectRoot, 'components');
+  mkdirSync(path.join(root, 'Badge'), { recursive: true });
+  mkdirSync(path.join(root, 'Widget'), { recursive: true });
+  writeFileSync(path.join(root, 'Badge', 'Badge.tsx'), "import React from 'react';\nimport { View } from 'react-native';\nexport function Badge() { return <View />; }\n");
+  writeFileSync(path.join(root, 'Badge', 'index.ts'), "export { Badge } from './Badge';\n");
+  writeFileSync(
+    path.join(root, 'Widget', 'Widget.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      "import { Badge } from '../Badge';",
+      '',
+      '// Badge is a real value import, used as a value — but never written as a JSX tag anywhere.',
+      'export function Widget() {',
+      '  const cached = Badge;',
+      '  return <Text>{String(Boolean(cached))}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(root, 'Widget', 'index.ts'), "export { Widget } from './Widget';\n");
+
+  const [widget] = readComponents(path.join(root, 'Widget', 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(widget.composedOfCandidates ?? [], []);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents does not attribute a same-file helper\'s own JSX to an unrelated exported component', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-composed-helper-'));
+  const root = path.join(projectRoot, 'components');
+  mkdirSync(path.join(root, 'Icon'), { recursive: true });
+  mkdirSync(path.join(root, 'Widget'), { recursive: true });
+  writeFileSync(path.join(root, 'Icon', 'Icon.tsx'), "import React from 'react';\nimport { View } from 'react-native';\nexport function Icon() { return <View />; }\n");
+  writeFileSync(path.join(root, 'Icon', 'index.ts'), "export { Icon } from './Icon';\n");
+  writeFileSync(
+    path.join(root, 'Widget', 'Widget.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      "import { Icon } from '../Icon';",
+      '',
+      '// `renderIcon` is its own, non-exported helper — its JSX belongs to it, not to Widget below,',
+      '// even though Widget calls it (as a function, never as a JSX tag of its own).',
+      'function renderIcon() {',
+      '  return <Icon />;',
+      '}',
+      '',
+      'export function Widget() {',
+      '  return <Text>{renderIcon()}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(root, 'Widget', 'index.ts'), "export { Widget } from './Widget';\n");
+
+  const [widget] = readComponents(path.join(root, 'Widget', 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(widget.composedOfCandidates ?? [], []);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents does not attribute a nested named helper\'s own JSX to the component that merely calls it', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-composed-nested-helper-'));
+  const root = path.join(projectRoot, 'components');
+  mkdirSync(path.join(root, 'Icon'), { recursive: true });
+  mkdirSync(path.join(root, 'Widget'), { recursive: true });
+  writeFileSync(path.join(root, 'Icon', 'Icon.tsx'), "import React from 'react';\nimport { View } from 'react-native';\nexport function Icon() { return <View />; }\n");
+  writeFileSync(path.join(root, 'Icon', 'index.ts'), "export { Icon } from './Icon';\n");
+  writeFileSync(
+    path.join(root, 'Widget', 'Widget.tsx'),
+    [
+      "import React from 'react';",
+      "import { Text } from 'react-native';",
+      "import { Icon } from '../Icon';",
+      '',
+      'export function Widget() {',
+      "  // `renderIcon` is a named helper nested inside Widget's own body — its JSX belongs to it,",
+      '  // not to Widget, even though Widget calls it (as a function, never as a JSX tag of its own).',
+      '  function renderIcon() {',
+      '    return <Icon />;',
+      '  }',
+      '  return <Text>{renderIcon()}</Text>;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(root, 'Widget', 'index.ts'), "export { Widget } from './Widget';\n");
+
+  const [widget] = readComponents(path.join(root, 'Widget', 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(widget.composedOfCandidates ?? [], []);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readComponents leaves a dynamic/unresolved JSX tag uncertain, never a composedOfCandidate', () => {
+  const projectRoot = mkdtempSync(path.join(tmpdir(), 'ds-viewer-composed-dynamic-'));
+  const root = path.join(projectRoot, 'components');
+  mkdirSync(path.join(root, 'Icon'), { recursive: true });
+  mkdirSync(path.join(root, 'Badge'), { recursive: true });
+  mkdirSync(path.join(root, 'Widget'), { recursive: true });
+  writeFileSync(path.join(root, 'Icon', 'Icon.tsx'), "import React from 'react';\nimport { View } from 'react-native';\nexport function Icon() { return <View />; }\n");
+  writeFileSync(path.join(root, 'Icon', 'index.ts'), "export { Icon } from './Icon';\n");
+  writeFileSync(path.join(root, 'Badge', 'Badge.tsx'), "import React from 'react';\nimport { View } from 'react-native';\nexport function Badge() { return <View />; }\n");
+  writeFileSync(path.join(root, 'Badge', 'index.ts'), "export { Badge } from './Badge';\n");
+  writeFileSync(
+    path.join(root, 'Widget', 'Widget.tsx'),
+    [
+      "import React from 'react';",
+      "import { Icon } from '../Icon';",
+      "import { Badge } from '../Badge';",
+      '',
+      'export function Widget({ useIcon }: { useIcon: boolean }) {',
+      '  const Comp = useIcon ? Icon : Badge;',
+      '  return <Comp />;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(path.join(root, 'Widget', 'index.ts'), "export { Widget } from './Widget';\n");
+
+  const [widget] = readComponents(path.join(root, 'Widget', 'index.ts'), RESOLVE_OPTIONS);
+  assert.deepEqual(widget.composedOfCandidates ?? [], []);
+  rmSync(projectRoot, { recursive: true, force: true });
+});

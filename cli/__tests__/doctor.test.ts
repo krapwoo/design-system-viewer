@@ -447,3 +447,146 @@ test('runDoctor itself always returns update: null — the update check is layer
   assert.equal(runDoctor(configFor(dir)).update, null);
   rmSync(dir, { recursive: true, force: true });
 });
+
+// Guided intelligence design §4 / plan Task 3 — `missing-composition-suggestion`: a conservative,
+// advisory (never fatal) nudge naming a candidate's component, source file and line — never an
+// inferred role/relationship, which stays the author's own call via `composedOf`.
+test('missing-composition-suggestion fires for a composedOfCandidate the page\'s composedOf never names', () => {
+  const widget = component({ composedOfCandidates: [{ component: 'Icon', file: 'x/Widget.tsx', line: 12 }] });
+  const issues = collectIssues([page({ component: 'Widget', hasComposedOf: false })], [widget]);
+  const found = issues.find((i) => i.id === 'missing-composition-suggestion');
+  assert.ok(found, 'expected a missing-composition-suggestion issue');
+  assert.equal(found!.severity, 'warning');
+  assert.match(found!.message, /"Icon"/);
+  assert.match(found!.message, /x\/Widget\.tsx:12/);
+  // Conservative: never an invented role/relationship word in the message or its fix.
+  assert.ok(!/built-in|slot|related/i.test(found!.message + found!.fix));
+});
+
+test('missing-composition-suggestion does not fire once the page\'s own composedOf already names the candidate', () => {
+  const widget = component({ composedOfCandidates: [{ component: 'Icon', file: 'x/Widget.tsx', line: 12 }] });
+  const issues = collectIssues([page({ component: 'Widget', hasComposedOf: true, composedOf: [{ component: 'Icon' }] })], [widget]);
+  assert.equal(issues.filter((i) => i.id === 'missing-composition-suggestion').length, 0);
+});
+
+test('missing-composition-suggestion never fires when composedOf was authored but not literally readable — never a false "missing" claim', () => {
+  const widget = component({ composedOfCandidates: [{ component: 'Icon', file: 'x/Widget.tsx', line: 12 }] });
+  // hasComposedOf: true, composedOf: undefined — authored non-literally (e.g. a `.map()` call).
+  const issues = collectIssues([page({ component: 'Widget', hasComposedOf: true, composedOf: undefined })], [widget]);
+  assert.equal(issues.filter((i) => i.id === 'missing-composition-suggestion').length, 0);
+});
+
+test('missing-composition-suggestion never fires for a component with no candidates at all', () => {
+  const widget = component({});
+  const issues = collectIssues([page({ component: 'Widget' })], [widget]);
+  assert.equal(issues.filter((i) => i.id === 'missing-composition-suggestion').length, 0);
+});
+
+// Guided intelligence design §2 / plan Task 3 — `degenerate-grid-axis`: a grid whose row or column
+// axis has only one item reads as a one-axis list, not a real two-axis comparison. Advisory
+// (warning, never an error) and semantically distinct from the existing hard grid-validity errors
+// (`grid-axis-key-invalid`, `grid-column-limit`) — authors keep full authority to keep it as is.
+test('degenerate-grid-axis fires a warning for a 1-column grid', () => {
+  const issues = collectIssues([page({
+    comparison: { rows: { items: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }] }, columns: { items: [{ key: 'c', label: 'C' }] } },
+  })], []);
+  const found = issues.find((i) => i.id === 'degenerate-grid-axis');
+  assert.ok(found);
+  assert.equal(found!.severity, 'warning');
+});
+
+test('degenerate-grid-axis fires for a 1-row grid too', () => {
+  const issues = collectIssues([page({
+    comparison: { rows: { items: [{ key: 'a', label: 'A' }] }, columns: { items: [{ key: 'c', label: 'C' }, { key: 'd', label: 'D' }] } },
+  })], []);
+  assert.equal(issues.filter((i) => i.id === 'degenerate-grid-axis').length, 1);
+});
+
+test('degenerate-grid-axis does not fire for a genuine two-axis (2x2 or larger) grid', () => {
+  const issues = collectIssues([page({
+    comparison: {
+      rows: { items: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }] },
+      columns: { items: [{ key: 'c', label: 'C' }, { key: 'd', label: 'D' }] },
+    },
+  })], []);
+  assert.equal(issues.filter((i) => i.id === 'degenerate-grid-axis').length, 0);
+});
+
+test('degenerate-grid-axis never runs against a not-checkable page — never a partial read', () => {
+  const issues = collectIssues([page({ checkable: false, comparison: undefined })], []);
+  assert.equal(issues.filter((i) => i.id === 'degenerate-grid-axis').length, 0);
+});
+
+// Guided intelligence design §3 / plan Task 3 — `missing-working-preview`: advisory, never fatal,
+// and fired only when a documented component has a controlled state/event pair (e.g.
+// `selected`/`onSelectedChange`) AND every direct-component example confidently demonstrates a
+// fixed value with a no-op/omitted callback. Unknown callback/wrapper logic must stay uncheckable
+// — never declared inert — and a genuine stateful wrapper or an explicit intentional-static
+// declaration must never fire it.
+const pillRow = component({
+  name: 'PillRow',
+  props: [
+    { name: 'selected', type: 'string', required: false, desc: '' },
+    { name: 'onSelectedChange', type: '(next: string) => void', required: false, desc: '' },
+  ],
+});
+
+test('missing-working-preview fires when every direct example passes a fixed value with a no-op callback', () => {
+  const issues = collectIssues([page({
+    component: 'PillRow',
+    variantsItems: [
+      { key: 'a', name: 'A', nodeDirectComponent: 'PillRow', nodeAttributes: { selected: { kind: 'literal', value: 'one' }, onSelectedChange: { kind: 'no-op-callback' } } },
+    ],
+  })], [pillRow]);
+  const found = issues.find((i) => i.id === 'missing-working-preview');
+  assert.ok(found);
+  assert.equal(found!.severity, 'warning');
+});
+
+test('missing-working-preview does not fire for a genuine stateful wrapper', () => {
+  const issues = collectIssues([page({
+    component: 'PillRow',
+    variantsItems: [{ key: 'a', name: 'A', nodeStatefulWrapper: true }],
+  })], [pillRow]);
+  assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+});
+
+test('missing-working-preview is suppressed by an explicit intentional-static declaration with its reason', () => {
+  const issues = collectIssues([page({
+    component: 'PillRow',
+    intentionalStaticPreviewReason: 'Selection is already demonstrated by SegmentedToggle.',
+    variantsItems: [
+      { key: 'a', name: 'A', nodeDirectComponent: 'PillRow', nodeAttributes: { selected: { kind: 'literal', value: 'one' }, onSelectedChange: { kind: 'no-op-callback' } } },
+    ],
+  })], [pillRow]);
+  assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+});
+
+test('missing-working-preview does not fire for a component with no controlled state/event pair', () => {
+  const plain = component({ name: 'Badge', props: [{ name: 'label', type: 'string', required: true, desc: '' }] });
+  const issues = collectIssues([page({
+    component: 'Badge',
+    variantsItems: [{ key: 'a', name: 'A', nodeDirectComponent: 'Badge', nodeAttributes: { label: { kind: 'literal', value: 'Hi' } } }],
+  })], [plain]);
+  assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+});
+
+test('missing-working-preview does not run against a not-checkable (computed) page — never a partial read', () => {
+  const issues = collectIssues([page({
+    component: 'PillRow', checkable: false,
+    variantsItems: [
+      { key: 'a', name: 'A', nodeDirectComponent: 'PillRow', nodeAttributes: { selected: { kind: 'literal', value: 'one' }, onSelectedChange: { kind: 'no-op-callback' } } },
+    ],
+  })], [pillRow]);
+  assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+});
+
+test('missing-working-preview does not fire when the callback is an unknown expression — uncheckable, never declared inert', () => {
+  const issues = collectIssues([page({
+    component: 'PillRow',
+    variantsItems: [
+      { key: 'a', name: 'A', nodeDirectComponent: 'PillRow', nodeAttributes: { selected: { kind: 'literal', value: 'one' }, onSelectedChange: { kind: 'unknown' } } },
+    ],
+  })], [pillRow]);
+  assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+});

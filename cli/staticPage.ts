@@ -7,12 +7,30 @@ export interface StaticAxis {
   items: { key: string; label: string }[];
 }
 
+/** One `ComparisonCell`'s literal-checkable presentation fields, read only when the whole
+ *  `comparison` is authored as a direct object literal (never through a `grid()` call, whose
+ *  `cell` argument is a function and is never executed — design §4). Each of `surface`/`align`/
+ *  `fill` is read independently; a non-literal value on one field leaves only that field unset, the
+ *  same per-field leniency `StaticListItem` already uses — a grid cell with an unresolvable
+ *  `surface` still reports its resolvable `fill`. */
+export interface StaticCell {
+  rowKey: string;
+  columnKey: string;
+  surface?: string;
+  align?: string;
+  fill?: boolean;
+}
+
 export interface StaticComparison {
   rowLabel?: string;
   columnLabel?: string;
   rows: StaticAxis;
   columns: StaticAxis;
   size?: string;
+  /** Present only for a direct object-literal `comparison` whose `cells` array is itself a literal
+   *  array of object literals — absent for a `grid()` call (cells come from an unevaluated `cell`
+   *  function) and for a non-literal `cells` expression (e.g. `.flatMap()`). */
+  cells?: StaticCell[];
 }
 
 export interface StaticListItem {
@@ -24,7 +42,44 @@ export interface StaticListItem {
    *  `doctor` only ever needs a tagged prop's *string* value to check against a real option. */
   props?: Record<string, string | number | boolean>;
   group?: string;
+  /** `VariantExample.fill`/`.surface`/`.align` (`SpecimenPresentation`), read only when literal —
+   *  none of the three are in design §4's original literal-checkable list, so a non-literal value
+   *  is simply left unset here rather than making the whole page not checkable. `fill` is read only
+   *  from a known `true`/`false` literal; any other expression (a variable, a computed value) stays
+   *  unset rather than being misread as `false`. */
+  fill?: boolean;
+  surface?: string;
+  align?: string;
+  /** This item's `node`'s own JSX tag name, when `node` is a direct JSX element (self-closing or
+   *  with children) — used only by `cli/doctor.ts`'s interactive-preview advisory (design §3) to
+   *  tell a direct render of the documented component from a locally-defined wrapper. `node` is
+   *  matched by plain tag-name text, not module resolution (design's global constraint: this reader
+   *  never resolves imports) — an aliased import (`import { Widget as W }`) is a conservative miss,
+   *  never a false positive. Undefined when `node` isn't a direct JSX element at all (a computed
+   *  expression, `null`, a conditional, …). */
+  nodeDirectComponent?: string;
+  /** Only present alongside `nodeDirectComponent` — this JSX element's own attribute values, read
+   *  generically (design §3 never knows in advance which prop pair `doctor` will check). See
+   *  `StaticAttributeValue`. */
+  nodeAttributes?: Record<string, StaticAttributeValue>;
+  /** True only when `node` is a JSX element whose tag resolves to a same-file function/arrow
+   *  declaration whose own body contains a `useState(`/`React.useState(` call — a confidently
+   *  identified, genuinely stateful wrapper (design §3: "do not manufacture a state wrapper," but a
+   *  real one the author already wrote must never be reported as an inert, static example).
+   *  Undefined (never `false`) for anything else — including a same-file wrapper with no detectable
+   *  `useState` call, which stays uncertain rather than asserted inert. */
+  nodeStatefulWrapper?: true;
 }
+
+/** One `VariantExample`/`ComparisonCell` JSX attribute's literal-checkable shape (design §3, plan
+ *  Task 3): a resolvable literal value, a confidently no-op callback (omitted, `undefined`, or an
+ *  empty-bodied arrow/function expression — `() => {}`), or `'unknown'` for anything else (an
+ *  identifier, a non-empty function body, a call expression, …) — genuinely uncheckable, never
+ *  asserted inert. */
+export type StaticAttributeValue =
+  | { kind: 'literal'; value: string | number | boolean }
+  | { kind: 'no-op-callback' }
+  | { kind: 'unknown' };
 
 export interface StaticPage {
   file: string;
@@ -83,6 +138,20 @@ export interface StaticPage {
    *  not checkable because `explain` would otherwise report different list geometry than the viewer. */
   variantsMaxColumns?: 1 | 2 | 3 | 4 | 5;
   statesMaxColumns?: 1 | 2 | 3 | 4 | 5;
+  /** Whether the page has its own `composedOf` property at all (presence only — same reasoning as
+   *  `hasWhenToUse`). `cli/doctor.ts`'s missing-composition advisory only ever suggests against a
+   *  page whose `composedOf` could actually be read; a page that authors one non-literally (e.g.
+   *  built with `.map()`) is given the same "never a partial read" benefit of the doubt as any
+   *  other not-literally-checkable field, rather than risk a false "missing" claim. */
+  hasComposedOf?: boolean;
+  /** `ComposedOfEntry.component` names only (design §4: never role/relationship, which `doctor`'s
+   *  comparison against `ComponentRecord.composedOfCandidates` never needs) — present only when
+   *  `composedOf` is itself a literal array of object literals, each with a literal `component`. */
+  composedOf?: { component: string }[];
+  /** `CatalogPageInput.intentionalStaticPreview.reason`, literal only — a non-literal reason is
+   *  left unset (not fabricated, not a "not checkable" penalty, same leniency as `whenToUse`/`a11y`
+   *  presence checks: this never affects `page.checkable`). */
+  intentionalStaticPreviewReason?: string;
 }
 
 const TRANSPILE_OPTIONS: ts.TranspileOptions = {
@@ -218,7 +287,7 @@ function readStaticPage(file: string): StaticPage {
     else page.checkable = false;
   }
 
-  const variants = readSlotItems(findProp(pageObject, 'variants'), consts);
+  const variants = readSlotItems(findProp(pageObject, 'variants'), consts, page.component, sourceFile);
   if (!variants.checkable) page.checkable = false;
   else {
     page.variantsItems = variants.items;
@@ -226,7 +295,7 @@ function readStaticPage(file: string): StaticPage {
     page.variantsMaxColumns = variants.maxColumns;
   }
 
-  const states = readSlotItems(findProp(pageObject, 'states'), consts);
+  const states = readSlotItems(findProp(pageObject, 'states'), consts, page.component, sourceFile);
   if (!states.checkable) page.checkable = false;
   else {
     page.statesItems = states.items;
@@ -234,7 +303,39 @@ function readStaticPage(file: string): StaticPage {
     page.statesMaxColumns = states.maxColumns;
   }
 
+  const composedOfProp = findProp(pageObject, 'composedOf');
+  page.hasComposedOf = composedOfProp !== undefined;
+  if (composedOfProp) page.composedOf = readComposedOf(composedOfProp.initializer, consts);
+
+  const intentionalStaticPreviewProp = findProp(pageObject, 'intentionalStaticPreview');
+  if (intentionalStaticPreviewProp) {
+    const resolved = resolve(intentionalStaticPreviewProp.initializer, consts, new Set());
+    if (ts.isObjectLiteralExpression(resolved)) {
+      const reasonProp = findProp(resolved, 'reason');
+      if (reasonProp) page.intentionalStaticPreviewReason = stringLiteral(resolve(reasonProp.initializer, consts, new Set()));
+    }
+  }
+
   return page;
+}
+
+/** A literal array of `ComposedOfEntry`-shaped object literals, read down to just `component`
+ *  (design §4: role/relationship are authored prose `doctor` never needs for its missing-
+ *  composition comparison). Undefined — not an empty array — for anything that isn't itself a
+ *  literal array, or whose element isn't an object literal with a literal `component`: `doctor`
+ *  must never mistake "couldn't read this" for "author declared no composition here". */
+function readComposedOf(node: ts.Expression, consts: Map<string, ts.Expression>): { component: string }[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isArrayLiteralExpression(resolved)) return undefined;
+  const entries: { component: string }[] = [];
+  for (const element of resolved.elements) {
+    const resolvedElement = resolve(element, consts, new Set());
+    if (!ts.isObjectLiteralExpression(resolvedElement)) return undefined;
+    const component = propertyStringLiteral(resolvedElement, 'component', consts);
+    if (component === undefined) return undefined;
+    entries.push({ component });
+  }
+  return entries;
 }
 
 /** Local name -> imported name, for every named import from `moduleSpecifier`. */
@@ -298,6 +399,19 @@ function stringLiteral(node: ts.Expression): string | undefined {
   return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? node.text : undefined;
 }
 
+/** `true`/`false` only from a known `true`/`false` literal; any other expression (a variable, a
+ *  computed value) stays `undefined` rather than being misread as `false`. Unlike the page's own
+ *  `hide.*`/`tokenGallery`/`itemsFill`/`wide` booleans — which intentionally treat "not literally
+ *  `true`" as `false`, since those already default to `false` when omitted — `fill`'s own default
+ *  is inherited (`SpecimenPresentation.fill` defaults to the slot's `itemsFill`, not to `false`),
+ *  so a non-literal value here must stay honestly unknown instead of claiming "not filling". */
+function literalBooleanOrUnknown(node: ts.Expression, consts: Map<string, ts.Expression>): boolean | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (resolved.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (resolved.kind === ts.SyntaxKind.FalseKeyword) return false;
+  return undefined;
+}
+
 function propertyName(name: ts.PropertyName): string {
   return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : name.getText();
 }
@@ -350,6 +464,32 @@ function readAxis(node: ts.Expression, consts: Map<string, ts.Expression>): Stat
   return undefined;
 }
 
+/** A literal array of `ComparisonCell`-shaped object literals: `rowKey`/`columnKey` required
+ *  (string literals only), `surface`/`align`/`fill` read the same per-field-lenient way
+ *  `readListItems` reads them. `node`/`unavailableReason` are never inspected — design §4 never
+ *  evaluates a cell's specimen node. Undefined (no cell metadata at all, not "every field unset")
+ *  for anything that isn't itself a literal array, or whose element isn't itself an object literal
+ *  with literal `rowKey`/`columnKey` — a `.flatMap()`-built `cells` array (the starter kit's own
+ *  convention for a `grid()`-free literal comparison) stays unrepresented rather than guessed at. */
+function readComparisonCells(node: ts.Expression, consts: Map<string, ts.Expression>): StaticCell[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isArrayLiteralExpression(resolved)) return undefined;
+  const cells: StaticCell[] = [];
+  for (const element of resolved.elements) {
+    const resolvedElement = resolve(element, consts, new Set());
+    if (!ts.isObjectLiteralExpression(resolvedElement)) return undefined;
+    const rowKey = propertyStringLiteral(resolvedElement, 'rowKey', consts);
+    const columnKey = propertyStringLiteral(resolvedElement, 'columnKey', consts);
+    if (rowKey === undefined || columnKey === undefined) return undefined;
+    const surface = propertyStringLiteral(resolvedElement, 'surface', consts);
+    const align = propertyStringLiteral(resolvedElement, 'align', consts);
+    const fillProp = findProp(resolvedElement, 'fill');
+    const fill = fillProp ? literalBooleanOrUnknown(fillProp.initializer, consts) : undefined;
+    cells.push({ rowKey, columnKey, surface, align, fill });
+  }
+  return cells;
+}
+
 /** A page's `comparison` field: either a direct `ComparisonDef`-shaped object literal, or (the
  *  starter kit's own convention since Task 1/2) a call to this package's own `grid()` helper — the
  *  one call shape this reader specially recognizes, reading its `rows`/`columns` arguments and
@@ -381,12 +521,14 @@ function readComparison(node: ts.Expression, consts: Map<string, ts.Expression>,
     const rowLabelProp = findProp(resolved, 'rowLabel');
     const columnLabelProp = findProp(resolved, 'columnLabel');
     const sizeProp = findProp(resolved, 'size');
+    const cellsProp = findProp(resolved, 'cells');
     return {
       rowLabel: rowLabelProp ? stringLiteral(resolve(rowLabelProp.initializer, consts, new Set())) : undefined,
       columnLabel: columnLabelProp ? stringLiteral(resolve(columnLabelProp.initializer, consts, new Set())) : undefined,
       rows,
       columns,
       size: sizeProp ? stringLiteral(resolve(sizeProp.initializer, consts, new Set())) : undefined,
+      cells: cellsProp ? readComparisonCells(cellsProp.initializer, consts) : undefined,
     };
   }
   return undefined;
@@ -395,7 +537,12 @@ function readComparison(node: ts.Expression, consts: Map<string, ts.Expression>,
 /** A literal array of list-item object literals — `key`/`name` required; `props` (read as a flat
  *  literal map, non-literal values simply omitted) and `group` optional. Each item's `node` field
  *  (always present, always JSX) is never inspected — reading the sibling fields never depends on it. */
-function readListItems(node: ts.Expression, consts: Map<string, ts.Expression>): StaticListItem[] | undefined {
+function readListItems(
+  node: ts.Expression,
+  consts: Map<string, ts.Expression>,
+  componentName: string | undefined,
+  sourceFile: ts.SourceFile,
+): StaticListItem[] | undefined {
   const resolved = resolve(node, consts, new Set());
   if (!ts.isArrayLiteralExpression(resolved)) return undefined;
   const items: StaticListItem[] = [];
@@ -407,9 +554,147 @@ function readListItems(node: ts.Expression, consts: Map<string, ts.Expression>):
     if (key === undefined || name === undefined) return undefined;
     const group = propertyStringLiteral(resolvedElement, 'group', consts);
     const propsProp = findProp(resolvedElement, 'props');
-    items.push({ key, name, group, props: propsProp ? readLiteralProps(propsProp.initializer, consts) : undefined });
+    const fillProp = findProp(resolvedElement, 'fill');
+    const fill = fillProp ? literalBooleanOrUnknown(fillProp.initializer, consts) : undefined;
+    const surface = propertyStringLiteral(resolvedElement, 'surface', consts);
+    const align = propertyStringLiteral(resolvedElement, 'align', consts);
+    const nodeProp = findProp(resolvedElement, 'node');
+    const nodeExample = nodeProp ? readNodeExample(nodeProp.initializer, consts, componentName, sourceFile) : {};
+    items.push({
+      key, name, group, props: propsProp ? readLiteralProps(propsProp.initializer, consts) : undefined, fill, surface, align,
+      ...nodeExample,
+    });
   }
   return items;
+}
+
+/** Generic, additive reading of one item's own `node:` JSX (design §3, plan Task 3) — used only by
+ *  `cli/doctor.ts`'s interactive-preview advisory. Never evaluates `node`; only reads its literal
+ *  AST shape. `node` matching `componentName` by plain tag-name text (not module resolution — this
+ *  reader never resolves imports) means "a direct instance of the documented component": its own
+ *  JSX attributes are read generically (`nodeAttributes`). Any other JSX tag is checked only for
+ *  whether it's a confidently-identified, genuinely stateful same-file wrapper
+ *  (`nodeStatefulWrapper`) — never asserted one way or the other when that can't be confirmed.
+ *  Anything that isn't a direct JSX element at all (`null`, a conditional, a function call, …)
+ *  leaves every field unset. */
+function readNodeExample(
+  node: ts.Expression,
+  consts: Map<string, ts.Expression>,
+  componentName: string | undefined,
+  sourceFile: ts.SourceFile,
+): Pick<StaticListItem, 'nodeDirectComponent' | 'nodeAttributes' | 'nodeStatefulWrapper'> {
+  const resolved = resolve(node, consts, new Set());
+  let element: ts.JsxSelfClosingElement | ts.JsxOpeningElement | undefined;
+  if (ts.isJsxSelfClosingElement(resolved)) element = resolved;
+  else if (ts.isJsxElement(resolved)) element = resolved.openingElement;
+  if (!element || !ts.isIdentifier(element.tagName)) return {};
+  const tagText = element.tagName.text;
+  if (componentName !== undefined && tagText === componentName) {
+    const nodeAttributes: Record<string, StaticAttributeValue> = {};
+    for (const attribute of element.attributes.properties) {
+      // Skips a spread attribute ({...rest}) and a namespaced name (xml:lang) — unreadable,
+      // never a reason to reject the whole item.
+      if (!ts.isJsxAttribute(attribute) || !ts.isIdentifier(attribute.name)) continue;
+      nodeAttributes[attribute.name.text] = readJsxAttributeValue(attribute, consts);
+    }
+    return { nodeDirectComponent: tagText, nodeAttributes };
+  }
+  return { nodeStatefulWrapper: sameFileWrapperHasUseState(sourceFile, tagText) ? true : undefined };
+}
+
+/** One JSX attribute's value, as a `StaticAttributeValue`. A shorthand attribute (`disabled`, no
+ *  `initializer` at all — equivalent to `disabled={true}`) is a literal `true`. */
+function readJsxAttributeValue(attribute: ts.JsxAttribute, consts: Map<string, ts.Expression>): StaticAttributeValue {
+  if (!attribute.initializer) return { kind: 'literal', value: true };
+  if (ts.isStringLiteral(attribute.initializer)) return { kind: 'literal', value: attribute.initializer.text };
+  if (!ts.isJsxExpression(attribute.initializer) || !attribute.initializer.expression) return { kind: 'unknown' };
+  const resolved = resolve(attribute.initializer.expression, consts, new Set());
+  if (ts.isStringLiteral(resolved) || ts.isNoSubstitutionTemplateLiteral(resolved)) return { kind: 'literal', value: resolved.text };
+  if (ts.isNumericLiteral(resolved)) return { kind: 'literal', value: Number(resolved.text) };
+  if (resolved.kind === ts.SyntaxKind.TrueKeyword) return { kind: 'literal', value: true };
+  if (resolved.kind === ts.SyntaxKind.FalseKeyword) return { kind: 'literal', value: false };
+  if (ts.isIdentifier(resolved) && resolved.text === 'undefined') return { kind: 'no-op-callback' };
+  if ((ts.isArrowFunction(resolved) || ts.isFunctionExpression(resolved)) && isEmptyFunctionBody(resolved.body)) {
+    return { kind: 'no-op-callback' };
+  }
+  return { kind: 'unknown' };
+}
+
+function isEmptyFunctionBody(body: ts.ConciseBody): boolean {
+  return ts.isBlock(body) && body.statements.length === 0;
+}
+
+/** True only when `sourceFile` declares a top-level function (declaration, or a `const`/`let`
+ *  initialized with a function/arrow expression) named `tagName` whose own body contains a call to
+ *  a *source-backed* React `useState`/`React.useState` — a confidently-identified, genuinely
+ *  stateful wrapper. Walking only that one function's own body (never the whole file) keeps this
+ *  scoped the same way `cli/props.ts`'s composedOfCandidate reader scopes its own JSX walk to one
+ *  implementation. */
+function sameFileWrapperHasUseState(sourceFile: ts.SourceFile, tagName: string): boolean {
+  const bindings = reactUseStateBindings(sourceFile);
+  for (const statement of sourceFile.statements) {
+    let body: ts.ConciseBody | undefined;
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === tagName) body = statement.body;
+    else if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (
+          ts.isIdentifier(declaration.name) && declaration.name.text === tagName && declaration.initializer &&
+          (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))
+        ) {
+          body = declaration.initializer.body;
+        }
+      }
+    }
+    if (body && containsUseStateCall(body, bindings)) return true;
+  }
+  return false;
+}
+
+/** This file's own top-level `import ... from 'react'` bindings relevant to recognizing a genuine
+ *  `useState` call — never a type-checker resolution, only the same-file import syntax, matching
+ *  this reader's existing "never resolves imports across files" contract. `namedUseState` holds
+ *  every local name bound to the real named `useState` export (an alias, e.g. `import { useState as
+ *  useReactState }`, included); `reactNamespace` holds every local name bound to the whole `react`
+ *  module (a default or `* as` import) that a `React.useState(...)` call could be written through.
+ *  A locally-defined `useState` (no matching import) or an unrelated object's own `.useState` method
+ *  binds to neither set and so is never counted — left uncheckable, never asserted stateful. */
+function reactUseStateBindings(sourceFile: ts.SourceFile): { namedUseState: Set<string>; reactNamespace: Set<string> } {
+  const namedUseState = new Set<string>();
+  const reactNamespace = new Set<string>();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== 'react') continue;
+    const clause = statement.importClause;
+    if (!clause) continue;
+    if (clause.name) reactNamespace.add(clause.name.text);
+    if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) reactNamespace.add(clause.namedBindings.name.text);
+    else if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+      for (const element of clause.namedBindings.elements) {
+        if ((element.propertyName ?? element.name).text === 'useState') namedUseState.add(element.name.text);
+      }
+    }
+  }
+  return { namedUseState, reactNamespace };
+}
+
+function containsUseStateCall(node: ts.Node, bindings: { namedUseState: Set<string>; reactNamespace: Set<string> }): boolean {
+  let found = false;
+  const visit = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(n)) {
+      const callee = n.expression;
+      const isNamedUseState = ts.isIdentifier(callee) && bindings.namedUseState.has(callee.text);
+      const isReactNamespaceUseState =
+        ts.isPropertyAccessExpression(callee) && callee.name.text === 'useState' &&
+        ts.isIdentifier(callee.expression) && bindings.reactNamespace.has(callee.expression.text);
+      if (isNamedUseState || isReactNamespaceUseState) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return found;
 }
 
 function readLiteralProps(node: ts.Expression, consts: Map<string, ts.Expression>): Record<string, string | number | boolean> | undefined {
@@ -438,12 +723,14 @@ function readLiteralProps(node: ts.Expression, consts: Map<string, ts.Expression
 function readSlotItems(
   prop: ts.PropertyAssignment | undefined,
   consts: Map<string, ts.Expression>,
+  componentName: string | undefined,
+  sourceFile: ts.SourceFile,
 ): { items?: StaticListItem[]; itemsFill?: boolean; maxColumns?: 1 | 2 | 3 | 4 | 5; checkable: boolean } {
   if (!prop) return { checkable: true };
   const resolved = resolve(prop.initializer, consts, new Set());
   const itemsProp = ts.isObjectLiteralExpression(resolved) ? findProp(resolved, 'items') : undefined;
   if (!itemsProp) return { checkable: false };
-  const items = readListItems(itemsProp.initializer, consts);
+  const items = readListItems(itemsProp.initializer, consts, componentName, sourceFile);
   if (!items) return { checkable: false };
   const itemsFillProp = ts.isObjectLiteralExpression(resolved) ? findProp(resolved, 'itemsFill') : undefined;
   const itemsFill = itemsFillProp ? resolve(itemsFillProp.initializer, consts, new Set()).kind === ts.SyntaxKind.TrueKeyword : undefined;

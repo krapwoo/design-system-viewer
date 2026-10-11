@@ -154,7 +154,13 @@ work. Desktop and laptop screens only. `SectionBlock` renders one page: breadcru
 description, previous/next, then the specimens, then always-visible
 **Guidance** and **Quick reference** (source path, accessibility), then **Props** in their own box
 (two columns, filled across first, when there are 4+ props and room). Token pages show only
-Quick reference with the source path. The specimens use one of four layouts:
+Quick reference with the source path. Guidance, Quick reference, and — only for a page with
+confirmed `composedOf` entries — Composition lay out from the reference card's own measured inner
+width, not viewport width alone: three columns side by side only when there's confirmed composition
+*and* the card is wide enough for all three (Composition gets its own column only then; otherwise
+it stays nested under Quick reference, as it always has), two when there's room for Guidance and
+Quick reference side by side, or one stacked column — in full document order, nothing dropped —
+when the card is too narrow even for two. The specimens use one of four layouts:
 - **Grid** — two props that combine freely, from an explicit `comparison` (e.g. Button's
   Variant × State).
 - **Grouped rows** — one row per variant holding that variant's own configurations (e.g.
@@ -199,6 +205,17 @@ actually apply:
   cell gray, `'white'` or `'transparent'` keeps them all white, and `'dark'` checks a light
   component on a dark fill. Detection runs in the browser viewer; elsewhere cells stay white.
   Token galleries and sections are never filled.
+- A `variants`/`states` item's own `fill`/`surface`/`align` — override the page's `specimenSurface`
+  (above), stretch just *this* item's wrapper to the row's full width, or change how its content
+  aligns inside that wrapper, for one instance that needs any of the three independently of its
+  siblings (e.g. a single `fullWidth` Button among otherwise compact, centered ones, or one
+  white-on-white example that needs its own gray backing even though the page's guess is right for
+  every other item). Omit any of them to inherit the slot's/page's own default: `fill` inherits the
+  slot's `itemsFill` (an explicit `fill: false` still overrides an inherited `itemsFill: true`), and
+  `align` defaults to centered, or to a stretched, full-width fill specimen's own content when
+  `fill` is set — a capped-width `fill` specimen that still wants centering (e.g. a phone-frame
+  preview) sets `align: 'center'` explicitly. The same `fill`/`surface`/`align` fields exist on each
+  authored `comparison` cell too, independently per cell, for exactly the same reasons.
 - `variants`/`states`' own `maxColumns: 1 | 2 | 3 | 4 | 5` — caps how many columns that slot's list
   ever wraps into (e.g. a 3-item size scale that should always read as one row of exactly 3, never
   more just because a laptop is wide). A narrow window still drops below the cap when it has to —
@@ -206,29 +223,80 @@ actually apply:
 - `group` on a `states` item — the `variants` key it belongs to (a size that only exists for one
   variant). Grouped states render one row per variant; ungrouped ones go to "Other configurations".
 - `composedOf: [{ component, role, relationship }]` — what this component is built from or
-  composed with, shown as a "Composition" subsection in Quick reference. `relationship` is
-  `'built-in'` for a component always present inside this one (e.g. Toast is built from a Banner),
-  `'slot'` for an optional caller-supplied child (e.g. a `leadingIcon` prop), or `'related'` for a
-  component commonly used alongside this one without either containing the other. `component` should be
-  a real component or page id: while you browse the catalog in development, an unknown name logs a
-  `[Catalog]` warning in the browser console. `doctor` doesn't check it, and it never fails a
-  build — e.g.
+  composed with, shown in Composition (its own column when space permits, otherwise under Quick reference). `relationship` is
+  `'built-in'` for a component that's part of this one's own implementation — always rendered, or
+  rendered only for some of its variants/states (e.g. Toast is built from a Banner),
+  `'slot'` for an optional caller-supplied child (e.g. a `leadingIcon`
+  prop), or `'related'` for a component commonly used alongside this one without either containing
+  the other. `component` should be a real component or page id: while you browse the catalog in
+  development, an unknown name logs a `[Catalog]` warning in the browser console. `doctor` doesn't
+  check it, and it never fails a build — e.g.
   `composedOf: [{ component: 'Icon', role: 'Leading glyph', relationship: 'slot' }]`.
+- `BoundedOverlayViewport` — wrap one demo whose own modal/sheet/portal would otherwise escape its
+  card and cover the whole catalog page (React Native Web's `Modal` portals into `document.body`;
+  no wrapper or `overflow: hidden` gives it a different boundary). Opt in per item, never per page:
+  ```tsx
+  import { BoundedOverlayViewport, comparisonCellItemKey } from '@krapwoo/ds-viewer';
+
+  { key: 'full-height', name: 'Full height', node: (
+    <BoundedOverlayViewport pageId="Sheet" slot="states" itemKey="full-height" width={360} height={600}>
+      <MyOverlayDemo />
+    </BoundedOverlayViewport>
+  ) }
+  ```
+  Here `MyOverlayDemo` is your existing stateful wrapper around the real component, not a viewer
+  export. `itemKey` is that item's own `VariantExample.key` for a `variants`/`states` item, or
+  `comparisonCellItemKey(rowKey, columnKey)` (import it — never join the two keys yourself; a plain
+  `${rowKey}:${columnKey}` is ambiguous whenever either key already contains a colon) for a
+  `comparison` cell. `width` is only a maximum — the stage still shrinks to whatever its real
+  owning cell actually has at a narrower width — and `height` is the child document's exact usable
+  height, never renegotiated; both must be finite and strictly positive or the specimen shows an
+  honest "This example is unavailable right now." instead of an iframe sized to a meaningless
+  bound. Browser-only: it opens a same-origin child document that boots this catalog's own app
+  entry/module/provider tree, so the wrapped demo's overlay opens inside that document's own
+  viewport instead of the outer page's `document.body`; the two documents stay independently
+  owned, with no shared memory or provider identity between them. On a native runtime, and inside
+  the one child document that the address itself selects, `children` render inline with no
+  boundary — never read either case as native containment parity.
 - `previewWidths: [402, 320]` — extra preview widths for a `render()` page (each capped at 402).
-  `CatalogShell`'s `defaultPreviewWidths="full"` keeps a catalog's previews full width.
+  Default to one preview; add a second width only when a narrower (or wider) viewport actually
+  changes something worth comparing — wrapping, truncation, or reflow — not just to show the same,
+  identically-laid-out content twice. `CatalogShell`'s `defaultPreviewWidths="full"` keeps a
+  catalog's previews full width.
+- `previewLayout: 'table'` — opt in to one shared, bordered card for a `render()` page's widths,
+  instead of the default `'frames'` (one bordered frame per width, side by side; unchanged unless
+  you set this). Each width keeps its own caption and stays an independent, stateful live instance
+  either way — `'table'` only changes how they're grouped visually. Widths that don't fit the
+  available space side by side wrap to stacked columns, each still captioned, rather than scrolling
+  or shrinking below their requested size. Has no effect on a `'full'` preview width (catalog
+  chrome) or a token gallery — those always render as `'frames'`.
 - `variants: { desc?, align?, itemsFill?, items: [{ key, name, node }] }` — one item per prop enum
   value (e.g. every `variant`). If the component has no `variant`-like prop at all, still include one
-  item named `"Default"` showing its plain look — the Variants column should never be empty.
+  item named `"Default"` showing its plain look — a page that documents its component through a
+  `variants` list should never leave that column empty. This doesn't mean every page must use
+  `variants`: a page that reaches for `render()` instead (see below) has no Variants column to fill
+  in the first place.
 - `states: { desc?, align?, itemsFill?, items: [{ key, name, node }] }` — one item per meaningfully
   distinct boolean state (`loading`, `disabled`, icon-only, …). Fine to omit if there are none.
 
 Every item's `name` is shown as its cell caption (e.g. `"Primary"`, `"Icon-only"`) — use the
 actual variant/state value, not a generic label. Omit `states` when there are none — the page simply
-shows no States block; don't invent items just to fill it. Set `itemsFill: true` on a slot whose
-items are wide, block-level components (Banner, Card, Toast, InputField) rather than small ones meant
-to sit centered (Button, Badge, Pill). Reach for `render()` instead of `variants` only when the
-content isn't a simple list of instances (a live demo with local state, a wrapping grid); its output
-renders in a Preview card (phone width for components). For a token-gallery section with no component API at all (raw token
+shows no States block; don't invent items just to fill it. Avoid a static prop matrix (a `states`
+item, or a `comparison` cell, for every combination) when two configurations only actually look
+different mid-transition and render identically at rest, or when the "closed" side of a toggle is
+just a redundant blank cell next to its "open" counterpart — show that behavior with one interactive
+example instead, with its own working toggle, rather than several now-identical static ones. Set
+`itemsFill: true` on a slot whose items are wide, block-level components (Banner, Card, Toast,
+InputField) rather than small ones meant to sit centered (Button, Badge, Pill).
+
+A `variants`/`states` item's `node` can be a plain instance, or a small stateful wrapper component
+(its own `useState` and all) that renders the real component live — a toggle demo for a
+`Collapsible`, say. That local state belongs to the item's own node, not to the page; it doesn't by
+itself mean the page needs `render()`. Reach for `render()` instead of `variants`/`states` only for a
+genuine custom composition that doesn't fit a list of independent instances at all — several demos
+sharing one measured layout, a wrapping grid, a token gallery — not merely because an item has local
+state. `render()`'s output renders in a Preview card (phone width for components). For a
+token-gallery section with no component API at all (raw token
 data, not a component — see `ColorsGallery`/`SpacingGallery`/`TypographyGallery`), set
 `tokenGallery: true` instead of `props`/`a11y`/`states` — `SectionBlock` then renders `render()`'s
 output full width under a "Tokens" label and shows only a Quick reference card with the source
@@ -363,6 +431,23 @@ Button
 - `--ci` exits 1 only when an error was found — a warning alone never fails CI, and `--ci` never makes a network call.
 - `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code.
 - A page whose layout data (`specimenSize`, `group`, grid `rows`/`columns`, list items' `key`/`name`/`props`/`group`, `propNotes` keys) isn't a literal — written as something other than a literal value, array, object, or a same-file `const` reference — gets one "page not statically checkable" warning. A page file that fails to parse *or typecheck* is `page-parse-error` instead: every page file is also run through the TypeScript type checker (the same way a component file already is), so a genuine syntax or type error in a page is reported with its line.
+- Three further rules are conservative source-backed *suggestions*, warnings by default
+  (the existing `doctor.strict` option still promotes them), never authoritative over what a page authors:
+  - `missing-composition-suggestion` — a component's own real JSX source evidence names another
+    known component its page's `composedOf` doesn't. The message states only that candidate's
+    `component`/`file`/`line`, never an invented role or relationship; add it to `composedOf`
+    yourself if it reflects real composition, or leave it as-is if it's incidental.
+  - `degenerate-grid-axis` — an authored `comparison` grid's row or column axis has exactly one
+    item, so it reads as a one-axis list rather than a real two-axis matrix. Never rewrites the
+    grid; an intentional single-value axis is left exactly as authored.
+  - `missing-working-preview` — a component has a controlled value/change pair (`value`/`onChange`,
+    or `x`/`onXChange`) but every example that renders it passes a fixed value with no working
+    callback. Add `intentionalStaticPreview: { reason: '...' }` to the page to suppress it when the
+    static examples are deliberate.
+  The analyzer follows supported aliases and resolved exports, but uncertain wrappers or
+  dynamically-constructed references remain uncheckable rather than being guessed at. A
+  declared `intentionalStaticPreview` is taken as the author's own call, not independently
+  verified; only a real browser check confirms actual behavior.
 
 ## Known gaps
 

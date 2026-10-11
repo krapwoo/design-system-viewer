@@ -24,6 +24,16 @@ export interface PropRecord {
   options?: string[];
 }
 
+/** One other known, project-local component this component's own implementation renders as a JSX
+ *  tag — optional, additive source evidence (guided-intelligence design §4), never an authored
+ *  role/relationship claim. `file`/`line` point at the JSX usage site (this component's own
+ *  implementation), not the referenced component's declaration. */
+export interface ComposedOfCandidate {
+  component: string;
+  file: string;
+  line: number;
+}
+
 export interface ComponentRecord {
   name: string;
   /** Path to the file that declares the component, relative to the process's cwd at read time. */
@@ -32,4 +42,6 @@ export interface ComponentRecord {
   /** Folder names of `node_modules` types this component's props extend (e.g. `["TextInput"]`),
    *  rendered as "plus all TextInput props" instead of listing every inherited prop. */
   inheritedFrom: string[];
+  /** See `ComposedOfCandidate`. Undefined (never an empty array) when none were found. */
+  composedOfCandidates?: ComposedOfCandidate[];
 }

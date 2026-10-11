@@ -31,8 +31,12 @@ export interface CatalogPageInput<TId extends string = string> {
   specimenSize?: SpecimenSize;
   specimenSurface?: SpecimenSurfaceKind;
   previewWidths?: PreviewWidths;
+  /** See `SectionDef.previewLayout`. */
+  previewLayout?: 'frames' | 'table';
   hide?: SectionDef['hide'];
   composedOf?: ComposedOfEntry[];
+  /** See `SectionDef.intentionalStaticPreview`. */
+  intentionalStaticPreview?: { reason: string };
   /** Export name this page documents; defaults to `id` for component pages. */
   component?: string;
   /** Sidebar group label. */
@@ -168,8 +172,10 @@ export function buildCatalogSections<TId extends string>(
       specimenSize: page.specimenSize,
       specimenSurface: page.specimenSurface,
       previewWidths: page.previewWidths,
+      previewLayout: page.previewLayout,
       hide: component ? page.hide : { ...page.hide, props: true },
       composedOf: page.composedOf,
+      intentionalStaticPreview: page.intentionalStaticPreview,
     };
   });
 

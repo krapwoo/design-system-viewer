@@ -149,6 +149,95 @@ test('reads variants/states list items, including a props tag and maxColumns, an
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
 
+test('reads each list item\'s own fill, surface, and align override, same per-item fields the viewer renders with', () => {
+  const file = writePage(`
+    import React from 'react';
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'full', name: 'Full', fill: true, surface: 'white', align: 'start', node: <Widget /> }] },
+      states: { items: [{ key: 'plain', name: 'Plain', node: <Widget /> }] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.variantsItems?.[0].fill, true);
+  assert.equal(page.variantsItems?.[0].surface, 'white');
+  assert.equal(page.variantsItems?.[0].align, 'start');
+  // Neither is authored on the plain item — left unset, not defaulted to a guessed value.
+  assert.equal(page.statesItems?.[0].fill, undefined);
+  assert.equal(page.statesItems?.[0].surface, undefined);
+  assert.equal(page.statesItems?.[0].align, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// Regression: `readListItems` previously read `fill` as `resolve(...).kind === TrueKeyword`, so ANY
+// present non-literal expression (a variable, a computed value) — not just a literal `false` — read
+// as `false`, contrary to this file's own documented policy that a non-literal value stays unset.
+// Only a known `true`/`false` literal may ever populate `fill`; anything else stays `undefined`.
+test('a non-literal fill expression stays unset, not misread as false; literal true/false are both read correctly', () => {
+  const file = writePage(`
+    import React from 'react';
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const computedFill = Math.random() > 0.5;
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      variants: { items: [
+        { key: 'literal-true', name: 'Literal true', fill: true, node: <Widget /> },
+        { key: 'literal-false', name: 'Literal false', fill: false, node: <Widget /> },
+        { key: 'non-literal', name: 'Non-literal', fill: computedFill, node: <Widget /> },
+      ] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.variantsItems?.[0].fill, true);
+  assert.equal(page.variantsItems?.[1].fill, false);
+  assert.equal(page.variantsItems?.[2].fill, undefined, 'a non-literal fill expression must stay unset, never defaulted to false');
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// Static grid cells (design's required omitted contract): a directly-authored object-literal
+// `comparison.cells` array has its per-cell literal `surface`/`align`/`fill` preserved — a grid
+// built through the starter kit's `grid()` helper (whose `cell` argument is a callback, never
+// evaluated) must stay unrepresented, never guessed at or built by a second evaluator.
+test('reads a direct object-literal comparison\'s per-cell surface/align/fill overrides; a grid() call\'s cells stay unrepresented', () => {
+  const literalFile = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      comparison: {
+        rowLabel: 'Variant', columnLabel: 'State',
+        rows: [{ key: 'primary', label: 'Primary' }],
+        columns: [{ key: 'default', label: 'Default' }, { key: 'disabled', label: 'Disabled' }],
+        cells: [
+          { rowKey: 'primary', columnKey: 'default', surface: 'white', align: 'start', fill: true, node: null },
+          { rowKey: 'primary', columnKey: 'disabled', unavailableReason: 'n/a' },
+        ],
+      },
+    });
+  `);
+  const [literalPage] = readStaticPages([literalFile]);
+  assert.equal(literalPage.checkable, true);
+  assert.deepEqual(literalPage.comparison?.cells, [
+    { rowKey: 'primary', columnKey: 'default', surface: 'white', align: 'start', fill: true },
+    { rowKey: 'primary', columnKey: 'disabled', surface: undefined, align: undefined, fill: undefined },
+  ]);
+  rmSync(path.dirname(literalFile), { recursive: true, force: true });
+
+  const gridCallFile = writePage(`
+    import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      comparison: grid('Variant', 'State', [{ key: 'primary', label: 'Primary' }], [{ key: 'default', label: 'Default' }], (row, column) => null),
+    });
+  `);
+  const [gridPage] = readStaticPages([gridCallFile]);
+  assert.equal(gridPage.checkable, true);
+  assert.equal(gridPage.comparison?.cells, undefined, 'a grid() call\'s cells come from an unevaluated cell() callback and must stay unrepresented, not built by a second evaluator');
+  rmSync(path.dirname(gridCallFile), { recursive: true, force: true });
+});
+
 test('propNotes keys are read; a non-literal propNotes value makes the page not checkable', () => {
   const literalFile = writePage(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
@@ -304,4 +393,189 @@ test('a file whose own AST walk throws (not just an unreadable file) still yield
   assert.equal(goodPage.checkable, true);
   assert.equal(goodPage.group, 'Components');
   rmSync(dir, { recursive: true, force: true });
+});
+
+// Guided intelligence design §4 / plan Task 3 — reading a page's own authored `composedOf` names
+// (never role/relationship, which `doctor` never needs for the missing-composition comparison).
+test('reads a literal composedOf array\'s component names', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Toast', group: 'Components', description: 'x',
+      composedOf: [{ component: 'Button', role: 'Action', relationship: 'built-in' }, { component: 'Icon', role: 'Status', relationship: 'built-in' }],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.hasComposedOf, true);
+  assert.deepEqual(page.composedOf, [{ component: 'Button' }, { component: 'Icon' }]);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('composedOf is undefined with no "not checkable" penalty when the page has none at all', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.hasComposedOf, false);
+  assert.equal(page.composedOf, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// Guided intelligence design §3 / plan Task 3 — the explicit interactive-vs-intentional-static
+// author declaration, with its bounded reason, carried through for `cli/doctor.ts` to honor.
+test('reads a literal intentionalStaticPreview reason', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'PillRow', group: 'Components', description: 'x',
+      intentionalStaticPreview: { reason: 'Already demonstrated by SegmentedToggle.' },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.intentionalStaticPreviewReason, 'Already demonstrated by SegmentedToggle.');
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('intentionalStaticPreviewReason is undefined with no declaration at all', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.intentionalStaticPreviewReason, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// Guided intelligence design §3 / plan Task 3 — generic reading of a variants/states item's own
+// `node:` JSX, used only by `cli/doctor.ts`'s interactive-preview advisory. Never evaluated as a
+// value (design's own global constraint) — only its literal AST shape is read.
+test('reads a direct JSX item\'s own attribute values: literal, no-op (empty arrow) callback, and an omitted callback', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { PillRow } from './PillRow';
+    export default defineCatalogPage({
+      component: 'PillRow', group: 'Components', description: 'x',
+      variants: { items: [
+        { key: 'a', name: 'A', node: <PillRow selected="one" onSelectedChange={() => {}} /> },
+        { key: 'b', name: 'B', node: <PillRow selected="two" /> },
+      ] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  const [a, b] = page.variantsItems!;
+  assert.equal(a.nodeDirectComponent, 'PillRow');
+  assert.deepEqual(a.nodeAttributes?.selected, { kind: 'literal', value: 'one' });
+  assert.deepEqual(a.nodeAttributes?.onSelectedChange, { kind: 'no-op-callback' });
+  assert.equal(b.nodeDirectComponent, 'PillRow');
+  assert.deepEqual(b.nodeAttributes?.selected, { kind: 'literal', value: 'two' });
+  assert.equal(b.nodeAttributes?.onSelectedChange, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('reads an unknown (non-literal, non-empty-arrow) callback as "unknown", never claimed inert', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { PillRow } from './PillRow';
+    function handleChange(next) { console.log(next); }
+    export default defineCatalogPage({
+      component: 'PillRow', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'a', name: 'A', node: <PillRow selected="one" onSelectedChange={handleChange} /> }] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.deepEqual(page.variantsItems![0].nodeAttributes?.onSelectedChange, { kind: 'unknown' });
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('recognizes a genuine same-file stateful wrapper (useState) as nodeStatefulWrapper, never an inert example', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { useState } from 'react';
+    import { PillRow } from './PillRow';
+    function PillRowDemo() {
+      const [selected, setSelected] = useState('one');
+      return <PillRow selected={selected} onSelectedChange={setSelected} />;
+    }
+    export default defineCatalogPage({
+      component: 'PillRow', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'a', name: 'A', node: <PillRowDemo /> }] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  const item = page.variantsItems![0];
+  assert.equal(item.nodeStatefulWrapper, true);
+  assert.equal(item.nodeDirectComponent, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a same-file wrapper with no useState is left uncertain, not a stateful wrapper and not a direct component', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { PillRow } from './PillRow';
+    function PillRowStatic() {
+      return <PillRow selected="one" />;
+    }
+    export default defineCatalogPage({
+      component: 'PillRow', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'a', name: 'A', node: <PillRowStatic /> }] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  const item = page.variantsItems![0];
+  assert.equal(item.nodeStatefulWrapper, undefined);
+  assert.equal(item.nodeDirectComponent, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a same-file wrapper calling an unrelated object\'s useState method is left uncertain, never nodeStatefulWrapper', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { PillRow } from './PillRow';
+    function PillRowDemo() {
+      const [selected, setSelected] = machine.useState('one');
+      return <PillRow selected={selected} onSelectedChange={setSelected} />;
+    }
+    export default defineCatalogPage({
+      component: 'PillRow', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'a', name: 'A', node: <PillRowDemo /> }] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  const item = page.variantsItems![0];
+  assert.equal(item.nodeStatefulWrapper, undefined);
+  assert.equal(item.nodeDirectComponent, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a computed/dynamic node leaves every node-example field unset — never claimed inert or stateful', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { PillRow } from './PillRow';
+    const node = Math.random() > 0.5 ? <PillRow selected="one" /> : null;
+    export default defineCatalogPage({
+      component: 'PillRow', group: 'Components', description: 'x',
+      variants: { items: [{ key: 'a', name: 'A', node }] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  const item = page.variantsItems![0];
+  assert.equal(item.nodeDirectComponent, undefined);
+  assert.equal(item.nodeAttributes, undefined);
+  assert.equal(item.nodeStatefulWrapper, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('composedOf stays undefined (but hasComposedOf true, and the page stays checkable) when it is authored as a non-literal expression', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const COMPOSED_OF = [{ component: 'Button', role: 'Action', relationship: 'built-in' as const }];
+    export default defineCatalogPage({ component: 'Toast', group: 'Components', description: 'x', composedOf: COMPOSED_OF.map((c) => c) });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.hasComposedOf, true);
+  assert.equal(page.composedOf, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
 });
