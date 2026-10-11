@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.9
+
+- After an update, the update page no longer stays on the result: it shows as a note at the top (success, or a failure with a button that recovers from the failed step), and Check now, the automatic-check switch and newer updates keep working below it.
+
 ## 0.4.8
 
 - In development, the viewer now warns in the browser console when an example is wider than its cell (naming a wider `specimenSize`), ignoring what scrolling or clipped areas hide. Filled examples are centred by what's actually visible, so a tooltip or a fixed-width skeleton inside a full-width wrapper no longer sits against the edge.
