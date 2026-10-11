@@ -9,7 +9,8 @@ const DEMO: ListItem[] = [
 ];
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/ComparisonList.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'One-axis examples inside ONE shared card. Cells wrap into balanced rows; each cell has its own caption strip so labels stay attached when rows wrap. Blank cells complete an uneven last row. Wide specimens use fixed 402px cells and the card hugs its columns. This is the layout behind every plain `variants`/`states` list in both catalogs that isn\'t a `comparison` grid.',

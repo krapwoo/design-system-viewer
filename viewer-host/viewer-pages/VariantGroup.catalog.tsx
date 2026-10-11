@@ -8,7 +8,8 @@ const demo = StyleSheet.create({
 });
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/VariantGroup.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'Labels one example (or small cluster of examples) inside a freeform `render()` — a bold uppercase name plus a one-line description, sitting above whatever demo content is passed as children. SectionBlock itself doesn\'t use this for `variants` clusters (those get their own card, titled directly); reach for it inside a `render()` that needs an inline sub-heading, e.g. a Colors gallery.',

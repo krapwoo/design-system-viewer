@@ -10,5 +10,6 @@ export default defineConfig({
   components: [],
   tokens: ['../native/catalog/tokens.ts'],
   pages: ['viewer-pages/*.catalog.tsx'],
+  groupOrder: ['Tokens', 'Components'],
   updateCheck: false,
 });

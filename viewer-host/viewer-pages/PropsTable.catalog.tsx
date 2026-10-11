@@ -14,7 +14,8 @@ function PropsTableDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/PropsTable.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'Renders a component\'s real prop interface as a table: each row stacks name + type above its description (and default, if any) — top-to-bottom, not side by side, so a long description reads at the card\'s full width instead of being squeezed into a narrow leftover column.',

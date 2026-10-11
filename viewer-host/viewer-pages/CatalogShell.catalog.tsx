@@ -77,7 +77,13 @@ function ShellDiagram() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/CatalogShell.tsx',
+  composedOf: [
+    { component: 'CatalogSidebar', role: "The navigation column.", relationship: 'built-in' },
+    { component: 'SectionBlock', role: "Each catalog page.", relationship: 'built-in' },
+    { component: 'UpdatePanel', role: "The update page, opened from the sidebar footer.", relationship: 'built-in' },
+  ],
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'The whole catalog — a persistent, searchable sidebar plus one selected page. Selecting a page replaces the main content; on web the page is kept in the URL fragment (#Button) so refresh, deep links, and back/forward work. Desktop and laptop screens only. You\'re reading a live CatalogShell right now.',

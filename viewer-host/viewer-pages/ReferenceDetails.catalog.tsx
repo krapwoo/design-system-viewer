@@ -14,7 +14,11 @@ const DEMO: SectionDef<'ReferenceDetailsDemo'> = {
 };
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/ReferenceDetails.tsx',
+  composedOf: [
+    { component: 'PropsTable', role: "The Props box.", relationship: 'built-in' },
+  ],
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'Always-visible Guidance (when to use it, accessibility) and Quick reference (source path), plus Props in its own box (two columns, filled across first, when there are 4+ props and room) — everything a page shows below its specimens, regardless of layout. A token-gallery page (`tokenGallery: true`) shows only Quick reference, with no Guidance or Props box, since there\'s no component API to document.',

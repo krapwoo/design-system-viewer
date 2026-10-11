@@ -7,7 +7,8 @@ function CatalogSearchInputDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/CatalogSearchInput.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'A plain filter input, deliberately built from bare RN primitives rather than the host app\'s own search field — the catalog\'s own chrome shouldn\'t depend on (or break alongside) the thing it\'s documenting.',

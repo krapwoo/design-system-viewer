@@ -58,7 +58,11 @@ function SidebarDiagram() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/CatalogSidebar.tsx',
+  composedOf: [
+    { component: 'CatalogSearchInput', role: "The filter field above the page list.", relationship: 'built-in' },
+  ],
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'Catalog navigation: app name, caption, a filter box, and grouped links, one per page. Selecting a link opens that page; the filter narrows this list only and never changes the open page. Used internally by CatalogShell.',

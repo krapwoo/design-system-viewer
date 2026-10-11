@@ -16,7 +16,8 @@ const DEMO: ComparisonDef = {
 };
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/ComparisonGrid.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'A grid of two props that combine freely, rendered as an accessible table inside one card. Columns grow with the window up to 402px and never shrink below the specimen size\'s minimum; a grid wider than its container scrolls horizontally inside the card, never the page. This is the layout behind every `comparison`-based page in both catalogs (e.g. Button\'s Variant × State).',

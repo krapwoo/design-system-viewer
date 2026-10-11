@@ -21,7 +21,14 @@ function TokenRowDemo() {
           <Text style={demo.spacingValue}>16px</Text>
         </View>
       </TokenRow>
-      <TokenRow use="This row has last — no divider beneath it, since nothing follows." last>
+      <TokenRow use="notePlacement='right' puts the note beside a narrow sample, so each token is one line." notePlacement="right">
+        <View style={demo.spacingRow}>
+          <Text style={demo.spacingLabel}>400</Text>
+          <View style={[demo.spacingBar, { width: 8 }]} />
+          <Text style={demo.spacingValue}>8px</Text>
+        </View>
+      </TokenRow>
+      <TokenRow use="This row has last, so no divider beneath it, since nothing follows." last>
         <View style={demo.spacingRow}>
           <Text style={demo.spacingLabel}>1200</Text>
           <View style={[demo.spacingBar, { width: 24 }]} />
@@ -33,9 +40,10 @@ function TokenRowDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/TokenRow.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
-  description: 'Wraps one token\'s rendered example with a grounded "when to use this" note beneath it, and a bottom divider so a stack of rows reads as a list — the shared shape behind every row in the Spacing and Type Scale galleries, in both this catalog and the starter kit\'s. The row\'s own content is freeform children; pass `last` on the final row in a stack to drop its divider.',
+  description: 'Wraps one token\'s rendered example with a grounded "when to use this" note beneath it, and a bottom divider so a stack of rows reads as a list — the shared shape behind every row in the Spacing and Type Scale galleries, in both this catalog and the starter kit\'s. The row\'s own content is freeform children; pass `last` on the final row in a stack to drop its divider. `notePlacement="right"` puts the note beside a narrow sample (`sampleWidth`, default 280).',
   render: () => <TokenRowDemo />,
 });

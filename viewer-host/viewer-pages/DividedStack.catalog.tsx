@@ -18,7 +18,8 @@ function DividedStackDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/DividedStack.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'Stacks children vertically with a hairline divider automatically inserted between each consecutive pair — never after the last. Unlike TokenRow\'s divider (which each row draws itself, needing a manually-computed `last` prop), this one is guaranteed by construction: wrap any list of items and the dividers place themselves.',

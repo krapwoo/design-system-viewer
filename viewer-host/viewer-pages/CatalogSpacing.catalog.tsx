@@ -2,7 +2,9 @@ import React from 'react';
 import { defineCatalogPage, SpacingScaleGallery, CATALOG_SPACE, CATALOG_SPACE_USE } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  title: 'Spacing',
+  group: 'Tokens',
+  source: '../native/catalog/tokens.ts',
   previewWidths: 'full',
   tokenGallery: true,
   description: 'The catalog chrome\'s own spacing scale, each step with a grounded "when to use this" note from CATALOG_SPACE_USE, based on how the framework\'s own files actually use them.',

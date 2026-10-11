@@ -47,7 +47,15 @@ function SectionBlockDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/SectionBlock.tsx',
+  composedOf: [
+    { component: 'ComparisonGrid', role: "A two-prop grid of examples.", relationship: 'built-in' },
+    { component: 'ComparisonList', role: "A one-axis list of examples.", relationship: 'built-in' },
+    { component: 'ComparisonGroups', role: "Grouped rows of examples.", relationship: 'built-in' },
+    { component: 'TokenSections', role: "A token page's titled cards.", relationship: 'built-in' },
+    { component: 'ReferenceDetails', role: "The reference cards below the examples.", relationship: 'built-in' },
+  ],
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'One catalog page: breadcrumb, title, description, previous/next, then the specimens in one of three layouts — a grid (two props that combine freely, from `comparison`), a list (one axis, in one shared card), or a full-width preview (`render()` and token galleries) — then always-visible Guidance, Quick reference, and Props. Columns and cells are at most 402px wide with 16px padding. The demo below is a standalone SectionBlock with a mock grid, including one genuinely unsupported cell.',

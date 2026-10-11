@@ -8,7 +8,8 @@ const DEMO: ListGroup[] = [
 ];
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  group: 'Components',
+  source: '../native/catalog/ComparisonGroups.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },
   description: 'Grouped rows: one row per variant, headed by the variant\'s name, holding that variant\'s own configurations. Each cell keeps its own caption because the rows do not share column meanings (a circle\'s size is not a bar\'s thickness). Shorter rows end in blank cells; a card wider than its container scrolls horizontally inside itself. Used by pages like Loading, whose circle sizes and linear thicknesses are genuinely different axes.',
