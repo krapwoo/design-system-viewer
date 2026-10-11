@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { defineCatalogPage, PhoneFrame } from '@krapwoo/ds-viewer';
-import { Button } from '../Button';
+import { defineCatalogPage, OverlayDemo } from '@krapwoo/ds-viewer';
 import { Toast } from './Toast';
 import { DS_SPACING } from '../../tokens';
 
@@ -15,14 +14,14 @@ const styles = StyleSheet.create({
 // pattern) so this demo actually exercises the slide-in-from-top/fade animation, not just the two
 // static end states.
 function ToastDemo() {
-  const [visible, setVisible] = useState(true);
   return (
-    <PhoneFrame>
-      <Button label={visible ? 'Hide toast' : 'Show toast'} onPress={() => setVisible((v) => !v)} />
-      <View style={styles.toastDemoOverlay} pointerEvents="box-none">
-        <Toast message="Trip saved" variant="success" visible={visible} />
-      </View>
-    </PhoneFrame>
+    <OverlayDemo triggerLabel={(open) => (open ? 'Hide toast' : 'Show toast')} keepTrigger initiallyOpen>
+      {({ open }) => (
+        <View style={styles.toastDemoOverlay} pointerEvents="box-none">
+          <Toast message="Trip saved" variant="success" visible={open} />
+        </View>
+      )}
+    </OverlayDemo>
   );
 }
 

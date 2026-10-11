@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { defineCatalogPage, PhoneFrame } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, PhoneFrame, PhoneScreen } from '@krapwoo/ds-viewer';
 import { Avatar } from '../components/Avatar';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
@@ -23,13 +23,6 @@ import { Icon } from '../icons/Icon.native';
 import { DS_ICON_SIZE, DS_MOTION_DURATION, DS_SEMANTIC, DS_SPACING, DS_TYPOGRAPHY } from '../tokens';
 
 const styles = StyleSheet.create({
-  // Saved trips recipe — fills PhoneFrame edge-to-edge (like dropdownFrameContent), with a
-  // fixed TopNav header and Dock footer around a scrollable middle, the same fixed-header/
-  // scrollable-body/fixed-footer shape a real screen would use.
-  savedTripsScreen: { flex: 1, alignSelf: 'stretch' },
-  // Takes the space between the TopNav and the Dock and scrolls (`minHeight: 0` lets a flex child
-  // shrink below its content on the web).
-  savedTripsScroll: { flex: 1, minHeight: 0 },
   // The muted area between TopNav and Dock takes the remaining height, so the list scrolls there.
   savedTripsBody: { flex: 1, minHeight: 0 },
   savedTripsScrollContent: { padding: DS_SPACING[800], gap: DS_SPACING[600] },
@@ -40,7 +33,7 @@ const styles = StyleSheet.create({
   // Floats over the top of the screen — same top/left/right inset Toast's own catalog demo uses —
   // instead of sitting inline in the flex flow and pushing the Dock down. A column with a small
   // gap, since back-to-back removals stack one toast per removal (newest on top).
-  savedTripsToastOverlay: { position: 'absolute', top: DS_SPACING[800], left: DS_SPACING[600], right: DS_SPACING[600], zIndex: 20, gap: DS_SPACING[300] },
+  savedTripsToastOverlay: { marginTop: DS_SPACING[800], marginHorizontal: DS_SPACING[600], gap: DS_SPACING[300] },
   // Map mode's stand-in — a real map isn't in scope for this recipe, just enough to show the
   // SegmentedToggle actually switches the screen's content, not just its own thumb.
   savedTripsMapPlaceholder: { alignItems: 'center', justifyContent: 'center', gap: DS_SPACING[400], paddingVertical: DS_SPACING[2400] },
@@ -111,130 +104,132 @@ function SavedTripsDemo() {
 
   return (
     <PhoneFrame>
-      <View style={styles.savedTripsScreen}>
-        <TopNav
-          title="Saved trips"
-          trailing={
-            <Tooltip visible={showFilterTip} label="Filter by mode" placement="bottom" align="right">
-              <Button
-                variant="secondary"
-                size="small"
-                showIcon
-                showLabel={false}
-                iconName="menu"
-                accessibilityLabel="Filters"
-                onPress={() => setShowFilterTip((v) => !v)}
+      <PhoneScreen
+        header={
+          <TopNav
+            title="Saved trips"
+            trailing={
+              <Tooltip visible={showFilterTip} label="Filter by mode" placement="bottom" align="right">
+                <Button
+                  variant="secondary"
+                  size="small"
+                  showIcon
+                  showLabel={false}
+                  iconName="menu"
+                  accessibilityLabel="Filters"
+                  onPress={() => setShowFilterTip((v) => !v)}
+                />
+              </Tooltip>
+            }
+          />
+        }
+        bodyWrapper={(body) => <Surface tone="muted" style={styles.savedTripsBody}>{body}</Surface>}
+        contentContainerStyle={styles.savedTripsScrollContent}
+        // Toasts float over the top of the screen instead of pushing the Dock down. One per
+        // pending removal, newest on top; each stays mounted (visible: false) through its exit.
+        floating={
+          <View style={styles.savedTripsToastOverlay} pointerEvents="box-none">
+            {toasts.map((t) => (
+              <Toast
+                key={t.key}
+                visible={t.visible}
+                message={`${t.trip.title} removed`}
+                action={{ label: 'Undo', onPress: () => undoRemove(t.key, t.trip) }}
               />
-            </Tooltip>
-          }
+            ))}
+          </View>
+        }
+        footer={
+          <Dock>
+            <Button label="Plan a new trip" onPress={() => {}} />
+          </Dock>
+        }
+      >
+        <SearchField value={query} onChangeText={setQuery} placeholder="Search stations" />
+        <SegmentedToggle
+          value={viewMode}
+          onChange={setViewMode}
+          options={[
+            { value: 'list', label: 'List', iconName: 'menu' },
+            { value: 'map', label: 'Map', iconName: 'map' },
+          ]}
         />
-        <Surface tone="muted" style={styles.savedTripsBody}>
-          <ScrollView style={styles.savedTripsScroll} contentContainerStyle={styles.savedTripsScrollContent}>
-            <SearchField value={query} onChangeText={setQuery} placeholder="Search stations" />
-            <SegmentedToggle
-              value={viewMode}
-              onChange={setViewMode}
+        {viewMode === 'map' ? (
+          <View style={styles.savedTripsMapPlaceholder}>
+            <Icon name="map" size={DS_ICON_SIZE.xl} color={DS_SEMANTIC.text.muted} />
+            <Text style={styles.savedTripsMapPlaceholderText}>Map view</Text>
+          </View>
+        ) : (
+          <>
+            <UnderlineTabs
+              value={tab}
+              onChange={setTab}
               options={[
-                { value: 'list', label: 'List', iconName: 'menu' },
-                { value: 'map', label: 'Map', iconName: 'map' },
+                { value: 'all', label: 'All' },
+                { value: 'nearby', label: 'Nearby' },
+                { value: 'favorites', label: 'Favorites' },
               ]}
             />
-            {viewMode === 'map' ? (
-              <View style={styles.savedTripsMapPlaceholder}>
-                <Icon name="map" size={DS_ICON_SIZE.xl} color={DS_SEMANTIC.text.muted} />
-                <Text style={styles.savedTripsMapPlaceholderText}>Map view</Text>
-              </View>
+            {tab === 'favorites' ? (
+              <EmptyState
+                iconName="waypoints"
+                title="No favorites yet"
+                description="Star a trip to see it here."
+                action={{ label: 'Browse trips', onPress: () => setTab('all') }}
+                secondaryAction={{ label: 'Not now', onPress: () => {} }}
+              />
             ) : (
               <>
-                <UnderlineTabs
-                  value={tab}
-                  onChange={setTab}
-                  options={[
-                    { value: 'all', label: 'All' },
-                    { value: 'nearby', label: 'Nearby' },
-                    { value: 'favorites', label: 'Favorites' },
-                  ]}
+                <PillRow
+                  pills={pills.map((p) => ({ ...p, onPress: () => setPills((prev) => prev.map((x) => ({ ...x, variant: x.id === p.id ? 'selected' : 'not_selected' }))) }))}
+                  showAddPill={false}
                 />
-                {tab === 'favorites' ? (
+                <View style={styles.savedTripsInlineRow}>
+                  <Loading size={14} />
+                  <Text style={styles.savedTripsLoadingText}>Updating arrival times…</Text>
+                </View>
+                {/* Dropdown's own `label` prop, not a hand-rolled Text above it — the component
+                    already owns the labeled-field pattern (PillRow, which has no label prop, is
+                    the case where an external label is legitimately the only option). */}
+                <Dropdown label="Sort by" value={sortBy} onChange={setSortBy} options={SAVED_TRIPS_SORT_OPTIONS} />
+                <SectionHeader title="Nearby stations" />
+                {trips.length > 0 ? (
+                  <List>
+                    {trips.map((trip) => (
+                      <ListItem
+                        key={trip.id}
+                        title={trip.title}
+                        subtitle={trip.subtitle}
+                        leading={<Avatar iconName={trip.iconName} size={40} />}
+                        trailing={
+                          <View style={styles.savedTripsInlineRow}>
+                            <Badge variant={trip.badgeVariant} label={trip.badgeLabel} />
+                            <Button
+                              variant="ghost"
+                              size="small"
+                              showIcon
+                              showLabel={false}
+                              iconName="clear"
+                              accessibilityLabel={`Remove ${trip.title}`}
+                              onPress={() => removeTrip(trip.id)}
+                            />
+                          </View>
+                        }
+                      />
+                    ))}
+                  </List>
+                ) : (
                   <EmptyState
                     iconName="waypoints"
-                    title="No favorites yet"
-                    description="Star a trip to see it here."
-                    action={{ label: 'Browse trips', onPress: () => setTab('all') }}
-                    secondaryAction={{ label: 'Not now', onPress: () => {} }}
+                    title="No nearby trips"
+                    description="Removed trips you save will show up here again."
                   />
-                ) : (
-                  <>
-                    <PillRow
-                      pills={pills.map((p) => ({ ...p, onPress: () => setPills((prev) => prev.map((x) => ({ ...x, variant: x.id === p.id ? 'selected' : 'not_selected' }))) }))}
-                      showAddPill={false}
-                    />
-                    <View style={styles.savedTripsInlineRow}>
-                      <Loading size={14} />
-                      <Text style={styles.savedTripsLoadingText}>Updating arrival times…</Text>
-                    </View>
-                    {/* Dropdown's own `label` prop, not a hand-rolled Text above it — the component
-                        already owns the labeled-field pattern (PillRow, which has no label prop, is
-                        the case where an external label is legitimately the only option). */}
-                    <Dropdown label="Sort by" value={sortBy} onChange={setSortBy} options={SAVED_TRIPS_SORT_OPTIONS} />
-                    <SectionHeader title="Nearby stations" />
-                    {trips.length > 0 ? (
-                      <List>
-                        {trips.map((trip) => (
-                          <ListItem
-                            key={trip.id}
-                            title={trip.title}
-                            subtitle={trip.subtitle}
-                            leading={<Avatar iconName={trip.iconName} size={40} />}
-                            trailing={
-                              <View style={styles.savedTripsInlineRow}>
-                                <Badge variant={trip.badgeVariant} label={trip.badgeLabel} />
-                                <Button
-                                  variant="ghost"
-                                  size="small"
-                                  showIcon
-                                  showLabel={false}
-                                  iconName="clear"
-                                  accessibilityLabel={`Remove ${trip.title}`}
-                                  onPress={() => removeTrip(trip.id)}
-                                />
-                              </View>
-                            }
-                          />
-                        ))}
-                      </List>
-                    ) : (
-                      <EmptyState
-                        iconName="waypoints"
-                        title="No nearby trips"
-                        description="Removed trips you save will show up here again."
-                      />
-                    )}
-                  </>
                 )}
               </>
             )}
-          </ScrollView>
-        </Surface>
-        {/* Absolutely positioned over the top of the screen (not inline in the flex flow — a real
-            toast floats over content, it doesn't push the Dock down) — same placement Toast's own
-            catalog demo uses. One Toast per pending removal, stacked newest-on-top; each entry
-            stays in the array (with `visible: false`) through its own exit animation instead of
-            being yanked out of the tree mid-motion. */}
-        <View style={styles.savedTripsToastOverlay} pointerEvents="box-none">
-          {toasts.map((t) => (
-            <Toast
-              key={t.key}
-              visible={t.visible}
-              message={`${t.trip.title} removed`}
-              action={{ label: 'Undo', onPress: () => undoRemove(t.key, t.trip) }}
-            />
-          ))}
-        </View>
-        <Dock>
-          <Button label="Plan a new trip" onPress={() => {}} />
-        </Dock>
-      </View>
+          </>
+        )}
+      </PhoneScreen>
     </PhoneFrame>
   );
 }

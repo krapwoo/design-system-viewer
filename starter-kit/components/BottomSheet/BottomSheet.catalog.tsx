@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage, PhoneFrame } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, OverlayDemo } from '@krapwoo/ds-viewer';
 import { Button } from '../Button';
 import { Dock } from '../Dock';
 import { TopNav } from '../TopNav';
@@ -17,53 +17,43 @@ const styles = StyleSheet.create({
 });
 
 function BottomSheetDemo() {
-  const [visible, setVisible] = useState(false);
   return (
-    <PhoneFrame>
-      {!visible && <Button label="Open sheet" onPress={() => setVisible(true)} />}
-      <BottomSheet
-        visible={visible}
-        onDismiss={() => setVisible(false)}
-        header={
-          <TopNav
-            title="Trip details"
-            trailing={
-              <Button
-                variant="secondary"
-                size="small"
-                showIcon
-                showLabel={false}
-                iconName="clear"
-                accessibilityLabel="Close"
-                onPress={() => setVisible(false)}
-              />
-            }
-          />
-        }
-        footer={
-          <Dock>
-            <Button label="Confirm" onPress={() => setVisible(false)} />
-          </Dock>
-        }
-      >
-        <View style={styles.sheetContent}>
-          <Text style={styles.cardTitle}>Uptown & The Bronx</Text>
-          <Text style={styles.cardBody}>Next train in 4 min · every 6–8 min.</Text>
-          {/* Long enough to overflow the phone frame's fixed height — demonstrates the Dock footer's
-              `elevated` shadow turning on automatically once this content area actually scrolls. */}
-          <Text style={styles.cardBody}>Board at the front car for a faster transfer at Union Sq.</Text>
-          <Text style={styles.cardBody}>
-            This line runs express between 96 St and 168 St during rush hours, skipping local stops in
-            between. Weekend service runs local along the full route, with some stations closed for
-            planned maintenance.
-          </Text>
-          <Text style={styles.cardBody}>
-            Elevators are available at 168 St, 137 St, and 125 St — check the map for accessible
-            entrances before you travel.
-          </Text>
-        </View>
-      </BottomSheet>
-    </PhoneFrame>
+    <OverlayDemo triggerLabel="Open sheet">
+      {({ open, close }) => (
+        <BottomSheet
+          visible={open}
+          onDismiss={close}
+          header={
+            <TopNav
+              title="Trip details"
+              trailing={<Button variant="secondary" size="small" showIcon showLabel={false} iconName="clear" accessibilityLabel="Close" onPress={close} />}
+            />
+          }
+          footer={
+            <Dock>
+              <Button label="Confirm" onPress={close} />
+            </Dock>
+          }
+        >
+          <View style={styles.sheetContent}>
+            <Text style={styles.cardTitle}>Uptown & The Bronx</Text>
+            <Text style={styles.cardBody}>Next train in 4 min · every 6–8 min.</Text>
+            {/* Long enough to overflow the phone frame's fixed height — demonstrates the Dock footer's
+                `elevated` shadow turning on automatically once this content area actually scrolls. */}
+            <Text style={styles.cardBody}>Board at the front car for a faster transfer at Union Sq.</Text>
+            <Text style={styles.cardBody}>
+              This line runs express between 96 St and 168 St during rush hours, skipping local stops in
+              between. Weekend service runs local along the full route, with some stations closed for
+              planned maintenance.
+            </Text>
+            <Text style={styles.cardBody}>
+              Elevators are available at 168 St, 137 St, and 125 St — check the map for accessible
+              entrances before you travel.
+            </Text>
+          </View>
+        </BottomSheet>
+      )}
+    </OverlayDemo>
   );
 }
 
