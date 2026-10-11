@@ -9,11 +9,11 @@ const DEMO_UPDATE: UpdateNotice = {
   summary: ['PhoneScreen and OverlayDemo for screen and overlay demos', 'doctor --render checks every page in a browser'],
   releasedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
 };
-// The page is 512px wide at most. On a laptop, two states sit side by side; each takes half the row
-// (never under 400px, so it doesn't squeeze), and a narrower window wraps them one per row.
+// On a laptop, two states sit side by side and share the row (never under 400px each); a narrower
+// window wraps them one per row. The update page's own content column is at most 512px (its design).
 const layout = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_LAYOUT.blockGap, alignItems: 'flex-start' },
-  cell: { flexGrow: 1, flexBasis: 400, maxWidth: 512 },
+  cell: { flexGrow: 1, flexBasis: 400 },
 });
 const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
 const status = (overrides: Partial<VersionStatus>): VersionStatus => ({

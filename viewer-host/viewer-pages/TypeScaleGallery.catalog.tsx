@@ -3,6 +3,9 @@ import { defineCatalogPage, TypeScaleGallery, CATALOG_TYPE, CATALOG_TYPE_USE } f
 
 export default defineCatalogPage({
   group: 'Components',
+  composedOf: [
+    { component: 'TokenRow', role: "One TokenRow per type step: a sample at that size, its name and value, with its note.", relationship: 'built-in' },
+  ],
   source: '../native/catalog/TypeScaleGallery.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeOverlayAddress, encodeOverlayAddress, findOverlayNode } from '../overlayViewport.ts';
 import { DEVICE_FRAME, deviceFrameScale } from '../deviceFrame.ts';
-import { overflowsCell, paintedExtent, shouldCenterFilledContent, visibleBoxes, type LayoutBox } from '../specimenSurfaceStyle.ts';
+import { FILLED_CONTENT_MAX_WIDTH, filledContentStyle, overflowsCell, paintedExtent, shouldCenterFilledContent, visibleBoxes, type LayoutBox } from '../specimenSurfaceStyle.ts';
 import { presentationBlocks } from '../comparison.ts';
 import type { SectionDef } from '../types.ts';
 
@@ -66,4 +66,9 @@ test('visibleBoxes stops at a clipping or scrolling container: its own box count
   };
   assert.equal(paintedExtent(visibleBoxes(tree)), 370);
   assert.equal(overflowsCell(paintedExtent(visibleBoxes(tree)), 370), false);
+});
+
+test("a filled example (a field, a dropdown, a full-width button) is at most a phone's content width, centred, however wide its cell", () => {
+  assert.equal(FILLED_CONTENT_MAX_WIDTH, 370);
+  assert.deepEqual(filledContentStyle(), { width: '100%', maxWidth: 370, alignSelf: 'center' });
 });

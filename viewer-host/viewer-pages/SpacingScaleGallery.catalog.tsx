@@ -3,6 +3,9 @@ import { defineCatalogPage, SpacingScaleGallery, CATALOG_SPACE, CATALOG_SPACE_US
 
 export default defineCatalogPage({
   group: 'Components',
+  composedOf: [
+    { component: 'TokenRow', role: "One TokenRow per spacing step: the step name, a bar at that width and the value, with its note.", relationship: 'built-in' },
+  ],
   source: '../native/catalog/SpacingScaleGallery.tsx',
   previewWidths: 'full',
   hide: { states: true, props: true, accessibility: true },

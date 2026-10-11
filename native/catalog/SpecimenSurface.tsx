@@ -3,7 +3,7 @@ import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { CATALOG_COLOR } from './tokens';
 import {
   DEFAULT_SPECIMEN_SURFACE, SPECIMEN_SURFACE_WIDTH_STYLE, overflowsCell, paintedExtent, shouldCenterFilledContent, specimenContentAlignItems,
-  specimenContentBoundedStyle, visibleBoxes, type LayoutBox,
+  specimenContentBoundedStyle, visibleBoxes, filledContentStyle, type LayoutBox,
 } from './specimenSurfaceStyle';
 import { useSpecimenAddress } from './SpecimenAddress';
 import { blendsIntoCell, measurePaintedBoxes } from './specimenFill';
@@ -140,7 +140,7 @@ export function SpecimenContent({ fill, align, children }: { fill?: boolean; ali
   }, [fill, align, centerNarrow, address]);
   if (fill) {
     const alignItems = centerNarrow ? 'center' : specimenContentAlignItems(fill, align);
-    return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, { alignItems }]}>{children}</View>;
+    return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, filledContentStyle(), { alignItems }]}>{children}</View>;
   }
   return <View ref={ref} onLayout={measure} style={specimenContentBoundedStyle(align)}>{children}</View>;
 }
