@@ -70,23 +70,24 @@ const startedDev = async () => ({ child: fakeChild() as never, port: 5199 });
 test('a browser that fails to launch is render-unavailable with the install command, and dev never starts', async () => {
   let started = false;
   const issues = await renderCheck('/tmp/x', {
-    deps: { puppeteer: { launch: async () => { throw new Error('Could not find Chrome (ver. 131)'); } }, startDev: async () => { started = true; return startedDev(); }, stopDev: () => {} },
+    settleMs: 0, deps: { puppeteer: { launch: async () => { throw new Error('Could not find Chrome (ver. 131)'); } }, startDev: async () => { started = true; return startedDev(); }, stopDev: () => {} },
   });
   assert.deepEqual(issues.map((i) => [i.id, i.fix]), [['render-unavailable', 'npx puppeteer browsers install chrome']]);
   assert.equal(started, false);
 });
 
 test('no sidebar links is render-failed; a malformed link falls back to its raw text instead of failing the run', async () => {
-  const none = await renderCheck('/tmp/x', { deps: { puppeteer: { launch: async () => fakeBrowser([]) }, startDev: startedDev, stopDev: () => {} } });
+  const none = await renderCheck('/tmp/x', { settleMs: 0, deps: { puppeteer: { launch: async () => fakeBrowser([]) }, startDev: startedDev, stopDev: () => {} } });
   assert.deepEqual(none.map((i) => i.id), ['render-failed']);
-  const odd = await renderCheck('/tmp/x', { deps: { puppeteer: { launch: async () => fakeBrowser(['#Button', '#50%']) }, startDev: startedDev, stopDev: () => {} } });
+  const odd = await renderCheck('/tmp/x', { settleMs: 0, deps: { puppeteer: { launch: async () => fakeBrowser(['#Button', '#50%']) }, startDev: startedDev, stopDev: () => {} } });
   assert.deepEqual(odd, []);
 });
 
 test('one page failing is reported for that page; the other pages are still checked', async () => {
   const issues = await renderCheck('/tmp/x', {
     files: new Map([['Dialog', 'x/Dialog.catalog.tsx']]),
-    deps: { puppeteer: { launch: async () => fakeBrowser(['#Button', '#Dialog', '#Toast'], { Dialog: 'throw' }) }, startDev: startedDev, stopDev: () => {} },
+    settleMs: 0,
+    settleMs: 0, deps: { puppeteer: { launch: async () => fakeBrowser(['#Button', '#Dialog', '#Toast'], { Dialog: 'throw' }) }, startDev: startedDev, stopDev: () => {} },
   });
   assert.deepEqual(issues.map((i) => [i.id, i.page, i.file]), [['render-error', 'Dialog', 'x/Dialog.catalog.tsx']]);
   assert.match(issues[0].message, /Navigation timeout/);

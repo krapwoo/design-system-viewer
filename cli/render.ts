@@ -168,6 +168,8 @@ export async function renderCheck(
   options: {
     files?: ReadonlyMap<string, string>;
     log?: (line: string) => void;
+    /** Wait after each page loads before reading it (lets deferred effects log). @default 900 */
+    settleMs?: number;
     deps?: {
       puppeteer?: unknown;
       startDev?: (projectRoot: string, onSpawn: (child: ChildProcess) => void) => Promise<{ child: ChildProcess; port: number }>;
@@ -234,21 +236,24 @@ export async function renderCheck(
     const issues: DoctorIssue[] = [];
     for (const id of ids) {
       // One page failing (a navigation timeout) is that page's finding; the others still run.
+      let page: { close: () => Promise<void> } & Record<string, any> | undefined;
       try {
-        const page = await browser.newPage();
-        await page.setViewport({ width: 1280, height: 800 });
+        page = await browser.newPage();
+        await page!.setViewport({ width: 1280, height: 800 });
         const messages: PageMessage[] = [];
-        page.on('console', (m: { type: () => string; text: () => string }) => messages.push({ type: m.type(), text: m.text() }));
-        page.on('pageerror', (e: unknown) => messages.push({ type: 'pageerror', text: String(e) }));
-        await page.goto(`http://localhost:${port}/#${encodeURIComponent(id)}`, { waitUntil: 'networkidle0', timeout: PAGE_TIMEOUT_MS });
-        if (!deps.puppeteer) await new Promise((r) => setTimeout(r, SETTLE_MS));
-        const hasHeading: boolean = await page.evaluate(() => {
+        page!.on('console', (m: { type: () => string; text: () => string }) => messages.push({ type: m.type(), text: m.text() }));
+        page!.on('pageerror', (e: unknown) => messages.push({ type: 'pageerror', text: String(e) }));
+        await page!.goto(`http://localhost:${port}/#${encodeURIComponent(id)}`, { waitUntil: 'networkidle0', timeout: PAGE_TIMEOUT_MS });
+        await new Promise((r) => setTimeout(r, options.settleMs ?? SETTLE_MS));
+        const hasHeading: boolean = await page!.evaluate(() => {
           const doc = (globalThis as unknown as { document: { querySelector: (s: string) => { textContent: string | null } | null } }).document;
           return Boolean(doc.querySelector('[role="heading"]')?.textContent?.trim());
         });
         issues.push(...issuesFromPage({ id, file: options.files?.get(id) }, messages, hasHeading, seen));
-        await page.close();
+        await page!.close();
       } catch (error) {
+        // A stuck page's tab is closed, so it doesn't keep loading next to the remaining pages.
+        await page?.close().catch(() => {});
         const file = options.files?.get(id);
         issues.push({ id: 'render-error', severity: 'error', page: id, ...(file ? { file } : {}), message: `Couldn't open the page: ${(error as Error).message.split('\n')[0]}`, fix: 'Open the page in `ds-viewer dev`; it may be very slow to load or stuck.' });
       }
