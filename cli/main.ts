@@ -5,7 +5,8 @@ import { resolveConfig } from './config.ts';
 import { initExistingProject, initNewProject, promptInitMode, type InitOptions, type InitResult, type NewProjectOptions } from './init.ts';
 import { dev } from './dev.ts';
 import { sync } from './sync.ts';
-import { formatHuman, runDoctor, toDoctorJson } from './doctor.ts';
+import { formatHuman, runDoctor, toDoctorJson, withExtraIssues } from './doctor.ts';
+import { renderCheck } from './render.ts';
 import { explainPage, formatExplain, parseHeights } from './explain.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { checkForUpdate, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck } from './updateCheck.ts';
@@ -28,6 +29,7 @@ Commands:
   doctor   Check every page for drift and coverage gaps
            --json          print the machine-readable report instead
            --ci            exit 1 when any error was found (never on a warning alone)
+           --render        also open every page in a headless browser (needs puppeteer)
   explain <Page>
            Print why a page's specimens are laid out the way they are
            --heights <first>,<second>  check side-by-side placement with these measured heights
@@ -132,10 +134,17 @@ export async function runInit(projectRoot: string, rest: string[], options: RunI
 export async function runDoctorCommand(
   projectRoot: string,
   rest: string[],
-  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv; prefsDir?: string } = {},
+  options: { checkForUpdate?: typeof checkForUpdate; env?: NodeJS.ProcessEnv; prefsDir?: string; renderCheck?: typeof renderCheck } = {},
 ): Promise<{ output: string; exitCode: number }> {
   const config = resolveConfig(projectRoot);
-  const result = runDoctor(config);
+  let result: Omit<ReturnType<typeof runDoctor>, 'pageFiles'> = runDoctor(config);
+  // `--render`: open every page in a headless browser and add what only a real render shows.
+  // Progress goes to stderr, so `--json` output stays pure JSON.
+  if (rest.includes('--render')) {
+    const files = (result as ReturnType<typeof runDoctor>).pageFiles;
+    const rendered = await (options.renderCheck ?? renderCheck)(config.projectRoot, { files, log: (line) => process.stderr.write(`${line}\n`) });
+    result = withExtraIssues(result, rendered, Boolean(config.doctor?.strict));
+  }
   // Design §4 "`--ci`: ... no update check." — `--ci` skips this whole block even when
   // `updateCheck` is otherwise enabled; `result.update` stays `null`.
   // Same precedence as the viewer: CI's environment variable, your own switch, the project config.

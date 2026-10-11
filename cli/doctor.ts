@@ -596,6 +596,19 @@ export interface DoctorRunResult extends DoctorJsonResult {
   /** 1 when `summary.errors > 0`, else 0 — what `--ci` exits with; a plain `doctor` run (no
    *  `--ci`) never uses this (design §4: "local work is never blocked"). */
   exitCode: number;
+  /** Page id → project-relative page file (not part of `--json`), for findings added later
+   *  (`doctor --render`). */
+  pageFiles: Map<string, string>;
+}
+
+/** Adds findings to a finished result: applies `doctor.strict`, recounts errors and warnings, and
+ *  resets the exit code. */
+export function withExtraIssues(result: Omit<DoctorRunResult, 'pageFiles'> & { pageFiles?: Map<string, string> }, extra: DoctorIssue[], strict: boolean) {
+  const added = strict ? extra.map((i) => (i.severity === 'warning' ? { ...i, severity: 'error' as const } : i)) : extra;
+  const issues = [...result.issues, ...added];
+  const errors = issues.filter((i) => i.severity === 'error').length;
+  const summary = { ...result.summary, errors, warnings: issues.length - errors };
+  return { ...result, issues, summary, exitCode: errors > 0 ? 1 : 0 };
 }
 
 /** "With examples" means what `checkComponentNoExamples` (Task 4) checks the *absence* of: at
@@ -680,10 +693,11 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
     withExamples: countWithExamples(pages, components),
     unboundExamples: countUnboundExamples(pages),
   };
-  return { version: 1, summary, update: null, issues, exitCode: summary.errors > 0 ? 1 : 0 };
+  const pageFileById = new Map(pages.map((p) => [resolvePageId(p, p.file), path.relative(config.projectRoot, p.file)]));
+  return { version: 1, summary, update: null, issues, exitCode: summary.errors > 0 ? 1 : 0, pageFiles: pageFileById };
 }
 
-export function toDoctorJson(result: DoctorRunResult): DoctorJsonResult {
+export function toDoctorJson(result: Omit<DoctorRunResult, 'pageFiles'>): DoctorJsonResult {
   const { version, summary, update, issues } = result;
   return { version, summary, update, issues };
 }
