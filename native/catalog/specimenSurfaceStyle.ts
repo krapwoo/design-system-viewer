@@ -88,3 +88,11 @@ export function specimenContentBoundedStyle(align: SpecimenAlign | undefined) {
 /** Each example's cell turns gray only when its example would vanish against white (see
  *  `specimenFill.ts`). A page can force a fill with `specimenSurface`. */
 export const DEFAULT_SPECIMEN_SURFACE: SpecimenSurfaceKind = 'auto';
+
+/** A `fill` example stretches to its cell, but one with its own fixed width (a 160-point skeleton
+ *  bar) stays that width; it should then sit in the middle of the cell, not against its leading
+ *  edge. True when the measured example is narrower than its wrapper (by more than rounding). */
+export function shouldCenterFilledContent(contentWidth: number, wrapperWidth: number): boolean {
+  if (!(contentWidth > 0) || !(wrapperWidth > 0)) return false;
+  return contentWidth < wrapperWidth - 1;
+}

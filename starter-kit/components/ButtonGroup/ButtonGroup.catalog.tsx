@@ -19,6 +19,9 @@ export default defineCatalogPage({
         key: 'horizontal',
         name: 'Horizontal',
         props: { variant: 'horizontal' },
+        // Shown at its own width, centred: stretched, its trailing alignment pushes it to the
+        // cell's edge, which reads as a misplaced example rather than as trailing alignment.
+        fill: false,
         node: (
           <ButtonGroup variant="horizontal">
             <Button label="Cancel" variant="tertiary" onPress={() => {}} />

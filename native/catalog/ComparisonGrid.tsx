@@ -3,6 +3,8 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, axisItems, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
+import { SpecimenAddressProvider } from './SpecimenAddress';
+import { comparisonCellItemKey } from './overlayViewport';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import type { ComparisonDef, SpecimenSize, SpecimenSurfaceKind } from './types';
 
@@ -66,7 +68,9 @@ export function ComparisonGrid({
               return (
                 cell?.node !== undefined ? (
                   <SpecimenSurface key={c.key} role="cell" surface={cell.surface ?? surface} style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
-                    <SpecimenContent fill={cell.fill} align={cell.align}>{cell.node}</SpecimenContent>
+                    <SpecimenAddressProvider address={{ pageId: sectionId, slot: 'comparison', itemKey: comparisonCellItemKey(row.key, c.key) }}>
+                      <SpecimenContent fill={cell.fill} align={cell.align}>{cell.node}</SpecimenContent>
+                    </SpecimenAddressProvider>
                   </SpecimenSurface>
                 ) : (
                   <View key={c.key} role="cell" style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>

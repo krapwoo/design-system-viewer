@@ -27,10 +27,11 @@ const styles = StyleSheet.create({
   // fixed TopNav header and Dock footer around a scrollable middle, the same fixed-header/
   // scrollable-body/fixed-footer shape a real screen would use.
   savedTripsScreen: { flex: 1, alignSelf: 'stretch' },
-  // A fixed cap (not `flex: 1`) — sidesteps a web-only flexbox quirk where a `flex: 1` ScrollView
-  // nested inside PhoneFrame's own fixed height doesn't actually shrink to the space left after
-  // TopNav/Dock, and grows PhoneFrame itself past its intended 480px instead of scrolling.
-  savedTripsScroll: { maxHeight: 320 },
+  // Takes the space between the TopNav and the Dock and scrolls (`minHeight: 0` lets a flex child
+  // shrink below its content on the web).
+  savedTripsScroll: { flex: 1, minHeight: 0 },
+  // The muted area between TopNav and Dock takes the remaining height, so the list scrolls there.
+  savedTripsBody: { flex: 1, minHeight: 0 },
   savedTripsScrollContent: { padding: DS_SPACING[800], gap: DS_SPACING[600] },
   // Shared by SavedTrips' small inline rows — the "Updating arrival times…" loading row and each
   // list row's trailing badge+button cluster (identical layout, one key).
@@ -127,7 +128,7 @@ function SavedTripsDemo() {
             </Tooltip>
           }
         />
-        <Surface tone="muted">
+        <Surface tone="muted" style={styles.savedTripsBody}>
           <ScrollView style={styles.savedTripsScroll} contentContainerStyle={styles.savedTripsScrollContent}>
             <SearchField value={query} onChangeText={setQuery} placeholder="Search stations" />
             <SegmentedToggle

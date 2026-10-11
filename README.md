@@ -265,6 +265,15 @@ actually apply:
   the one child document that the address itself selects, `children` render inline with no
   boundary — never read either case as native containment parity.
 - `previewWidths: [402, 320]` — extra preview widths for a `render()` page (each capped at 402).
+  Add a second width only when the component looks different there (labels truncate, a row
+  wraps); otherwise it's the same picture twice. Leave it out by default.
+- **`PhoneFrame`** — wrap a demo that is a whole screen or opens an overlay (a sheet, a dialog, a
+  toast sliding in, a dropdown's picker) in `<PhoneFrame>`. It is a real device: the demo lays out
+  in an iPhone SE viewport (375 × 667 points), scaled down only when its cell is narrower. In the
+  browser viewer it opens that example in its own device-sized document, so overlays that portal
+  to the page (React Native's `Modal`) open inside the phone, not over the catalog.
+- Full-width (`itemsFill`) variants and states wrap at most **3** across; set `maxColumns` to
+  change that. A filled example that keeps its own fixed width is centred in its cell.
   Default to one preview; add a second width only when a narrower (or wider) viewport actually
   changes something worth comparing — wrapping, truncation, or reflow — not just to show the same,
   identically-laid-out content twice. `CatalogShell`'s `defaultPreviewWidths="full"` keeps a

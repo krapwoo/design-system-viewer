@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
+import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 
@@ -18,10 +19,13 @@ export function ComparisonGroups({
   size,
   label,
   surface = DEFAULT_SPECIMEN_SURFACE,
+  pageId,
 }: {
   groups: ListGroup[];
   size: SpecimenSize;
   label: string;
+  /** The page these examples belong to, so a device frame inside one can address it. */
+  pageId?: string;
   surface?: SpecimenSurfaceKind;
 }) {
   const columns = Math.max(1, ...groups.map((g) => g.items.length));
@@ -48,7 +52,9 @@ export function ComparisonGroups({
                       <Text style={styles.captionText}>{item.label}</Text>
                     </View>
                     <SpecimenSurface surface={item.surface ?? surface} style={styles.specimen}>
-                      <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
+                      <SpecimenAddressProvider address={pageId && item.slot ? { pageId, slot: item.slot, itemKey: item.key } : undefined}>
+                        <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
+                      </SpecimenAddressProvider>
                     </SpecimenSurface>
                   </View>
                 );

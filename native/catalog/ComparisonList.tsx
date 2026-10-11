@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 import { MATRIX_LAYOUT, listGeometry, type ListItem } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
+import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 
@@ -19,10 +20,13 @@ export function ComparisonList({
   label,
   maxColumns,
   surface = DEFAULT_SPECIMEN_SURFACE,
+  pageId,
 }: {
   items: ListItem[];
   size: SpecimenSize;
   label: string;
+  /** The page these examples belong to, so a device frame inside one can address it. */
+  pageId?: string;
   maxColumns?: 1 | 2 | 3 | 4 | 5;
   surface?: SpecimenSurfaceKind;
 }) {
@@ -62,7 +66,9 @@ export function ComparisonList({
                     <Text style={styles.captionText}>{item.label}</Text>
                   </View>
                   <SpecimenSurface surface={item.surface ?? surface} style={styles.specimen}>
-                    <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
+                    <SpecimenAddressProvider address={pageId && item.slot ? { pageId, slot: item.slot, itemKey: item.key } : undefined}>
+                      <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
+                    </SpecimenAddressProvider>
                   </SpecimenSurface>
                 </View>
               );

@@ -229,6 +229,9 @@ export function remainingStates(states: VariantSlot | undefined, comparison: Com
 
 export interface ListItem {
   key: string;
+  /** Which authored slot this item came from, so a device frame inside it can address it
+   *  (`overlayViewport.ts`). */
+  slot?: 'variants' | 'states';
   label: string;
   node: unknown;
   fill?: boolean;
@@ -265,10 +268,20 @@ export function slotSize<TId extends string>(def: SectionDef<TId>, slot: Variant
   return def.specimenSize ?? (slot.itemsFill ? 'wide' : 'regular');
 }
 
-function slotItems(slot: VariantSlot): ListItem[] {
+/** Full-width (filled) examples are block components (cards, banners, rows): narrower than about a
+ *  third of a laptop's content width they stop reading as themselves, so they wrap at most 3
+ *  across unless the page sets its own `maxColumns`. Small centred examples wrap freely. */
+export const FILLED_SLOT_MAX_COLUMNS = 3;
+
+function slotColumnCap(slot: VariantSlot): { maxColumns?: 1 | 2 | 3 | 4 | 5 } {
+  if (slot.maxColumns !== undefined) return { maxColumns: slot.maxColumns };
+  return slot.itemsFill ? { maxColumns: FILLED_SLOT_MAX_COLUMNS } : {};
+}
+
+function slotItems(slot: VariantSlot, from: 'variants' | 'states'): ListItem[] {
   // Nullish, not `||`: an item's own explicit `fill: false` must override an inherited
   // `itemsFill: true`, which `false || slot.itemsFill` would silently discard.
-  return slot.items.map((item) => ({ key: item.key, label: item.name, node: item.node, fill: item.fill ?? slot.itemsFill, surface: item.surface, align: item.align }));
+  return slot.items.map((item) => ({ key: item.key, slot: from, label: item.name, node: item.node, fill: item.fill ?? slot.itemsFill, surface: item.surface, align: item.align }));
 }
 
 /** Preview widths, each capped at phone width. 'full' is kept for catalog chrome and token pages. */
@@ -289,8 +302,8 @@ function groupStates(variants: VariantSlot, states: VariantSlot): { groups: List
   const groups = variants.items.map((variant) => {
     const own = states.items.filter((s) => s.group === variant.key);
     const items = own.length > 0
-      ? own.map((s) => ({ key: s.key, label: s.name, node: s.node, fill: fill(s, states), surface: s.surface, align: s.align }))
-      : [{ key: variant.key, label: variant.name, node: variant.node, fill: fill(variant, variants), surface: variant.surface, align: variant.align }];
+      ? own.map((s) => ({ key: s.key, slot: 'states' as const, label: s.name, node: s.node, fill: fill(s, states), surface: s.surface, align: s.align }))
+      : [{ key: variant.key, slot: 'variants' as const, label: variant.name, node: variant.node, fill: fill(variant, variants), surface: variant.surface, align: variant.align }];
     return { key: variant.key, label: variant.name, items };
   });
   const rest = states.items.filter((s) => s.group === undefined || !variantKeys.has(s.group));
@@ -337,8 +350,8 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
         kind: 'list',
         title: 'Variants',
         size: slotSize(def, def.variants),
-        items: slotItems(def.variants),
-        ...(def.variants.maxColumns !== undefined ? { maxColumns: def.variants.maxColumns } : {}),
+        items: slotItems(def.variants, 'variants'),
+        ...slotColumnCap(def.variants),
       });
     } else if (def.render) {
       blocks.push({ kind: 'preview', title: 'Preview', widths: previewWidths(def.previewWidths, options.defaultPreviewWidths) });
@@ -351,8 +364,8 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
       kind: 'list',
       title: secondary ? 'Other configurations' : 'States / configurations',
       size: slotSize(def, states),
-      items: slotItems(states),
-      ...(states.maxColumns !== undefined ? { maxColumns: states.maxColumns } : {}),
+      items: slotItems(states, 'states'),
+      ...slotColumnCap(states),
     });
   }
 

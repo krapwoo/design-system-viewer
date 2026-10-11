@@ -9,7 +9,7 @@ import type React from 'react';
 import type { SectionDef } from './types.ts';
 
 /** Which block on a page an addressed specimen's `node` lives in — see `findOverlayNode`. */
-export type OverlaySlot = 'variants' | 'states' | 'comparison';
+export type OverlaySlot = 'variants' | 'states' | 'comparison' | 'preview';
 
 /** Identifies exactly one authored specimen: a page id (`SectionDef.id`), which block it lives
  *  in, and that item's own key — `VariantExample.key` for `'variants'`/`'states'`, or this
@@ -23,7 +23,7 @@ export interface OverlayAddress {
   itemKey: string;
 }
 
-const OVERLAY_SLOTS: readonly OverlaySlot[] = ['variants', 'states', 'comparison'];
+const OVERLAY_SLOTS: readonly OverlaySlot[] = ['variants', 'states', 'comparison', 'preview'];
 
 /** `encodeURIComponent` leaves `.` untouched (it's an unreserved character), which would let a
  *  literal `.` inside a segment collide with the `.`-joined encoding below; escape it too so
@@ -117,6 +117,8 @@ export function findOverlayNode(sections: readonly SectionDef<string>[], address
   if (!def) return undefined;
   if (address.slot === 'variants') return def.variants?.items.find((item) => item.key === address.itemKey)?.node;
   if (address.slot === 'states') return def.states?.items.find((item) => item.key === address.itemKey)?.node;
+  // A `render()` page's preview (one per page; `itemKey` is always 'preview').
+  if (address.slot === 'preview') return def.render?.();
   // Matched by recomputing each cell's own canonical key, never by splitting `address.itemKey` —
   // a row/column key may itself contain any delimiter this module could pick.
   return def.comparison?.cells.find((cell) => comparisonCellItemKey(cell.rowKey, cell.columnKey) === address.itemKey)?.node;
