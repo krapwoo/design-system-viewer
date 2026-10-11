@@ -175,13 +175,18 @@ when the card is too narrow even for two. The specimens use one of four layouts:
 - **Preview** — `render()` content. Component previews render at phone width (402px), optionally
   with more widths such as a 320px small phone; token galleries and catalog chrome stay full width.
 
-When a page has two blocks, the catalog places them side by side if that makes the page at least
-120px shorter (e.g. Dropdown), and stacks them otherwise. A block with nothing to show is omitted.
+When a page has two blocks, the catalog places them side by side — the row split into two equal
+columns, each block filling its own — if both keep their minimum width there and it makes the page
+at least 120px shorter (e.g. Dropdown); otherwise they stack, each filling the whole row. A block
+with nothing to show is omitted.
 
-Grid columns and list cells are at most 402px wide with 16px padding. A page's `specimenSize`
-(`compact` 160px, `regular` 240px, `wide` 402px) sets the minimum width; full-width (`itemsFill`)
-slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`, never from
-the host app's tokens.
+Every card fills the column it is given, and its columns or cells share that width equally: a
+two-column grid is as wide as a five-column one, and a two-item list is as wide as a six-item one.
+Phone width (402px, 370px of content) caps the specimen inside a cell, not the cell. A page's
+`specimenSize` (`compact` 160px, `regular` 240px, `wide` 402px) sets the minimum column width — a
+card narrower than its minimum scrolls inside itself rather than squeezing its cells. Full-width
+(`itemsFill`) slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`,
+never from the host app's tokens.
 
 ## Adding a component (the recipe)
 

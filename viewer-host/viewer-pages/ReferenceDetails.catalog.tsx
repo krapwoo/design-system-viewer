@@ -13,14 +13,27 @@ const DEMO: SectionDef<'ReferenceDetailsDemo'> = {
   ],
 };
 
+const WITH_COMPOSITION: SectionDef<'ReferenceDetailsDemo'> = {
+  ...DEMO,
+  composedOf: [{ component: 'Icon', role: 'The leading glyph.', relationship: 'slot' }],
+};
+const TOKEN_PAGE: SectionDef<'ReferenceDetailsDemo'> = { ...DEMO, tokenGallery: true, props: undefined };
+
 export default defineCatalogPage({
   group: 'Components',
   source: '../native/catalog/ReferenceDetails.tsx',
   composedOf: [
     { component: 'PropsTable', role: "The Props box.", relationship: 'built-in' },
   ],
-  previewWidths: 'full',
-  hide: { states: true, props: true, accessibility: true },
+  specimenSize: 'page',
+  hide: { props: true },
   description: 'Always-visible Guidance (when to use it, accessibility) and Quick reference (source path), plus Props in its own box (two columns, filled across first, when there are 4+ props and room) — everything a page shows below its specimens, regardless of layout. A token-gallery page (`tokenGallery: true`) shows only Quick reference, with no Guidance or Props box, since there\'s no component API to document.',
-  render: () => <ReferenceDetails def={DEMO} />,
+  a11y: 'Each card title is a level-2 heading; facts are label and value pairs.',
+  variants: {
+    items: [
+      { key: 'component', name: 'Component page', node: <ReferenceDetails def={DEMO} /> },
+      { key: 'composition', name: 'With composition (third column)', node: <ReferenceDetails def={WITH_COMPOSITION} /> },
+      { key: 'token', name: 'Token page (Quick reference only)', node: <ReferenceDetails def={TOKEN_PAGE} /> },
+    ],
+  },
 });

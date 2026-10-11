@@ -1,0 +1,1 @@
+A `variants`/`states` list now measures the space it actually has instead of assuming a laptop's content width, so a list inside a narrower container (an example cell, a split layout) shrinks its columns rather than being cut off, and it never overflows while it waits for its first measurement.

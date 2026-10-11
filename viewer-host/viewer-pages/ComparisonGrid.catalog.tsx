@@ -15,11 +15,34 @@ const DEMO: ComparisonDef = {
   ],
 };
 
+// Five columns: inside a compact page's column budget, past a regular one's — the same def shows
+// both the fitting case and the horizontal scroll a wider grid falls back to.
+const SIZES = ['xs', 'sm', 'md', 'lg', 'xl'] as const;
+const WIDE: ComparisonDef = {
+  rowLabel: 'Tone',
+  columnLabel: 'Size',
+  rows: [{ key: 'neutral', label: 'Neutral' }, { key: 'accent', label: 'Accent' }],
+  columns: SIZES.map((s) => ({ key: s, label: s })),
+  cells: ['neutral', 'accent'].flatMap((tone) =>
+    SIZES.map((s) => ({ rowKey: tone, columnKey: s, node: <Text>{`${tone[0]}·${s}`}</Text> })),
+  ),
+};
+
 export default defineCatalogPage({
   group: 'Components',
   source: '../native/catalog/ComparisonGrid.tsx',
-  previewWidths: 'full',
-  hide: { states: true, props: true, accessibility: true },
-  description: 'A grid of two props that combine freely, rendered as an accessible table inside one card. Columns grow with the window up to 402px and never shrink below the specimen size\'s minimum; a grid wider than its container scrolls horizontally inside the card, never the page. This is the layout behind every `comparison`-based page in both catalogs (e.g. Button\'s Variant × State).',
-  render: () => <ComparisonGrid def={DEMO} size="regular" sectionId="ComparisonGridDemo" />,
+  specimenSize: 'page',
+  hide: { props: true },
+  description: 'A grid of two props that combine freely, rendered as an accessible table inside one card. The card fills its container and the columns share that width equally, so a two-column grid is as wide as a five-column one; phone width (402px) caps the specimen inside a cell, not the column. Columns never shrink below the specimen size\'s minimum — below that the grid scrolls horizontally inside the card, never the page. This is the layout behind every `comparison`-based page in both catalogs (e.g. Button\'s Variant × State).',
+  a11y: 'The card is a table labelled by its two axis names: the first row and the first column are headers, and every example sits in its own cell, so each one is announced with both of its axes.',
+  variants: {
+    // A whole grid card per row: two grids side by side would each fall below their column
+    // minimum and scroll inside themselves.
+    maxColumns: 1,
+    items: [
+      { key: 'combination', name: 'Variant × State, with an unavailable cell', node: <ComparisonGrid def={DEMO} size="regular" sectionId="ComparisonGridDemo" /> },
+      { key: 'compact', name: 'Compact · five columns fit', node: <ComparisonGrid def={WIDE} size="compact" sectionId="ComparisonGridCompactDemo" /> },
+      { key: 'scrolling', name: 'Wide · columns never below phone width', node: <ComparisonGrid def={DEMO} size="wide" sectionId="ComparisonGridWideDemo" /> },
+    ],
+  },
 });

@@ -46,13 +46,6 @@ export const REFERENCE_COLUMN_GAP = 32;
 /** Smallest column or cell width per specimen size. Wide specimens are fixed at phone width. */
 export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402, page: 512 };
 
-/** The widest a cell gets. Phone-sized components cap at phone width (402); `'page'` (components
- *  wider than a phone, such as a whole catalog page or the update page) has no cap: its cells share
- *  the row. */
-export function columnMaxWidth(size: SpecimenSize): number {
-  return size === 'page' ? Infinity : MATRIX_LAYOUT.columnMaxWidth;
-}
-
 /** `Array.isArray`'s built-in type guard narrows to a mutable `any[]`, which a `readonly T[]`
  *  union member is never assignable to — so the `else` branch of `Array.isArray(axis) ? ... :
  *  ...` keeps `axis`'s full union type instead of narrowing away the array member. This explicit
@@ -113,12 +106,11 @@ export function gridColumnLimit(size: SpecimenSize): number {
   return Math.floor((MATRIX_LAYOUT.laptopContentWidth - MATRIX_LAYOUT.rowHeaderWidth) / COLUMN_MIN_WIDTH[size]);
 }
 
-export function gridWidthBounds(columnCount: number, size: SpecimenSize): { minWidth: number; maxWidth: number } {
-  const n = Math.max(0, columnCount);
-  return {
-    minWidth: MATRIX_LAYOUT.rowHeaderWidth + n * COLUMN_MIN_WIDTH[size],
-    maxWidth: MATRIX_LAYOUT.rowHeaderWidth + n * columnMaxWidth(size),
-  };
+/** The narrowest a grid card may be: the row header plus every column at its minimum. A card wider
+ *  than its container scrolls inside itself; above this width the columns share the container
+ *  equally, because the phone-width cap belongs to the specimen inside a cell, not to the column. */
+export function gridMinWidth(columnCount: number, size: SpecimenSize): number {
+  return MATRIX_LAYOUT.rowHeaderWidth + Math.max(0, columnCount) * COLUMN_MIN_WIDTH[size];
 }
 
 export interface ListGeometry {
@@ -130,7 +122,8 @@ export interface ListGeometry {
 }
 
 /** Balanced wrapping for a one-axis list inside a single bordered card (1px outer border). Each
- *  cell's 1px divider sits inside its own width, so no cell is ever wider than 402px. Uses as few
+ *  cell's 1px divider sits inside its own width. Cells share the container equally — phone width
+ *  caps the specimen inside a cell, not the cell. Uses as few
  *  rows as fit, then spreads items evenly across them so a short last row leaves as little empty
  *  space as possible. `fillers` blank cells complete the last row. `columnCap` (from
  *  `VariantSlot.maxColumns`) only ever lowers the natural, width-based column count — a narrow
@@ -146,7 +139,7 @@ export function listGeometry(itemCount: number, availableWidth: number, size: Sp
   const rows = Math.ceil(itemCount / maxColumns);
   const columns = Math.ceil(itemCount / rows);
   const fitted = Math.floor(inner / columns);
-  const cellWidth = size === 'wide' ? MATRIX_LAYOUT.columnMaxWidth : Math.max(min, Math.min(columnMaxWidth(size), fitted));
+  const cellWidth = Math.max(min, fitted);
   return {
     columns,
     rows,
@@ -285,10 +278,11 @@ function slotColumnCap(slot: VariantSlot): { maxColumns?: 1 | 2 | 3 | 4 | 5 } {
   return slot.itemsFill ? { maxColumns: FILLED_SLOT_MAX_COLUMNS } : {};
 }
 
-function slotItems(slot: VariantSlot, from: 'variants' | 'states'): ListItem[] {
+function slotItems(slot: VariantSlot, from: 'variants' | 'states', fillByDefault = false): ListItem[] {
   // Nullish, not `||`: an item's own explicit `fill: false` must override an inherited
   // `itemsFill: true`, which `false || slot.itemsFill` would silently discard.
-  return slot.items.map((item) => ({ key: item.key, slot: from, label: item.name, node: item.node, fill: item.fill ?? slot.itemsFill, surface: item.surface, align: item.align }));
+  // Page-width examples (layouts wider than a phone) fill their cell unless they say otherwise.
+  return slot.items.map((item) => ({ key: item.key, slot: from, label: item.name, node: item.node, fill: item.fill ?? slot.itemsFill ?? (fillByDefault || undefined), surface: item.surface, align: item.align }));
 }
 
 /** Preview widths, each capped at phone width. 'full' is kept for catalog chrome and token pages. */
@@ -357,7 +351,7 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
         kind: 'list',
         title: 'Variants',
         size: slotSize(def, def.variants),
-        items: slotItems(def.variants, 'variants'),
+        items: slotItems(def.variants, 'variants', def.specimenSize === 'page'),
         ...slotColumnCap(def.variants),
       });
     } else if (def.render) {
@@ -371,7 +365,7 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
       kind: 'list',
       title: secondary ? 'Other configurations' : 'States / configurations',
       size: slotSize(def, states),
-      items: slotItems(states, 'states'),
+      items: slotItems(states, 'states', def.specimenSize === 'page'),
       ...slotColumnCap(states),
     });
   }
@@ -384,9 +378,11 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
 
 export interface PlacementBlock {
   kind: PresentationBlock['kind'];
-  /** Rendered width of the block's card (lists hug their columns; everything else fills). */
-  width?: number;
-  /** Measured height of the whole block, label included, while stacked. */
+  /** The narrowest this block renders without its cells dropping below their minimum, from
+   *  `blockMinWidth`. A block that can only fill a whole row (a 'full' preview, token sections)
+   *  reports `Infinity` and never shares one. */
+  minWidth?: number;
+  /** Measured height of the whole block, label included, while stacked at the full width. */
   height: number;
   /** For a list: item count, specimen size, and any explicit column cap, so its side-by-side
    *  height can be predicted from the same geometry the rendered list uses. */
@@ -395,20 +391,44 @@ export interface PlacementBlock {
   maxColumns?: 1 | 2 | 3 | 4 | 5;
 }
 
-/** Side by side or stacked, for a page with exactly two blocks. Tries both and keeps the shorter;
- *  stays stacked unless side by side saves at least PLACEMENT_MIN_SAVING. Only a list can move
- *  beside a first block that hugs its content, and only when its cells keep their minimum width. */
+/** The narrowest a block renders at. Every card fills the column it is given, so this is a floor,
+ *  not the width it will take: below it a grid scrolls inside itself and a list would push its
+ *  cells under their minimum. `Infinity` means the block can only have a whole row. */
+export function blockMinWidth(block: PresentationBlock): number {
+  switch (block.kind) {
+    case 'grid':
+      return gridMinWidth(axisItems(block.comparison.columns).length, block.size);
+    case 'grouped':
+      return MATRIX_LAYOUT.rowHeaderWidth + Math.max(1, ...block.groups.map((g) => g.items.length)) * COLUMN_MIN_WIDTH[block.size] + 2;
+    case 'list':
+      // One column: a list always wraps further rather than going below its size's minimum.
+      return COLUMN_MIN_WIDTH[block.size] + 2;
+    case 'preview':
+      // Fixed preview widths can share a row; a 'full' preview is the row.
+      return block.widths === 'full' ? Infinity : Math.min(...block.widths);
+    default:
+      return Infinity;
+  }
+}
+
+/** The height a block takes at `width`, from the height measured while stacked at `available`.
+ *  Only a list reflows: its rows change with the width, and every row is the same height. */
+function heightAtWidth(block: PlacementBlock, width: number, available: number): number {
+  if (block.kind !== 'list' || !block.itemCount || !block.size) return block.height;
+  const stackedRows = listGeometry(block.itemCount, available, block.size, block.maxColumns).rows;
+  const rows = listGeometry(block.itemCount, width, block.size, block.maxColumns).rows;
+  return (block.height / Math.max(1, stackedRows)) * rows;
+}
+
+/** Side by side or stacked, for a page with exactly two blocks. Side by side splits the row into
+ *  two equal columns and each block fills its own, so it is only possible when both blocks keep
+ *  their minimum width in half a row; it is only taken when it saves at least PLACEMENT_MIN_SAVING
+ *  against stacking, measuring each block at the width it would actually have. */
 export function choosePlacement({ available, gap, first, second }: { available: number; gap: number; first: PlacementBlock; second: PlacementBlock }): 'side' | 'stacked' {
-  if (second.kind !== 'list' || !second.itemCount || !second.size) return 'stacked';
-  const firstWidth = first.width ?? available;
-  if (firstWidth > available * 0.7) return 'stacked';
-  const room = available - firstWidth - gap;
-  const minCell = second.size === 'wide' ? MATRIX_LAYOUT.columnMaxWidth : COLUMN_MIN_WIDTH[second.size];
-  if (room < minCell + 2) return 'stacked';
-  const stackedRows = listGeometry(second.itemCount, available, second.size, second.maxColumns).rows;
-  const sideRows = listGeometry(second.itemCount, room, second.size, second.maxColumns).rows;
-  const rowHeight = second.height / Math.max(1, stackedRows);
-  const sideHeight = Math.max(first.height, sideRows * rowHeight);
+  const half = Math.floor((available - gap) / 2);
+  if (half <= 0) return 'stacked';
+  if ((first.minWidth ?? Infinity) > half || (second.minWidth ?? Infinity) > half) return 'stacked';
+  const sideHeight = Math.max(heightAtWidth(first, half, available), heightAtWidth(second, half, available));
   const stackedHeight = first.height + gap + second.height;
   return sideHeight <= stackedHeight - PLACEMENT_MIN_SAVING ? 'side' : 'stacked';
 }

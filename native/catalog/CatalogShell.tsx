@@ -52,7 +52,7 @@ function resetMainScroll(scrollView: ScrollView | null): void {
  *  with only `onPress` (as `CatalogSidebar.tsx`'s own finding already documents) never activates on
  *  Enter under react-native-web unless the element is a genuine anchor. `role="status"` (not
  *  `"alert"`, the mockup's own choice) — a non-urgent notice should not interrupt assistive tech. */
-function MajorBanner({ update, onReviewUpdate, onDismiss }: { update: UpdateNotice; onReviewUpdate: () => void; onDismiss: () => void }) {
+function MajorBanner({ update, onReviewUpdate, onDismiss, keepDocumentUrl = false }: { update: UpdateNotice; onReviewUpdate: () => void; onDismiss: () => void; keepDocumentUrl?: boolean }) {
   const releaseUrl = `https://github.com/krapwoo/design-system-viewer/releases/tag/v${update.latest}`;
   return (
     <View style={bannerStyles.banner} role="status">
@@ -68,7 +68,16 @@ function MajorBanner({ update, onReviewUpdate, onDismiss }: { update: UpdateNoti
           Migration guide
         </Text>
         {' · '}
-        <Text role="link" style={bannerStyles.link} onPress={onReviewUpdate} {...({ href: hashForId(UPDATE_PAGE_ID) } as Record<string, unknown>)}>
+        <Text
+          role="link"
+          style={bannerStyles.link}
+          onPress={(event?: { preventDefault?: () => void }) => {
+            // An embedded shell opens its own update page; the host page's address stays put.
+            if (keepDocumentUrl) event?.preventDefault?.();
+            onReviewUpdate();
+          }}
+          {...({ href: hashForId(UPDATE_PAGE_ID) } as Record<string, unknown>)}
+        >
           Review update
         </Text>
       </Text>
@@ -115,9 +124,16 @@ export function CatalogShell<TId extends string>({
   update,
   versionStatus,
   updateEndpoint,
+  embedded = false,
+  initialPage,
 }: {
   /** Short product/app name — the sidebar logo and the breadcrumb root. */
   appName: string;
+  /** A shell shown inside another page (a catalog demo): it keeps its selected page in its own
+   *  state, never reads or writes the URL, and doesn't treat the page's address as its own. */
+  embedded?: boolean;
+  /** The page an embedded shell opens on (defaults to the first page). */
+  initialPage?: TId;
   /** Optional logo image, validated and bundled by `cli/workspace.ts` from the project's `logo`
    *  config field. See `CatalogSidebar`'s own doc comment for the approved layout rule. */
   logoImageSource?: ImageSourcePropType;
@@ -150,14 +166,16 @@ export function CatalogShell<TId extends string>({
   // recognizing itself as the selected address) would otherwise render alongside it for nothing.
   // Read once per mount, like `active`'s own initial read below: this mode is only ever entered by
   // a fresh document load, never a same-document transition.
-  const overlayAddress = useMemo(() => (isWeb() ? overlayAddressFromSearch(window.location.search) : undefined), []);
+  // An embedded shell never owns the URL (hash routing, the overlay child-document address).
+  const routesByUrl = isWeb() && !embedded;
+  const overlayAddress = useMemo(() => (routesByUrl ? overlayAddressFromSearch(window.location.search) : undefined), [routesByUrl]);
   const overlayNode = useMemo(() => (overlayAddress ? findOverlayNode(sections, overlayAddress) : undefined), [overlayAddress, sections]);
 
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
   const labels = useMemo(() => new Map(sections.filter((def) => def.title).map((def) => [def.id as string, def.title as string])), [sections]);
   const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
   const [active, setActive] = useState<ShellPageId<TId> | undefined>(() =>
-    isWeb() ? resolveActiveFromHash(window.location.hash, order) : order[0],
+    embedded ? initialPage ?? order[0] : isWeb() ? resolveActiveFromHash(window.location.hash, order) : order[0],
   );
 
   const scrollRef = useRef<ScrollView>(null);
@@ -179,7 +197,7 @@ export function CatalogShell<TId extends string>({
 
   // Back/forward and manual fragment edits.
   useEffect(() => {
-    if (!isWeb()) return;
+    if (!routesByUrl) return;
     const onHashChange = () => {
       const id = resolveActiveFromHash(window.location.hash, order);
       if (id === undefined) return;
@@ -193,7 +211,7 @@ export function CatalogShell<TId extends string>({
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [order]);
+  }, [order, routesByUrl]);
 
   // After every page change: sync the fragment, return to the top, and move focus when the user
   // navigated (never on first load).
@@ -203,7 +221,7 @@ export function CatalogShell<TId extends string>({
     const focus = focusHeadingNext.current;
     pushHistoryNext.current = false;
     focusHeadingNext.current = false;
-    if (isWeb()) {
+    if (routesByUrl) {
       const expected = hashForId(active);
       if (window.location.hash !== expected) {
         if (push) window.location.hash = expected;
@@ -212,7 +230,7 @@ export function CatalogShell<TId extends string>({
     }
     resetMainScroll(scrollRef.current);
     if (focus) focusElement(headingRef.current);
-  }, [active]);
+  }, [active, routesByUrl]);
 
   const activeDef = active !== undefined && active !== UPDATE_PAGE_ID ? sectionsById.get(active) : undefined;
 
@@ -266,7 +284,7 @@ export function CatalogShell<TId extends string>({
 
   return (
     <View style={styles.root}>
-      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} labels={labels} active={active} onPress={select} footer={footer} />
+      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} labels={labels} active={active} onPress={select} footer={footer} keepDocumentUrl={embedded} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {active === UPDATE_PAGE_ID ? (
           <UpdatePanel
@@ -286,7 +304,7 @@ export function CatalogShell<TId extends string>({
             // The approved mockup's own `PAGE_BG` order: crumb, then banner, then title — the
             // banner used to render above the breadcrumb instead (Important finding, Fable
             // correction pass).
-            banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} /> : undefined}
+            banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} keepDocumentUrl={embedded} /> : undefined}
             pager={{
               previousId: neighbors(order, activeDef.id).previous,
               nextId: neighbors(order, activeDef.id).next,

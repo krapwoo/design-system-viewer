@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
-import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, columnMaxWidth, type ListGroup } from './comparison';
+import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
@@ -10,9 +10,10 @@ import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 /**
  * Grouped rows: one row per variant, headed by the variant's name, holding that variant's own
  * configurations. Each cell keeps its own caption because the rows do not share column meanings
- * (a circle's size is not a bar's thickness). Each row is its own labeled list. Shorter rows end
- * in blank cells; a card wider than its container scrolls horizontally inside itself. `surface` is
- * the page's `specimenSurface` behind each item.
+ * (a circle's size is not a bar's thickness). Each row is its own labeled list. Cells share the
+ * card's width equally, the way a grid's columns do, and shorter rows end in blank cells; a card
+ * narrower than its minimum scrolls horizontally inside itself. `surface` is the page's
+ * `specimenSurface` behind each item.
  */
 export function ComparisonGroups({
   groups,
@@ -44,16 +45,16 @@ export function ComparisonGroups({
                 const item = group.items[ci];
                 const last = ci === columns - 1;
                 if (!item) {
-                  return <View key={`blank-${ci}`} aria-hidden style={[styles.cell, { minWidth: min, maxWidth: columnMaxWidth(size) }, last && styles.lastColumn]} />;
+                  return <View key={`blank-${ci}`} aria-hidden style={[styles.cell, { minWidth: min }, last && styles.lastColumn]} />;
                 }
                 return (
-                  <View key={item.key} role="listitem" style={[styles.cell, { minWidth: min, maxWidth: columnMaxWidth(size) }, last && styles.lastColumn]}>
+                  <View key={item.key} role="listitem" style={[styles.cell, { minWidth: min }, last && styles.lastColumn]}>
                     <View style={styles.caption}>
                       <Text style={styles.captionText}>{item.label}</Text>
                     </View>
                     <SpecimenSurface surface={item.surface ?? surface} style={styles.specimen}>
                       <SpecimenAddressProvider address={pageId && item.slot ? { pageId, slot: item.slot, itemKey: item.key } : undefined}>
-                        <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
+                        <SpecimenContent fill={item.fill} align={item.align} capped={size !== 'page'}>{item.node as React.ReactNode}</SpecimenContent>
                       </SpecimenAddressProvider>
                     </SpecimenSurface>
                   </View>

@@ -42,7 +42,7 @@ export function ComparisonList({
   for (let r = 0; r < geometry.rows; r += 1) rows.push(slots.slice(r * geometry.columns, (r + 1) * geometry.columns));
 
   return (
-    <View onLayout={onLayout}>
+    <View onLayout={onLayout} style={styles.measure}>
       <View role="list" aria-label={label} style={[styles.card, { width: geometry.containerWidth }]}>
         {rows.map((row, ri) => (
           <View key={ri} role="none" style={[styles.row, ri === rows.length - 1 && styles.lastRow]}>
@@ -67,7 +67,7 @@ export function ComparisonList({
                   </View>
                   <SpecimenSurface surface={item.surface ?? surface} style={styles.specimen}>
                     <SpecimenAddressProvider address={pageId && item.slot ? { pageId, slot: item.slot, itemKey: item.key } : undefined}>
-                      <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
+                      <SpecimenContent fill={item.fill} align={item.align} capped={size !== 'page'}>{item.node as React.ReactNode}</SpecimenContent>
                     </SpecimenAddressProvider>
                   </SpecimenSurface>
                 </View>
@@ -81,7 +81,16 @@ export function ComparisonList({
 }
 
 const styles = StyleSheet.create({
+  // The wrapper that measures the space the list has. It must stretch: left to hug its own card it
+  // would keep reporting the card's width, so a list inside a narrower container (a specimen cell)
+  // would never learn to shrink and would overflow. `alignItems` keeps the card centred, the
+  // position it had when the wrapper hugged it.
+  measure: { alignSelf: 'stretch', alignItems: 'center' },
   card: {
+    // The width below is computed from the last measured space; until the first measurement lands
+    // it is a laptop-sized guess, so the card is also clamped to whatever space it really has —
+    // a list has no scroller of its own, and a too-wide guess would be cut off for a frame.
+    maxWidth: '100%',
     backgroundColor: CATALOG_COLOR.surface,
     borderWidth: 1,
     borderColor: CATALOG_COLOR.borderStrong,

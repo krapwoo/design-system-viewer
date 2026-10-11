@@ -1,58 +1,40 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage } from '@krapwoo/ds-viewer';
-import { DS_SEMANTIC, DS_SPACING } from '../../starter-kit/tokens';
+import React, { useState } from 'react';
+import { View, StyleSheet } from 'react-native';
+import { defineCatalogPage, CatalogSidebar, CATALOG_COLOR, type NavGroup } from '@krapwoo/ds-viewer';
 
-// A plain box standing in for the real, viewport-sized CatalogSidebar — a live instance here would
-// fight the real catalog around it, not demonstrate the component.
-const demo = StyleSheet.create({
-  diagramSidebarFrame: {
-    height: 180,
-    width: 140,
-    borderWidth: 1,
-    borderColor: DS_SEMANTIC.border.subtle,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  diagramSidebarCol: {
-    width: 110,
-    backgroundColor: DS_SEMANTIC.surface.white,
-    borderRightWidth: 1,
-    borderRightColor: DS_SEMANTIC.border.subtle,
-    padding: DS_SPACING[400],
-    gap: DS_SPACING[200],
-  },
-  diagramLogo: { fontSize: 9, fontWeight: '700', color: DS_SEMANTIC.text.regular },
-  diagramCaption: { fontSize: 7, color: DS_SEMANTIC.text.muted, marginBottom: DS_SPACING[200] },
-  diagramSearch: {
-    height: 12,
-    borderRadius: 3,
-    borderWidth: 1,
-    borderColor: DS_SEMANTIC.border.subtle,
-    backgroundColor: DS_SEMANTIC.surface.main,
-  },
-  diagramGroupLabel: { fontSize: 6, fontWeight: '700', color: DS_SEMANTIC.text.muted, letterSpacing: 0.4, marginTop: DS_SPACING[200] },
-  diagramNavItem: { fontSize: 7, color: DS_SEMANTIC.text.muted },
-  diagramNavActive: { color: DS_SEMANTIC.text.regular, fontWeight: '700' },
+// The real sidebar is as tall as the catalog window, so each example gives it a bounded frame —
+// the same approach CatalogShell's page uses for its embedded shells.
+type Id = 'Colors' | 'Spacing' | 'Button' | 'Card' | 'Toast';
+const GROUPS: NavGroup<Id>[] = [
+  { label: 'Tokens', ids: ['Colors', 'Spacing'] },
+  { label: 'Components', ids: ['Button', 'Card', 'Toast'] },
+];
+
+const frame = StyleSheet.create({
+  // A row, so the sidebar stretches to the frame's height the way it fills the catalog window:
+  // its list scrolls and the footer link stays pinned at the bottom.
+  box: { flexDirection: 'row', height: 420, borderWidth: 1, borderColor: CATALOG_COLOR.border, overflow: 'hidden' },
 });
 
-function SidebarSwatch() {
+/** A live sidebar that owns its own selection, so the filter and the links really work here. */
+function SidebarDemo({ footer, footerActive = false }: { footer: { label: string; kind: 'update' | 'version' }; footerActive?: boolean }) {
+  const [active, setActive] = useState<Id | undefined>('Button');
+  const [onUpdatePage, setOnUpdatePage] = useState(footerActive);
   return (
-    <View style={demo.diagramSidebarCol}>
-      <Text style={demo.diagramLogo}>Design System</Text>
-      <Text style={demo.diagramCaption}>Component Catalog</Text>
-      <View style={demo.diagramSearch} />
-      <Text style={demo.diagramGroupLabel}>ACTIONS</Text>
-      <Text style={demo.diagramNavItem}>Button</Text>
-      <Text style={[demo.diagramNavItem, demo.diagramNavActive]}>Pill</Text>
-    </View>
-  );
-}
-
-function SidebarDiagram() {
-  return (
-    <View style={demo.diagramSidebarFrame}>
-      <SidebarSwatch />
+    <View style={frame.box}>
+      <CatalogSidebar
+        logo="Rider App"
+        caption="Component Catalog"
+        groups={GROUPS}
+        active={onUpdatePage ? undefined : active}
+        onPress={(id) => {
+          setActive(id);
+          setOnUpdatePage(false);
+        }}
+        footer={{ ...footer, active: onUpdatePage, onPress: () => setOnUpdatePage(true) }}
+        // A demo sidebar inside another catalog: its links must not change this page's address.
+        keepDocumentUrl
+      />
     </View>
   );
 }
@@ -63,8 +45,14 @@ export default defineCatalogPage({
   composedOf: [
     { component: 'CatalogSearchInput', role: "The filter field above the page list.", relationship: 'built-in' },
   ],
-  previewWidths: 'full',
-  hide: { states: true, props: true, accessibility: true },
-  description: 'Catalog navigation: app name, caption, a filter box, and grouped links, one per page. Selecting a link opens that page; the filter narrows this list only and never changes the open page. Used internally by CatalogShell.',
-  render: () => <SidebarDiagram />,
+  hide: { props: true },
+  description: 'Catalog navigation: app name, caption, a filter field, and one link per page under grouped headings. Selecting a link opens that page (CatalogShell owns which page is shown); the filter narrows this list only and never changes the open page. These examples are live — type in the filter or select a link to see it respond. Below the list sits one footer link to the update page: the installed version, or an update notice with a dot.',
+  a11y: 'Each group is a labelled list of links; the open page is the one marked `aria-current="page"`. The filter field is a search box that announces how many pages remain.',
+  variants: {
+    items: [
+      { key: 'version', name: 'Installed version in the footer', node: <SidebarDemo footer={{ label: 'DS Viewer 0.5.0', kind: 'version' }} /> },
+      { key: 'update', name: 'Update available (dot)', node: <SidebarDemo footer={{ label: 'DS Viewer 1.0.0', kind: 'update' }} /> },
+      { key: 'updateOpen', name: 'Update page open', node: <SidebarDemo footer={{ label: 'DS Viewer 1.0.0', kind: 'update' }} footerActive /> },
+    ],
+  },
 });

@@ -10,12 +10,13 @@ import {
   REFERENCE_MIN_COLUMN_WIDTH,
   cellKey,
   gridColumnLimit,
-  gridWidthBounds,
+  gridMinWidth,
   indexCells,
   listGeometry,
   PREVIEW_MAX_WIDTH,
   PROPS_COLUMN_GAP,
   PROPS_MIN_COLUMN_WIDTH,
+  blockMinWidth,
   choosePlacement,
   presentationBlocks,
   propsColumns,
@@ -54,9 +55,9 @@ test('gridColumnLimit derives how many columns fit a 1280px laptop', () => {
   assert.equal(gridColumnLimit('wide'), 2);
 });
 
-test('gridWidthBounds depends on column count and specimen size', () => {
-  assert.deepEqual(gridWidthBounds(3, 'regular'), { minWidth: 840, maxWidth: 1326 });
-  assert.deepEqual(gridWidthBounds(4, 'compact'), { minWidth: 760, maxWidth: 1728 });
+test('gridMinWidth depends on column count and specimen size', () => {
+  assert.equal(gridMinWidth(3, 'regular'), 840);
+  assert.equal(gridMinWidth(4, 'compact'), 760);
 });
 
 test('listGeometry balances rows inside one card', () => {
@@ -64,10 +65,10 @@ test('listGeometry balances rows inside one card', () => {
   assert.deepEqual(listGeometry(6, 952, 'regular'), { columns: 3, rows: 2, fillers: 0, cellWidth: 316, containerWidth: 950 });
   // Switch states: 4 compact items -> one row.
   assert.deepEqual(listGeometry(4, 952, 'compact'), { columns: 4, rows: 1, fillers: 0, cellWidth: 237, containerWidth: 950 });
-  // Banner variants: 5 wide items -> 2 phone-width columns, 3 rows, one blank.
-  assert.deepEqual(listGeometry(5, 952, 'wide'), { columns: 2, rows: 3, fillers: 1, cellWidth: 402, containerWidth: 806 });
-  // Never wider than 402 per cell, even with room to spare.
-  assert.deepEqual(listGeometry(2, 1600, 'compact'), { columns: 2, rows: 1, fillers: 0, cellWidth: 402, containerWidth: 806 });
+  // Banner variants: 5 wide items -> 2 columns (wide's 402px minimum), 3 rows, one blank.
+  assert.deepEqual(listGeometry(5, 952, 'wide'), { columns: 2, rows: 3, fillers: 1, cellWidth: 475, containerWidth: 952 });
+  // Cells share the container: phone width caps the specimen inside a cell, not the cell.
+  assert.deepEqual(listGeometry(2, 1600, 'compact'), { columns: 2, rows: 1, fillers: 0, cellWidth: 799, containerWidth: 1600 });
   // Narrow container falls back to one column, never below the size minimum.
   assert.deepEqual(listGeometry(3, 200, 'regular'), { columns: 1, rows: 3, fillers: 0, cellWidth: 240, containerWidth: 242 });
   assert.deepEqual(listGeometry(0, 952, 'regular'), { columns: 0, rows: 0, fillers: 0, cellWidth: 0, containerWidth: 0 });
@@ -77,11 +78,11 @@ test('listGeometry respects an explicit column cap, never exceeding it even with
   // Baseline, no cap: 6 regular items on a 1280px laptop -> 3 columns (matches the uncapped test above).
   assert.deepEqual(listGeometry(6, 952, 'regular'), { columns: 3, rows: 2, fillers: 0, cellWidth: 316, containerWidth: 950 });
   // Capped to 2: same 6 items -> 2 columns × 3 rows, never 3, even though the width fits 3.
-  assert.deepEqual(listGeometry(6, 952, 'regular', 2), { columns: 2, rows: 3, fillers: 0, cellWidth: 402, containerWidth: 806 });
+  assert.deepEqual(listGeometry(6, 952, 'regular', 2), { columns: 2, rows: 3, fillers: 0, cellWidth: 475, containerWidth: 952 });
   // A cap higher than what fits the width still drops to fewer columns when width requires it.
   assert.deepEqual(listGeometry(3, 200, 'regular', 5), { columns: 1, rows: 3, fillers: 0, cellWidth: 240, containerWidth: 242 });
   // A cap of 1 always stacks into a single column.
-  assert.deepEqual(listGeometry(4, 952, 'compact', 1), { columns: 1, rows: 4, fillers: 0, cellWidth: 402, containerWidth: 404 });
+  assert.deepEqual(listGeometry(4, 952, 'compact', 1), { columns: 1, rows: 4, fillers: 0, cellWidth: 950, containerWidth: 952 });
 });
 
 test('presentationBlocks propagates an explicit maxColumns onto list blocks, omitting it when not set', () => {
@@ -284,23 +285,41 @@ test('states that name their variant become grouped rows', () => {
   assert.deepEqual(presentationBlocks({ ...base, variants, states, hide: { states: true } }).map((b) => b.kind), ['list']);
 });
 
-test('choosePlacement keeps the shorter arrangement and prefers stacking', () => {
-  const second = { kind: 'list', itemCount: 3, size: 'wide', height: 600 };
-  // Dropdown at 1280: one 402px variant (≈600 tall) beside three wide states.
-  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second: { ...second, height: 640 } }), 'side');
-  // Same page at 1100: only 340px beside it, narrower than a 402px cell.
-  assert.equal(choosePlacement({ available: 772, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second }), 'stacked');
-  // A first block that fills the width (grid, grouped, preview) never shares the row.
-  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'grid', width: 952, height: 500 }, second }), 'stacked');
-  // Switch at 1280: beside a 402px variant, four compact states wrap to two rows — no real saving.
-  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 4, size: 'compact', height: 230 } }), 'stacked');
-  // A column cap participates in the same placement calculation: four measured one-column rows
-  // remain four rows beside the first block, instead of being incorrectly predicted as two.
-  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 4, size: 'compact', maxColumns: 1, height: 640 } }), 'side');
+test('choosePlacement splits the row in two and keeps the shorter arrangement', () => {
+  // Each block fills half a row (952 - 28 gap = 462 each), so both must keep their minimum there.
+  const wideFirst = { kind: 'list', minWidth: 404, height: 600 };
+  // Dropdown at 1280: one wide variant (≈600 tall) beside three wide states that drop to one
+  // column in half a row — still far shorter than stacking.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: wideFirst, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 640 } }), 'side');
+  // The same page at 1100: half a row is 372px, under a wide cell's 402px minimum.
+  assert.equal(choosePlacement({ available: 772, gap: 28, first: wideFirst, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 600 } }), 'stacked');
+  // A block that can only fill a whole row (a 'full' preview, token sections) never shares one.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'preview', minWidth: Infinity, height: 500 }, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 600 } }), 'stacked');
+  // A five-column grid needs 920px: it keeps the whole row even though the list beside it would fit.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'grid', minWidth: 920, height: 500 }, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 600 } }), 'stacked');
+  // Switch at 1280: four compact states wrap from one row to two beside the first block, so the
+  // page gets no real saving and stays stacked.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, height: 230 }, second: { kind: 'list', minWidth: 162, itemCount: 4, size: 'compact', height: 230 } }), 'stacked');
+  // A column cap participates in the same calculation: four measured one-column rows stay four
+  // rows beside the first block, instead of being wrongly predicted as two.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, height: 230 }, second: { kind: 'list', minWidth: 162, itemCount: 4, size: 'compact', maxColumns: 1, height: 640 } }), 'side');
   // Two single-row blocks that both fit save a full row and go side by side.
-  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 230 }, second: { kind: 'list', itemCount: 1, size: 'wide', height: 230 } }), 'side');
-  // Only lists reflow predictably beside another block.
-  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', width: 404, height: 600 }, second: { kind: 'grid', itemCount: 3, size: 'wide', height: 640 } }), 'stacked');
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, height: 230 }, second: { kind: 'list', minWidth: 404, itemCount: 1, size: 'wide', height: 230 } }), 'side');
+  // Only a list reflows in half a row; a grid keeps its height and scrolls inside its own card.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: wideFirst, second: { kind: 'grid', minWidth: 360, height: 640 } }), 'side');
+});
+
+test('blockMinWidth is the narrowest a block renders at, Infinity for a whole-row block', () => {
+  const [grid] = presentationBlocks({ id: 'X', path: 'p', description: 'd', comparison: valid });
+  // Two regular columns beside the 120px row header.
+  assert.equal(blockMinWidth(grid), 120 + 2 * 240);
+  const [list] = presentationBlocks({ id: 'X', path: 'p', description: 'd', variants: { items: [{ key: 'a', name: 'A', node: 'a' }] } });
+  // One regular column plus the card's own border.
+  assert.equal(blockMinWidth(list), 242);
+  const [preview] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: 'full', render: () => null });
+  assert.equal(blockMinWidth(preview), Infinity);
+  const [fixed] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: [402, 320], render: () => null });
+  assert.equal(blockMinWidth(fixed), 320);
 });
 
 test('propsColumns uses two columns only for 4+ props with room', () => {

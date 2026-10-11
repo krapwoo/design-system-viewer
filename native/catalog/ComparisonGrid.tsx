@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
-import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, columnMaxWidth, axisItems, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
+import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, axisItems, cellKey, gridMinWidth, indexCells, validateComparison } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { comparisonCellItemKey } from './overlayViewport';
@@ -10,9 +10,11 @@ import type { ComparisonDef, SpecimenSize, SpecimenSurfaceKind } from './types';
 
 /**
  * A grid of two props that combine freely, rendered as an accessible table inside one card.
- * Columns grow with the window up to 402px and never shrink below the specimen size's minimum;
- * a grid wider than its container scrolls horizontally inside the card, never the page. `surface`
- * is the page's `specimenSurface` behind each cell's example.
+ * The card fills its container and its columns share that width equally, never shrinking below the
+ * specimen size's minimum; a grid narrower than that scrolls horizontally inside the card, never
+ * the page. Phone width (402px) caps the specimen inside a cell, not the column, so a two-column
+ * grid is as wide as a five-column one. `surface` is the page's `specimenSurface` behind each
+ * cell's example.
  */
 export function ComparisonGrid({
   def,
@@ -31,13 +33,12 @@ export function ComparisonGrid({
   const cells = indexCells(def);
   const rows = axisItems(def.rows);
   const columns = axisItems(def.columns);
-  const bounds = gridWidthBounds(columns.length, size);
+  const minWidth = gridMinWidth(columns.length, size);
   const column = {
     flexGrow: 1,
     flexShrink: 1,
     flexBasis: COLUMN_MIN_WIDTH[size],
     minWidth: COLUMN_MIN_WIDTH[size],
-    maxWidth: columnMaxWidth(size),
   };
   const lastColumn = columns.length - 1;
 
@@ -46,7 +47,7 @@ export function ComparisonGrid({
       <View
         role="table"
         aria-label={`${sectionId}: ${def.rowLabel} by ${def.columnLabel}`}
-        style={[styles.card, { minWidth: bounds.minWidth, maxWidth: bounds.maxWidth }]}
+        style={[styles.card, { minWidth }]}
       >
         <View role="row" style={styles.row}>
           <View role="columnheader" style={[styles.cell, styles.rowHeader, styles.headerCell]}>
@@ -69,7 +70,7 @@ export function ComparisonGrid({
                 cell?.node !== undefined ? (
                   <SpecimenSurface key={c.key} role="cell" surface={cell.surface ?? surface} style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
                     <SpecimenAddressProvider address={{ pageId: sectionId, slot: 'comparison', itemKey: comparisonCellItemKey(row.key, c.key) }}>
-                      <SpecimenContent fill={cell.fill} align={cell.align}>{cell.node}</SpecimenContent>
+                      <SpecimenContent fill={cell.fill} align={cell.align} capped={size !== 'page'}>{cell.node}</SpecimenContent>
                     </SpecimenAddressProvider>
                   </SpecimenSurface>
                 ) : (

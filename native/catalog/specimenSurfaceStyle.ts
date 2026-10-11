@@ -148,7 +148,8 @@ export function visibleBoxes(root: LayoutBox): { left: number; right: number; pa
  *  misrepresent them. Examples that aren't filled keep their own width. */
 export const FILLED_CONTENT_MAX_WIDTH = 370;
 
-/** The wrapper style for a filled example: full width up to `FILLED_CONTENT_MAX_WIDTH`, centred. */
-export function filledContentStyle(): { width: '100%'; maxWidth: number; alignSelf: 'center' } {
-  return { width: '100%', maxWidth: FILLED_CONTENT_MAX_WIDTH, alignSelf: 'center' };
+/** The wrapper style for a filled example: full width up to `FILLED_CONTENT_MAX_WIDTH`, centred.
+ *  `capped: false` (page-width examples) fills the whole cell. */
+export function filledContentStyle(capped = true): { width: '100%'; maxWidth?: number; alignSelf: 'center' } {
+  return capped ? { width: '100%', maxWidth: FILLED_CONTENT_MAX_WIDTH, alignSelf: 'center' } : { width: '100%', alignSelf: 'center' };
 }

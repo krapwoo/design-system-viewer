@@ -115,7 +115,7 @@ function readTree(root: MeasurableNode, browser: Browser): LayoutBox {
   return read(root);
 }
 
-export function SpecimenContent({ fill, align, children }: { fill?: boolean; align?: SpecimenAlign; children: React.ReactNode }) {
+export function SpecimenContent({ fill, align, capped = true, children }: { fill?: boolean; align?: SpecimenAlign; /** Phone-width cap for a filled example; off for page-width cells. */ capped?: boolean; children: React.ReactNode }) {
   // After layout (browser only): a `fill` example whose visible content is narrower than the cell
   // (a fixed-width skeleton, a tooltip around a small trigger) is centred instead of sitting
   // against the leading edge; an explicit `align` always wins. And in development, an example
@@ -140,7 +140,7 @@ export function SpecimenContent({ fill, align, children }: { fill?: boolean; ali
   }, [fill, align, centerNarrow, address]);
   if (fill) {
     const alignItems = centerNarrow ? 'center' : specimenContentAlignItems(fill, align);
-    return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, filledContentStyle(), { alignItems }]}>{children}</View>;
+    return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, filledContentStyle(capped), { alignItems }]}>{children}</View>;
   }
   return <View ref={ref} onLayout={measure} style={specimenContentBoundedStyle(align)}>{children}</View>;
 }

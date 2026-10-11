@@ -1,91 +1,51 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage } from '@krapwoo/ds-viewer';
-import { DS_SEMANTIC, DS_SPACING } from '../../starter-kit/tokens';
+import { defineCatalogPage, CatalogShell, CATALOG_COLOR, CATALOG_TYPE, type NavGroup, type SectionDef, type UpdateNotice, type VersionStatus } from '@krapwoo/ds-viewer';
 
-// Plain boxes standing in for the real, viewport-sized CatalogShell — a live instance here would
-// fight the real catalog around it, not demonstrate the component.
-const demo = StyleSheet.create({
-  diagramFrame: {
-    flexDirection: 'row',
-    height: 180,
-    borderWidth: 1,
-    borderColor: DS_SEMANTIC.border.subtle,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  diagramSidebarCol: {
-    width: 110,
-    backgroundColor: DS_SEMANTIC.surface.white,
-    borderRightWidth: 1,
-    borderRightColor: DS_SEMANTIC.border.subtle,
-    padding: DS_SPACING[400],
-    gap: DS_SPACING[200],
-  },
-  diagramMainCol: {
-    flex: 1,
-    backgroundColor: DS_SEMANTIC.surface.main,
-    padding: DS_SPACING[400],
-    gap: DS_SPACING[200],
-  },
-  diagramLogo: { fontSize: 9, fontWeight: '700', color: DS_SEMANTIC.text.regular },
-  diagramCaption: { fontSize: 7, color: DS_SEMANTIC.text.muted, marginBottom: DS_SPACING[200] },
-  diagramSearch: {
-    height: 12,
-    borderRadius: 3,
-    borderWidth: 1,
-    borderColor: DS_SEMANTIC.border.subtle,
-    backgroundColor: DS_SEMANTIC.surface.main,
-  },
-  diagramGroupLabel: { fontSize: 6, fontWeight: '700', color: DS_SEMANTIC.text.muted, letterSpacing: 0.4, marginTop: DS_SPACING[200] },
-  diagramNavItem: { fontSize: 7, color: DS_SEMANTIC.text.muted },
-  diagramNavActive: { color: DS_SEMANTIC.text.regular, fontWeight: '700' },
-  diagramPageTitle: { fontSize: 9, fontWeight: '700', color: DS_SEMANTIC.text.regular },
-  diagramBlock: {
-    height: 40,
-    borderRadius: 4,
-    backgroundColor: DS_SEMANTIC.surface.white,
-    borderWidth: 1,
-    borderColor: DS_SEMANTIC.border.subtle,
-  },
+// A small sample catalog for the live, embedded shells below.
+type Id = 'Colors' | 'Button' | 'Card';
+const sample = StyleSheet.create({ text: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted } });
+const SECTIONS: SectionDef<Id>[] = [
+  { id: 'Colors', path: 'src/tokens.ts', description: 'Colour tokens.', tokenGallery: true, previewWidths: 'full', render: () => <Text style={sample.text}>Swatches…</Text> },
+  { id: 'Button', path: 'src/Button.tsx', description: 'The primary tap target.', variants: { items: [{ key: 'primary', name: 'Primary', node: <Text style={sample.text}>Continue</Text> }] } },
+  { id: 'Card', path: 'src/Card.tsx', description: 'A surface for grouped content.', variants: { items: [{ key: 'plain', name: 'Plain', node: <Text style={sample.text}>Card</Text> }] } },
+];
+const GROUPS: NavGroup<Id>[] = [
+  { label: 'Tokens', ids: ['Colors'] },
+  { label: 'Components', ids: ['Button', 'Card'] },
+];
+const version = (current: string, update: UpdateNotice | null): VersionStatus => ({
+  current, autoCheck: { enabled: true, source: 'default' }, lastOutcome: 'ok', lastCheckedAt: new Date().toISOString(), update,
 });
+const MINOR: UpdateNotice = { current: '0.4.9', latest: '0.5.0', breaking: false, summary: [] };
+const MAJOR: UpdateNotice = { current: '0.5.0', latest: '1.0.0', breaking: true, summary: [] };
 
-function SidebarSwatch() {
-  return (
-    <View style={demo.diagramSidebarCol}>
-      <Text style={demo.diagramLogo}>Design System</Text>
-      <Text style={demo.diagramCaption}>Component Catalog</Text>
-      <View style={demo.diagramSearch} />
-      <Text style={demo.diagramGroupLabel}>ACTIONS</Text>
-      <Text style={demo.diagramNavItem}>Button</Text>
-      <Text style={[demo.diagramNavItem, demo.diagramNavActive]}>Pill</Text>
-    </View>
-  );
-}
-
-function ShellDiagram() {
-  return (
-    <View style={demo.diagramFrame}>
-      <SidebarSwatch />
-      <View style={demo.diagramMainCol}>
-        <Text style={demo.diagramPageTitle}>Pill</Text>
-        <View style={demo.diagramBlock} />
-        <View style={demo.diagramBlock} />
-      </View>
-    </View>
-  );
-}
+const frame = StyleSheet.create({ box: { height: 460, alignSelf: 'stretch', borderWidth: 1, borderColor: CATALOG_COLOR.border, overflow: 'hidden' } });
+const shell = (update: UpdateNotice | null, current: string) => (
+  <View style={frame.box}>
+    <CatalogShell embedded initialPage="Button" appName="Rider App" title="Component Catalog" groups={GROUPS} sections={SECTIONS} update={update} versionStatus={version(current, update)} />
+  </View>
+);
 
 export default defineCatalogPage({
   group: 'Components',
   source: '../native/catalog/CatalogShell.tsx',
+  specimenSize: 'page',
   composedOf: [
-    { component: 'CatalogSidebar', role: "The navigation column.", relationship: 'built-in' },
-    { component: 'SectionBlock', role: "Each catalog page.", relationship: 'built-in' },
-    { component: 'UpdatePanel', role: "The update page, opened from the sidebar footer.", relationship: 'built-in' },
+    { component: 'CatalogSidebar', role: 'The navigation column.', relationship: 'built-in' },
+    { component: 'SectionBlock', role: 'Each catalog page.', relationship: 'built-in' },
+    { component: 'UpdatePanel', role: 'The update page, opened from the sidebar footer.', relationship: 'built-in' },
   ],
-  previewWidths: 'full',
-  hide: { states: true, props: true, accessibility: true },
-  description: 'The whole catalog — a persistent, searchable sidebar plus one selected page. Selecting a page replaces the main content; on web the page is kept in the URL fragment (#Button) so refresh, deep links, and back/forward work. Desktop and laptop screens only. You\'re reading a live CatalogShell right now.',
-  render: () => <ShellDiagram />,
+  hide: { props: true },
+  description: "The whole catalog: a searchable sidebar plus one selected page. On web the page lives in the URL fragment (#Button), so refresh, deep links and back/forward work. These examples are live shells with `embedded`, which keeps the selected page in its own state instead of the URL. You're also reading a live CatalogShell right now.",
+  a11y: 'Selecting a page moves focus to its heading. The sidebar is a list of links grouped under headings.',
+  variants: {
+    // A whole catalog is laptop-sized: one per row.
+    maxColumns: 1,
+    items: [
+      { key: 'current', name: 'Up to date', node: shell(null, '0.5.0') },
+      { key: 'update', name: 'Update available', node: shell(MINOR, '0.4.9') },
+      { key: 'major', name: 'Major update (banner)', node: shell(MAJOR, '0.5.0') },
+    ],
+  },
 });
