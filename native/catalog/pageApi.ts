@@ -37,6 +37,8 @@ export interface CatalogPageInput<TId extends string = string> {
   composedOf?: ComposedOfEntry[];
   /** See `SectionDef.intentionalStaticPreview`. */
   intentionalStaticPreview?: { reason: string };
+  /** See `SectionDef.internalProps`. */
+  internalProps?: Record<string, string>;
   /** Export name this page documents; defaults to `id` for component pages. */
   component?: string;
   /** Sidebar group label. */

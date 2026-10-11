@@ -12,6 +12,8 @@ const DEMO: ListItem[] = [
 const UNEVEN: ListItem[] = ['A', 'B', 'C', 'D', 'E'].map((l) => ({ key: l.toLowerCase(), label: l, node: <Text>{l}</Text> }));
 
 export default defineCatalogPage({
+  component: 'ComparisonList',
+  internalProps: { size: "The page's specimen size, passed by SectionBlock's layout.", surface: "The page's specimenSurface, passed by SectionBlock." },
   group: 'Components',
   source: '../native/catalog/ComparisonList.tsx',
   specimenSize: 'page',

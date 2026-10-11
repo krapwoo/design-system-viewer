@@ -12,6 +12,7 @@ const demo = StyleSheet.create({
 });
 
 export default defineCatalogPage({
+  component: 'PhoneScreen',
   group: 'Components',
   source: '../native/catalog/PhoneScreen.tsx',
   description: "A whole app screen inside a PhoneFrame: `header` stays at the top, `footer` at the phone's bottom, and the children scroll between them instead of pushing the footer off the screen. `floating` is a layer over the top for toasts (position its content yourself); `bodyWrapper` puts the app's own surface around the scrolling body.",

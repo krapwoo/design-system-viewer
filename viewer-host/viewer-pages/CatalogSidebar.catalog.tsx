@@ -40,6 +40,7 @@ function SidebarDemo({ footer, footerActive = false }: { footer: { label: string
 }
 
 export default defineCatalogPage({
+  component: 'CatalogSidebar',
   group: 'Components',
   source: '../native/catalog/CatalogSidebar.tsx',
   composedOf: [

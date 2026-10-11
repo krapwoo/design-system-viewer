@@ -268,6 +268,12 @@ export interface SectionDef<TId extends string = string> {
    *  sentence explaining why (not free-form prose) — e.g. "Selection is already demonstrated by X's
    *  working preview." Omit when no such declaration applies; the advisory then runs normally. */
   intentionalStaticPreview?: { reason: string };
+  /** Props the reader never chooses: plumbing a parent passes (a layout size, an internal surface
+   *  kind). `cli/doctor.ts`'s `option-not-covered` advisory then skips them, instead of asking for
+   *  an example of every option of a prop nobody picks by hand. Each entry needs a short reason,
+   *  so the exemption is a visible declaration in the page rather than a silent gap — write an
+   *  example instead whenever the reader really does choose the value. */
+  internalProps?: Record<string, string>;
 }
 
 /** A labeled group of section ids in the sidebar (e.g. "Components" vs "Tokens"). */

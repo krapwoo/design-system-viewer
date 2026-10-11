@@ -17,6 +17,7 @@ const panel = (update: UpdateNotice | null, versionStatus: VersionStatus) => (
 );
 
 export default defineCatalogPage({
+  component: 'UpdatePanel',
   group: 'Components',
   source: '../native/catalog/UpdatePanel.tsx',
   // Wider than a phone (its column is 512px), so its examples use page-width cells.

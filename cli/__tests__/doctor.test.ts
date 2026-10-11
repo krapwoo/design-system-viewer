@@ -160,7 +160,7 @@ test('group-unmatched fires when a states item names a group with no matching va
   assert.ok(issues.some((i) => i.id === 'group-unmatched'));
 });
 
-test('missing-guidance-or-a11y fires for a missing whenToUse and a missing a11y, as two separate messages under the same id; both are silenced by tokenGallery, and a11y alone by hidesAccessibility', () => {
+test('missing-guidance-or-a11y fires for a missing whenToUse and a missing a11y, as two separate messages under the same id; both are silenced by tokenGallery, and hiding the section is not an exemption', () => {
   const missingBoth = collectIssues([page({ component: 'Widget', hasWhenToUse: false, hasA11y: false })], [component({})]);
   assert.equal(missingBoth.filter((i) => i.id === 'missing-guidance-or-a11y').length, 2);
   assert.ok(missingBoth.some((i) => i.message.includes('whenToUse')));
@@ -171,10 +171,39 @@ test('missing-guidance-or-a11y fires for a missing whenToUse and a missing a11y,
   assert.equal(missingA11yOnly.filter((i) => i.id === 'missing-guidance-or-a11y').length, 1);
   const hasBoth = collectIssues([page({ component: 'Widget', hasWhenToUse: true, hasA11y: true })], [component({})]);
   assert.equal(hasBoth.filter((i) => i.id === 'missing-guidance-or-a11y').length, 0);
+  // Hiding the accessibility section removes the visible placeholder, not the obligation: the gap
+  // would otherwise be invisible to both the reader and the doctor.
   const hiddenA11y = collectIssues([page({ component: 'Widget', hasWhenToUse: true, hasA11y: false, hidesAccessibility: true })], [component({})]);
-  assert.equal(hiddenA11y.filter((i) => i.id === 'missing-guidance-or-a11y').length, 0);
+  const hidden = hiddenA11y.filter((i) => i.id === 'missing-guidance-or-a11y');
+  assert.equal(hidden.length, 1);
+  assert.ok(hidden[0].message.includes('hides the accessibility section'));
   const tokenPage = collectIssues([page({ component: 'Widget', tokenGallery: true, hasWhenToUse: false, hasA11y: false })], [component({})]);
   assert.equal(tokenPage.filter((i) => i.id === 'missing-guidance-or-a11y').length, 0);
+});
+
+test('internalProps exempts a declared plumbing prop from option-not-covered, and only that prop', () => {
+  const widget = component({ props: [
+    { name: 'size', type: "'sm' | 'lg'", options: ['sm', 'lg'] },
+    { name: 'tone', type: "'calm' | 'loud'", options: ['calm', 'loud'] },
+  ] });
+  const uncovered = collectIssues([page({ component: 'Widget', variantsItems: [{ key: 'a', name: 'A' }] })], [widget]);
+  assert.equal(uncovered.filter((i) => i.id === 'option-not-covered').length, 4);
+  const declared = collectIssues([page({ component: 'Widget', variantsItems: [{ key: 'a', name: 'A' }], internalProps: ['size'] })], [widget]);
+  const left = declared.filter((i) => i.id === 'option-not-covered');
+  assert.equal(left.length, 2);
+  assert.ok(left.every((i) => i.message.includes('tone')));
+});
+
+test('preview-only-component-page fires for a component documented by render() alone, never for a token gallery or a declared static preview', () => {
+  const previewOnly = collectIssues([page({ component: 'Widget', hasRender: true })], [component({})]);
+  assert.equal(previewOnly.filter((i) => i.id === 'preview-only-component-page').length, 1);
+  // A named example of any kind is enough: the reader gets captions and the other rules can read them.
+  const withVariants = collectIssues([page({ component: 'Widget', hasRender: true, variantsItems: [{ key: 'a', name: 'A' }] })], [component({})]);
+  assert.equal(withVariants.filter((i) => i.id === 'preview-only-component-page').length, 0);
+  const tokenGallery = collectIssues([page({ component: 'Widget', hasRender: true, tokenGallery: true })], [component({})]);
+  assert.equal(tokenGallery.filter((i) => i.id === 'preview-only-component-page').length, 0);
+  const declaredStatic = collectIssues([page({ component: 'Widget', hasRender: true, intentionalStaticPreviewReason: 'A gallery of every icon.' })], [component({})]);
+  assert.equal(declaredStatic.filter((i) => i.id === 'preview-only-component-page').length, 0);
 });
 
 test('a page marked not checkable only ever gets page-not-checkable — every other check (grid axis keys, bound options) is skipped for it, even when some of its data was in fact read', () => {

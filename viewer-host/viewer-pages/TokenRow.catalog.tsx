@@ -40,6 +40,7 @@ function TokenRowDemo() {
 }
 
 export default defineCatalogPage({
+  component: 'TokenRow',
   group: 'Components',
   source: '../native/catalog/TokenRow.tsx',
   previewWidths: 'full',

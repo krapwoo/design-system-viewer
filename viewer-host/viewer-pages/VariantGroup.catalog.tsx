@@ -27,6 +27,7 @@ function Examples() {
 }
 
 export default defineCatalogPage({
+  component: 'VariantGroup',
   group: 'Components',
   source: '../native/catalog/VariantGroup.tsx',
   hide: { props: true },
@@ -34,11 +35,11 @@ export default defineCatalogPage({
   a11y: 'The name and description are plain text, not headings, so a group never injects a heading level into the page\'s outline; label the examples themselves if they need their own names.',
   variants: {
     items: [
-      { key: 'full', name: 'Name and description', node: <VariantGroup name="Usage" desc="wraps a row or stack of live examples"><Examples /></VariantGroup> },
+      { key: 'full', name: 'Name and description', props: { align: 'center' }, node: <VariantGroup name="Usage" desc="wraps a row or stack of live examples"><Examples /></VariantGroup> },
       { key: 'nameOnly', name: 'Name only', node: <VariantGroup name="Usage"><Examples /></VariantGroup> },
       // Filled, so the group has room to show that it stacks against the left edge rather than
       // shrink-wrapping its content the way the centred variants do.
-      { key: 'left', name: "align: 'left'", fill: true, node: <VariantGroup name="Usage" desc="left-aligned, for a gallery column" align="left"><Examples /></VariantGroup> },
+      { key: 'left', name: "align: 'left'", props: { align: 'left' }, fill: true, node: <VariantGroup name="Usage" desc="left-aligned, for a gallery column" align="left"><Examples /></VariantGroup> },
     ],
   },
 });

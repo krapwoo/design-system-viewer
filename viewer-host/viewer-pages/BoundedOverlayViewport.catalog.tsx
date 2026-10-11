@@ -9,6 +9,8 @@ const demo = StyleSheet.create({
 });
 
 export default defineCatalogPage({
+  component: 'BoundedOverlayViewport',
+  internalProps: { slot: 'Part of the specimen address the catalog builds; never chosen by hand.' },
   group: 'Components',
   source: '../native/catalog/BoundedOverlayViewport.tsx',
   specimenSize: 'regular',

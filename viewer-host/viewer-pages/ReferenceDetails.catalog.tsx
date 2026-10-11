@@ -20,6 +20,7 @@ const WITH_COMPOSITION: SectionDef<'ReferenceDetailsDemo'> = {
 const TOKEN_PAGE: SectionDef<'ReferenceDetailsDemo'> = { ...DEMO, tokenGallery: true, props: undefined };
 
 export default defineCatalogPage({
+  component: 'ReferenceDetails',
   group: 'Components',
   source: '../native/catalog/ReferenceDetails.tsx',
   composedOf: [

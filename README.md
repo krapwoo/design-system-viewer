@@ -488,6 +488,15 @@ Button
     or `x`/`onXChange`) but every example that renders it passes a fixed value with no working
     callback. Add `intentionalStaticPreview: { reason: '...' }` to the page to suppress it when the
     static examples are deliberate.
+  - `preview-only-component-page` — a component page's only examples are a free-form `render()`
+    preview, so nothing is named and the checks above have no example to read. Give the page
+    `variants` (and `states`, where they differ) naming each real configuration. Token galleries
+    and a declared `intentionalStaticPreview` are exempt; `render()` stays right for a token
+    gallery or a whole-page layout.
+  A page's `internalProps: { size: 'why' }` exempts a named prop from `option-not-covered` — for
+  plumbing a parent passes (a layout size, an internal surface kind) rather than a value the
+  reader picks. It needs a reason per prop, so the exemption is a visible declaration in the page;
+  when the reader really does choose the value, tag an example with `props` instead.
   The analyzer follows supported aliases and resolved exports, but uncertain wrappers or
   dynamically-constructed references remain uncheckable rather than being guessed at. A
   declared `intentionalStaticPreview` is taken as the author's own call, not independently

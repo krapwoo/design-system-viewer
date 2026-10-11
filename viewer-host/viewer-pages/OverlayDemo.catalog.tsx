@@ -29,6 +29,7 @@ function SheetDemo() {
 }
 
 export default defineCatalogPage({
+  component: 'OverlayDemo',
   group: 'Components',
   source: '../native/catalog/OverlayDemo.tsx',
   description: "A phone with a catalog button that opens an overlay: a sheet, a dialog, a toast. Children get `{ open, close }`; keep an app's overlay mounted and drive its own `visible` from `open`, so its animations play. `keepTrigger` makes the button a toggle, `triggerLabel` can follow the state, and `initiallyOpen` starts it open.",

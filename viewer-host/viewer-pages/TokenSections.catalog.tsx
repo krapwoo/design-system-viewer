@@ -5,6 +5,7 @@ import { defineCatalogPage, TokenSections, CATALOG_COLOR, CATALOG_TYPE } from '@
 const demo = StyleSheet.create({ body: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted } });
 
 export default defineCatalogPage({
+  component: 'TokenSections',
   group: 'Components',
   source: '../native/catalog/TokenLayouts.tsx',
   previewWidths: 'full',

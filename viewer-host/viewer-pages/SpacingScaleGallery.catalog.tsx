@@ -2,6 +2,8 @@ import React from 'react';
 import { defineCatalogPage, SpacingScaleGallery, CATALOG_SPACE, CATALOG_SPACE_USE } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
+  component: 'SpacingScaleGallery',
+  intentionalStaticPreview: { reason: 'Generic over whatever spacing scale it is given: one real scale is the demonstration, and a second would only repeat it with other numbers.' },
   group: 'Components',
   composedOf: [
     { component: 'TokenRow', role: "One TokenRow per spacing step: the step name, a bar at that width and the value, with its note.", relationship: 'built-in' },

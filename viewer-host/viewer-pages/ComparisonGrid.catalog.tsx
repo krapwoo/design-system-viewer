@@ -29,6 +29,8 @@ const WIDE: ComparisonDef = {
 };
 
 export default defineCatalogPage({
+  component: 'ComparisonGrid',
+  internalProps: { size: "The page's specimen size, passed by SectionBlock's layout.", surface: "The page's specimenSurface, passed by SectionBlock." },
   group: 'Components',
   source: '../native/catalog/ComparisonGrid.tsx',
   specimenSize: 'page',

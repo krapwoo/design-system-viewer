@@ -49,6 +49,7 @@ const previewDef: SectionDef<'Example'> = { ...mockSectionDef, comparison: undef
 const block = (def: SectionDef<'Example'>) => <SectionBlock def={def} headingLevel={2} />;
 
 export default defineCatalogPage({
+  component: 'SectionBlock',
   group: 'Components',
   source: '../native/catalog/SectionBlock.tsx',
   composedOf: [

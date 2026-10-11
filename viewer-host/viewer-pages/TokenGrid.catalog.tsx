@@ -7,6 +7,7 @@ const demo = StyleSheet.create({
 });
 
 export default defineCatalogPage({
+  component: 'TokenGrid',
   group: 'Components',
   source: '../native/catalog/TokenLayouts.tsx',
   previewWidths: 'full',

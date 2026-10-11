@@ -17,6 +17,7 @@ const SIX: PropDef[] = [
 ];
 
 export default defineCatalogPage({
+  component: 'PropsTable',
   group: 'Components',
   source: '../native/catalog/PropsTable.tsx',
   specimenSize: 'page',

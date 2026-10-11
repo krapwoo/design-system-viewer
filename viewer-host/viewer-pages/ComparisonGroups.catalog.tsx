@@ -15,6 +15,8 @@ const UNEVEN: ListGroup[] = [
 ];
 
 export default defineCatalogPage({
+  component: 'ComparisonGroups',
+  internalProps: { size: "The page's specimen size, passed by SectionBlock's layout.", surface: "The page's specimenSurface, passed by SectionBlock." },
   group: 'Components',
   source: '../native/catalog/ComparisonGroups.tsx',
   specimenSize: 'page',

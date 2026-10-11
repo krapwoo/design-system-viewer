@@ -2,6 +2,7 @@ import React from 'react';
 import { defineCatalogPage, CatalogButton } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
+  component: 'CatalogButton',
   group: 'Components',
   source: '../native/catalog/CatalogButton.tsx',
   specimenSize: 'compact',

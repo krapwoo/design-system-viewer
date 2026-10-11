@@ -8,6 +8,7 @@ function SearchDemo({ initial = '' }: { initial?: string }) {
 }
 
 export default defineCatalogPage({
+  component: 'CatalogSearchInput',
   group: 'Components',
   source: '../native/catalog/CatalogSearchInput.tsx',
   hide: { props: true },

@@ -3,6 +3,8 @@ import { Easing } from 'react-native';
 import { defineCatalogPage, MotionSpecimen } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
+  component: 'MotionSpecimen',
+  internalProps: { valueRange: 'Derived from the motion token being shown, not picked per example.' },
   group: 'Components',
   source: '../native/catalog/MotionSpecimen.tsx',
   specimenSize: 'regular',

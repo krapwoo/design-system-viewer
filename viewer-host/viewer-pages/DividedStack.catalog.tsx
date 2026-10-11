@@ -18,6 +18,7 @@ function DividedStackDemo() {
 }
 
 export default defineCatalogPage({
+  component: 'DividedStack',
   group: 'Components',
   source: '../native/catalog/DividedStack.tsx',
   previewWidths: 'full',

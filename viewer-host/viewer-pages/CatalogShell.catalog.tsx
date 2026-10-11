@@ -28,6 +28,7 @@ const shell = (update: UpdateNotice | null, current: string) => (
 );
 
 export default defineCatalogPage({
+  component: 'CatalogShell',
   group: 'Components',
   source: '../native/catalog/CatalogShell.tsx',
   specimenSize: 'page',

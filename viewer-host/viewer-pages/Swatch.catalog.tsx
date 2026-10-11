@@ -2,6 +2,7 @@ import React from 'react';
 import { defineCatalogPage, Swatch, CATALOG_COLOR } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
+  component: 'Swatch',
   group: 'Components',
   source: '../native/catalog/Swatch.tsx',
   previewWidths: 'full',

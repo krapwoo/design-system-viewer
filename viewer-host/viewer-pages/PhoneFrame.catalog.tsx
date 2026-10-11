@@ -9,6 +9,7 @@ const demo = StyleSheet.create({
 });
 
 export default defineCatalogPage({
+  component: 'PhoneFrame',
   group: 'Components',
   source: '../native/catalog/PhoneFrame.tsx',
   description: 'A real phone screen for a live demo: an iPhone SE viewport (375 × 667 points), scaled down only when its cell is narrower. In the browser viewer it opens its example in its own device-sized document, so overlays that portal to the page (React Native\'s `Modal`) open inside the phone, not over the catalog.',

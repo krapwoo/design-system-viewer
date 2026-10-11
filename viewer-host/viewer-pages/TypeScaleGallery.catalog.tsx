@@ -2,6 +2,8 @@ import React from 'react';
 import { defineCatalogPage, TypeScaleGallery, CATALOG_TYPE, CATALOG_TYPE_USE } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
+  component: 'TypeScaleGallery',
+  intentionalStaticPreview: { reason: 'Generic over whatever type scale it is given: one real scale is the demonstration, and a second would only repeat it with other numbers.' },
   group: 'Components',
   composedOf: [
     { component: 'TokenRow', role: "One TokenRow per type step: a sample at that size, its name and value, with its note.", relationship: 'built-in' },
