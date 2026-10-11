@@ -173,6 +173,124 @@ function checkGridColumnLimit(pages: StaticPage[]): DoctorIssue[] {
   return issues;
 }
 
+/** Guided intelligence design §2 / plan Task 3 — `degenerate-grid-axis`: warns (never errors) when
+ *  a grid's row or column axis has exactly one item — it then reads as a one-axis list, not a real
+ *  two-axis comparison. Deliberately its own, separate advisory from the existing hard grid-validity
+ *  errors above (`grid-axis-key-invalid`, `grid-column-limit`): authors keep full authority to leave
+ *  it as authored; this never silently rewrites the matrix and never promotes to an error. */
+function checkDegenerateGridAxis(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.checkable || !page.comparison) continue; // never a partial read — see checkGridAxisKeys's own note.
+    const { rows, columns } = page.comparison;
+    for (const [axisName, axis] of [['row', rows], ['column', columns]] as const) {
+      if (axis.items.length === 1) {
+        issues.push(issue({
+          id: 'degenerate-grid-axis', severity: 'warning', ...pageRef(page),
+          message: `This grid's ${axisName} axis has only 1 item; it reads as a one-axis list, not a two-axis comparison.`,
+          fix: `If this axis genuinely only ever has one value, consider a Variants/States list instead; otherwise add more items to it.`,
+        }));
+      }
+    }
+  }
+  return issues;
+}
+
+/** Guided intelligence design §4 / plan Task 3 — `missing-composition-suggestion`: compares each
+ *  documented component's optional, additive `composedOfCandidates` (`cli/props.ts`, real JSX
+ *  source evidence) against the page's own authored `composedOf` names, and suggests — never
+ *  confirms — a candidate the author hasn't named. Conservative by construction: a candidate's own
+ *  `component`/`file`/`line` is all the message ever states, never an invented role or relationship
+ *  (that stays the author's own call via `composedOf`). Never fires when `composedOf` was authored
+ *  but isn't itself literally readable (`page.hasComposedOf && page.composedOf === undefined`) —
+ *  the candidate might already be named there; this rule must never risk a false "missing" claim. */
+function checkMissingComposition(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
+  const componentsByName = new Map(components.map((c) => [c.name, c]));
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.component || !page.checkable) continue;
+    if (page.hasComposedOf && page.composedOf === undefined) continue;
+    const component = componentsByName.get(page.component);
+    const candidates = component?.composedOfCandidates;
+    if (!candidates || candidates.length === 0) continue;
+    const authored = new Set((page.composedOf ?? []).map((entry) => entry.component));
+    for (const candidate of candidates.filter((c) => !authored.has(c.component))) {
+      issues.push(issue({
+        id: 'missing-composition-suggestion', severity: 'warning', ...pageRef(page),
+        message: `"${component!.name}" renders "${candidate.component}" (${candidate.file}:${candidate.line}), which composedOf doesn't name.`,
+        fix: `Add { component: '${candidate.component}', ... } to composedOf with the role/relationship you choose, if this reflects real composition — or leave it if it's incidental.`,
+      }));
+    }
+  }
+  return issues;
+}
+
+/** A function-typed prop's printed type always contains `=>` (`cli/props.ts`'s own displayed type
+ *  strings — "(value: string) => void", "() => void", …); a plain data prop's never does. */
+function isFunctionPropType(type: string): boolean {
+  return type.includes('=>');
+}
+
+/** Guided intelligence design §3 / plan Task 3 — finds a component's controlled state/event pair:
+ *  a non-function prop `x` paired with a function-typed prop named `onXChange` (PascalCase), or the
+ *  universal `value`/`onChange` pair. "Confidently identifiable" by naming convention alone — never
+ *  a claim about actual behavior (that's `checkMissingWorkingPreview`'s own job, from the page's
+ *  examples). Undefined when no such pair exists. */
+function findControlledPair(component: ComponentRecord): { valueProp: string; changeProp: string } | undefined {
+  for (const prop of component.props) {
+    if (isFunctionPropType(prop.type)) continue;
+    const expectedChangeProp = prop.name === 'value' ? 'onChange' : `on${prop.name.charAt(0).toUpperCase()}${prop.name.slice(1)}Change`;
+    const changeProp = component.props.find((p) => p.name === expectedChangeProp);
+    if (changeProp && isFunctionPropType(changeProp.type)) return { valueProp: prop.name, changeProp: changeProp.name };
+  }
+  return undefined;
+}
+
+/** Guided intelligence design §3 / plan Task 3 — `missing-working-preview`: recommends a real,
+ *  stateful preview only when BOTH hold: the documented component has a controlled state/event pair
+ *  (`findControlledPair`), AND every example that directly renders it (`nodeDirectComponent`)
+ *  confidently demonstrates a fixed value with a no-op/omitted callback. Conservative by
+ *  construction — never fires when:
+ *   - the page already has its own `render()` (design's own escape hatch for live demos, never
+ *     statically inspectable here);
+ *   - the author declared `intentionalStaticPreview` with a reason (tolerated, not overridden);
+ *   - any example is a confidently-identified genuine stateful wrapper (`nodeStatefulWrapper`) —
+ *     positive evidence the page is already interactive;
+ *   - no example directly renders the component at all, or any direct example's value/callback is
+ *     `'unknown'` — genuinely uncheckable, and "uncheckable" must never be reported as "inert".
+ *  Never a newly-fatal gate: always a warning, same as every other advisory in this file. */
+function checkMissingWorkingPreview(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
+  const componentsByName = new Map(components.map((c) => [c.name, c]));
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.component || !page.checkable || page.hasRender) continue;
+    if (page.intentionalStaticPreviewReason) continue;
+    const component = componentsByName.get(page.component);
+    if (!component) continue;
+    const pair = findControlledPair(component);
+    if (!pair) continue;
+    const items = [...(page.variantsItems ?? []), ...(page.statesItems ?? [])];
+    if (items.some((i) => i.nodeStatefulWrapper)) continue;
+    const directItems = items.filter((i) => i.nodeDirectComponent === component.name);
+    if (directItems.length === 0) continue;
+    const allStaticInert = directItems.every((i) => {
+      const valueAttr = i.nodeAttributes?.[pair.valueProp];
+      const changeAttr = i.nodeAttributes?.[pair.changeProp];
+      return valueAttr?.kind === 'literal' && (changeAttr === undefined || changeAttr.kind === 'no-op-callback');
+    });
+    if (!allStaticInert) continue;
+    issues.push(issue({
+      id: 'missing-working-preview', severity: 'warning', ...pageRef(page),
+      message:
+        `"${component.name}" has a controlled "${pair.valueProp}"/"${pair.changeProp}" pair, but every example passes a fixed "${pair.valueProp}" ` +
+        'with no working callback.',
+      fix: `Add a working example using local state (useState) that wires "${pair.valueProp}" to "${pair.changeProp}", ` +
+        'or declare intentionalStaticPreview with a reason if the examples are deliberately static.',
+    }));
+  }
+  return issues;
+}
+
 /** Everything that needs a page's own matching `ComponentRecord` to check: `propNotes`, bound
  *  axes, tagged list items, coverage, grouped-state matching, and guidance/a11y presence. One
  *  function because every one of these checks shares the same per-page `component`/`propsByName`
@@ -330,7 +448,10 @@ export function collectIssues(pages: StaticPage[], components: ComponentRecord[]
     ...checkDuplicatePageId(pages),
     ...checkGridAxisKeys(pages),
     ...checkGridColumnLimit(pages),
+    ...checkDegenerateGridAxis(pages),
     ...checkComponentPages(pages, components),
+    ...checkMissingComposition(pages, components),
+    ...checkMissingWorkingPreview(pages, components),
   ];
 }
 

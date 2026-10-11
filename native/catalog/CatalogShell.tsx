@@ -6,6 +6,7 @@ import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
 import { UpdatePanel } from './UpdatePanel';
 import { DS_VIEWER_SECRET_HEADER, footerLink, groupLabelFor, hashForId, neighbors, orderedIds, resolveActiveFromHash, shouldShowMajorBanner, UPDATE_PAGE_ID } from './catalogNavigation';
+import { findOverlayNode, overlayAddressFromSearch } from './overlayViewport';
 import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice, VersionStatus } from './types';
 
 /** `active` can be a real page id, or the reserved update-page id — never both a generic `TId`
@@ -142,6 +143,15 @@ export function CatalogShell<TId extends string>({
    *  **Update now** button when this is missing. */
   updateEndpoint?: { baseUrl: string; secret: string };
 }) {
+  // A `BoundedOverlayViewport`'s own child document (design §5): render ONLY the one authored
+  // node this document's URL addresses, with no sidebar/breadcrumb/title/pager — never the whole
+  // page, since that page's other examples (and this same example's own viewport wrapper, now
+  // recognizing itself as the selected address) would otherwise render alongside it for nothing.
+  // Read once per mount, like `active`'s own initial read below: this mode is only ever entered by
+  // a fresh document load, never a same-document transition.
+  const overlayAddress = useMemo(() => (isWeb() ? overlayAddressFromSearch(window.location.search) : undefined), []);
+  const overlayNode = useMemo(() => (overlayAddress ? findOverlayNode(sections, overlayAddress) : undefined), [overlayAddress, sections]);
+
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
   const labels = useMemo(() => new Map(sections.filter((def) => def.title).map((def) => [def.id as string, def.title as string])), [sections]);
   const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
@@ -242,6 +252,14 @@ export function CatalogShell<TId extends string>({
   // the approved mockup's own `frame()`: the banner only ever renders when `!isPanel`).
   const showBanner = active !== UPDATE_PAGE_ID && shouldShowMajorBanner(effectiveUpdate, dismissedMajor);
 
+  if (overlayAddress) {
+    return (
+      <View style={styles.overlayDocumentRoot}>
+        {overlayNode ?? <Text style={styles.overlayUnavailable}>This example is no longer available.</Text>}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} labels={labels} active={active} onPress={select} footer={footer} />
@@ -284,6 +302,10 @@ export function CatalogShell<TId extends string>({
 
 const styles = StyleSheet.create({
   root: { flex: 1, flexDirection: 'row', backgroundColor: CATALOG_COLOR.pageBackground },
+  // A `BoundedOverlayViewport` child document's own root: no sidebar/chrome, just the one
+  // addressed node — sized by whatever that node itself renders, not the catalog's own layout.
+  overlayDocumentRoot: { flex: 1 },
+  overlayUnavailable: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted, padding: CATALOG_SPACE.lg },
   main: { flex: 1 },
   mainContent: {
     width: '100%',

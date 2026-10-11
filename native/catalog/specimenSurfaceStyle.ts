@@ -1,4 +1,4 @@
-import type { SpecimenSurfaceKind } from './types.ts';
+import type { SpecimenAlign, SpecimenSurfaceKind } from './types.ts';
 
 /**
  * The example wrapper's width policy inside a cell, kept free of any `react-native` import so
@@ -15,6 +15,75 @@ import type { SpecimenSurfaceKind } from './types.ts';
 export const SPECIMEN_SURFACE_WIDTH_STYLE = {
   alignSelf: 'stretch',
 } as const;
+
+/**
+ * Centers a non-`fill` specimen horizontally inside its (now full-width) wrapper — unchanged,
+ * bounded (non-`fill`) specimens stay centered by default. See `SpecimenSurface.tsx`'s
+ * `SpecimenContent`, the one place every presentation shape (list/grouped/grid) wraps a specimen
+ * before handing it to its cell.
+ */
+export const SPECIMEN_CONTENT_CENTER_STYLE = {
+  ...SPECIMEN_SURFACE_WIDTH_STYLE,
+  alignItems: 'center',
+} as const;
+
+/**
+ * A `fill` specimen's content stretches instead of centering: `alignItems: 'center'` on this
+ * wrapper previously applied to `fill` specimens too, which collapses an auto-sized, already
+ * full-width child (e.g. NextTrainInfo's row) down to its own intrinsic content width instead of
+ * leaving it at the wrapper's full width — `alignItems: 'center'` resolves a child with no definite
+ * cross-axis size to its content size, the opposite of what `fill` promises. A `fill` specimen
+ * whose own size is capped below the wrapper's width (e.g. a phone-frame preview's `maxWidth`) is
+ * expected to center itself (`alignSelf: 'center'`, see `PhoneFrame.tsx`) rather than lean on this
+ * wrapper's `alignItems` — the same way `alignItems: 'stretch'` already behaves like `flex-start`,
+ * not an actual stretch, for any child with a definite cross-axis size (a set width/maxWidth) per
+ * the flexbox spec. An explicit `align` (see `specimenContentAlignItems`) still overrides this.
+ */
+export const SPECIMEN_CONTENT_FILL_STYLE = {
+  ...SPECIMEN_SURFACE_WIDTH_STYLE,
+  alignItems: 'stretch',
+} as const;
+
+const ALIGN_ITEMS_BY_SPECIMEN_ALIGN: Record<SpecimenAlign, 'flex-start' | 'center' | 'flex-end'> = {
+  start: 'flex-start',
+  center: 'center',
+  end: 'flex-end',
+};
+
+/** The `SpecimenContent` wrapper's `alignItems`: an explicit `align` (`SpecimenPresentation.align`)
+ *  always wins over `fill`. Omitted, `fill` decides the established default — `'stretch'` (preserve
+ *  a full-width auto-sized child) when true, `'center'` (unchanged) otherwise. */
+export function specimenContentAlignItems(fill: boolean | undefined, align: SpecimenAlign | undefined): 'flex-start' | 'center' | 'flex-end' | 'stretch' {
+  if (align !== undefined) return ALIGN_ITEMS_BY_SPECIMEN_ALIGN[align];
+  return fill ? 'stretch' : 'center';
+}
+
+/** A non-fill specimen's horizontal position, as `justifyContent` on `SpecimenContent`'s own row
+ *  main axis rather than `alignItems` on a column: `alignItems` only sets a child's *default*
+ *  `alignSelf`, which the specimen's own root can — and does, e.g. Badge's `alignSelf:
+ *  'flex-start'` — override outright, leaning the whole grid left regardless of the wrapper's
+ *  intent. `justifyContent` positions along the main axis directly and cannot be overridden by a
+ *  child's `alignSelf`, which only ever targets the cross axis (vertical, on a row). Reuses
+ *  `ALIGN_ITEMS_BY_SPECIMEN_ALIGN`'s mapping — `flex-start`/`center`/`flex-end` are valid values
+ *  for both `alignItems` and `justifyContent`. */
+export function specimenContentJustifyContent(align: SpecimenAlign | undefined): 'flex-start' | 'center' | 'flex-end' {
+  return align !== undefined ? ALIGN_ITEMS_BY_SPECIMEN_ALIGN[align] : 'center';
+}
+
+/** The non-fill `SpecimenContent` wrapper's own style: still full-width (`SPECIMEN_SURFACE_WIDTH_STYLE`,
+ *  so a percentage-width child keeps resolving against it), but a row main axis so
+ *  `justifyContent` — not `alignItems` — decides horizontal placement (see
+ *  `specimenContentJustifyContent`). Vertical cross-axis stays centered, as it already did. Only
+ *  for non-`fill` specimens; `fill` keeps the existing column + `alignItems` stretch behavior
+ *  (`specimenContentAlignItems`), unchanged. */
+export function specimenContentBoundedStyle(align: SpecimenAlign | undefined) {
+  return {
+    ...SPECIMEN_SURFACE_WIDTH_STYLE,
+    flexDirection: 'row' as const,
+    justifyContent: specimenContentJustifyContent(align),
+    alignItems: 'center' as const,
+  };
+}
 
 /** Each example's cell turns gray only when its example would vanish against white (see
  *  `specimenFill.ts`). A page can force a fill with `specimenSurface`. */

@@ -65,8 +65,8 @@ export function ComparisonGrid({
               const cell = cells.get(cellKey(row.key, c.key));
               return (
                 cell?.node !== undefined ? (
-                  <SpecimenSurface key={c.key} role="cell" surface={surface} style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
-                    <SpecimenContent fill={cell.fill}>{cell.node}</SpecimenContent>
+                  <SpecimenSurface key={c.key} role="cell" surface={cell.surface ?? surface} style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>
+                    <SpecimenContent fill={cell.fill} align={cell.align}>{cell.node}</SpecimenContent>
                   </SpecimenSurface>
                 ) : (
                   <View key={c.key} role="cell" style={[styles.cell, column, styles.bodyRow, styles.specimenCell, ci === lastColumn && styles.lastColumn]}>

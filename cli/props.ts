@@ -1,7 +1,7 @@
 import * as ts from 'typescript';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
-import type { ComponentRecord, PropRecord } from './types.ts';
+import type { ComponentRecord, ComposedOfCandidate, PropRecord } from './types.ts';
 
 export interface ReadComponentsOptions {
   /** Absolute `paths` entries (e.g. `{ react: ['/abs/path/to/@types/react'] }`), merged on top of
@@ -233,7 +233,82 @@ function readComponentRecord(
     }
   }
   const inheritedFrom = propsType ? nodeModulesHeritageNames(checker, propsType.isUnion() ? propsType.types : [propsType]) : [];
-  return { name, file: path.relative(process.cwd(), sourceFile.fileName), props, inheritedFrom };
+  const composedOfCandidates = readComposedOfCandidates(checker, declaration);
+  return {
+    name,
+    file: path.relative(process.cwd(), sourceFile.fileName),
+    props,
+    inheritedFrom,
+    ...(composedOfCandidates.length > 0 ? { composedOfCandidates } : {}),
+  };
+}
+
+/** Optional, additive source evidence (guided-intelligence design §4, plan Task 3): every other
+ *  known, project-local component this component's own implementation renders as a literal JSX
+ *  tag. Scoped to exactly the implementation function's own body (the same function
+ *  `defaultsFromImplementation` already unwraps through `React.memo`/`forwardRef`) — a same-file
+ *  helper's own JSX, or a different export's JSX, is never walked at all, since traversal never
+ *  starts there. Only a JSX tag that is a bare identifier resolving (through import aliases and
+ *  barrel re-exports) to an exported symbol satisfying `isComponentType` becomes a candidate; a
+ *  type-only import can never reach here (it cannot be used as a JSX tag at all), an import that is
+ *  never written as a JSX tag is never visited, and a locally-computed/conditional tag identifier
+ *  (not itself an import alias) is left uncertain rather than guessed at. A `node_modules`
+ *  declaration (a framework primitive, not a project component) is excluded — "known canonical
+ *  component export" means part of this project's own component surface. */
+function readComposedOfCandidates(checker: ts.TypeChecker, declaration: ts.Declaration): ComposedOfCandidate[] {
+  const startNode = ts.isVariableDeclaration(declaration) && declaration.initializer ? declaration.initializer : declaration;
+  const fn = resolveFunctionLike(startNode, new Set());
+  if (!fn?.body) return [];
+  const candidates: ComposedOfCandidate[] = [];
+  const visit = (node: ts.Node): void => {
+    // A nested named helper (a local `function foo() {}` declaration, or a `const foo = () => {}`/
+    // `function expression` assignment) defines its own scope: its JSX belongs to it, not to this
+    // component, even when this component calls it as an ordinary function — so its body is never
+    // walked at all, matching the top-level sibling-helper behavior this already preserved.
+    if (isNestedNamedHelper(node)) return;
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && ts.isIdentifier(node.tagName)) {
+      const candidate = resolveComposedOfCandidate(checker, node.tagName);
+      if (candidate) candidates.push(candidate);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(fn.body);
+  return candidates;
+}
+
+function isNestedNamedHelper(node: ts.Node): boolean {
+  if (ts.isFunctionDeclaration(node) && node.name) return true;
+  return (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    node.initializer !== undefined &&
+    (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+  );
+}
+
+/** Resolves one JSX tag identifier to a composedOfCandidate, or undefined when it isn't a known,
+ *  project-local component export reached through an import alias (directly or through one or more
+ *  barrel re-exports). */
+function resolveComposedOfCandidate(checker: ts.TypeChecker, tagName: ts.Identifier): ComposedOfCandidate | undefined {
+  let symbol = checker.getSymbolAtLocation(tagName);
+  if (!symbol) return undefined;
+  // Only a tag identifier that is itself bound to an import (an Alias symbol) counts — a locally
+  // computed/conditional identifier (e.g. `const Comp = cond ? A : B`) is left uncertain even if its
+  // inferred type happens to satisfy `isComponentType`.
+  if (!(symbol.flags & ts.SymbolFlags.Alias)) return undefined;
+  const seen = new Set<ts.Symbol>();
+  while (symbol.flags & ts.SymbolFlags.Alias && !seen.has(symbol)) {
+    seen.add(symbol);
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  const resolvedDeclaration = symbol.valueDeclaration;
+  if (!resolvedDeclaration) return undefined;
+  const declarationFile = resolvedDeclaration.getSourceFile().fileName;
+  if (declarationFile.includes('node_modules')) return undefined;
+  const type = checker.getTypeOfSymbolAtLocation(symbol, resolvedDeclaration);
+  if (!isComponentType(checker, type)) return undefined;
+  const { line } = tagName.getSourceFile().getLineAndCharacterOfPosition(tagName.getStart());
+  return { component: symbol.getName(), file: path.relative(process.cwd(), tagName.getSourceFile().fileName), line: line + 1 };
 }
 
 /** Design §3 — "Type column: keeps alias names, not expanded unions." An optional prop's type

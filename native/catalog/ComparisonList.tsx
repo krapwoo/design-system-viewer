@@ -61,8 +61,8 @@ export function ComparisonList({
                   <View style={styles.caption}>
                     <Text style={styles.captionText}>{item.label}</Text>
                   </View>
-                  <SpecimenSurface surface={surface} style={styles.specimen}>
-                    <SpecimenContent fill={item.fill}>{item.node as React.ReactNode}</SpecimenContent>
+                  <SpecimenSurface surface={item.surface ?? surface} style={styles.specimen}>
+                    <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
                   </SpecimenSurface>
                 </View>
               );

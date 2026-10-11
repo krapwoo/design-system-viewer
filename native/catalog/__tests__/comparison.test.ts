@@ -1,8 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import {
   COLUMN_MIN_WIDTH,
   MATRIX_LAYOUT,
+  REFERENCE_COLUMN_GAP,
+  REFERENCE_MIN_COLUMN_WIDTH,
   cellKey,
   gridColumnLimit,
   gridWidthBounds,
@@ -14,6 +19,7 @@ import {
   choosePlacement,
   presentationBlocks,
   propsColumns,
+  referenceColumns,
   remainingStates,
   validateComparison,
 } from '../comparison.ts';
@@ -88,6 +94,59 @@ test('presentationBlocks propagates an explicit maxColumns onto list blocks, omi
 
   const plain = presentationBlocks({ ...base, variants: { items: variants.items } })[0];
   assert.equal('maxColumns' in plain, false, 'uncapped slots never carry a maxColumns key at all');
+});
+
+// SectionBlock.tsx imports react-native, so it can't run under `node --test` directly — same
+// constraint as the ReferenceDetails.tsx source checks below. `def.previewLayout` is read directly
+// in `Preview`'s own 'preview' branch rather than threaded through `PresentationBlock` (this file's
+// own `presentationBlocks` output), so these source assertions, not a unit test here, are the
+// regression for the "table" layout's full-width/token-gallery exclusion (guided intelligence,
+// "Collapsible Preview table").
+test('SectionBlock\'s Preview only reaches the table layout after its full-width check, so a token gallery or full-width preview (always widths: \'full\') can never render it', () => {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../SectionBlock.tsx');
+  const source = readFileSync(sourcePath, 'utf8');
+  const fullWidthCheck = source.indexOf("widths === 'full'");
+  const tableLayoutCheck = source.indexOf("layout === 'table'");
+  assert.ok(fullWidthCheck >= 0, "Preview must check widths === 'full' explicitly");
+  assert.ok(tableLayoutCheck >= 0, "Preview must check layout === 'table' explicitly");
+  assert.ok(
+    fullWidthCheck < tableLayoutCheck,
+    "the widths === 'full' early return must come before the layout === 'table' check, so a full-width preview (component or token gallery) never reaches the table layout",
+  );
+});
+
+test('SectionBlock\'s table-layout cell reserves the requested width plus the shared cell padding, and an inner width-qualified group — not the padded body — owns render()', () => {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../SectionBlock.tsx');
+  const source = readFileSync(sourcePath, 'utf8');
+
+  // The padded cell body shares ComparisonList's own cell padding — it no longer renders edge-to-edge.
+  const tableBody = source.match(/tableBody:\s*\{([^}]*)\}/)?.[1];
+  assert.ok(tableBody, 'tableBody style declaration not found');
+  assert.match(tableBody, /padding:\s*MATRIX_LAYOUT\.cellPadding/, 'tableBody must share the same cell padding ComparisonList uses, not render edge-to-edge');
+
+  // A cell's flex basis reserves the requested width PLUS that padding on both sides, so the padded
+  // body still has room to fit the requested width untouched instead of clipping or leaving slack.
+  assert.match(
+    source,
+    /flexBasis:\s*width\s*\+\s*2\s*\*\s*MATRIX_LAYOUT\.cellPadding/,
+    'a cell\'s flexBasis must reserve the requested width plus twice the cell padding, so its padded body still fits the requested width untouched',
+  );
+
+  // The stable keyed width map survives: one shared `tableCell` style per cell, still keyed by its
+  // own width and index.
+  assert.match(
+    source,
+    /key=\{`\$\{width\}-\$\{i\}`\}[^>]*style=\{\[styles\.tableCell/s,
+    'each cell must stay keyed by its own width and index, carrying the shared tableCell style',
+  );
+
+  // render() is owned by its own inner width-qualified group, nested inside the padded body — not
+  // by the padded body/cell itself — so the requested width reaches the live demo untouched.
+  assert.match(
+    source,
+    /<SpecimenSurface[^>]*style=\{styles\.tableBody\}[^>]*>\s*<View\s+role="group"[^>]*aria-label=\{frameLabel\(width\)\}[^>]*>/s,
+    'the padded tableBody SpecimenSurface must wrap an inner role="group" View (carrying the width-group aria-label) that owns render(), not render() directly',
+  );
 });
 
 test('a complete comparison validates cleanly and indexes every cell', () => {
@@ -184,7 +243,7 @@ test('presentationBlocks plans grid, list, grouped, preview, and empty blocks', 
   assert.deepEqual(summary({ ...base, comparison: valid, states: { items: [states.items[0]] } }), [['grid', 'Variant × State', 'regular']]);
 
   const list = presentationBlocks({ ...base, variants: wideVariants })[0];
-  assert.deepEqual(list.items, [{ key: 'a', label: 'A', node: 'a', fill: true }]);
+  assert.deepEqual(list.items, [{ key: 'a', label: 'A', node: 'a', fill: true, surface: undefined, align: undefined }]);
 });
 
 test('component previews are phone width by default; token galleries stay full width', () => {
@@ -251,4 +310,186 @@ test('propsColumns uses two columns only for 4+ props with room', () => {
   assert.equal(propsColumns(9, 730), 1);
   assert.equal(propsColumns(4, 752), 2);
   assert.equal(propsColumns(0, 910), 1);
+});
+
+test('referenceColumns stacks, doubles, or triples the reference panel from measured width and confirmed composition', () => {
+  assert.equal(REFERENCE_MIN_COLUMN_WIDTH, 280);
+  assert.equal(REFERENCE_COLUMN_GAP, CATALOG_SPACE['2xl']);
+  // Unmeasured (0, before layout settles) always stacks, composition or not.
+  assert.equal(referenceColumns(0, false), 1);
+  assert.equal(referenceColumns(0, true), 1);
+  // Too narrow even for two: AnimatedChevron's own card at the reproduced narrow band.
+  assert.equal(referenceColumns(500, false), 1);
+  assert.equal(referenceColumns(500, true), 1);
+  // Exactly two columns' worth, no composition to show a third.
+  const twoColumns = 2 * REFERENCE_MIN_COLUMN_WIDTH + REFERENCE_COLUMN_GAP;
+  assert.equal(referenceColumns(twoColumns, false), 2);
+  // Composition exists, but only two columns fit: it stays nested, not a separate column.
+  assert.equal(referenceColumns(twoColumns, true), 2);
+  // Exactly three columns' worth, with confirmed composition: Composition gets its own column.
+  const threeColumns = 3 * REFERENCE_MIN_COLUMN_WIDTH + 2 * REFERENCE_COLUMN_GAP;
+  assert.equal(referenceColumns(threeColumns, true), 3);
+  // One px short of three stays at two.
+  assert.equal(referenceColumns(threeColumns - 1, true), 2);
+  // No composition never promotes to three, no matter how wide.
+  assert.equal(referenceColumns(2000, false), 2);
+});
+
+// `referenceColumns`'s own width parameter is documented (above) as the card's INNER width, but
+// `ReferenceDetails.tsx` previously measured its outer, padded/bordered card instead, feeding
+// `referenceColumns` a width up to ~42px wider than the three columns' actual content budget
+// (`CATALOG_LAYOUT.panelPadding` × 2 + the card's 1px border × 2). This pure-math assertion can't
+// see that ownership mistake — the component itself is the source of truth for which node's layout
+// is measured — so this is a source-level regression, supplementary to it: controller real-host
+// geometry checks confirm the rendered effect.
+test('ReferenceDetails measures the columns row\'s own inner width, not the padded/bordered card around it', () => {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../ReferenceDetails.tsx');
+  const source = readFileSync(sourcePath, 'utf8');
+  assert.doesNotMatch(
+    source,
+    /style=\{styles\.card\}\s*onLayout=\{onLayout\}/,
+    'onLayout must not sit on the padded/bordered outer card — that measures an outer width, not the inner content budget referenceColumns expects',
+  );
+  assert.match(
+    source,
+    /styles\.columns[^>]*onLayout=\{onLayout\}/s,
+    'onLayout must measure the columns row itself, which excludes the card\'s own padding/border',
+  );
+});
+
+// Controller-reproduced: at 1280px outer width (three-column mode), UpcomingTripCard's
+// `TrainArrivalRemainingTime · built-in` composition label is long enough that, with no shrink
+// allowance, the role text it shares a `Fact` row with is pushed outside the 280px column. The
+// label and its value must be allowed to shrink together — `factLabel` needs its own
+// `flexShrink`/`minWidth` contract, the same one `columnStyle`'s `minWidth: 0` already gives the
+// column itself.
+test('ReferenceDetails\' shared Fact row lets its label shrink (flexShrink: 1, minWidth: 0) instead of forcing the value outside a narrow composition column', () => {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../ReferenceDetails.tsx');
+  const source = readFileSync(sourcePath, 'utf8');
+  const match = source.match(/factLabel:\s*\{([^}]*)\}/);
+  assert.ok(match, 'factLabel style declaration not found');
+  const body = match[1];
+  assert.match(body, /flexShrink:\s*1/, 'factLabel must declare flexShrink: 1 so it can shrink alongside its value');
+  assert.match(body, /minWidth:\s*0/, 'factLabel must declare minWidth: 0 so it can shrink below its intrinsic content width');
+});
+
+test('ReferenceDetails stacks each shared Fact label above its left-aligned value', () => {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../ReferenceDetails.tsx');
+  const source = readFileSync(sourcePath, 'utf8');
+  const fact = source.match(/\bfact:\s*\{([^}]*)\}/)?.[1];
+  const value = source.match(/\bfactValue:\s*\{([^}]*)\}/)?.[1];
+  assert.ok(fact, 'shared Fact container style declaration not found');
+  assert.ok(value, 'shared Fact value style declaration not found');
+  assert.match(fact, /flexDirection:\s*'column'/, 'labels and descriptions must stack at every reference width');
+  assert.match(fact, /gap:\s*CATALOG_SPACE\.xs/, 'use the existing tight label-to-description spacing token');
+  assert.doesNotMatch(fact, /justifyContent:\s*'space-between'/, 'do not distribute vertical space between related text');
+  assert.match(value, /textAlign:\s*'left'/, 'descriptions must align with their labels');
+  assert.doesNotMatch(value, /\bflex:\s*1\b/, 'stacked values retain their full intrinsic text height');
+});
+
+// Controller-reproduced: every composition entry's label unconditionally appended
+// "· <relationship>", so a built-in entry (composition's assumed default relationship) read
+// redundantly, e.g. "TrainArrivalRemainingTime · built-in". Only built-in's suffix is redundant —
+// slot/related still need their own suffix to stay distinguishable from a plain built-in entry.
+test('ReferenceDetails\' composition label drops the redundant "· built-in" suffix while keeping it for slot/related, without dropping relationship metadata', () => {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../ReferenceDetails.tsx');
+  const source = readFileSync(sourcePath, 'utf8');
+  assert.doesNotMatch(
+    source,
+    /label=\{`\$\{entry\.component\}\s*·\s*\$\{entry\.relationship\}`\}/,
+    'label must not unconditionally append "· <relationship>" — built-in then redundantly reads "<Component> · built-in"',
+  );
+  assert.match(
+    source,
+    /entry\.relationship\s*===\s*'built-in'/,
+    'the label must branch on relationship, omitting the suffix only when it is \'built-in\'',
+  );
+  assert.match(
+    source,
+    /\$\{entry\.component\}\s*·\s*\$\{entry\.relationship\}/,
+    'slot/related entries must still render their own relationship suffix',
+  );
+  assert.match(
+    source,
+    /entry\.role/,
+    'the Fact value must still show the composition entry\'s role — relationship metadata stays intact, only the label suffix changes',
+  );
+});
+
+test('presentationBlocks carries each item\'s own surface override onto its ListItem, alongside fill', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = {
+    items: [
+      { key: 'a', name: 'A', node: 'a', surface: 'white' as const },
+      { key: 'b', name: 'B', node: 'b' },
+    ],
+  };
+  const [block] = presentationBlocks({ ...base, variants });
+  assert.deepEqual(block.kind === 'list' ? block.items.map((i) => [i.key, i.surface]) : null, [['a', 'white'], ['b', undefined]]);
+});
+
+test('presentationBlocks carries a grouped item\'s own surface override the same way a plain list does', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = { items: [{ key: 'circle', name: 'Circle', node: 'c' }] };
+  const states = { items: [{ key: 'small', name: 'Small', node: 's', group: 'circle', surface: 'neutral' as const }] };
+  const [block] = presentationBlocks({ ...base, variants, states });
+  assert.equal(block.kind, 'grouped');
+  assert.equal(block.kind === 'grouped' ? block.groups[0].items[0].surface : undefined, 'neutral');
+});
+
+// Regression: `slotItems`/`groupStates` previously computed `item.fill || slot.itemsFill`, so an
+// item's own explicit `fill: false` was silently discarded by an inherited `itemsFill: true` (`false
+// || true` is `true`). Nullish (`??`) inheritance fixes it while leaving the omitted case (no
+// explicit `fill` at all) exactly as it inherited before.
+test('an item\'s own explicit fill: true/false always wins over an inherited itemsFill; omitted still inherits it', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = {
+    itemsFill: true,
+    items: [
+      { key: 'explicit-false', name: 'Explicit false', node: 'a', fill: false },
+      { key: 'explicit-true', name: 'Explicit true', node: 'b', fill: true },
+      { key: 'omitted', name: 'Omitted', node: 'c' },
+    ],
+  };
+  const [block] = presentationBlocks({ ...base, variants });
+  assert.equal(block.kind, 'list');
+  assert.deepEqual(block.kind === 'list' ? block.items.map((i) => [i.key, i.fill]) : null, [
+    ['explicit-false', false],
+    ['explicit-true', true],
+    ['omitted', true],
+  ]);
+
+  // Same precedence inside a grouped row (states grouped under a variant key).
+  const groupedVariants = { itemsFill: true, items: [{ key: 'circle', name: 'Circle', node: 'c' }] };
+  const groupedStates = {
+    itemsFill: true,
+    items: [
+      { key: 'small', name: 'Small', node: 's', group: 'circle', fill: false },
+    ],
+  };
+  const [groupedBlock] = presentationBlocks({ ...base, variants: groupedVariants, states: groupedStates });
+  assert.equal(groupedBlock.kind, 'grouped');
+  assert.equal(groupedBlock.kind === 'grouped' ? groupedBlock.groups[0].items[0].fill : undefined, false);
+});
+
+// The typed per-specimen `align` override (design's required omitted contract): carried through
+// alongside `fill`/`surface`, with no inheritance of its own (unlike `fill`, there is no slot-level
+// "itemsAlign" to fall back to) — omitted always just stays undefined.
+test('presentationBlocks carries each item\'s own align override onto its ListItem, in list and grouped shapes alike', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = {
+    items: [
+      { key: 'a', name: 'A', node: 'a', align: 'start' as const },
+      { key: 'b', name: 'B', node: 'b' },
+    ],
+  };
+  const [block] = presentationBlocks({ ...base, variants });
+  assert.equal(block.kind, 'list');
+  assert.deepEqual(block.kind === 'list' ? block.items.map((i) => [i.key, i.align]) : null, [['a', 'start'], ['b', undefined]]);
+
+  const groupedVariants = { items: [{ key: 'circle', name: 'Circle', node: 'c' }] };
+  const groupedStates = { items: [{ key: 'small', name: 'Small', node: 's', group: 'circle', align: 'end' as const }] };
+  const [groupedBlock] = presentationBlocks({ ...base, variants: groupedVariants, states: groupedStates });
+  assert.equal(groupedBlock.kind, 'grouped');
+  assert.equal(groupedBlock.kind === 'grouped' ? groupedBlock.groups[0].items[0].align : undefined, 'end');
 });

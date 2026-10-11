@@ -16,6 +16,11 @@ const HEIGHT = 480;
  * `width: '100%'` capped at 280 (not a fixed width) — a fixed px width could exceed the card's real
  * content width once the surrounding column shrinks below its own max-width cap (it does at common
  * viewport sizes), overflowing past the card's edge since the card itself doesn't clip.
+ *
+ * `alignSelf: 'center'` is this frame's own responsibility, not its `SpecimenContent` wrapper's:
+ * a `fill` specimen's wrapper now stretches by default (preserving an unrelated full-width
+ * auto-sized specimen elsewhere), which leaves a capped-width child like this one flush to one
+ * side instead of centered — see `specimenContentAlignItems` in `specimenSurfaceStyle.ts`.
  */
 export function PhoneFrame({ children }: { children: React.ReactNode }) {
   return <View style={styles.frame}>{children}</View>;
@@ -33,5 +38,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
   },
 });

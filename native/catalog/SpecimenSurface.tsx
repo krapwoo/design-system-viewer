@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { CATALOG_COLOR } from './tokens';
-import { DEFAULT_SPECIMEN_SURFACE, SPECIMEN_SURFACE_WIDTH_STYLE } from './specimenSurfaceStyle';
+import { DEFAULT_SPECIMEN_SURFACE, SPECIMEN_SURFACE_WIDTH_STYLE, specimenContentAlignItems, specimenContentBoundedStyle } from './specimenSurfaceStyle';
 import { blendsIntoCell, measurePaintedBoxes } from './specimenFill';
-import type { SpecimenSurfaceKind } from './types';
+import type { SpecimenAlign, SpecimenSurfaceKind } from './types';
 
 type Browser = {
   getComputedStyle?: (element: unknown) => never;
@@ -65,9 +65,22 @@ export function SpecimenSurface({
 }
 
 /** Wraps one example inside its cell: full cell width (so a percentage-width example resolves
- *  against the cell), centered unless the example fills the cell. */
-export function SpecimenContent({ fill, children }: { fill?: boolean; children: React.ReactNode }) {
-  return <View style={fill ? styles.fill : styles.center}>{children}</View>;
+ *  against the cell). `fill` changes whether the example itself also stretches to that width
+ *  (default) or keeps its own content size — a non-`fill` specimen centers by default; a `fill`
+ *  one stretches by default instead, preserving an auto-sized full-width child (see
+ *  `specimenContentAlignItems`). `align` always overrides that default explicitly.
+ *
+ *  A non-`fill` specimen uses a row main axis (`specimenContentBoundedStyle`) so `justifyContent`
+ *  positions it horizontally — a column + `alignItems` left the specimen's own root `alignSelf`
+ *  (e.g. Badge's `alignSelf: 'flex-start'`) free to override that positioning outright, since
+ *  `alignItems` only sets a child's *default* `alignSelf`. `fill` keeps the existing column +
+ *  `alignItems` stretch behavior, unchanged. */
+export function SpecimenContent({ fill, align, children }: { fill?: boolean; align?: SpecimenAlign; children: React.ReactNode }) {
+  if (fill) {
+    const alignItems = specimenContentAlignItems(fill, align);
+    return <View style={[SPECIMEN_SURFACE_WIDTH_STYLE, { alignItems }]}>{children}</View>;
+  }
+  return <View style={specimenContentBoundedStyle(align)}>{children}</View>;
 }
 
 // 'dark' reuses CATALOG_COLOR.text (the catalog's own darkest token); there is no dark-surface token.
@@ -76,9 +89,4 @@ const FILL = StyleSheet.create({
   white: { backgroundColor: CATALOG_COLOR.surface },
   dark: { backgroundColor: CATALOG_COLOR.text },
   transparent: {},
-});
-
-const styles = StyleSheet.create({
-  center: { ...SPECIMEN_SURFACE_WIDTH_STYLE, alignItems: 'center' },
-  fill: { ...SPECIMEN_SURFACE_WIDTH_STYLE },
 });

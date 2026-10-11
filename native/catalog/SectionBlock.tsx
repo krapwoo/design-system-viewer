@@ -8,7 +8,7 @@ import { ReferenceDetails } from './ReferenceDetails';
 import { SpecimenSurface } from './SpecimenSurface';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
-import { choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
+import { MATRIX_LAYOUT, choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
 import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
 
 // Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
@@ -103,11 +103,14 @@ function frameLabel(width: number): string {
 
 /** A component preview: one frame per width (each at most phone width), or full width for catalog
  *  chrome and token galleries. Every frame is its own live instance with its own state. `surface`
- *  is omitted for token galleries, which keep their current, unstaged presentation. */
-function Preview({ render, widths, surface }: { render: () => React.ReactNode; widths: PreviewWidths; surface?: SpecimenSurfaceKind }) {
+ *  is omitted for token galleries, which keep their current, unstaged presentation. `layout: 'table'`
+ *  (only ever set for a numeric-width preview — see `presentationBlocks`) renders `TablePreview`
+ *  instead; omitted/`'frames'` keeps this exact, unchanged presentation. */
+function Preview({ render, widths, surface, layout }: { render: () => React.ReactNode; widths: PreviewWidths; surface?: SpecimenSurfaceKind; layout?: 'table' }) {
   // Token galleries pass no surface: their card stays white.
   const kind = surface ?? 'transparent';
   if (widths === 'full') return <SpecimenSurface surface={kind} style={styles.previewCard}>{render()}</SpecimenSurface>;
+  if (layout === 'table') return <TablePreview render={render} widths={widths} surface={kind} />;
   return (
     <View style={styles.previewCard}>
       <View style={styles.frames}>
@@ -128,6 +131,39 @@ function Preview({ render, widths, surface }: { render: () => React.ReactNode; w
   );
 }
 
+/** `layout: 'table'` presentation for a numeric-width Preview: every width shares ONE
+ *  `ComparisonList`-style card (same caption typography, muted caption strip, border/radius/surface
+ *  tokens) instead of each width getting its own bordered frame-card. Each width keeps its own
+ *  caption strip directly above its own live body, in a single flex-wrapped row — one stable parent
+ *  with keyed cells, so a viewport resize that wraps the row to stacked columns reflows in place
+ *  rather than remounting any demo. A cell's body carries the same `MATRIX_LAYOUT.cellPadding`
+ *  `ComparisonList`'s own cells use; the requested width instead reaches the demo untouched through
+ *  an inner width-qualified viewport nested inside that padded body (capped only by
+ *  `maxWidth: '100%'`, the same cap `Preview`'s own frames already use), so a cell's `flexBasis`
+ *  reserving `width + 2 * cellPadding` leaves the padded body exactly enough room for it, with no
+ *  blank trailing slack. The row's cells share 1px gutters (a `gap` on a bordered backing) for
+ *  dividers, in both the side-by-side and stacked-wrap arrangements. */
+function TablePreview({ render, widths, surface }: { render: () => React.ReactNode; widths: readonly number[]; surface: SpecimenSurfaceKind }) {
+  return (
+    <View style={styles.tableCard}>
+      <View style={styles.tableRow}>
+        {widths.map((width, i) => (
+          <View key={`${width}-${i}`} style={[styles.tableCell, { flexBasis: width + 2 * MATRIX_LAYOUT.cellPadding }]}>
+            <View style={styles.tableCaption}>
+              <Text style={styles.tableCaptionText}>{frameLabel(width)}</Text>
+            </View>
+            <SpecimenSurface surface={surface} style={styles.tableBody}>
+              <View role="group" aria-label={frameLabel(width)} style={[styles.tableBodyViewport, { width }]}>
+                {render()}
+              </View>
+            </SpecimenSurface>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function BlockContent<TId extends string>({ block, def, surface }: { block: PresentationBlock; def: SectionDef<TId>; surface: SpecimenSurfaceKind }) {
   switch (block.kind) {
     case 'grid':
@@ -139,7 +175,9 @@ function BlockContent<TId extends string>({ block, def, surface }: { block: Pres
     case 'preview':
       // A token gallery's `preview` block shows full-width raw token data, not a component
       // specimen — it keeps its current, unstaged presentation.
-      return def.render ? <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} /> : null;
+      // `Preview`'s own `widths === 'full'` check already excludes a full-width or token-gallery
+      // preview from ever reaching the table layout, regardless of `def.previewLayout`.
+      return def.render ? <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} layout={def.previewLayout === 'table' ? 'table' : undefined} /> : null;
     case 'tokenSections':
       return <TokenSections sections={block.sections} columns={block.columns} />;
     default:
@@ -356,5 +394,29 @@ const styles = StyleSheet.create({
     padding: CATALOG_SPACE.xl,
     gap: CATALOG_SPACE.md,
   },
+  // `ComparisonList`'s own card/caption tokens, reused so a 'table' preview reads as the same shared
+  // surface — no outer `previewCard` padding/chrome around it (that card provides its own).
+  tableCard: {
+    backgroundColor: CATALOG_COLOR.surface,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.borderStrong,
+    borderRadius: CATALOG_RADIUS.card,
+    overflow: 'hidden',
+  },
+  // 1px gutters between cells: a gap over a bordered backing, so dividers read correctly whether
+  // cells sit side by side or wrap into stacked rows.
+  tableRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: CATALOG_COLOR.border },
+  tableCell: { backgroundColor: CATALOG_COLOR.surface, flexGrow: 1, minWidth: 0, maxWidth: '100%' },
+  tableCaption: {
+    padding: MATRIX_LAYOUT.cellPadding,
+    backgroundColor: CATALOG_COLOR.surfaceMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: CATALOG_COLOR.border,
+  },
+  tableCaptionText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
+  // Same cell padding `ComparisonList` uses: the requested width instead reaches the live demo
+  // untouched through `tableBodyViewport`, the inner width-qualified group nested inside this body.
+  tableBody: { padding: MATRIX_LAYOUT.cellPadding, flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' },
+  tableBodyViewport: { maxWidth: '100%' },
   emptyText: { fontSize: CATALOG_TYPE.sm, fontStyle: 'italic', color: CATALOG_COLOR.textMuted },
 });

@@ -1,0 +1,1 @@
+`npx ds-viewer doctor` now also reports three conservative, source-backed advisories — `missing-composition-suggestion`, `degenerate-grid-axis`, and `missing-working-preview` (suppressible per page with `intentionalStaticPreview`) — each a warning that suggests from real JSX/prop evidence without ever overriding an author's own `composedOf` or examples.

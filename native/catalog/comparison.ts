@@ -8,7 +8,9 @@
  * It also decides whether two blocks sit side by side (choosePlacement) and how many columns the
  * Props box uses (propsColumns). ComparisonGrid, ComparisonGroups, and ComparisonList render it.
  */
-import type { ComparisonAxisItem, ComparisonDef, GridAxis, PreviewWidths, SectionDef, SpecimenSize, TokenSection, VariantSlot } from './types.ts';
+import type {
+  ComparisonAxisItem, ComparisonDef, GridAxis, PreviewWidths, SectionDef, SpecimenAlign, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot,
+} from './types.ts';
 import type React from 'react';
 
 /** Approved geometry. `cellPadding` equals CATALOG_SPACE.lg (asserted in tests). The laptop
@@ -32,6 +34,14 @@ export const PROPS_MIN_COLUMN_WIDTH = 360;
 
 /** Gap between the two Props columns (CATALOG_SPACE['2xl']). */
 export const PROPS_COLUMN_GAP = 32;
+
+/** A reference column (Guidance, Quick reference, or Composition) is never narrower than this;
+ *  below it, `referenceColumns` drops to fewer columns. */
+export const REFERENCE_MIN_COLUMN_WIDTH = 280;
+
+/** Gap between reference columns (CATALOG_SPACE['2xl'], the same token the card's columns already
+ *  use). */
+export const REFERENCE_COLUMN_GAP = 32;
 
 /** Smallest column or cell width per specimen size. Wide specimens are fixed at phone width. */
 export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402 };
@@ -222,6 +232,12 @@ export interface ListItem {
   label: string;
   node: unknown;
   fill?: boolean;
+  /** This item's own `specimenSurface` override — see `SpecimenPresentation`. Omit to inherit the
+   *  surface already in effect (the slot's/page's `specimenSurface`, else `'auto'`). */
+  surface?: SpecimenSurfaceKind;
+  /** This item's own cross-axis alignment override — see `SpecimenPresentation.align`. Omit to
+   *  inherit the established default (centered, or stretched when `fill` is set). */
+  align?: SpecimenAlign;
 }
 
 export interface ListGroup {
@@ -250,7 +266,9 @@ export function slotSize<TId extends string>(def: SectionDef<TId>, slot: Variant
 }
 
 function slotItems(slot: VariantSlot): ListItem[] {
-  return slot.items.map((item) => ({ key: item.key, label: item.name, node: item.node, fill: item.fill || slot.itemsFill }));
+  // Nullish, not `||`: an item's own explicit `fill: false` must override an inherited
+  // `itemsFill: true`, which `false || slot.itemsFill` would silently discard.
+  return slot.items.map((item) => ({ key: item.key, label: item.name, node: item.node, fill: item.fill ?? slot.itemsFill, surface: item.surface, align: item.align }));
 }
 
 /** Preview widths, each capped at phone width. 'full' is kept for catalog chrome and token pages. */
@@ -265,12 +283,14 @@ function previewWidths(requested: PreviewWidths | undefined, fallback: PreviewWi
 function groupStates(variants: VariantSlot, states: VariantSlot): { groups: ListGroup[]; leftovers: VariantSlot | undefined } | undefined {
   const variantKeys = new Set(variants.items.map((v) => v.key));
   if (!states.items.some((s) => s.group !== undefined && variantKeys.has(s.group))) return undefined;
-  const fill = (item: VariantSlot['items'][number], slot: VariantSlot) => item.fill || slot.itemsFill;
+  // Nullish, not `||` — same reasoning as `slotItems`: an explicit `fill: false` must win over an
+  // inherited `itemsFill: true`.
+  const fill = (item: VariantSlot['items'][number], slot: VariantSlot) => item.fill ?? slot.itemsFill;
   const groups = variants.items.map((variant) => {
     const own = states.items.filter((s) => s.group === variant.key);
     const items = own.length > 0
-      ? own.map((s) => ({ key: s.key, label: s.name, node: s.node, fill: fill(s, states) }))
-      : [{ key: variant.key, label: variant.name, node: variant.node, fill: fill(variant, variants) }];
+      ? own.map((s) => ({ key: s.key, label: s.name, node: s.node, fill: fill(s, states), surface: s.surface, align: s.align }))
+      : [{ key: variant.key, label: variant.name, node: variant.node, fill: fill(variant, variants), surface: variant.surface, align: variant.align }];
     return { key: variant.key, label: variant.name, items };
   });
   const rest = states.items.filter((s) => s.group === undefined || !variantKeys.has(s.group));
@@ -376,4 +396,18 @@ export function choosePlacement({ available, gap, first, second }: { available: 
 /** Props box columns: two, filled across first, for 4+ props when each column keeps its minimum. */
 export function propsColumns(count: number, width: number): 1 | 2 {
   return count >= 4 && width >= 2 * PROPS_MIN_COLUMN_WIDTH + PROPS_COLUMN_GAP ? 2 : 1;
+}
+
+/** How many columns the reference card's Guidance / Quick reference / Composition panel uses at a
+ *  given measured inner card width: 3 only when there is confirmed composition to show as its own
+ *  column AND the card is wide enough for three REFERENCE_MIN_COLUMN_WIDTH columns; 2 when wide
+ *  enough for two (any composition then stays nested under Quick reference, as it always has been);
+ *  1 (stacked, full content in document order — nothing dropped) when even two columns wouldn't
+ *  each keep their minimum. An unmeasured width (`<= 0`) stacks, so the first frame before layout
+ *  settles never overflows. */
+export function referenceColumns(width: number, hasComposition: boolean): 1 | 2 | 3 {
+  const fits = (n: number) => width >= n * REFERENCE_MIN_COLUMN_WIDTH + (n - 1) * REFERENCE_COLUMN_GAP;
+  if (hasComposition && fits(3)) return 3;
+  if (fits(2)) return 2;
+  return 1;
 }

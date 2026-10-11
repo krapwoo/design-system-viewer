@@ -12,21 +12,39 @@ export interface PropDef {
   desc: string;
 }
 
+/** How a specimen's content is cross-axis aligned inside its (already full-width) wrapper —
+ *  `start`/`center`/`end` map to `flex-start`/`center`/`flex-end`. Omit to inherit the established
+ *  default: `center` when `fill` is false/omitted (unchanged), or the wrapper's own full-width
+ *  stretch when `fill` is true — a capped-width `fill` specimen (e.g. a phone-frame preview) that
+ *  still wants centering sets `align: 'center'` explicitly rather than relying on `fill` alone; see
+ *  `specimenContentAlignItems` in `specimenSurfaceStyle.ts`. */
+export type SpecimenAlign = 'start' | 'center' | 'end';
+
+/** Per-specimen presentation, layered under whatever a slot or page already decides: this one
+ *  specimen's own background (`surface`, overriding the slot's/page's `specimenSurface` — omit to
+ *  inherit it), whether its wrapper stretches to the row's full width instead of shrinking to its
+ *  own content width (`fill`, for a single wide-format instance, e.g. a `fullWidth` Button, sitting
+ *  among otherwise compact, centered siblings — independent of a slot's own `itemsFill`, which
+ *  applies to every item uniformly), and how its content cross-axis aligns inside that wrapper
+ *  (`align` — see `SpecimenAlign`). Shared by `VariantExample` (list/grouped items) and
+ *  `ComparisonCell` (grid cells) so the same knobs mean the same thing in every presentation shape
+ *  ds-viewer renders a specimen in; an explicit `surface` here always bypasses `'auto'`'s own fill
+ *  heuristic (`specimenFill.ts`), the same way a slot's/page's own explicit surface already does. */
+export interface SpecimenPresentation {
+  /** @default false */
+  fill?: boolean;
+  surface?: SpecimenSurfaceKind;
+  align?: SpecimenAlign;
+}
+
 /** One individual example inside a variant/state cluster — e.g. one Button instance. */
-export interface VariantExample {
+export interface VariantExample extends SpecimenPresentation {
   /** React key; keep stable and unique within its group. */
   key: string;
   /** Shown as a small caption under this item — the actual variant/state value it demonstrates
    *  (e.g. "Primary", "Icon-only"), not a generic label like "Example 1". */
   name: string;
   node: React.ReactNode;
-  /** Stretch *this item's* wrapper to the row's full width, instead of shrinking to its own content
-   *  width — for a single wide-format instance (e.g. a `fullWidth` Button) sitting among otherwise
-   *  compact, centered siblings in the same slot. Without this, a `fullWidth`/stretch-based prop on
-   *  the instance itself has nothing to stretch into — its wrapper still shrinks to content, so the
-   *  instance renders at its natural size regardless of the prop. Independent of the slot's own
-   *  `itemsFill` (which applies to every item uniformly); this is a per-item override. @default false */
-  fill?: boolean;
   /** Which real prop value(s) this instance demonstrates, e.g. `{ variant: 'primary' }` or
    *  `{ size: 'large', disabled: true }` — mirrors the actual props passed to `node`. Optional and
    *  additive: SectionBlock only cross-checks a section's enum props against this metadata once at
@@ -99,14 +117,13 @@ export interface ComparisonAxisItem {
 export type GridAxis = readonly ComparisonAxisItem[] | { prop: string; items: readonly ComparisonAxisItem[] };
 
 /** One authored row × column specimen. Provide exactly one of `node` (a real instance of the
- *  documented component) or `unavailableReason` (the combination genuinely does not exist). */
-export interface ComparisonCell {
+ *  documented component) or `unavailableReason` (the combination genuinely does not exist). See
+ *  `SpecimenPresentation` for `fill`/`surface`. */
+export interface ComparisonCell extends SpecimenPresentation {
   rowKey: string;
   columnKey: string;
   node?: React.ReactNode;
   unavailableReason?: string;
-  /** Stretch this specimen to the cell width. @default false */
-  fill?: boolean;
 }
 
 /** A grid of two props that combine freely. Every row × column pair is authored — never inferred
@@ -222,6 +239,13 @@ export interface SectionDef<TId extends string = string> {
   /** Widths for this page's `render()` preview, e.g. `[402, 320]` to add a small-phone example.
    *  Defaults to the catalog's default (CatalogShell `defaultPreviewWidths`), else `[402]`. */
   previewWidths?: PreviewWidths;
+  /** Presentation for this page's numeric-width component Preview (guided intelligence,
+   *  "Collapsible Preview table"): `'frames'` (default, unchanged) — one borderless-card frame per
+   *  width, side by side. `'table'` — the widths share one `ComparisonList`-style card, each with
+   *  its own muted caption strip above its live body; still an independent, stateful instance per
+   *  width. Has no effect on a `'full'` preview width (catalog chrome) or a token gallery — those
+   *  always render as `'frames'` regardless of this field. */
+  previewLayout?: 'frames' | 'table';
   /** Remove specific parts of the page — for sections with no meaningful states, props, or
    *  accessibility story (e.g. a framework's own building-block pages). `variants` removes the
    *  first specimen block (grid, Variants list, or Preview); `states` removes the States /
@@ -237,6 +261,12 @@ export interface SectionDef<TId extends string = string> {
    *  Quick reference. See `ComposedOfEntry`. Omit when the component has no meaningful composition
    *  to disclose (most leaf components). */
   composedOf?: ComposedOfEntry[];
+  /** Explicit author declaration (guided intelligence design §3) that this page's examples are
+   *  intentionally static despite the documented component having a controlled state/event pair —
+   *  suppresses `cli/doctor.ts`'s `missing-working-preview` advisory. `reason` is a short, bounded
+   *  sentence explaining why (not free-form prose) — e.g. "Selection is already demonstrated by X's
+   *  working preview." Omit when no such declaration applies; the advisory then runs normally. */
+  intentionalStaticPreview?: { reason: string };
 }
 
 /** A labeled group of section ids in the sidebar (e.g. "Components" vs "Tokens"). */
