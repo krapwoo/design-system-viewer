@@ -309,3 +309,30 @@ test('POST /version/check answers 502 when the check fails, and the next Check n
     assert.equal((await fetch(`${baseUrl}/version/check`, { method: 'POST', headers })).status, 200);
   });
 });
+
+test('POST /update/dismiss clears a finished result back to idle, and is refused while an update runs', async () => {
+  let status: UpdateStatus = { phase: 'success', doctorSummary: 'ok', files: [], latest: '0.5.0' };
+  await withServer({ getStatus: () => status, dismissStatus: () => { status = { phase: 'idle' }; } }, async (baseUrl) => {
+    const headers = { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET };
+    assert.equal((await fetch(`${baseUrl}/update/dismiss`, { method: 'POST' , headers: { Origin: ALLOWED_ORIGIN } })).status, 401);
+    const res = await fetch(`${baseUrl}/update/dismiss`, { method: 'POST', headers });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { phase: 'idle' });
+    status = { phase: 'updating', steps: [] };
+    assert.equal((await fetch(`${baseUrl}/update/dismiss`, { method: 'POST', headers })).status, 409);
+  });
+});
+
+test('POST /update/resume continues a failed migrate or doctor step; anything else is refused', async () => {
+  let status: UpdateStatus = { phase: 'failure', log: 'x', failedStep: 'Applying 1 migration', step: 'migrate' };
+  const resumed: string[] = [];
+  const resumeUpdate = (step: 'migrate' | 'doctor') => { resumed.push(step); status = { phase: 'updating', steps: [] }; };
+  await withServer({ getStatus: () => status, resumeUpdate }, async (baseUrl) => {
+    const headers = { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET };
+    assert.equal((await fetch(`${baseUrl}/update/resume`, { method: 'POST', headers })).status, 202);
+    assert.equal((await fetch(`${baseUrl}/update/resume`, { method: 'POST', headers })).status, 409, 'not while running');
+    status = { phase: 'failure', log: 'x', failedStep: 'Install with npm', step: 'install' };
+    assert.equal((await fetch(`${baseUrl}/update/resume`, { method: 'POST', headers })).status, 409, 'an install failure retries with POST /update instead');
+    assert.deepEqual(resumed, ['migrate']);
+  });
+});

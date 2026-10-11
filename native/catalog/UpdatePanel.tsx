@@ -3,7 +3,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch,
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { DS_VIEWER_SECRET_HEADER } from './catalogNavigation';
 import {
-  autoCheckHelp, bumpLabel, checkedAgoLabel, daysAgoLabel, isAlreadyUpToDateError, resolvePanelPhase, versionOverview, type UpdatePlanView, type UpdateStatusView,
+  autoCheckHelp, bumpLabel, checkedAgoLabel, resultNote, daysAgoLabel, isAlreadyUpToDateError, resolvePanelPhase, versionOverview, type UpdatePlanView, type UpdateStatusView,
 } from './updatePanelState';
 import type { UpdateNotice, VersionStatus } from './types';
 
@@ -51,20 +51,6 @@ function FilesList({ files }: { files: UpdatePlanView['files'] }) {
   );
 }
 
-/** Same shape as `FilesList`, but with no right-hand reason column — the `success` phase's
- *  `status.files` carries plain paths, never a reason (Task 16 Step 2 table: a dedicated,
- *  smaller render here is simplest rather than over-generalizing `FilesList` for one caller). */
-function PlainFilesList({ files }: { files: string[] }) {
-  return (
-    <View style={styles.filesBox}>
-      {files.map((path, i) => (
-        <View key={path} style={[styles.fileRow, i > 0 && styles.fileRowBorder]}>
-          <Text style={styles.filePath}>{path}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
 
 const NOTE_BOX_VARIANT = {
   muted: { box: { backgroundColor: CATALOG_COLOR.surfaceMuted }, text: { color: CATALOG_COLOR.text } },
@@ -139,57 +125,64 @@ function Code({ children }: { children: string }) {
   return <Text style={styles.code}>{children}</Text>;
 }
 
-/** The `success` phase's content, shared between the `update === null` path (Errata 1c — the
- *  normal case, since `update.json` becomes `null` once latest equals current) and the defensive
- *  `update` still non-null path. Reads `status.latest`/`status.files`/`status.doctorSummary`,
- *  never `update.latest`/`plan.files` — `plan` is gone by the time this renders (the page has
- *  reloaded onto the new version). */
-function SuccessContent({ status }: { status: Extract<UpdateStatusView, { phase: 'success' }> }) {
-  return (
-    <>
-      <View style={styles.versionsRow}>
-        <Text style={styles.versionsText}>{status.latest}</Text>
-        <View style={[styles.pill, styles.pillSuccess]}>
-          <Text style={[styles.pillText, styles.pillTextSuccess]}>Updated</Text>
-        </View>
-      </View>
-      <NoteBox variant="ok">
-        <Text style={styles.noteBoxBold}>{`Updated to ${status.latest}.`}</Text>
-        {' Changes are not committed — review them in your editor.'}
-      </NoteBox>
-      <View style={styles.block}>
-        <Text style={styles.h3}>Changed</Text>
-        <PlainFilesList files={status.files} />
-      </View>
-      <View style={styles.block}>
-        <Text style={styles.h3}>Doctor</Text>
-        <Text style={styles.muted}>{status.doctorSummary}</Text>
-      </View>
-    </>
-  );
-}
 
-/** The `failure` phase's headline/body copy, keyed off which step failed — `runUpdate`/
- *  `performUpdate` each name their own distinct recovery command (Important finding, Fable
- *  correction pass: one hardcoded headline/body for every failure was wrong for two of the
- *  three). */
-function failureCopy(failedStep: string, current: string): { headline: string; body: React.ReactNode } {
-  if (/install/i.test(failedStep)) {
-    return {
-      headline: 'The update stopped while installing.',
-      body: <>Your files weren’t migrated. Recover with <Code>npx ds-viewer update</Code> in your terminal.</>,
-    };
-  }
-  if (/migrat/i.test(failedStep)) {
-    return {
-      headline: 'The update installed, but migrating failed.',
-      body: <>Recover with <Code>{`npx ds-viewer migrate --from ${current}`}</Code> in your terminal.</>,
-    };
-  }
-  return {
-    headline: 'The update installed and migrated, but doctor failed to run.',
-    body: <>Recover with <Code>npx ds-viewer doctor</Code> in your terminal.</>,
-  };
+
+/**
+ * The result of the last update, as a note at the top of the update page (approved mockup
+ * 2026-10-11): a bold header, a description, one detail line, and a bottom-left button in the
+ * note's colour. The rest of the page stays usable below it.
+ */
+function ResultNoteBox({
+  status,
+  current,
+  latest,
+  busy,
+  onAction,
+}: {
+  status: Extract<UpdateStatusView, { phase: 'success' | 'failure' }>;
+  current: string;
+  latest?: string;
+  busy: boolean;
+  onAction: (kind: 'dismiss' | 'retry' | 'resume') => void;
+}) {
+  const [showLog, setShowLog] = useState(false);
+  const note = resultNote(status, current, latest);
+  const ok = note.tone === 'ok';
+  const tone = ok ? CATALOG_COLOR.success : CATALOG_COLOR.danger;
+  return (
+    <View style={[styles.resultNote, ok ? styles.resultNoteOk : styles.resultNoteErr]} role="status">
+      <Text style={[styles.resultTitle, { color: tone }]}>{note.title}</Text>
+      <Text style={[styles.resultDescription, { color: tone }]}>{note.description}</Text>
+      <Text style={[styles.resultDetail, { color: tone }]}>
+        {note.command ? (
+          <>
+            {'You can also run '}
+            <Code>{note.command}</Code>
+            {' in your terminal.'}
+          </>
+        ) : (
+          note.detail
+        )}
+      </Text>
+      <View style={styles.resultRow}>
+        <Pressable
+          onPress={() => onAction(note.action.kind)}
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: busy }}
+          style={({ pressed }) => [styles.resultButton, { backgroundColor: tone }, (pressed || busy) && styles.resultButtonPressed]}
+        >
+          <Text style={styles.resultButtonText}>{note.action.label}</Text>
+        </Pressable>
+        {note.hasLog && status.phase === 'failure' && (
+          <Pressable onPress={() => setShowLog((v) => !v)} accessibilityRole="button" accessibilityState={{ expanded: showLog }}>
+            <Text style={[styles.resultLink, { color: tone }]}>{showLog ? 'Hide log' : 'Show log'}</Text>
+          </Pressable>
+        )}
+      </View>
+      {showLog && status.phase === 'failure' && <LogBlock>{status.log}</LogBlock>}
+    </View>
+  );
 }
 
 /**
@@ -202,10 +195,13 @@ function VersionDetails({
   status,
   endpoint,
   onStatus,
+  onCheck,
 }: {
   status: VersionStatus;
   endpoint?: Endpoint;
   onStatus: (next: VersionStatus) => void;
+  /** Called as Check now starts (clears an update result note). */
+  onCheck?: () => void;
 }) {
   const [checking, setChecking] = useState(false);
   const [justChecked, setJustChecked] = useState(false);
@@ -217,6 +213,7 @@ function VersionDetails({
 
   const checkNow = async () => {
     if (!endpoint || checking) return;
+    onCheck?.();
     setChecking(true);
     setJustChecked(false);
     setLocalError(undefined);
@@ -395,7 +392,20 @@ export function UpdatePanel({
     });
   }, [fetchStatus, fetchPlan, update]);
 
-  const phase = resolvePanelPhase(status, planResult);
+  // A finished update (success or failure) shows as a note at the top; the page under it behaves
+  // as if idle, so Check now, the switch and a newer update all keep working.
+  const result = status.phase === 'success' || status.phase === 'failure' ? status : undefined;
+  const phase = resolvePanelPhase(result ? { phase: 'idle' } : status, planResult);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const dismissResult = useCallback(async () => {
+    if (!endpoint || !isWeb()) return;
+    try {
+      const res = await authedFetch(endpoint, '/update/dismiss', { method: 'POST' });
+      if (res.ok) setStatus((await res.json()) as UpdateStatusView);
+    } catch {
+      // The note stays; the next status poll or reload settles it.
+    }
+  }, [endpoint]);
 
   // Polls `/update/status` at a plain interval while an update is in flight — design §5 never
   // asks for push/websocket progress, only "the panel shows progress."
@@ -463,14 +473,14 @@ export function UpdatePanel({
   if (!update) {
     // Errata 1c: no update known (disabled, offline, or genuinely up to date). `status` still
     // reflects a just-finished update read from the (surviving) endpoint across the reload.
-    content =
-      status.phase === 'success' ? (
-        <SuccessContent status={status} />
-      ) : versionStatus ? (
-        <VersionDetails status={versionStatus} endpoint={endpoint} onStatus={onVersionStatus ?? (() => {})} />
+    content = versionStatus ? (
+        <VersionDetails status={versionStatus} endpoint={endpoint} onStatus={onVersionStatus ?? (() => {})} onCheck={result ? dismissResult : undefined} />
       ) : (
         <NoteBox variant="ok">You’re already up to date.</NoteBox>
       );
+  } else if (result?.phase === 'failure') {
+    // The failure note's own button is the recovery; don't offer Update now twice.
+    content = <VersionsHeader current={update.current} latest={update.latest} breaking={update.breaking} releasedAt={update.releasedAt} />;
   } else if (phase === 'ready' && plan) {
     content = (
       <>
@@ -587,40 +597,7 @@ export function UpdatePanel({
         <Text style={styles.muted}>If it doesn’t come back, run <Code>npx ds-viewer dev</Code> in your terminal.</Text>
       </>
     );
-  } else if (phase === 'success' && status.phase === 'success') {
-    content = <SuccessContent status={status} />;
-  } else if (phase === 'failure' && status.phase === 'failure') {
-    const { headline, body } = failureCopy(status.failedStep, update.current);
-    const failedLabel = `${status.failedStep} failed`;
-    content = (
-      <>
-        <VersionsHeader current={update.current} latest={update.latest} breaking={update.breaking} releasedAt={update.releasedAt} />
-        <NoteBox variant="err">
-          <Text style={styles.noteBoxBold}>{headline}</Text>
-          {' '}
-          {body}
-        </NoteBox>
-        <Steps
-          steps={[
-            { label: `Downloaded ${update.latest}`, state: 'done' },
-            { label: failedLabel, state: 'todo' },
-          ]}
-          failedStep={failedLabel}
-        />
-        <LogBlock>{status.log}</LogBlock>
-        <View style={styles.actions}>
-          <Pressable
-            onPress={() => {
-              if (isWeb()) navigator.clipboard?.writeText(status.log);
-            }}
-            accessibilityRole="button"
-            style={styles.secondaryButton}
-          >
-            <Text style={styles.secondaryButtonText}>Copy log</Text>
-          </Pressable>
-        </View>
-      </>
-    );
+
   }
 
   return (
@@ -631,6 +608,28 @@ export function UpdatePanel({
       <View ref={headingRef} tabIndex={-1} role="heading" {...({ 'aria-level': 1 } as Record<string, unknown>)} style={styles.headingTarget}>
         <Text style={styles.title}>DS Viewer updates</Text>
       </View>
+      {result && (
+        <ResultNoteBox
+          status={result}
+          current={update?.current ?? versionStatus?.current ?? ''}
+          latest={update?.latest}
+          busy={noteBusy || starting}
+          onAction={async (kind) => {
+            if (!endpoint) return;
+            setNoteBusy(true);
+            try {
+              if (kind === 'dismiss') await dismissResult();
+              else if (kind === 'retry') await startUpdate();
+              else {
+                await authedFetch(endpoint, '/update/resume', { method: 'POST' });
+                await fetchStatus();
+              }
+            } finally {
+              setNoteBusy(false);
+            }
+          }}
+        />
+      )}
       {content}
     </View>
   );
@@ -638,6 +637,18 @@ export function UpdatePanel({
 
 const styles = StyleSheet.create({
   wrap: { maxWidth: CATALOG_LAYOUT.updateContentMaxWidth },
+  resultNote: { borderRadius: CATALOG_RADIUS.md, padding: 14, marginTop: 12, marginBottom: 18, gap: 4 },
+  resultNoteOk: { backgroundColor: CATALOG_COLOR.successSubtle },
+  resultNoteErr: { backgroundColor: CATALOG_COLOR.dangerSubtle, borderWidth: 1, borderColor: CATALOG_COLOR.dangerBorder },
+  resultTitle: { fontSize: CATALOG_TYPE.lg, fontWeight: '800' },
+  resultDescription: { fontSize: CATALOG_TYPE.panelHeading, lineHeight: 19 },
+  resultDetail: { fontSize: CATALOG_TYPE.sm, lineHeight: 18 },
+  resultRow: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md, marginTop: 8 },
+  // The catalog's smallest control size (the major banner's close button), filled in the note's colour.
+  resultButton: { height: 32, paddingHorizontal: 14, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  resultButtonPressed: { opacity: 0.8 },
+  resultButtonText: { color: '#ffffff', fontSize: CATALOG_TYPE.sm, fontWeight: '700' },
+  resultLink: { fontSize: CATALOG_TYPE.panelHeading, fontWeight: '700', textDecorationLine: 'underline' },
   crumb: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
   headingTarget: { marginTop: 4, marginBottom: 6 },
   title: { fontSize: CATALOG_TYPE.pageTitle, fontWeight: '800', color: CATALOG_COLOR.text },

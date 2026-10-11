@@ -1,0 +1,1 @@
+After an update, the update page no longer stays on the result: it shows as a note at the top (success, or a failure with a button that recovers from the failed step), and Check now, the automatic-check switch and newer updates keep working below it.

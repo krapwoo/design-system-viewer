@@ -280,3 +280,37 @@ test('performUpdate: step labels name the detected package manager and the real 
   assert.ok(secondReport.steps.some((s) => s.label === 'Installed with npm' && s.state === 'done'));
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('performUpdate: each failure names its step, so the viewer can offer the right recovery', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  const config: ResolvedConfig = { name: 'X', components: [], tokens: [], updateCheck: true, doctor: { strict: false }, projectRoot: dir, configPath: path.join(dir, 'x.ts') };
+  for (const [failing, step] of [['install', 'install'], ['migrate', 'migrate'], ['doctor', 'doctor']] as const) {
+    const execImpl = async (command: string, args: string[]) => {
+      const sub = command === 'node' ? args[1] : 'install';
+      if (sub === failing) throw new Error(`${failing} broke`);
+      return '';
+    };
+    const deps = recordingDeps();
+    await performUpdate(config, '0.4.0', samplePlan(), { execImpl, onStatus: deps.onStatus, restart: deps.restart, delayMs: 0 });
+    const last = deps.statuses[deps.statuses.length - 1];
+    assert.equal(last.phase === 'failure' && last.step, step);
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('performUpdate: resuming from a failed step skips the steps already done', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  const config: ResolvedConfig = { name: 'X', components: [], tokens: [], updateCheck: true, doctor: { strict: false }, projectRoot: dir, configPath: path.join(dir, 'x.ts') };
+  for (const [from, expected] of [['migrate', ['node migrate', 'node doctor']], ['doctor', ['node doctor']]] as const) {
+    const calls: string[] = [];
+    const execImpl = async (command: string, args: string[]) => {
+      calls.push(command === 'node' ? `node ${args[1]}` : `${command} ${args[0]}`);
+      return '0 errors, 0 warnings';
+    };
+    const deps = recordingDeps();
+    await performUpdate(config, '0.4.0', samplePlan(), { execImpl, onStatus: deps.onStatus, restart: deps.restart, delayMs: 0, from });
+    assert.deepEqual(calls, expected, from);
+    assert.equal(deps.restartCalls.length, 1, `${from} still restarts on success`);
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
