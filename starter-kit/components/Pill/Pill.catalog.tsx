@@ -41,6 +41,9 @@ const PILL_COMPARISON = grid(
 export default defineCatalogPage({
   component: 'Pill',
   group: 'Actions',
+  composedOf: [
+    { component: 'Loading', role: "The spinner shown instead of the label and icon while loading is true.", relationship: 'built-in' },
+  ],
   specimenSize: 'compact',
   comparison: PILL_COMPARISON,
   description: 'A compact selectable chip — selected/unselected states with an optional leading icon.',

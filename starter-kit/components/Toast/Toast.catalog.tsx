@@ -37,7 +37,7 @@ export default defineCatalogPage({
   // status glyph, but Icon has no catalog page/known component name of its own to confirm against
   // yet, so that entry is left out rather than logging an unknown-component warning.
   composedOf: [
-    { component: 'Button', role: 'Renders the optional action button when `action` is set.', relationship: 'built-in' },
+    { component: 'Button', role: 'Renders the optional action button when action is set.', relationship: 'built-in' },
   ],
   variants: {
     itemsFill: true,

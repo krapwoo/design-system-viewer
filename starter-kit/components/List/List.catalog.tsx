@@ -9,6 +9,9 @@ import { DS_SEMANTIC } from '../../tokens';
 export default defineCatalogPage({
   component: 'List',
   group: 'Layout',
+  composedOf: [
+    { component: 'Divider', role: "The hairline between consecutive items (none after the last).", relationship: 'built-in' },
+  ],
   description: 'Stacks ListItem rows on a rounded white surface, with a Divider automatically inserted between each consecutive pair — never after the last.',
   a11y: 'A plain View; each ListItem child carries its own accessibility.',
   variants: {
