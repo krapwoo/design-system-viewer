@@ -10,6 +10,9 @@ function TextAreaDemo() {
 export default defineCatalogPage({
   component: 'TextArea',
   group: 'Inputs',
+  composedOf: [
+    { component: 'FieldContainer', role: "The field frame around the multi-line input.", relationship: 'built-in' },
+  ],
   description: 'A multi-line input that grows with its content from a minimum height.',
   a11y: 'A multiline TextInput; pass accessibilityLabel via inputProps when there is no visible label beside it.',
   variants: {

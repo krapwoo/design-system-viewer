@@ -453,7 +453,7 @@ test('runDoctor itself always returns update: null — the update check is layer
 // inferred role/relationship, which stays the author's own call via `composedOf`.
 test('missing-composition-suggestion fires for a composedOfCandidate the page\'s composedOf never names', () => {
   const widget = component({ composedOfCandidates: [{ component: 'Icon', file: 'x/Widget.tsx', line: 12 }] });
-  const issues = collectIssues([page({ component: 'Widget', hasComposedOf: false })], [widget]);
+  const issues = collectIssues([page({ component: 'Widget', hasComposedOf: false })], [widget, component({ name: 'Icon', file: '/x/Icon.tsx' })]);
   const found = issues.find((i) => i.id === 'missing-composition-suggestion');
   assert.ok(found, 'expected a missing-composition-suggestion issue');
   assert.equal(found!.severity, 'warning');
@@ -474,6 +474,24 @@ test('missing-composition-suggestion never fires when composedOf was authored bu
   // hasComposedOf: true, composedOf: undefined — authored non-literally (e.g. a `.map()` call).
   const issues = collectIssues([page({ component: 'Widget', hasComposedOf: true, composedOf: undefined })], [widget]);
   assert.equal(issues.filter((i) => i.id === 'missing-composition-suggestion').length, 0);
+});
+
+test('missing-composition-suggestion only suggests a real catalog component or page — naming anything else would log "unknown component" in the viewer', () => {
+  // Icon here is a plain helper (e.g. starter-kit/icons), not a detected component or a page.
+  const widget = component({ composedOfCandidates: [{ component: 'Icon', file: 'x/Widget.tsx', line: 12 }, { component: 'Spinner', file: 'x/Widget.tsx', line: 20 }] });
+  const spinner = component({ name: 'Spinner', file: '/x/Spinner.tsx' });
+  const issues = collectIssues([page({ component: 'Widget' })], [widget, spinner]).filter((i) => i.id === 'missing-composition-suggestion');
+  assert.deepEqual(issues.map((i) => /renders "(\w+)"/.exec(i.message)?.[1]), ['Spinner']);
+  // A page id counts as known too (e.g. a standalone recipe page).
+  const viaPage = collectIssues([page({ component: 'Widget' }), page({ id: 'Icon', file: '/x/Icon.catalog.tsx' })], [widget]).filter((i) => i.id === 'missing-composition-suggestion');
+  assert.deepEqual(viaPage.map((i) => /renders "(\w+)"/.exec(i.message)?.[1]), ['Icon']);
+});
+
+test('missing-composition-suggestion reports each component once per page, at its first call site', () => {
+  const widget = component({ composedOfCandidates: [{ component: 'Button', file: 'x/Widget.tsx', line: 30 }, { component: 'Button', file: 'x/Widget.tsx', line: 31 }] });
+  const issues = collectIssues([page({ component: 'Widget' })], [widget, component({ name: 'Button', file: '/x/Button.tsx' })]).filter((i) => i.id === 'missing-composition-suggestion');
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].message, /x\/Widget\.tsx:30/);
 });
 
 test('missing-composition-suggestion never fires for a component with no candidates at all', () => {

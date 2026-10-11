@@ -39,6 +39,12 @@ function DropdownDemo() {
 export default defineCatalogPage({
   component: 'Dropdown',
   group: 'Inputs',
+  composedOf: [
+    { component: 'FieldContainer', role: "The field frame around the label, value and chevron (the trigger).", relationship: 'built-in' },
+    { component: 'BottomSheet', role: "The sheet listing the options while the dropdown is open.", relationship: 'built-in' },
+    { component: 'TopNav', role: "The sheet's header, titled with the field's label.", relationship: 'built-in' },
+    { component: 'Button', role: "The icon-only Close button in the sheet header.", relationship: 'built-in' },
+  ],
   description: 'A labelled field that opens a BottomSheet picker on tap — the "bottom sheet picker" interaction: tap the trigger, pick an option from the sheet, it closes.',
   whenToUse: 'The answer is one of a small, known set of choices — never free text. For free-text filtering, use SearchField; for a named field with a fixed identity, use InputField.',
   a11y: 'The trigger is a Pressable (via FieldContainer) with accessibilityRole="button". Options render as accessibilityRole="radio" inside a "radiogroup", with accessibilityState.checked reflecting the current selection.',

@@ -18,6 +18,9 @@ function InputFieldDemo() {
 export default defineCatalogPage({
   component: 'InputField',
   group: 'Inputs',
+  composedOf: [
+    { component: 'InputClearButton', role: "The clear (\u00d7) button, shown while the field has a value and is focused (or active, when not editable).", relationship: 'built-in' },
+  ],
   description: 'A floating-label field. Resting: a centred, body-sized label with no border. Active (focused, or picker with active set) or filled: the label floats to a small top caption, row 2 shows the value/input, and a border fades in while active.',
   whenToUse: 'A named field with a fixed identity ("To", "Arrive by") across the interaction. For free-text search with no floating label, use SearchField; for one of a small known set of choices, use Dropdown.',
   a11y: 'The editable mode is a live TextInput; the picker mode is a Pressable row. Either mode shows a clear button while active (focused, or active for a picker) with a value set. Provide a meaningful label.',

@@ -5,6 +5,9 @@ import { SectionHeader } from './SectionHeader';
 export default defineCatalogPage({
   component: 'SectionHeader',
   group: 'Layout',
+  composedOf: [
+    { component: 'Button', role: "The trailing button, rendered when trailingButtonLabel is set.", relationship: 'built-in' },
+  ],
   description: 'An uppercase muted section label with an optional inline icon and a right-aligned ghost button.',
   whenToUse: "A label above a group of related rows within a screen (e.g. above a List) — for the screen's own top bar, use TopNav.",
   a11y: 'Title renders as plain Text — no heading role. A tappable labelIcon (onPress set) becomes accessibilityRole="button" with accessibilityLabel falling back to the section\'s own title; a non-interactive labelIcon has no accessibility node of its own. The trailing button is a real Button, so it carries Button\'s own accessibility for free.',

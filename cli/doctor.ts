@@ -203,9 +203,14 @@ function checkDegenerateGridAxis(pages: StaticPage[]): DoctorIssue[] {
  *  `component`/`file`/`line` is all the message ever states, never an invented role or relationship
  *  (that stays the author's own call via `composedOf`). Never fires when `composedOf` was authored
  *  but isn't itself literally readable (`page.hasComposedOf && page.composedOf === undefined`) —
- *  the candidate might already be named there; this rule must never risk a false "missing" claim. */
+ *  the candidate might already be named there; this rule must never risk a false "missing" claim.
+ *  Only suggests a name the viewer itself would accept in `composedOf` — a detected component or a
+ *  page id (`buildCatalogSections`' own check); anything else (a plain helper such as a starter
+ *  kit's `Icon`) would only trade this warning for an "unknown component" one. One issue per
+ *  component per page, citing its first call site. */
 function checkMissingComposition(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
   const componentsByName = new Map(components.map((c) => [c.name, c]));
+  const knownNames = new Set<string>([...componentsByName.keys(), ...pages.map((p) => p.id).filter((id): id is string => Boolean(id))]);
   const issues: DoctorIssue[] = [];
   for (const page of pages) {
     if (!page.component || !page.checkable) continue;
@@ -214,7 +219,10 @@ function checkMissingComposition(pages: StaticPage[], components: ComponentRecor
     const candidates = component?.composedOfCandidates;
     if (!candidates || candidates.length === 0) continue;
     const authored = new Set((page.composedOf ?? []).map((entry) => entry.component));
-    for (const candidate of candidates.filter((c) => !authored.has(c.component))) {
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      if (authored.has(candidate.component) || !knownNames.has(candidate.component) || seen.has(candidate.component)) continue;
+      seen.add(candidate.component);
       issues.push(issue({
         id: 'missing-composition-suggestion', severity: 'warning', ...pageRef(page),
         message: `"${component!.name}" renders "${candidate.component}" (${candidate.file}:${candidate.line}), which composedOf doesn't name.`,

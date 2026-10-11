@@ -5,6 +5,9 @@ import { Banner } from './Banner';
 export default defineCatalogPage({
   component: 'Banner',
   group: 'Surfaces',
+  composedOf: [
+    { component: 'AnimatedChevron', role: "The expand/collapse chevron in the header of a collapsible banner.", relationship: 'built-in' },
+  ],
   description: 'An inline callout for status/announcements — five semantic variants, optional collapsible body, inline link, and action button.',
   whenToUse: "Persistent and in-flow, describing a standing condition about the screen's content. For a transient, self-contained event notification, use Toast instead.",
   a11y: 'When onPress/action is set the header/button are Pressables; the collapsible header toggles the description with a chevron affordance.',

@@ -10,6 +10,10 @@ function SearchFieldDemo() {
 export default defineCatalogPage({
   component: 'SearchField',
   group: 'Inputs',
+  composedOf: [
+    { component: 'FieldContainer', role: "The field frame around the search icon, input and clear button.", relationship: 'built-in' },
+    { component: 'InputClearButton', role: "The clear (\u00d7) button, shown while focused with text.", relationship: 'built-in' },
+  ],
   description: 'Single-line search input on the shared field chrome — leading search icon, a border that darkens on focus, and a clear button while active with text.',
   whenToUse: 'Free-text filtering/searching only — never a named field with a fixed value. For that, use InputField; for a small known set of choices, use Dropdown.',
   a11y: 'Forwards a ref to the underlying TextInput; all TextInputProps pass through, so pass accessibilityLabel/placeholder as needed.',

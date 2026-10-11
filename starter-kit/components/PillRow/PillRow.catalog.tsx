@@ -5,6 +5,9 @@ import { PillRow } from './PillRow';
 export default defineCatalogPage({
   component: 'PillRow',
   group: 'Actions',
+  composedOf: [
+    { component: 'Pill', role: "Each item in pills, plus the trailing icon-only Edit pill when shown.", relationship: 'built-in' },
+  ],
   description: 'A horizontally-scrolling row of Pill chips, with an optional trailing icon-only add pill — keeps the selected pill scrolled into view automatically.',
   whenToUse: 'A scrollable row of selection chips (e.g. saved-place shortcuts) — for a fixed row of action buttons instead, use ButtonGroup.',
   a11y: 'The row itself carries no accessibility role; each Pill (including the add pill) keeps its own accessibilityLabel/role from the Pill component.',
