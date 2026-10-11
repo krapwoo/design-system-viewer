@@ -140,8 +140,11 @@ export async function performUpdate(
      *  `restart` — gives the browser a moment to start polling `/update/status` and see the
      *  `'restarting'` phase before the old Metro process goes away. Tests pass `0`. */
     delayMs?: number;
+    /** Resume a failed update from this step; the steps before it already succeeded. */
+    from?: 'migrate' | 'doctor';
   },
 ): Promise<void> {
+  const startAt = deps.from === 'doctor' ? 3 : deps.from === 'migrate' ? 2 : 1;
   const migrationCount = plan.files.filter((f) => f.reason.startsWith('migration:')).length;
   const pm = detectPackageManager(config.projectRoot);
   // Names the detected package manager and the real migration count (Important finding, Fable
@@ -170,30 +173,34 @@ export async function performUpdate(
         state: i < completedCount ? 'done' : i === completedCount ? 'now' : 'todo',
       })),
     });
-  report(1);
+  report(startAt);
 
-  const { command, args } = installUpgradeCommand(pm, '@krapwoo/ds-viewer', plan.latest);
-  try {
-    await deps.execImpl(command, args, { cwd: config.projectRoot, encoding: 'utf8' });
-  } catch (error) {
-    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[1].failLabel ?? stepDefs[1].label });
-    return;
+  if (startAt <= 1) {
+    const { command, args } = installUpgradeCommand(pm, '@krapwoo/ds-viewer', plan.latest);
+    try {
+      await deps.execImpl(command, args, { cwd: config.projectRoot, encoding: 'utf8' });
+    } catch (error) {
+      deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[1].failLabel ?? stepDefs[1].label, step: 'install' });
+      return;
+    }
+    report(2);
   }
-  report(2);
 
-  try {
-    await deps.execImpl('node', [installedMainJs(config.projectRoot), 'migrate', '--from', currentVersion], { cwd: config.projectRoot, encoding: 'utf8' });
-  } catch (error) {
-    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[2].label });
-    return;
+  if (startAt <= 2) {
+    try {
+      await deps.execImpl('node', [installedMainJs(config.projectRoot), 'migrate', '--from', currentVersion], { cwd: config.projectRoot, encoding: 'utf8' });
+    } catch (error) {
+      deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[2].label, step: 'migrate' });
+      return;
+    }
+    report(3);
   }
-  report(3);
 
   let doctorOutput: string;
   try {
     doctorOutput = await deps.execImpl('node', [installedMainJs(config.projectRoot), 'doctor'], { cwd: config.projectRoot, encoding: 'utf8' });
   } catch (error) {
-    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[3].label });
+    deps.onStatus({ phase: 'failure', log: (error as Error).message, failedStep: stepDefs[3].label, step: 'doctor' });
     return;
   }
   report(4);
@@ -387,31 +394,56 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   let child!: ReturnType<typeof spawn>;
   const secret = randomBytes(24).toString('hex');
   const allowedOrigin = `http://localhost:${port}`;
+  // The plan the last update ran with, so a failed migrate or doctor step can be resumed.
+  let lastPlan: UpdatePlan | undefined;
+  const runUpdate = (plan: UpdatePlan, from?: 'migrate' | 'doctor') => {
+    lastPlan = plan;
+    watchersPaused = true;
+    void performUpdate(config, ownVersion, plan, {
+      execImpl: defaultExecImpl,
+      from,
+      onStatus: (status) => {
+        updateStatus = status;
+        if (status.phase === 'failure') watchersPaused = false; // the update stopped — keep developing on the old version.
+      },
+      restart: async (result) => {
+        writeFileSync(statusFile, JSON.stringify({ phase: 'success', ...result }));
+        await performRestart({ projectRoot: config.projectRoot, port, child, watchers, endpointServer, doctorSummary: result.doctorSummary, files: result.files });
+      },
+    }).catch((error) => {
+      // `performUpdate` only reports 'failure' from its own guarded steps; anything thrown outside
+      // them (e.g. writing the status file) lands here instead of as an unhandled rejection.
+      updateStatus = { phase: 'failure', log: (error as Error).message, failedStep: 'Updating', step: 'other' };
+      watchersPaused = false;
+    });
+  };
   const endpointDeps: EndpointDeps = {
     secret,
     allowedOrigin,
     buildPlan: () => buildUpdatePlan(config, ownVersion),
-    startUpdate: (plan) => {
-      watchersPaused = true;
-      void performUpdate(config, ownVersion, plan, {
-        execImpl: defaultExecImpl,
-        onStatus: (status) => {
-          updateStatus = status;
-          if (status.phase === 'failure') watchersPaused = false; // the update stopped — keep developing on the old version.
-        },
-        restart: async (result) => {
-          writeFileSync(statusFile, JSON.stringify({ phase: 'success', ...result }));
-          await performRestart({ projectRoot: config.projectRoot, port, child, watchers, endpointServer, doctorSummary: result.doctorSummary, files: result.files });
-        },
-      }).catch((error) => {
-        // Minor finding, Fable correction pass: `performUpdate` only ever reports `'failure'` from
-        // its own guarded steps — a throw outside them (e.g. `writeFileSync(statusFile)` itself
-        // failing) previously became an unhandled rejection with nothing watching for it.
-        updateStatus = { phase: 'failure', log: (error as Error).message, failedStep: 'Updating' };
-        watchersPaused = false;
-      });
-    },
+    // Install, migrate, doctor, restart; `from` resumes after a failed migrate or doctor step.
+    startUpdate: (plan) => runUpdate(plan),
     getStatus: () => updateStatus,
+    dismissStatus: () => {
+      updateStatus = { phase: 'idle' };
+    },
+    resumeUpdate: (step) => {
+      if (lastPlan) {
+        runUpdate(lastPlan, step);
+        return;
+      }
+      // No plan in memory (this process didn't run the failed update): rebuild it first.
+      updateStatus = { phase: 'updating', steps: [{ label: 'Preparing', state: 'now' }] };
+      void buildUpdatePlan(config, ownVersion).then(
+        (plan) => {
+          if ('error' in plan) updateStatus = { phase: 'failure', log: plan.error, failedStep: 'Preparing', step: 'other' };
+          else runUpdate(plan, step);
+        },
+        (error: Error) => {
+          updateStatus = { phase: 'failure', log: error.message, failedStep: 'Preparing', step: 'other' };
+        },
+      );
+    },
     getVersionStatus: version.getVersionStatus,
     checkNow: version.checkNow,
     setAutoCheck: version.setAutoCheck,

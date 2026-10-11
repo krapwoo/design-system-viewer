@@ -32,7 +32,7 @@ export type UpdateStatusView =
   | { phase: 'updating'; steps: { label: string; state: 'done' | 'now' | 'todo' }[] }
   | { phase: 'restarting' }
   | { phase: 'success'; doctorSummary: string; files: string[]; latest: string }
-  | { phase: 'failure'; log: string; failedStep: string };
+  | { phase: 'failure'; log: string; failedStep: string; step?: 'install' | 'migrate' | 'doctor' | 'other' };
 
 export type UpdatePhase = 'checking' | 'ready' | 'dirty' | 'offline' | 'updating' | 'restarting' | 'success' | 'failure';
 
@@ -143,4 +143,71 @@ export function bumpLabel(current: string, latest: string, breaking: boolean): '
   const b = parts(latest);
   if (!a || !b) return 'Minor';
   return a[0] === b[0] && a[1] === b[1] ? 'Patch' : 'Minor';
+}
+
+export interface ResultNote {
+  tone: 'ok' | 'err';
+  title: string;
+  description: string;
+  detail: string;
+  /** The terminal fallback, shown as code inside `detail` (failures only). */
+  command?: string;
+  /** At most two words. `dismiss` clears the note; `retry` runs the whole update again; `resume`
+   *  continues from the failed migrate or doctor step. */
+  action: { label: string; kind: 'dismiss' | 'retry' | 'resume' };
+  hasLog: boolean;
+}
+
+/** The note shown at the top of the update page after an update finished (approved mockup
+ *  2026-10-11): a header, a description, one detail line, and a bottom-left button. */
+export function resultNote(
+  status: Extract<UpdateStatusView, { phase: 'success' | 'failure' }>,
+  current: string,
+  latest?: string,
+): ResultNote {
+  if (status.phase === 'success') {
+    return {
+      tone: 'ok',
+      title: `Updated to ${status.latest}`,
+      description: "The changes aren't committed yet, so review them in your editor.",
+      // Doctor's own summary line continues after an em dash with component counts; the note keeps
+      // only the error and warning counts.
+      detail: `Changed: ${status.files.join(', ') || 'nothing'} · Doctor: ${status.doctorSummary.split(' — ')[0]}`,
+      action: { label: 'Got it', kind: 'dismiss' },
+      hasLog: false,
+    };
+  }
+  const failure = (title: string, description: string, command: string, action: ResultNote['action']): ResultNote => ({
+    tone: 'err', title, description, detail: `You can also run ${command} in your terminal.`, command, action, hasLog: true,
+  });
+  switch (status.step) {
+    case 'migrate':
+      return failure(
+        'The update installed, but migrating failed',
+        `Your package is on ${latest ?? 'the new version'}, but your files still match ${current}.`,
+        `npx ds-viewer migrate --from ${current}`,
+        { label: 'Finish migration', kind: 'resume' },
+      );
+    case 'doctor':
+      return failure(
+        'The update installed, but doctor failed to run',
+        'The update itself is done. Only the page check is missing.',
+        'npx ds-viewer doctor',
+        { label: 'Rerun doctor', kind: 'resume' },
+      );
+    case 'install':
+      return failure(
+        'The update stopped while installing',
+        'Nothing was migrated. Retrying starts again from the download.',
+        'npx ds-viewer update',
+        { label: 'Retry update', kind: 'retry' },
+      );
+    default:
+      return failure(
+        'The update stopped',
+        'Something unexpected went wrong. Retrying starts again from the download.',
+        'npx ds-viewer update',
+        { label: 'Retry update', kind: 'retry' },
+      );
+  }
 }

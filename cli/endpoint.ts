@@ -24,7 +24,9 @@ export type UpdateStatus =
   // Errata 1b: `latest` lets the viewer render the success state after `update.json` has gone
   // back to `null` (current === latest post-reload) without the panel ever needing `update` again.
   | { phase: 'success'; doctorSummary: string; files: string[]; latest: string }
-  | { phase: 'failure'; log: string; failedStep: string };
+  // `step` says where it stopped, so the viewer can offer the right recovery: retry the whole update
+  // (install, or an unexpected failure), or resume from migrate or doctor.
+  | { phase: 'failure'; log: string; failedStep: string; step?: 'install' | 'migrate' | 'doctor' | 'other' };
 
 export interface EndpointDeps {
   secret: string;
@@ -35,6 +37,11 @@ export interface EndpointDeps {
    *  `'failure'` phase, never as a rejected promise this endpoint would have to catch. */
   startUpdate: (plan: UpdatePlan) => void;
   getStatus: () => UpdateStatus;
+  /** Clears a finished result (success or failure) back to idle, once the viewer has shown it. */
+  dismissStatus?: () => void;
+  /** Continues a failed update from its migrate or doctor step (fire-and-forget, like
+   *  `startUpdate`). */
+  resumeUpdate?: (step: 'migrate' | 'doctor') => void;
   /** The update page's version status (`GET /version`). Optional: without it, the three version
    *  routes answer 404. */
   getVersionStatus?: () => VersionStatus;
@@ -193,6 +200,39 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
           deps.startUpdate(plan);
         } catch (error) {
           console.warn('Update could not start: ' + (error as Error).message);
+        } finally {
+          starting = false;
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/update/dismiss' && deps.dismissStatus) {
+      const phase = deps.getStatus().phase;
+      if (starting || phase === 'updating' || phase === 'restarting') {
+        sendJson(res, 409, { error: 'An update is running.' }, deps.allowedOrigin);
+        return;
+      }
+      deps.dismissStatus();
+      sendJson(res, 200, deps.getStatus(), deps.allowedOrigin);
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/update/resume' && deps.resumeUpdate) {
+      const status = deps.getStatus();
+      const step = status.phase === 'failure' ? status.step : undefined;
+      if (starting || (step !== 'migrate' && step !== 'doctor')) {
+        sendJson(res, 409, { error: 'There is no failed migrate or doctor step to resume.' }, deps.allowedOrigin);
+        return;
+      }
+      // Same reasoning as POST /update: answer first, then run the work on the next tick.
+      starting = true;
+      sendJson(res, 202, { started: true }, deps.allowedOrigin);
+      setImmediate(() => {
+        try {
+          deps.resumeUpdate!(step);
+        } catch (error) {
+          console.warn('Update could not resume: ' + (error as Error).message);
         } finally {
           starting = false;
         }
