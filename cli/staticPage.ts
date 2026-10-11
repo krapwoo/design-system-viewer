@@ -349,9 +349,12 @@ export function importedNames(sourceFile: ts.SourceFile, moduleSpecifier: string
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== moduleSpecifier) {
       continue;
     }
+    // Type-only imports bring no runtime value (`import type { X }`, `import { type X }`).
+    if (statement.importClause?.isTypeOnly) continue;
     const bindings = statement.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) continue;
     for (const element of bindings.elements) {
+      if (element.isTypeOnly) continue;
       names.set(element.name.text, element.propertyName ? element.propertyName.text : element.name.text);
     }
   }

@@ -664,3 +664,12 @@ test('runDoctor maps each page id to its project-relative file', () => {
   assert.equal(runDoctor(configFor(dir)).pageFiles.get('Widget'), path.join('components', 'Widget', 'Widget.catalog.tsx'));
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('overlay-without-device-frame ignores type-only Modal imports', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-overlay-'));
+  writeFileSync(path.join(dir, 'A.tsx'), "import type { Modal } from 'react-native';\nexport function A() { return null; }\n");
+  writeFileSync(path.join(dir, 'B.tsx'), "import { type Modal, View } from 'react-native';\nexport function B() { return null; }\n");
+  const pages = [page({ component: 'A', viewerImports: [] }), page({ component: 'B', viewerImports: [] })];
+  assert.equal(checkOverlaysFramed(pages, [component({ name: 'A', file: 'A.tsx' }), component({ name: 'B', file: 'B.tsx' })], dir).length, 0);
+  rmSync(dir, { recursive: true, force: true });
+});

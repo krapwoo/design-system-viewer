@@ -503,7 +503,9 @@ and adds what only a real render shows:
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't
 install a browser. It takes about two minutes for 50 pages and works with `--json` (progress
 goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci`.
-It stops the viewer it started, including on Ctrl-C. Windows is covered by unit tests only.
+It stops the viewer it started, including on Ctrl-C (exit codes 130, 143 or 129 for SIGINT,
+SIGTERM or SIGHUP). On Windows it stops the viewer with `taskkill`; that path is unit-tested, not
+run on a real Windows machine.
 
 ## Known gaps
 

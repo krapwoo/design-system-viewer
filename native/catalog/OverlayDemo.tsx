@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { PhoneFrame } from './PhoneFrame';
 import { CatalogButton } from './CatalogButton';
@@ -26,11 +26,18 @@ export function OverlayDemo({
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const trigger = overlayTrigger(open, { triggerLabel, keepTrigger });
+  // When the overlay closes, keyboard focus returns to the trigger instead of the page body.
+  const triggerRef = useRef<View>(null);
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current && !open) (triggerRef.current as unknown as { focus?: () => void } | null)?.focus?.();
+    wasOpen.current = open;
+  }, [open]);
   return (
     <PhoneFrame>
       <View style={styles.screen}>
         {trigger.visible && (
-          <CatalogButton label={trigger.label} onPress={() => setOpen((value) => (keepTrigger ? !value : true))} />
+          <CatalogButton ref={triggerRef} label={trigger.label} onPress={() => setOpen((value) => (keepTrigger ? !value : true))} />
         )}
         <View style={FILL} pointerEvents="box-none">
           {children({ open, close: () => setOpen(false) })}
