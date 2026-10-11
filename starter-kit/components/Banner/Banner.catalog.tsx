@@ -4,7 +4,8 @@ import { Banner } from './Banner';
 
 export default defineCatalogPage({
   component: 'Banner',
-  group: 'Surfaces',
+  group: 'Components',
+  specimenSize: 'regular',
   composedOf: [
     { component: 'AnimatedChevron', role: "The expand/collapse chevron in the header of a collapsible banner.", relationship: 'built-in' },
   ],

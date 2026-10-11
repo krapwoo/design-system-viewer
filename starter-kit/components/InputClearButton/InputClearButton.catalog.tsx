@@ -4,7 +4,7 @@ import { InputClearButton } from './InputClearButton';
 
 export default defineCatalogPage({
   component: 'InputClearButton',
-  group: 'Sub-Parts',
+  group: 'Components',
   description: 'The clear (×) button InputField and SearchField both show once a field is active and holds a value — a filled circle-x icon sized to reach the 44pt touch target via hitSlop, not visual size.',
   a11y: 'A Pressable with accessibilityRole="button" and the given (or default "Clear field") accessibilityLabel; hitSlop of 10 on every side pads its 24×24 visual size out to the 44pt minimum.',
   variants: {

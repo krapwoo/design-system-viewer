@@ -140,7 +140,24 @@ function ReportIssueDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Recipes',
+  group: 'Patterns',
+  composedOf: [
+    { component: 'BottomSheet', role: "Holds the whole report flow, opened from the Report an issue button.", relationship: 'built-in' },
+    { component: 'TopNav', role: "The sheet header with a Close button.", relationship: 'built-in' },
+    { component: 'ProgressDots', role: "The step indicator.", relationship: 'built-in' },
+    { component: 'Banner', role: "The Delays reported near 14 St service alert.", relationship: 'built-in' },
+    { component: 'PillRow', role: "The issue-type and line pickers.", relationship: 'built-in' },
+    { component: 'TextArea', role: "Free-text details.", relationship: 'built-in' },
+    { component: 'Checkbox', role: "Marks the report urgent.", relationship: 'built-in' },
+    { component: 'Radio', role: "Chooses between sharing publicly and reporting anonymously.", relationship: 'built-in' },
+    { component: 'Switch', role: "Notify me when resolved.", relationship: 'built-in' },
+    { component: 'SkeletonGroup', role: "Groups the loading lines for Recent reports near you into one loading region.", relationship: 'built-in' },
+    { component: 'Shimmer', role: "The loading lines themselves.", relationship: 'built-in' },
+    { component: 'Dock', role: "The sheet footer holding Submit report.", relationship: 'built-in' },
+    { component: 'Dialog', role: "Confirms discarding the report on close.", relationship: 'built-in' },
+    { component: 'ButtonGroup', role: "The dialog's Keep editing and Discard buttons.", relationship: 'built-in' },
+    { component: 'Button', role: "Report an issue, Close, Submit report, and the dialog's actions.", relationship: 'built-in' },
+  ],
   description: 'A composed real screen — a "report an issue" flow opened from a BottomSheet, combining a step indicator, a service-alert banner, a Pill-based issue-type and line picker (a data choice, not a view switch, so Pill rather than SegmentedToggle), free-text and toggle inputs, and a loading skeleton for recent reports. Dismissing with unsaved changes opens a confirmation Dialog.',
   tokenGallery: true,
   fullWidthLabel: 'Preview',

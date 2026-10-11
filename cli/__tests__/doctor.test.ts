@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { applyComponentDefaults, collectGlobalIssues, collectIssues, formatHuman, runDoctor, toDoctorJson } from '../doctor.ts';
+import { applyComponentDefaults, checkPageTypeErrors, collectGlobalIssues, collectIssues, formatHuman, runDoctor, toDoctorJson } from '../doctor.ts';
 import type { ComponentRecord, ResolvedConfig } from '../types.ts';
 import type { StaticPage } from '../staticPage.ts';
 
@@ -306,6 +306,27 @@ test('checkPageTypeErrors resolves a page import through the host tsconfig\'s ow
   const result = runDoctor(configFor(dir));
   assert.deepEqual(result.issues.filter((i) => i.id === 'page-parse-error'), []);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('checkPageTypeErrors uses the host project\'s tsconfig even when every page lives outside it (a sibling kit folder under a parent with other settings)', () => {
+  // workspace/
+  //   tsconfig.json          ← a parent's own settings (no JSX), like this repo's CLI tsconfig
+  //   kit/Widget.catalog.tsx ← the pages, outside the host
+  //   host/                  ← the project ds-viewer runs in, with its own JSX-enabled tsconfig
+  const root = mkdtempSync(path.join(tmpdir(), 'ds-viewer-doctor-sibling-'));
+  writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'nodenext', moduleResolution: 'nodenext' } }));
+  mkdirSync(path.join(root, 'kit'), { recursive: true });
+  const pageFile = path.join(root, 'kit', 'Widget.catalog.tsx');
+  writeFileSync(pageFile, "import React from 'react';\nexport const node = <view />;\nexport default { group: 'Components', description: 'x' };\n");
+  const host = path.join(root, 'host');
+  mkdirSync(path.join(host, 'node_modules', '@types', 'react'), { recursive: true });
+  writeFileSync(path.join(host, 'node_modules', '@types', 'react', 'index.d.ts'), 'declare const React: any; export = React; declare global { namespace JSX { interface IntrinsicElements { [name: string]: any } } }\n');
+  writeFileSync(path.join(host, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'esnext', moduleResolution: 'bundler', jsx: 'react-jsx', jsxImportSource: undefined, types: [] } }));
+  const fallbackPaths = { '*': [path.join(host, 'node_modules', '@types', '*'), path.join(host, 'node_modules', '*')] };
+  const issues = checkPageTypeErrors([{ file: pageFile, checkable: true, group: 'Components' }], { fallbackPaths, hostRoot: host });
+  const messages = issues.map((i) => i.message);
+  assert.ok(!messages.some((m) => /--jsx|explicit file extensions/.test(m)), messages.join('\n'));
+  rmSync(root, { recursive: true, force: true });
 });
 
 test('checkPageTypeErrors honors a host tsconfig that sets strict: false — no strict-only diagnostic fires', () => {

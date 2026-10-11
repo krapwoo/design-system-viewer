@@ -40,7 +40,7 @@ const PILL_COMPARISON = grid(
 
 export default defineCatalogPage({
   component: 'Pill',
-  group: 'Actions',
+  group: 'Components',
   composedOf: [
     { component: 'Loading', role: "The spinner shown instead of the label and icon while loading is true.", relationship: 'built-in' },
   ],

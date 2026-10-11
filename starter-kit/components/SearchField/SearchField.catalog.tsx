@@ -9,7 +9,8 @@ function SearchFieldDemo() {
 
 export default defineCatalogPage({
   component: 'SearchField',
-  group: 'Inputs',
+  group: 'Components',
+  specimenSize: 'regular',
   composedOf: [
     { component: 'FieldContainer', role: "The field frame around the search icon, input and clear button.", relationship: 'built-in' },
     { component: 'InputClearButton', role: "The clear (\u00d7) button, shown while focused with text.", relationship: 'built-in' },

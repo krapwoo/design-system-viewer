@@ -51,7 +51,7 @@ const BADGE_COMPARISON = grid(
 
 export default defineCatalogPage({
   component: 'Badge',
-  group: 'Surfaces',
+  group: 'Components',
   specimenSize: 'compact',
   comparison: BADGE_COMPARISON,
   description: 'A small status chip — five semantic variants, with optional leading/trailing icons or icon-only.',

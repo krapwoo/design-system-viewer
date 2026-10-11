@@ -11,7 +11,11 @@ const styles = StyleSheet.create({
 
 export default defineCatalogPage({
   component: 'SkeletonGroup',
-  group: 'Sub-Parts',
+  group: 'Components',
+  composedOf: [
+    { component: 'Shimmer', role: 'Its children: the stacked Shimmers that stand in for one element, announced once as a single Loading region.', relationship: 'slot' },
+  ],
+  specimenSize: 'regular',
   description: 'An accessibility wrapper for a composite skeleton — several Shimmers standing in for one real element (e.g. a list row: an avatar + a two-line label). It announces the whole thing as one "Loading" region and silences the individual blocks, so a screen reader says "Loading" once instead of once per Shimmer. Adds no layout of its own — pass your own flexDirection/gap via style.',
   whenToUse: 'Wrap 2+ Shimmers that together stand in for one element. A single lone Shimmer already announces on its own and needs no wrapper.',
   a11y: 'Carries accessibilityRole="progressbar" + accessibilityLabel (default "Loading") + accessibilityState={{ busy: true }} for the whole region; provides a context that makes every descendant Shimmer drop its own announcement. Net effect: one "Loading" announcement per skeleton, not one per block.',

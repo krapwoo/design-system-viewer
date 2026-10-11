@@ -10,7 +10,8 @@ const styles = StyleSheet.create({
 
 export default defineCatalogPage({
   component: 'Breathing',
-  group: 'Feedback',
+  group: 'Components',
+  specimenSize: 'regular',
   description:
     "The shared animated primitive behind Shimmer — a solid block that breathes between a low and high colour on one shared, module-level clock, so every Breathing/Shimmer instance on screen stays phase-locked instead of drifting out of sync. Exported so a custom composite skeleton can reuse the same pulse directly instead of going through Shimmer's fixed text/circle/container shapes.",
   a11y: 'Renders a plain Animated.View with no role by default — pass accessibilityRole="progressbar" and accessibilityLabel yourself, the same way Shimmer does internally for its own standalone (non-grouped) blocks.',

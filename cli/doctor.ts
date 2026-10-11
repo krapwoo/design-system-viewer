@@ -489,7 +489,16 @@ export function collectGlobalIssues(input: { syncWarnings: string[]; tokenFileCo
  *  syntactic diagnostics are a superset of what `ts.transpileModule` already found). A spike
  *  against the real kit (`spikes/page-typecheck/` in this plan's spike folder) found exactly one
  *  real, previously-uncaught diagnostic, fixed in Task 2. */
-export function checkPageTypeErrors(pages: StaticPage[], options: { fallbackPaths?: Record<string, string[]> } = {}): DoctorIssue[] {
+export function checkPageTypeErrors(
+  pages: StaticPage[],
+  options: {
+    fallbackPaths?: Record<string, string[]>;
+    /** The host project's root. Its tsconfig decides the options, wherever the pages live (a host
+     *  whose pages sit in a sibling folder, e.g. kit-host's `../starter-kit`, would otherwise pick
+     *  up whatever tsconfig is above that folder). Without it, the first page's nearest tsconfig. */
+    hostRoot?: string;
+  } = {},
+): DoctorIssue[] {
   const checkablePages = pages.filter((p) => !p.parseError);
   const pageFiles = checkablePages.map((p) => p.file);
   if (pageFiles.length === 0) return [];
@@ -500,7 +509,9 @@ export function checkPageTypeErrors(pages: StaticPage[], options: { fallbackPath
   // `createComponentReader` (where a mismatch only degrades prop reading silently; here it would
   // produce CI-failing errors the host's own `tsc` would never raise). Only `noEmit`,
   // `skipLibCheck`, and the merged `paths` are forced on top.
-  const host = readHostTsconfigOptions(pageFiles[0]);
+  // `readHostTsconfigOptions` searches upward from the given file's folder; a file name inside
+  // `hostRoot` starts that search at the host's own root.
+  const host = readHostTsconfigOptions(options.hostRoot ? path.join(options.hostRoot, 'ds-viewer.config.ts') : pageFiles[0]);
   const compilerOptions: ts.CompilerOptions = {
     ...host.options,
     noEmit: true,
@@ -615,7 +626,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
 
   let issues = [
     ...collectIssues(pages, components),
-    ...checkPageTypeErrors(pages, { fallbackPaths }),
+    ...checkPageTypeErrors(pages, { fallbackPaths, hostRoot: config.projectRoot }),
     ...collectGlobalIssues({ syncWarnings: syncResult.warnings, tokenFileCount }),
   ];
   // Design's own `--json` example gives a project-relative `file`; `StaticPage.file` is absolute

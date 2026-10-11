@@ -193,14 +193,11 @@ function ensureSharedProjectFiles(projectRoot: string): string[] {
 
 const KIT_REQUIRED_PACKAGES = ['react-native-svg', 'react-native-safe-area-context'];
 
-/** The starter kit's own intended sidebar order (the same list kit-host/ds-viewer.config.ts
- *  declares, minus "Viewer" — that group only holds kit-host's own framework-docs pages under
- *  `viewer-pages/`, which `init --new` never copies). Written into a fresh project's config so its
- *  sidebar isn't left alphabetical (controller end-to-end finding E3). */
-const KIT_GROUP_ORDER = [
-  'Actions', 'Surfaces', 'Inputs', 'Controls', 'Selection', 'Feedback', 'Navigation',
-  'Overlays', 'Layout', 'Sub-Parts', 'Recipes', 'Tokens', 'Reference',
-];
+/** The starter kit's own sidebar order (the same list kit-host/ds-viewer.config.ts declares),
+ *  written into a fresh project's config. Follows the README's "Organising the catalog": Tokens,
+ *  then every component in one A–Z group, then the non-component kinds of page (Patterns: whole
+ *  screens built from the kit; Reference: the generated manifest). */
+const KIT_GROUP_ORDER = ['Tokens', 'Components', 'Patterns', 'Reference'];
 
 /** Default `installer` — a real `npx expo install`, run only for whichever of
  *  `KIT_REQUIRED_PACKAGES` the project doesn't already depend on. Test-injected in every unit test

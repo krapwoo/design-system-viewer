@@ -20,7 +20,7 @@ function RadioGroupDemo() {
 
 export default defineCatalogPage({
   component: 'Radio',
-  group: 'Controls',
+  group: 'Components',
   specimenSize: 'compact',
   description: 'A single circular selection control — a filled dot appears in the ring when selected. A group of mutually-exclusive Radios is just multiple instances sharing one selected value in the consumer.',
   whenToUse: 'One selection from a mutually-exclusive set — checking one should un-check another. For an independent on/off fact, use Checkbox; for a setting that takes effect immediately, use Switch.',

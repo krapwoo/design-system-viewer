@@ -187,17 +187,15 @@ test('initNewProject installs missing kit packages via the injected installer, c
 test('initNewProject writes the kit\'s own sidebar groupOrder, instead of leaving the sidebar alphabetical', async () => {
   // Controller end-to-end finding E3: a fresh project's sidebar fell back to alphabetical order
   // (Actions, Controls, Feedback, Inputs, …) because `init --new` wrote no `groupOrder` at all,
-  // losing the kit's intended order (as kit-host's own config declares, minus the "Viewer" group
-  // that only applies to kit-host's own framework-docs pages, which `init --new` never copies).
+  // losing the kit's intended order (the same list kit-host's own config declares).
   const projectRoot = copyNewProjectFixture();
   await initNewProject(projectRoot, { installer: () => {} });
   const config = readFileSync(path.join(projectRoot, 'ds-viewer.config.ts'), 'utf8');
   const groupOrderSection = config.match(/groupOrder: \[([\s\S]*?)\]/)?.[1] ?? '';
   const groups = [...groupOrderSection.matchAll(/["']([^"']+)["']/g)].map((m) => m[1]);
-  assert.deepEqual(groups, [
-    'Actions', 'Surfaces', 'Inputs', 'Controls', 'Selection', 'Feedback', 'Navigation',
-    'Overlays', 'Layout', 'Sub-Parts', 'Recipes', 'Tokens', 'Reference',
-  ]);
+  // The page guide's "Organising the catalog": Tokens, then every component in one A–Z group, then
+  // the non-component kinds of page. Never per-category component groups.
+  assert.deepEqual(groups, ['Tokens', 'Components', 'Patterns', 'Reference']);
   rmSync(projectRoot, { recursive: true, force: true });
 });
 

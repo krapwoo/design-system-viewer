@@ -65,9 +65,10 @@
     "test": "node --experimental-strip-types --test 'cli/**/*.test.ts' 'config/**/*.test.ts' 'native/catalog/__tests__/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "kit:dev": "npm run build && cd kit-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js dev",
-    "check:catalog": "npm run build && node scripts/checkCatalogConsole.mjs kit-host",
-    "check:doctor": "npm run build && cd kit-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js doctor --ci",
-    "check:types": "tsc --noEmit -p kit-host",
+    "viewer:dev": "npm run build && cd viewer-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js dev",
+    "check:catalog": "npm run build && node scripts/checkCatalogConsole.mjs kit-host && node scripts/checkCatalogConsole.mjs viewer-host",
+    "check:doctor": "npm run build && cd kit-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js doctor --ci && cd ../viewer-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js doctor --ci",
+    "check:types": "tsc --noEmit -p kit-host && tsc --noEmit -p viewer-host",
     "release": "node scripts/release.mjs"
   }
 }

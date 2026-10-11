@@ -86,10 +86,18 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
     if (next > 0 && next !== width) setWidth(next);
   };
   if (def.tokenGallery) {
+    // Full-width pages with no component API (token galleries, and whole screens such as a
+    // starter kit's Patterns) still disclose what they're built from when they say so.
     return (
       <View style={styles.card}>
         <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
         {def.path && <Fact label="Source" value={def.path} mono />}
+        {def.composedOf && def.composedOf.length > 0 && (
+          <>
+            <Text style={styles.subheading}>Composition</Text>
+            <CompositionFacts composedOf={def.composedOf} />
+          </>
+        )}
       </View>
     );
   }

@@ -14,7 +14,7 @@ function SwitchLabelDemo() {
 
 export default defineCatalogPage({
   component: 'Switch',
-  group: 'Controls',
+  group: 'Components',
   specimenSize: 'compact',
   description: 'A boolean on/off toggle. The thumb slides and the track crossfades colour, sharing SegmentedToggle/UnderlineTabs\' own slide-animation hook for a consistent motion feel.',
   whenToUse: 'A setting that takes effect immediately, no separate save step. For recording a fact a future action (like a form submit) will act on, use Checkbox; for one-of-many exclusive selection, use Radio.',

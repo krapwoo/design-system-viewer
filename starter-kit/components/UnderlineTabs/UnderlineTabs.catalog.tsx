@@ -20,7 +20,7 @@ function UnderlineTabsDemo() {
 
 export default defineCatalogPage({
   component: 'UnderlineTabs',
-  group: 'Selection',
+  group: 'Components',
   // Phone width plus a small phone, where long labels truncate.
   previewWidths: [402, 320],
   description: 'A quieter tab switcher — left-aligned labels over a hairline rule, with a sliding underline indicator. Same options/value/onChange API as SegmentedToggle.',

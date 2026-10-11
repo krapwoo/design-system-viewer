@@ -92,9 +92,15 @@ npm run kit:dev          # builds the CLI, then opens the starter kit's own cata
 npm run check:catalog    # the same headless check CI runs — every page, zero console errors
 ```
 
-`kit-host/` also hosts `viewer-pages/` — standalone catalog pages (not shipped in the package)
-documenting the viewer framework's own pieces (`CatalogShell`, `SectionBlock`, `ComparisonGrid`,
-…), shown under a "Viewer" group alongside the starter kit's own pages.
+The viewer's own building blocks (`CatalogShell`, `SectionBlock`, `ComparisonGrid`, the catalog's
+own colours and type, …) are documented in a separate catalog for people working on ds-viewer
+itself, so the starter kit's catalog shows only what a project using the kit gets:
+
+```bash
+npm run viewer:dev       # opens viewer-host/, the DS Viewer internals catalog (not shipped)
+```
+
+`check:catalog`, `check:doctor` and `check:types` cover both catalogs.
 
 ## Contributing
 
@@ -308,9 +314,9 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   `Components`. A page's `group` is a plain string shown as its sidebar section label;
   `groupOrder` (e.g. `['Tokens', 'Components', 'Patterns', 'Recipes', 'Experiences']`) only
   controls which order those sections appear in, top to bottom — any group not listed sorts
-  alphabetically after the ones that are. This starter kit's own two groups (`Tokens`, then
-  `Components`) are one valid shape, not the only one: a larger catalog might add `Patterns`
-  (reusable combinations like a settings row), `Recipes` (worked end-to-end screens), or
+  alphabetically after the ones that are. The starter kit uses `Tokens`, then every
+  component under `Components`, then `Patterns` (whole screens built from the kit, such as
+  SavedTrips) and `Reference` (the generated manifest). A larger catalog might add `Recipes` or
   `Experiences` (full flows) alongside them. Pages sort A–Z inside each group regardless of how
   many groups you have. Avoid splitting `Components` into finer categories such as "Actions" or
   "Status" purely to browse by — that makes readers guess where a component lives; search and A–Z

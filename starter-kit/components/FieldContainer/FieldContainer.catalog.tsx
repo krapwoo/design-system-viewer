@@ -12,7 +12,11 @@ const styles = StyleSheet.create({
 
 export default defineCatalogPage({
   component: 'FieldContainer',
-  group: 'Sub-Parts',
+  group: 'Components',
+  composedOf: [
+    { component: 'Surface', role: "Reads the surrounding Surface tone: a recessed fill on white, opaque white inside a muted Surface.", relationship: 'related' },
+  ],
+  specimenSize: 'regular',
   description: 'The shared field chrome — white surface, medium radius, a 1px border that darkens on focus and mutes when disabled — behind InputField, TextArea, Dropdown, and SearchField, so all four share one visually-consistent field look instead of each re-implementing it.',
   a11y: 'Renders a plain View by default. Passing onPress (without disabled) makes it a Pressable with accessibilityRole="button" and the given accessibilityLabel — a consumer building a real editable field (InputField\'s editable mode) relies on its own inner TextInput for accessibility instead.',
   variants: {

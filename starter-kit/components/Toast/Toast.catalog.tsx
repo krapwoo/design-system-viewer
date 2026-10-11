@@ -28,7 +28,8 @@ function ToastDemo() {
 
 export default defineCatalogPage({
   component: 'Toast',
-  group: 'Feedback',
+  group: 'Components',
+  specimenSize: 'regular',
   description: 'A transient confirmation bar. Without a variant it renders the dark surface with inverse text; a variant shifts to a pastel status color.',
   whenToUse: "Transient and self-contained, floating over the screen, expected to go away on its own or via its own action. For a persistent, in-flow message about a standing condition, use Banner.",
   a11y: 'Rendered with accessibilityRole="alert" so screen readers announce it when it appears.',

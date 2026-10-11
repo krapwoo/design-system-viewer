@@ -31,7 +31,7 @@ const AVATAR_COMPARISON = grid(
 
 export default defineCatalogPage({
   component: 'Avatar',
-  group: 'Surfaces',
+  group: 'Components',
   specimenSize: 'compact',
   comparison: AVATAR_COMPARISON,
   description: 'A circular image, or an initials fallback on a solid fill when there\'s no image (or it fails to load).',

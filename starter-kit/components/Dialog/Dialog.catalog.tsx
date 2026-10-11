@@ -33,7 +33,7 @@ function DialogDemo() {
 
 export default defineCatalogPage({
   component: 'Dialog',
-  group: 'Overlays',
+  group: 'Components',
   description: 'A card centred on screen over a dismissible backdrop — fades and scales in, distinct from BottomSheet\'s bottom-anchored slide. Named Dialog (not Modal) to avoid shadowing React Native\'s own built-in Modal.',
   whenToUse: 'A short, focused decision that interrupts the flow (confirm/cancel, a single form). For anything longer, browsable, or that needs its own internal scrolling, use BottomSheet.',
   a11y: 'The backdrop is a Pressable with accessibilityRole="button" and accessibilityLabel="Dismiss"; content you pass as children carries its own accessibility.',

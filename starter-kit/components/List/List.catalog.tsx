@@ -8,7 +8,8 @@ import { DS_SEMANTIC } from '../../tokens';
 
 export default defineCatalogPage({
   component: 'List',
-  group: 'Layout',
+  group: 'Components',
+  specimenSize: 'regular',
   composedOf: [
     { component: 'Divider', role: "The hairline between consecutive items (none after the last).", relationship: 'built-in' },
   ],

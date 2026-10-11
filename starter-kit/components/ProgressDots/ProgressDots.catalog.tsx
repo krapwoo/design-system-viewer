@@ -4,7 +4,7 @@ import { ProgressDots } from './ProgressDots';
 
 export default defineCatalogPage({
   component: 'ProgressDots',
-  group: 'Feedback',
+  group: 'Components',
   description: 'A row of dots for a stepped flow; the active dot widens into a pill.',
   a11y: 'Decorative progress indicator; convey the "step X of Y" position in text for screen readers.',
   // No `variant` prop exists on ProgressDots — its "Variants" column just shows the one default

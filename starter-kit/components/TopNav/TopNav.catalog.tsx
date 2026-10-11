@@ -11,7 +11,10 @@ const styles = StyleSheet.create({
 
 export default defineCatalogPage({
   component: 'TopNav',
-  group: 'Navigation',
+  group: 'Components',
+  composedOf: [
+    { component: 'Button', role: "The leading and trailing slots, typically small icon Buttons (back, close, an action).", relationship: 'slot' },
+  ],
   description: 'A screen\'s top bar — fixed-width leading/trailing slots flanking a centered title (or custom center content). Slots reserve their layout space even when empty, so the title stays centered no matter which sides are populated.',
   a11y: 'The title renders with accessibilityRole="header". Slot content (typically icon-only Buttons) carries its own accessibilityLabel.',
   // No `variant` prop exists on TopNav — its "Variants" column just shows the one default look,

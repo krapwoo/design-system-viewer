@@ -21,7 +21,7 @@ function SegmentedToggleDemo() {
 
 export default defineCatalogPage({
   component: 'SegmentedToggle',
-  group: 'Selection',
+  group: 'Components',
   // Phone width plus a small phone, where long labels truncate.
   previewWidths: [402, 320],
   description: 'A row of mutually-exclusive options on a recessed track, with a white thumb that slides to the selected segment. Two or more options.',
