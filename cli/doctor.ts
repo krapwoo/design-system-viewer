@@ -5,7 +5,7 @@ import type { ComponentRecord, ResolvedConfig } from './types.ts';
 import type { StaticPage } from './staticPage.ts';
 import { discoverAllPageFiles, resolvePageId } from './pageIndex.ts';
 import { readHostTsconfigOptions } from './props.ts';
-import { readStaticPages } from './staticPage.ts';
+import { importedNames, readStaticPages } from './staticPage.ts';
 import { resolveGlob } from './glob.ts';
 import { sync } from './sync.ts';
 import { gridColumnLimit } from '../native/catalog/comparison.ts';
@@ -229,6 +229,42 @@ function checkMissingComposition(pages: StaticPage[], components: ComponentRecor
         fix: `Add { component: '${candidate.component}', ... } to composedOf with the role/relationship you choose, if this reflects real composition — or leave it if it's incidental.`,
       }));
     }
+  }
+  return issues;
+}
+
+/** The viewer exports that frame an example as a phone (or another bounded document), so an
+ *  overlay that portals to the document body opens inside it instead of over the catalog. */
+const DEVICE_FRAME_EXPORTS = ['PhoneFrame', 'OverlayDemo', 'PhoneScreen', 'BoundedOverlayViewport'];
+
+/** Whether a component's own source imports React Native's `Modal` (by its imported name, so an
+ *  alias still counts and an unrelated local `Modal` doesn't). Conservative by design: it can't see
+ *  `import * as RN`, a re-exported `Modal`, or a Modal opened by a sub-component. */
+function importsModal(file: string): boolean {
+  try {
+    const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
+    return [...importedNames(source, 'react-native').values()].includes('Modal');
+  } catch {
+    return false;
+  }
+}
+
+/** `overlay-without-device-frame`: a page whose component opens a React Native `Modal` (which
+ *  portals to the document body on the web, covering the whole catalog) but whose page imports no
+ *  device frame. A page whose imports couldn't be read is skipped, never assumed unframed. */
+export function checkOverlaysFramed(pages: StaticPage[], components: ComponentRecord[], projectRoot: string): DoctorIssue[] {
+  const byName = new Map(components.map((c) => [c.name, c]));
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.component || page.viewerImports === undefined) continue;
+    if (page.viewerImports.some((name) => DEVICE_FRAME_EXPORTS.includes(name))) continue;
+    const component = byName.get(page.component);
+    if (!component || !importsModal(path.resolve(projectRoot, component.file))) continue;
+    issues.push(issue({
+      id: 'overlay-without-device-frame', severity: 'warning', ...pageRef(page),
+      message: `"${component.name}" opens a React Native Modal, which covers the whole catalog page unless its example is inside a phone.`,
+      fix: 'Wrap the example in <PhoneFrame> (or use <OverlayDemo>), so it opens inside the phone.',
+    }));
   }
   return issues;
 }
@@ -627,6 +663,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
   let issues = [
     ...collectIssues(pages, components),
     ...checkPageTypeErrors(pages, { fallbackPaths, hostRoot: config.projectRoot }),
+    ...checkOverlaysFramed(pages, components, config.projectRoot),
     ...collectGlobalIssues({ syncWarnings: syncResult.warnings, tokenFileCount }),
   ];
   // Design's own `--json` example gives a project-relative `file`; `StaticPage.file` is absolute

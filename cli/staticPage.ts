@@ -91,6 +91,9 @@ export interface StaticPage {
    *  `propNoteKeys` can be present even though `comparison` is absent because only the comparison
    *  wasn't literal). */
   checkable: boolean;
+  /** Names this page imports from `@krapwoo/ds-viewer` (imported names, not local aliases). Set
+   *  whenever the file parsed, even when the page itself isn't literal-checkable. */
+  viewerImports?: string[];
   /** Set only when the file failed to parse (a syntax error) — distinct from `checkable: false`,
    *  which also covers a page that parsed fine but has non-literal layout data. */
   parseError?: string;
@@ -196,6 +199,7 @@ function readStaticPage(file: string): StaticPage {
   }
   const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
   const imports = importedNames(sourceFile, '@krapwoo/ds-viewer');
+  const viewerImports = [...new Set(imports.values())];
   const defineCatalogPageNames = localNamesFor(imports, 'defineCatalogPage');
   const gridNames = localNamesFor(imports, 'grid');
 
@@ -204,13 +208,13 @@ function readStaticPage(file: string): StaticPage {
     // Not a recognized `defineCatalogPage(...)` default export — e.g. a hand-written object, or a
     // shadowed/renamed import this reader can't trace. Not a parse error: the file is valid
     // TypeScript, just not literal-checkable.
-    return { file, checkable: false };
+    return { file, checkable: false, viewerImports };
   }
   const consts = topLevelConsts(sourceFile);
   const pageObject = resolve(call.arguments[0], consts, new Set());
-  if (!ts.isObjectLiteralExpression(pageObject)) return { file, checkable: false };
+  if (!ts.isObjectLiteralExpression(pageObject)) return { file, checkable: false, viewerImports };
 
-  const page: StaticPage = { file, checkable: true };
+  const page: StaticPage = { file, checkable: true, viewerImports };
   const idProp = findProp(pageObject, 'id');
   const componentProp = findProp(pageObject, 'component');
   const groupProp = findProp(pageObject, 'group');
@@ -339,7 +343,7 @@ function readComposedOf(node: ts.Expression, consts: Map<string, ts.Expression>)
 }
 
 /** Local name -> imported name, for every named import from `moduleSpecifier`. */
-function importedNames(sourceFile: ts.SourceFile, moduleSpecifier: string): Map<string, string> {
+export function importedNames(sourceFile: ts.SourceFile, moduleSpecifier: string): Map<string, string> {
   const names = new Map<string, string>();
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== moduleSpecifier) {
