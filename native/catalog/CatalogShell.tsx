@@ -96,7 +96,7 @@ const bannerStyles = StyleSheet.create({
   bold: { fontWeight: '700' },
   link: { color: CATALOG_COLOR.warning, fontWeight: '700', textDecorationLine: 'underline' },
   close: { width: 32, height: 32, borderRadius: CATALOG_RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
-  closeGlyph: { fontSize: 18, color: CATALOG_COLOR.warning },
+  closeGlyph: { fontSize: CATALOG_TYPE.xl, color: CATALOG_COLOR.warning },
 });
 
 /**

@@ -1,0 +1,1 @@
+The catalog's own type scale uses only 10, 12, 14, 16, 18, 24, 28, 32 and 40 px (table headers and panel headings 12, the sidebar name 18, the update page's version numbers 24). `CatalogButton` is a rounded rectangle, with the primary button in the catalog's accent blue.

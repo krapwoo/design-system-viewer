@@ -1,9 +1,9 @@
 import React, { forwardRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, type View } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
 
-/** The viewer's own button, for catalog chrome and demo triggers (not an app component). Same look
- *  as the update page's buttons. */
+/** The viewer's own button, for catalog chrome and demo triggers (not an app component): a rounded
+ *  rectangle, primary in the accent blue, secondary outlined. */
 export const CatalogButton = forwardRef<View, {
   label: string;
   onPress: () => void;
@@ -33,8 +33,9 @@ export const CatalogButton = forwardRef<View, {
 });
 
 const styles = StyleSheet.create({
-  base: { height: CATALOG_LAYOUT.controlSize, paddingHorizontal: 18, borderRadius: 22, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
-  primary: { backgroundColor: CATALOG_COLOR.text },
+  // A rounded rectangle (owner decision 2026-10-11); primary in the catalog's accent blue.
+  base: { height: CATALOG_LAYOUT.controlSize, paddingHorizontal: 18, borderRadius: CATALOG_RADIUS.control, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
+  primary: { backgroundColor: CATALOG_COLOR.accent },
   primaryPressed: { opacity: 0.85 },
   secondary: { borderWidth: 1, borderColor: CATALOG_COLOR.borderStrong, backgroundColor: CATALOG_COLOR.surface },
   secondaryPressed: { backgroundColor: CATALOG_COLOR.surfacePressed },
