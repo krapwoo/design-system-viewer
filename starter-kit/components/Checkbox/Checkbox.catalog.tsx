@@ -10,7 +10,7 @@ function CheckboxDemo() {
 export default defineCatalogPage({
   component: 'Checkbox',
   group: 'Components',
-  specimenSize: 'compact',
+  specimenSize: 'regular',
   description: 'A square selection control — the box fills with the accent colour and a checkmark when checked.',
   whenToUse: 'An independent on/off fact about this one item — any number can be checked at once. For a setting that takes effect immediately, use Switch; for one-of-many exclusive selection, use Radio.',
   a11y: 'Renders a Pressable with accessibilityRole="checkbox" and accessibilityState.checked; the optional label doubles as its accessibilityLabel.',

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeOverlayAddress, encodeOverlayAddress, findOverlayNode } from '../overlayViewport.ts';
 import { DEVICE_FRAME, deviceFrameScale } from '../deviceFrame.ts';
-import { shouldCenterFilledContent } from '../specimenSurfaceStyle.ts';
+import { overflowsCell, paintedExtent, shouldCenterFilledContent, visibleBoxes, type LayoutBox } from '../specimenSurfaceStyle.ts';
 import { presentationBlocks } from '../comparison.ts';
 import type { SectionDef } from '../types.ts';
 
@@ -41,4 +41,29 @@ test('full-width (filled) examples wrap at most 3 across unless the page sets ma
   assert.equal(explicit.kind === 'list' && explicit.maxColumns, 4);
   const [compact] = presentationBlocks({ ...base, specimenSize: 'compact', states: { items } });
   assert.equal(compact.kind === 'list' && 'maxColumns' in compact, false, 'small centred examples keep wrapping freely');
+});
+
+test('paintedExtent measures what is actually visible, not the full-width wrapper around it', () => {
+  // A full-width tooltip wrapper (0–345) holding an 18-point trigger and a 120-point bubble.
+  assert.equal(paintedExtent([{ left: 0, right: 345, painted: false }, { left: 0, right: 18, painted: true }, { left: -40, right: 80, painted: true }]), 120);
+  assert.equal(paintedExtent([]), 0);
+  // A visible element that spans the cell counts as full width (a real full-width example).
+  assert.equal(paintedExtent([{ left: 0, right: 345, painted: true }]), 345);
+});
+
+test('overflowsCell flags an example wider than its cell, beyond rounding', () => {
+  assert.equal(overflowsCell(171, 158), true);
+  assert.equal(overflowsCell(158.6, 158), false);
+  assert.equal(overflowsCell(0, 158), false);
+});
+
+test('visibleBoxes stops at a clipping or scrolling container: its own box counts, not the content it hides', () => {
+  const tree: LayoutBox = {
+    left: 0, right: 370, painted: false, clips: false, children: [
+      // A horizontally scrolling row: 370 visible, 643 of content inside.
+      { left: 0, right: 370, painted: false, clips: true, children: [{ left: 0, right: 643, painted: true, clips: false, children: [] }] },
+    ],
+  };
+  assert.equal(paintedExtent(visibleBoxes(tree)), 370);
+  assert.equal(overflowsCell(paintedExtent(visibleBoxes(tree)), 370), false);
 });

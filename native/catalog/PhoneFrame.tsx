@@ -36,7 +36,11 @@ export function PhoneFrame({ children }: { children: React.ReactNode }) {
     if (width > 0 && width !== available) setAvailable(width);
   };
   const scale = deviceFrameScale(available);
-  const box = { width: DEVICE_FRAME.width * scale, height: DEVICE_FRAME.height * scale };
+  // Until the cell is measured, fit it at the device's proportions rather than drawing at full size
+  // for a frame (which would briefly overflow a cell narrower than the device).
+  const box = available > 0
+    ? { width: DEVICE_FRAME.width * scale, height: DEVICE_FRAME.height * scale }
+    : { width: '100%' as const, maxWidth: DEVICE_FRAME.width, aspectRatio: DEVICE_FRAME.width / DEVICE_FRAME.height };
 
   if (isWeb() && address) {
     const decision = resolveOverlayViewport({
