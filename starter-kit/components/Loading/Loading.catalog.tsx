@@ -5,7 +5,8 @@ import { DS_SEMANTIC } from '../../tokens';
 
 export default defineCatalogPage({
   component: 'Loading',
-  group: 'Feedback',
+  group: 'Components',
+  specimenSize: 'regular',
   description: 'An indeterminate loader — the shape fills up, empties out, then fills again, seamlessly. Two variants: circle (used internally by Button and Pill for their own loading states) and linear.',
   a11y: 'Exposed to assistive tech as accessibilityRole="progressbar" with accessibilityLabel="Loading" — no extra wiring needed at the call site.',
   // One example per `variant` enum value — `circle` is the default, so it comes first.

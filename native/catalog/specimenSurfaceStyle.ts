@@ -88,3 +88,57 @@ export function specimenContentBoundedStyle(align: SpecimenAlign | undefined) {
 /** Each example's cell turns gray only when its example would vanish against white (see
  *  `specimenFill.ts`). A page can force a fill with `specimenSurface`. */
 export const DEFAULT_SPECIMEN_SURFACE: SpecimenSurfaceKind = 'auto';
+
+/** A `fill` example stretches to its cell, but one with its own fixed width (a 160-point skeleton
+ *  bar) stays that width; it should then sit in the middle of the cell, not against its leading
+ *  edge. True when the measured example is narrower than its wrapper (by more than rounding). */
+export function shouldCenterFilledContent(contentWidth: number, wrapperWidth: number): boolean {
+  if (!(contentWidth > 0) || !(wrapperWidth > 0)) return false;
+  return contentWidth < wrapperWidth - 1;
+}
+
+/** The width of what's actually visible in an example: from the leftmost to the rightmost painted
+ *  box (text, an icon, anything with a fill), ignoring transparent layout wrappers that may span
+ *  the whole cell. */
+export function paintedExtent(boxes: readonly { left: number; right: number; painted: boolean }[]): number {
+  let left = Infinity;
+  let right = -Infinity;
+  for (const box of boxes) {
+    if (!box.painted || box.right <= box.left) continue;
+    left = Math.min(left, box.left);
+    right = Math.max(right, box.right);
+  }
+  return Number.isFinite(left) ? right - left : 0;
+}
+
+/** True when an example is wider than its cell (beyond rounding): its edges are cut off or touch
+ *  the neighbouring cell, so the page should use a wider `specimenSize`. */
+export function overflowsCell(contentWidth: number, cellWidth: number): boolean {
+  return contentWidth > 0 && cellWidth > 0 && contentWidth > cellWidth + 1;
+}
+
+/** One element of an example as measured in the browser. `clips` is true for a container that
+ *  hides or scrolls its overflow (a scrolling row, a device frame). */
+export interface LayoutBox {
+  left: number;
+  right: number;
+  painted: boolean;
+  clips: boolean;
+  children: LayoutBox[];
+}
+
+/** The boxes a reader can actually see: a clipping container counts as its own box, and what it
+ *  hides or scrolls inside it is skipped. */
+export function visibleBoxes(root: LayoutBox): { left: number; right: number; painted: boolean }[] {
+  const out: { left: number; right: number; painted: boolean }[] = [];
+  const walk = (box: LayoutBox, isRoot: boolean) => {
+    if (!isRoot && box.clips) {
+      out.push({ left: box.left, right: box.right, painted: true });
+      return;
+    }
+    if (!isRoot) out.push({ left: box.left, right: box.right, painted: box.painted });
+    for (const child of box.children) walk(child, false);
+  };
+  walk(root, true);
+  return out;
+}

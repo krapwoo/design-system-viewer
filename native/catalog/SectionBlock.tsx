@@ -6,6 +6,7 @@ import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { ReferenceDetails } from './ReferenceDetails';
 import { SpecimenSurface } from './SpecimenSurface';
+import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
 import { MATRIX_LAYOUT, choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
@@ -169,15 +170,19 @@ function BlockContent<TId extends string>({ block, def, surface }: { block: Pres
     case 'grid':
       return <ComparisonGrid def={block.comparison} size={block.size} sectionId={def.id} surface={surface} />;
     case 'grouped':
-      return <ComparisonGroups groups={block.groups} size={block.size} label={def.id} surface={surface} />;
+      return <ComparisonGroups groups={block.groups} size={block.size} label={def.id} surface={surface} pageId={def.id} />;
     case 'list':
-      return <ComparisonList items={block.items} size={block.size} label={`${def.id}: ${block.title}`} maxColumns={block.maxColumns} surface={surface} />;
+      return <ComparisonList items={block.items} size={block.size} label={`${def.id}: ${block.title}`} maxColumns={block.maxColumns} surface={surface} pageId={def.id} />;
     case 'preview':
       // A token gallery's `preview` block shows full-width raw token data, not a component
       // specimen — it keeps its current, unstaged presentation.
       // `Preview`'s own `widths === 'full'` check already excludes a full-width or token-gallery
       // preview from ever reaching the table layout, regardless of `def.previewLayout`.
-      return def.render ? <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} layout={def.previewLayout === 'table' ? 'table' : undefined} /> : null;
+      return def.render ? (
+        <SpecimenAddressProvider address={{ pageId: def.id, slot: 'preview', itemKey: 'preview' }}>
+          <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} layout={def.previewLayout === 'table' ? 'table' : undefined} />
+        </SpecimenAddressProvider>
+      ) : null;
     case 'tokenSections':
       return <TokenSections sections={block.sections} columns={block.columns} />;
     default:
@@ -369,7 +374,8 @@ const styles = StyleSheet.create({
   blocks: { gap: CATALOG_LAYOUT.blockGap, marginBottom: CATALOG_LAYOUT.blockGap },
   blocksSide: { flexDirection: 'row', alignItems: 'flex-start' },
   blockFill: { flex: 1, minWidth: 0 },
-  frames: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.xl, alignItems: 'flex-start' },
+  // Centred in the card, like every other example (a single phone-width frame used to sit left).
+  frames: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.xl, alignItems: 'flex-start', justifyContent: 'center' },
   frame: { maxWidth: '100%', gap: CATALOG_SPACE.sm },
   frameLabel: {
     fontSize: CATALOG_TYPE.tableHeader,

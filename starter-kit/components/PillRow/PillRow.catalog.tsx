@@ -4,7 +4,7 @@ import { PillRow } from './PillRow';
 
 export default defineCatalogPage({
   component: 'PillRow',
-  group: 'Actions',
+  group: 'Components',
   composedOf: [
     { component: 'Pill', role: "Each item in pills, plus the trailing icon-only Edit pill when shown.", relationship: 'built-in' },
   ],

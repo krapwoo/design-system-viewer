@@ -5,7 +5,8 @@ import { DS_SEMANTIC } from '../../tokens';
 
 export default defineCatalogPage({
   component: 'EmptyState',
-  group: 'Layout',
+  group: 'Components',
+  specimenSize: 'regular',
   composedOf: [
     { component: 'Avatar', role: "The icon circle above the title (iconName, default 'users').", relationship: 'built-in' },
     { component: 'ButtonGroup', role: "Stacks the action buttons when action is set.", relationship: 'built-in' },

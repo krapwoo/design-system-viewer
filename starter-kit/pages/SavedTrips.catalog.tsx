@@ -27,10 +27,11 @@ const styles = StyleSheet.create({
   // fixed TopNav header and Dock footer around a scrollable middle, the same fixed-header/
   // scrollable-body/fixed-footer shape a real screen would use.
   savedTripsScreen: { flex: 1, alignSelf: 'stretch' },
-  // A fixed cap (not `flex: 1`) — sidesteps a web-only flexbox quirk where a `flex: 1` ScrollView
-  // nested inside PhoneFrame's own fixed height doesn't actually shrink to the space left after
-  // TopNav/Dock, and grows PhoneFrame itself past its intended 480px instead of scrolling.
-  savedTripsScroll: { maxHeight: 320 },
+  // Takes the space between the TopNav and the Dock and scrolls (`minHeight: 0` lets a flex child
+  // shrink below its content on the web).
+  savedTripsScroll: { flex: 1, minHeight: 0 },
+  // The muted area between TopNav and Dock takes the remaining height, so the list scrolls there.
+  savedTripsBody: { flex: 1, minHeight: 0 },
   savedTripsScrollContent: { padding: DS_SPACING[800], gap: DS_SPACING[600] },
   // Shared by SavedTrips' small inline rows — the "Updating arrival times…" loading row and each
   // list row's trailing badge+button cluster (identical layout, one key).
@@ -127,7 +128,7 @@ function SavedTripsDemo() {
             </Tooltip>
           }
         />
-        <Surface tone="muted">
+        <Surface tone="muted" style={styles.savedTripsBody}>
           <ScrollView style={styles.savedTripsScroll} contentContainerStyle={styles.savedTripsScrollContent}>
             <SearchField value={query} onChangeText={setQuery} placeholder="Search stations" />
             <SegmentedToggle
@@ -239,7 +240,27 @@ function SavedTripsDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Recipes',
+  group: 'Patterns',
+  composedOf: [
+    { component: 'TopNav', role: "The screen header, titled Saved trips, with a Filters button.", relationship: 'built-in' },
+    { component: 'Tooltip', role: "The Filter by mode hint on the Filters button.", relationship: 'built-in' },
+    { component: 'Surface', role: "The muted background behind the search, toggles and list.", relationship: 'built-in' },
+    { component: 'SearchField', role: "Searches stations.", relationship: 'built-in' },
+    { component: 'SegmentedToggle', role: "Switches between List and Map views.", relationship: 'built-in' },
+    { component: 'UnderlineTabs', role: "The All, Nearby and Favorites tabs.", relationship: 'built-in' },
+    { component: 'PillRow', role: "Mode filter pills.", relationship: 'built-in' },
+    { component: 'Loading', role: "The small spinner beside Updating arrival times.", relationship: 'built-in' },
+    { component: 'Dropdown', role: "The Sort by picker.", relationship: 'built-in' },
+    { component: 'SectionHeader', role: "The Nearby stations heading.", relationship: 'built-in' },
+    { component: 'List', role: "Holds the saved-trip rows with dividers.", relationship: 'built-in' },
+    { component: 'ListItem', role: "Each saved trip row.", relationship: 'built-in' },
+    { component: 'Avatar', role: "Each row's mode icon.", relationship: 'built-in' },
+    { component: 'Badge', role: "Each row's status, e.g. delays.", relationship: 'built-in' },
+    { component: 'Button', role: "The Filters button, each row's remove button, and Plan a new trip.", relationship: 'built-in' },
+    { component: 'EmptyState', role: "Shown instead of the list on an empty tab (Favorites, or after removing every row).", relationship: 'built-in' },
+    { component: 'Toast', role: "Confirms a removed trip, with Undo.", relationship: 'built-in' },
+    { component: 'Dock', role: "The bottom bar holding Plan a new trip.", relationship: 'built-in' },
+  ],
   description: 'A composed real screen — a saved-trips list with a search bar, tab switcher, mode filter pills, a sort Dropdown, and a bottom action bar. Switch to the "Favorites" tab (or remove every row) to see the EmptyState alternative to the list; tap the header icon to see its Tooltip; tap a row\'s trailing × to see the Toast, which only appears after that real action and auto-dismisses (or Undo) — remove two rows back-to-back and each removal gets its own stacked toast on its own clock.',
   tokenGallery: true,
   fullWidthLabel: 'Preview',

@@ -4,7 +4,8 @@ import { SectionHeader } from './SectionHeader';
 
 export default defineCatalogPage({
   component: 'SectionHeader',
-  group: 'Layout',
+  group: 'Components',
+  specimenSize: 'regular',
   composedOf: [
     { component: 'Button', role: "The trailing button, rendered when trailingButtonLabel is set.", relationship: 'built-in' },
   ],

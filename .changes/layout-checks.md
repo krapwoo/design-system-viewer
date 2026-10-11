@@ -1,0 +1,1 @@
+In development, the viewer now warns in the browser console when an example is wider than its cell (naming a wider `specimenSize`), ignoring what scrolling or clipped areas hide. Filled examples are centred by what's actually visible, so a tooltip or a fixed-width skeleton inside a full-width wrapper no longer sits against the edge.

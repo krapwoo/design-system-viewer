@@ -69,7 +69,11 @@ function BottomSheetDemo() {
 
 export default defineCatalogPage({
   component: 'BottomSheet',
-  group: 'Navigation',
+  group: 'Components',
+  composedOf: [
+    { component: 'TopNav', role: "The header slot, typically a TopNav with a close or back action.", relationship: 'slot' },
+    { component: 'Dock', role: "The footer slot, typically a Dock with the sheet's primary actions; a Dock footer gets its shadow once the content scrolls.", relationship: 'slot' },
+  ],
   description: 'A sheet that slides up over a dismissible backdrop. Height is driven by its content (not fixed snap points) up to 90% of the available height, then the content area scrolls. Compose header with TopNav and footer with Dock.',
   whenToUse: 'For longer, browsable content, or anything that benefits from a TopNav/Dock header-footer structure. For a short, focused decision that interrupts the flow, use Dialog.',
   a11y: 'The backdrop is a Pressable with accessibilityRole="button" and accessibilityLabel="Dismiss"; header/content/footer carry their own accessibility (e.g. TopNav\'s title as accessibilityRole="header").',

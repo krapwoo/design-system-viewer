@@ -243,7 +243,8 @@ test('presentationBlocks plans grid, list, grouped, preview, and empty blocks', 
   assert.deepEqual(summary({ ...base, comparison: valid, states: { items: [states.items[0]] } }), [['grid', 'Variant × State', 'regular']]);
 
   const list = presentationBlocks({ ...base, variants: wideVariants })[0];
-  assert.deepEqual(list.items, [{ key: 'a', label: 'A', node: 'a', fill: true, surface: undefined, align: undefined }]);
+  assert.deepEqual(list.items, [{ key: 'a', slot: 'variants', label: 'A', node: 'a', fill: true, surface: undefined, align: undefined }]);
+  assert.equal(list.kind === 'list' && list.maxColumns, 3, 'filled examples wrap at most 3 across');
 });
 
 test('component previews are phone width by default; token galleries stay full width', () => {

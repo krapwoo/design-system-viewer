@@ -38,7 +38,7 @@ function DropdownDemo() {
 
 export default defineCatalogPage({
   component: 'Dropdown',
-  group: 'Inputs',
+  group: 'Components',
   composedOf: [
     { component: 'FieldContainer', role: "The field frame around the label, value and chevron (the trigger).", relationship: 'built-in' },
     { component: 'BottomSheet', role: "The sheet listing the options while the dropdown is open.", relationship: 'built-in' },

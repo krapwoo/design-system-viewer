@@ -5,7 +5,10 @@ import { Dock } from './Dock';
 
 export default defineCatalogPage({
   component: 'Dock',
-  group: 'Navigation',
+  group: 'Components',
+  composedOf: [
+    { component: 'Button', role: "Its children: up to three full-width Buttons, stacked.", relationship: 'slot' },
+  ],
   description: 'Pinned to the bottom of the screen, above the home indicator — holds up to three full-width Buttons stacked vertically, with an optional small caption area above them.',
   a11y: 'A plain View; each Button child carries its own accessibility role and label.',
   // No `variant` prop exists on Dock — its "Variants" column just shows the one default look,

@@ -40,7 +40,13 @@ function TripPlannerFormDemo() {
 }
 
 export default defineCatalogPage({
-  group: 'Recipes',
+  group: 'Patterns',
+  composedOf: [
+    { component: 'Card', role: "Frames the whole form.", relationship: 'built-in' },
+    { component: 'InputField', role: "The From and To fields.", relationship: 'built-in' },
+    { component: 'Divider', role: "Separates the fields from the actions.", relationship: 'built-in' },
+    { component: 'Button', role: "Add stop (tertiary) and Continue (primary, disabled until To is filled).", relationship: 'built-in' },
+  ],
   description: 'A composed real screen — not one component in isolation — showing how Card, InputField, Divider, and Button actually fit together: a From/To trip form with a secondary "Add stop" action and a primary "Continue" that\'s disabled until a destination is entered.',
   tokenGallery: true,
   fullWidthLabel: 'Preview',

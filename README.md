@@ -92,9 +92,15 @@ npm run kit:dev          # builds the CLI, then opens the starter kit's own cata
 npm run check:catalog    # the same headless check CI runs — every page, zero console errors
 ```
 
-`kit-host/` also hosts `viewer-pages/` — standalone catalog pages (not shipped in the package)
-documenting the viewer framework's own pieces (`CatalogShell`, `SectionBlock`, `ComparisonGrid`,
-…), shown under a "Viewer" group alongside the starter kit's own pages.
+The viewer's own building blocks (`CatalogShell`, `SectionBlock`, `ComparisonGrid`, the catalog's
+own colours and type, …) are documented in a separate catalog for people working on ds-viewer
+itself, so the starter kit's catalog shows only what a project using the kit gets:
+
+```bash
+npm run viewer:dev       # opens viewer-host/, the DS Viewer internals catalog (not shipped)
+```
+
+`check:catalog`, `check:doctor` and `check:types` cover both catalogs.
 
 ## Contributing
 
@@ -259,6 +265,15 @@ actually apply:
   the one child document that the address itself selects, `children` render inline with no
   boundary — never read either case as native containment parity.
 - `previewWidths: [402, 320]` — extra preview widths for a `render()` page (each capped at 402).
+  Add a second width only when the component looks different there (labels truncate, a row
+  wraps); otherwise it's the same picture twice. Leave it out by default.
+- **`PhoneFrame`** — wrap a demo that is a whole screen or opens an overlay (a sheet, a dialog, a
+  toast sliding in, a dropdown's picker) in `<PhoneFrame>`. It is a real device: the demo lays out
+  in an iPhone SE viewport (375 × 667 points), scaled down only when its cell is narrower. In the
+  browser viewer it opens that example in its own device-sized document, so overlays that portal
+  to the page (React Native's `Modal`) open inside the phone, not over the catalog.
+- Full-width (`itemsFill`) variants and states wrap at most **3** across; set `maxColumns` to
+  change that. A filled example that keeps its own fixed width is centred in its cell.
   Default to one preview; add a second width only when a narrower (or wider) viewport actually
   changes something worth comparing — wrapping, truncation, or reflow — not just to show the same,
   identically-laid-out content twice. `CatalogShell`'s `defaultPreviewWidths="full"` keeps a
@@ -308,9 +323,9 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   `Components`. A page's `group` is a plain string shown as its sidebar section label;
   `groupOrder` (e.g. `['Tokens', 'Components', 'Patterns', 'Recipes', 'Experiences']`) only
   controls which order those sections appear in, top to bottom — any group not listed sorts
-  alphabetically after the ones that are. This starter kit's own two groups (`Tokens`, then
-  `Components`) are one valid shape, not the only one: a larger catalog might add `Patterns`
-  (reusable combinations like a settings row), `Recipes` (worked end-to-end screens), or
+  alphabetically after the ones that are. The starter kit uses `Tokens`, then every
+  component under `Components`, then `Patterns` (whole screens built from the kit, such as
+  SavedTrips) and `Reference` (the generated manifest). A larger catalog might add `Recipes` or
   `Experiences` (full flows) alongside them. Pages sort A–Z inside each group regardless of how
   many groups you have. Avoid splitting `Components` into finer categories such as "Actions" or
   "Status" purely to browse by — that makes readers guess where a component lives; search and A–Z

@@ -7,6 +7,7 @@ import { SectionBlock } from './SectionBlock';
 import { UpdatePanel } from './UpdatePanel';
 import { DS_VIEWER_SECRET_HEADER, footerLink, groupLabelFor, hashForId, neighbors, orderedIds, resolveActiveFromHash, shouldShowMajorBanner, UPDATE_PAGE_ID } from './catalogNavigation';
 import { findOverlayNode, overlayAddressFromSearch } from './overlayViewport';
+import { SpecimenAddressProvider } from './SpecimenAddress';
 import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice, VersionStatus } from './types';
 
 /** `active` can be a real page id, or the reserved update-page id — never both a generic `TId`
@@ -255,7 +256,10 @@ export function CatalogShell<TId extends string>({
   if (overlayAddress) {
     return (
       <View style={styles.overlayDocumentRoot}>
-        {overlayNode ?? <Text style={styles.overlayUnavailable}>This example is no longer available.</Text>}
+        {/* The addressed example's own device frame recognises this document as its viewport. */}
+        <SpecimenAddressProvider address={overlayAddress}>
+          {overlayNode ?? <Text style={styles.overlayUnavailable}>This example is no longer available.</Text>}
+        </SpecimenAddressProvider>
       </View>
     );
   }

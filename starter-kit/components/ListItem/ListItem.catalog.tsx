@@ -9,7 +9,13 @@ import { DS_SEMANTIC } from '../../tokens';
 
 export default defineCatalogPage({
   component: 'ListItem',
-  group: 'Layout',
+  group: 'Components',
+  composedOf: [
+    { component: 'Avatar', role: "The leading slot, typically an Avatar (or an icon).", relationship: 'slot' },
+    { component: 'Switch', role: "A trailing-slot option, e.g. a settings toggle.", relationship: 'slot' },
+    { component: 'Button', role: "A trailing-slot option, e.g. an Accept action.", relationship: 'slot' },
+  ],
+  specimenSize: 'regular',
   description: 'A single row: optional leading/trailing slots flanking a title (+ optional subtitle/footer). Stack several inside a List for a settings screen, menu, or search-results list.',
   whenToUse: "A row in a set of visually-light peers sharing a List's own surface and dividers. For a standalone unit with its own shadow, use Card instead.",
   a11y: 'A tappable row (onPress set) renders as a Pressable with accessibilityRole="button" and an accessibilityLabel built from title + subtitle; a plain row is a non-interactive View.',

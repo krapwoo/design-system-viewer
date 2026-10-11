@@ -11,7 +11,8 @@ const styles = StyleSheet.create({
 
 export default defineCatalogPage({
   component: 'Divider',
-  group: 'Layout',
+  group: 'Components',
+  specimenSize: 'regular',
   description: 'A 1px hairline separator at the divider token colour.',
   a11y: 'A plain, non-interactive View — purely decorative.',
   // No `variant` prop and no other real configuration exists on Divider — a single hairline is the

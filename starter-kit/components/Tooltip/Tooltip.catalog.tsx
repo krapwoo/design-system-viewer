@@ -31,7 +31,8 @@ function TooltipDemo() {
 
 export default defineCatalogPage({
   component: 'Tooltip',
-  group: 'Overlays',
+  group: 'Components',
+  specimenSize: 'regular',
   description: 'A small floating label anchored above or below its wrapped trigger. Fully controlled — drive `visible` from the trigger\'s own onLongPress/onPressIn, since mobile has no hover.',
   a11y: 'The bubble is a plain, non-interactive View; the trigger you wrap it around carries its own accessibility.',
   variants: {

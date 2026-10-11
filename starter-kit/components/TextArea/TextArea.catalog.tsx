@@ -9,7 +9,8 @@ function TextAreaDemo() {
 
 export default defineCatalogPage({
   component: 'TextArea',
-  group: 'Inputs',
+  group: 'Components',
+  specimenSize: 'regular',
   composedOf: [
     { component: 'FieldContainer', role: "The field frame around the multi-line input.", relationship: 'built-in' },
   ],

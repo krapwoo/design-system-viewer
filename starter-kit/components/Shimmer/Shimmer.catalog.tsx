@@ -11,7 +11,8 @@ const styles = StyleSheet.create({
 
 export default defineCatalogPage({
   component: 'Shimmer',
-  group: 'Feedback',
+  group: 'Components',
+  specimenSize: 'regular',
   description: 'Loading placeholders that breathe while content loads. `text` stands in for one line of text (an element with 3 lines gets 3 stacked `text` Shimmers, not one tall one), `circle` is always for a circular element, and `container` covers everything else (Card, Banner, image, …) — sized to match the real element it replaces, not an arbitrary block. When several stand in for one element, wrap them in `SkeletonGroup`.',
   whenToUse: 'A composite skeleton (several Shimmers standing in for one element) → wrap them in SkeletonGroup so it announces "Loading" once, not once per block. A single lone Shimmer needs no wrapper — it announces on its own.',
   a11y: 'A standalone Shimmer is exposed as accessibilityRole="progressbar" + accessibilityLabel="Loading". Inside a SkeletonGroup, each block goes silent and the group carries one busy "Loading" announcement for the whole skeleton — so a screen reader says "Loading" once, not once per block.',
