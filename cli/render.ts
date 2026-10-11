@@ -171,6 +171,9 @@ export async function renderCheck(
     });
     await home.close();
     const ids = hrefs.map((href) => decodeURIComponent(href.slice(1))).filter(Boolean);
+    if (ids.length === 0) {
+      return [{ id: 'render-failed', severity: 'error', message: 'The catalog rendered no sidebar links, so it probably failed to render at all.', fix: 'Run `ds-viewer dev` and check the browser console.' }];
+    }
     log(`Rendering ${ids.length} pages…`);
     const seen = new Set<string>();
     const issues: DoctorIssue[] = [];

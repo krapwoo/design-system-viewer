@@ -288,6 +288,17 @@ Written between `<!-- ds-viewer:start v1 -->` and `<!-- ds-viewer:end -->`; shor
 
 Runs on every pull request (no path filters): install dependencies, then `npx ds-viewer doctor --ci`. Actions are pinned to commit SHAs.
 
+### 0.5 additions
+
+- `doctor --render` (owner-approved 2026-10-10): starts the project's own `dev`, opens every
+  sidebar page with the project's `puppeteer`, and adds `render-error`, `render-no-heading`,
+  `render-layout`, `render-catalog-warning`, `render-unavailable`, `render-failed`. This
+  repository's `check:catalog` runs the same engine and fails on any finding.
+- `overlay-without-device-frame` (warning): a component importing React Native's `Modal` whose page
+  imports no device frame.
+- Viewer exports `PhoneScreen`, `OverlayDemo` (catalog-button trigger, owner decision) and
+  `CatalogButton`.
+
 ## 5. Releases and updates
 
 ### Releasing (from this repository)

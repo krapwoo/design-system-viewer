@@ -1,0 +1,1 @@
+`npx ds-viewer doctor --render` opens every catalog page in a headless browser and reports console errors, pages that don't render, and examples that overflow their cells, with `--json`, `--ci` and `doctor.strict` support. It needs `puppeteer` in your project.
