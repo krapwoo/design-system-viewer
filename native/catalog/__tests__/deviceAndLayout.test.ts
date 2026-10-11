@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { decodeOverlayAddress, encodeOverlayAddress, findOverlayNode } from '../overlayViewport.ts';
 import { DEVICE_FRAME, deviceFrameScale } from '../deviceFrame.ts';
 import { FILLED_CONTENT_MAX_WIDTH, filledContentStyle, overflowsCell, paintedExtent, shouldCenterFilledContent, visibleBoxes, type LayoutBox } from '../specimenSurfaceStyle.ts';
-import { presentationBlocks } from '../comparison.ts';
+import { columnMaxWidth, COLUMN_MIN_WIDTH, gridWidthBounds, listGeometry, presentationBlocks } from '../comparison.ts';
 import type { SectionDef } from '../types.ts';
 
 test('the device frame is a real phone viewport: iPhone SE, 375 × 667 points', () => {
@@ -71,4 +71,18 @@ test('visibleBoxes stops at a clipping or scrolling container: its own box count
 test("a filled example (a field, a dropdown, a full-width button) is at most a phone's content width, centred, however wide its cell", () => {
   assert.equal(FILLED_CONTENT_MAX_WIDTH, 370);
   assert.deepEqual(filledContentStyle(), { width: '100%', maxWidth: 370, alignSelf: 'center' });
+});
+
+test("specimenSize 'page' is for components wider than a phone: cells at least 512px, sharing the row, never capped at 402", () => {
+  assert.equal(COLUMN_MIN_WIDTH.page, 512);
+  assert.equal(columnMaxWidth('page'), Infinity);
+  assert.equal(columnMaxWidth('wide'), 402);
+  assert.equal(columnMaxWidth('regular'), 402);
+  // A 1280px laptop (952px content): 4 states → one per row, full width.
+  assert.deepEqual(listGeometry(4, 952, 'page'), { columns: 1, rows: 4, fillers: 0, cellWidth: 950, containerWidth: 952 });
+  // A 1728px window (~1200px content): 2 across, sharing the row equally.
+  assert.deepEqual(listGeometry(4, 1200, 'page'), { columns: 2, rows: 2, fillers: 0, cellWidth: 599, containerWidth: 1200 });
+  // Phone-sized sizes still cap at 402.
+  assert.equal(listGeometry(2, 1200, 'regular').cellWidth, 402);
+  assert.equal(gridWidthBounds(2, 'page').maxWidth, Infinity);
 });

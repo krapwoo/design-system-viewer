@@ -201,7 +201,9 @@ actually apply:
   combination does not exist. Never multiply `variants` by `states` to fill it. Keep the column axis
   within what fits a 1280px laptop: 5 compact, 3 regular, or 2 wide columns. `states` items whose
   key matches a row or column key are not repeated below the grid.
-- `specimenSize: 'compact' | 'regular' | 'wide'` — the page's specimen width class.
+- `specimenSize: 'compact' | 'regular' | 'wide' | 'page'` — the page's specimen width class. `'page'`
+  is for components wider than a phone (a whole screen layout, a catalog page): cells are at least
+  512px and share the row, with no 402px cap.
 - `specimenSurface: 'auto' | 'neutral' | 'white' | 'dark' | 'transparent'` — the fill of each
   example's cell (list, grouped and grid cells, and a non-token `render()` preview). Defaults to
   `'auto'`: after the page draws, a cell turns light gray only when its own example would vanish

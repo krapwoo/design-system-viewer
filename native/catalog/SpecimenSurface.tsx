@@ -134,7 +134,7 @@ export function SpecimenContent({ fill, align, children }: { fill?: boolean; ali
     if ((globalThis as { __DEV__?: boolean }).__DEV__ && !warned.current && overflowsCell(visible, wrapperWidth)) {
       warned.current = true;
       console.warn(
-        `[Catalog] ${address ? `${address.pageId} (${address.itemKey})` : 'An example'} is ${Math.round(visible)}px wide in a ${Math.round(wrapperWidth)}px cell, so it's cut off. Give the page a wider specimenSize ('regular' or 'wide').`,
+        `[Catalog] ${address ? `${address.pageId} (${address.itemKey})` : 'An example'} is ${Math.round(visible)}px wide in a ${Math.round(wrapperWidth)}px cell, so it's cut off. Give the page a wider specimenSize ('regular', 'wide', or 'page' for components wider than a phone).`,
       );
     }
   }, [fill, align, centerNarrow, address]);

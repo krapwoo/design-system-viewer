@@ -75,9 +75,10 @@ export interface VariantSlot {
   items: VariantExample[];
 }
 
-/** Width class for a page's specimens: compact (min 160px), regular (min 240px), or wide (fixed
- *  402px, phone width). Sets grid column and list cell widths. */
-export type SpecimenSize = 'compact' | 'regular' | 'wide';
+/** Width class for a page's specimens: compact (min 160px), regular (min 240px), wide (fixed
+ *  402px, phone width), or page (min 512px, no maximum: cells share the row) for components wider
+ *  than a phone, such as a whole catalog page. Sets grid column and list cell widths. */
+export type SpecimenSize = 'compact' | 'regular' | 'wide' | 'page';
 
 /** Widths for a component preview: one or more phone widths (each capped at 402px), or 'full' for
  *  content that is not a phone component (catalog chrome, token galleries). */

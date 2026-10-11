@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
-import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
+import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, columnMaxWidth, type ListGroup } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
@@ -44,10 +44,10 @@ export function ComparisonGroups({
                 const item = group.items[ci];
                 const last = ci === columns - 1;
                 if (!item) {
-                  return <View key={`blank-${ci}`} aria-hidden style={[styles.cell, { minWidth: min }, last && styles.lastColumn]} />;
+                  return <View key={`blank-${ci}`} aria-hidden style={[styles.cell, { minWidth: min, maxWidth: columnMaxWidth(size) }, last && styles.lastColumn]} />;
                 }
                 return (
-                  <View key={item.key} role="listitem" style={[styles.cell, { minWidth: min }, last && styles.lastColumn]}>
+                  <View key={item.key} role="listitem" style={[styles.cell, { minWidth: min, maxWidth: columnMaxWidth(size) }, last && styles.lastColumn]}>
                     <View style={styles.caption}>
                       <Text style={styles.captionText}>{item.label}</Text>
                     </View>
@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
   },
   rowHeaderText: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
   cells: { flex: 1, flexDirection: 'row' },
-  cell: { flex: 1, maxWidth: MATRIX_LAYOUT.columnMaxWidth, borderRightWidth: 1, borderRightColor: CATALOG_COLOR.border },
+  cell: { flex: 1, borderRightWidth: 1, borderRightColor: CATALOG_COLOR.border },
   lastColumn: { borderRightWidth: 0 },
   caption: {
     padding: MATRIX_LAYOUT.cellPadding,

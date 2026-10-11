@@ -45,7 +45,7 @@ test('layout constants match the approved design', () => {
   assert.equal(MATRIX_LAYOUT.cellPadding, 16);
   assert.equal(MATRIX_LAYOUT.cellPadding, CATALOG_SPACE.lg);
   assert.equal(MATRIX_LAYOUT.laptopContentWidth, 1280 - 264 - 2 * 32);
-  assert.deepEqual(COLUMN_MIN_WIDTH, { compact: 160, regular: 240, wide: 402 });
+  assert.deepEqual(COLUMN_MIN_WIDTH, { compact: 160, regular: 240, wide: 402, page: 512 });
 });
 
 test('gridColumnLimit derives how many columns fit a 1280px laptop', () => {

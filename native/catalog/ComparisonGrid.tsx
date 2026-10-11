@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
-import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, axisItems, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
+import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, columnMaxWidth, axisItems, cellKey, gridWidthBounds, indexCells, validateComparison } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { comparisonCellItemKey } from './overlayViewport';
@@ -37,7 +37,7 @@ export function ComparisonGrid({
     flexShrink: 1,
     flexBasis: COLUMN_MIN_WIDTH[size],
     minWidth: COLUMN_MIN_WIDTH[size],
-    maxWidth: MATRIX_LAYOUT.columnMaxWidth,
+    maxWidth: columnMaxWidth(size),
   };
   const lastColumn = columns.length - 1;
 

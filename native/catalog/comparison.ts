@@ -44,7 +44,14 @@ export const REFERENCE_MIN_COLUMN_WIDTH = 280;
 export const REFERENCE_COLUMN_GAP = 32;
 
 /** Smallest column or cell width per specimen size. Wide specimens are fixed at phone width. */
-export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402 };
+export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402, page: 512 };
+
+/** The widest a cell gets. Phone-sized components cap at phone width (402); `'page'` (components
+ *  wider than a phone, such as a whole catalog page or the update page) has no cap: its cells share
+ *  the row. */
+export function columnMaxWidth(size: SpecimenSize): number {
+  return size === 'page' ? Infinity : MATRIX_LAYOUT.columnMaxWidth;
+}
 
 /** `Array.isArray`'s built-in type guard narrows to a mutable `any[]`, which a `readonly T[]`
  *  union member is never assignable to — so the `else` branch of `Array.isArray(axis) ? ... :
@@ -110,7 +117,7 @@ export function gridWidthBounds(columnCount: number, size: SpecimenSize): { minW
   const n = Math.max(0, columnCount);
   return {
     minWidth: MATRIX_LAYOUT.rowHeaderWidth + n * COLUMN_MIN_WIDTH[size],
-    maxWidth: MATRIX_LAYOUT.rowHeaderWidth + n * MATRIX_LAYOUT.columnMaxWidth,
+    maxWidth: MATRIX_LAYOUT.rowHeaderWidth + n * columnMaxWidth(size),
   };
 }
 
@@ -139,7 +146,7 @@ export function listGeometry(itemCount: number, availableWidth: number, size: Sp
   const rows = Math.ceil(itemCount / maxColumns);
   const columns = Math.ceil(itemCount / rows);
   const fitted = Math.floor(inner / columns);
-  const cellWidth = size === 'wide' ? MATRIX_LAYOUT.columnMaxWidth : Math.max(min, Math.min(MATRIX_LAYOUT.columnMaxWidth, fitted));
+  const cellWidth = size === 'wide' ? MATRIX_LAYOUT.columnMaxWidth : Math.max(min, Math.min(columnMaxWidth(size), fitted));
   return {
     columns,
     rows,
