@@ -1,1 +1,0 @@
-`doctor`'s `missing-composition-suggestion` now only suggests names the viewer accepts in `composedOf` (a detected component or a page), once per component per page; the starter kit's pages declare their real composition. If you use `doctor.strict: true`, the new advisories from this release count as errors until you add `composedOf` (or leave `strict` off while you review them).

@@ -3,6 +3,15 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.7
+
+- A new opt-in `BoundedOverlayViewport` gives a modal/sheet/portal specimen a same-origin bounded browsing context — a maximum width that still shrinks to its real owning cell, and an exact height — instead of letting the overlay portal into and cover the whole catalog page; Sheet's full-height and TimePickerModal's open examples now use it.
+- The reference panel now stacks or widens to two or three columns (Guidance, Quick reference, and — only with confirmed composition — its own Composition column) based on its actual measured inner content width instead of always using two; Quick reference and Composition put each label above its left-aligned description or value; a composition entry's label now drops the redundant "· built-in" suffix (slot/related entries keep theirs); a `fill` specimen's content now stretches to its wrapper's full width by default instead of centering (so an auto-sized full-width example keeps its own measured width), while a capped-width `fill` example (e.g. a phone-frame preview) centers itself; a non-`fill` specimen now centers horizontally even when its own root sets `alignSelf: 'flex-start'`, keeping its intrinsic width; and `variants`/`states` items (and, for a directly-authored grid, its cells) can now override their own `surface`/`fill`/`align` independently of the page's defaults, with an item's explicit `fill: false` always winning over an inherited `itemsFill: true`.
+
+A `render()` page can now opt a numeric-width Preview into `previewLayout: 'table'` — every width shares one bordered, captioned card instead of each getting its own separate frame — while a `'full'` preview width or a token gallery keeps today's `'frames'` presentation regardless.
+- `doctor`'s `missing-composition-suggestion` now only suggests names the viewer accepts in `composedOf` (a detected component or a page), once per component per page; the starter kit's pages declare their real composition. If you use `doctor.strict: true`, the new advisories from this release count as errors until you add `composedOf` (or leave `strict` off while you review them).
+- `npx ds-viewer doctor` now also reports three conservative, source-backed advisories — `missing-composition-suggestion`, `degenerate-grid-axis`, and `missing-working-preview` (suppressible per page with `intentionalStaticPreview`) — each a warning that suggests from real JSX/prop evidence without ever overriding an author's own `composedOf` or examples.
+
 ## 0.4.6
 
 - The sidebar always shows the installed version and opens the update page, which now says whether you're on the latest version, automatic checks are off, or npm couldn't be reached, and offers **Check now** and a switch for automatic checks (saved per project, for you only, on this computer). `doctor` honours the same switch.

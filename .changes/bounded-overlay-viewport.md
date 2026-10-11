@@ -1,1 +1,0 @@
-A new opt-in `BoundedOverlayViewport` gives a modal/sheet/portal specimen a same-origin bounded browsing context — a maximum width that still shrinks to its real owning cell, and an exact height — instead of letting the overlay portal into and cover the whole catalog page; Sheet's full-height and TimePickerModal's open examples now use it.
