@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.4.8
+
+- In development, the viewer now warns in the browser console when an example is wider than its cell (naming a wider `specimenSize`), ignoring what scrolling or clipped areas hide. Filled examples are centred by what's actually visible, so a tooltip or a fixed-width skeleton inside a full-width wrapper no longer sits against the edge.
+- The starter kit's catalog is organised by the page guide: Tokens, then every component in one A–Z Components group, then Patterns (whole screens) and Reference. `init --new` writes that order. Every component that renders or slots other kit components, and every pattern, lists its composition, and full-width components show their examples 3 across. `doctor` now type-checks pages with the project's own tsconfig even when the pages live outside the project folder.
+- `PhoneFrame` is now a real device: demos lay out in an iPhone SE viewport (375 × 667 points), scaled down only for a narrower cell, and in the browser each opens in its own device-sized document so sheets, dialogs and pickers open inside the phone instead of over the catalog. Full-width examples wrap at most 3 across (was up to 4 on wide windows), filled examples with their own fixed width are centred, and single-width previews are centred in their card.
+
 ## 0.4.7
 
 - A new opt-in `BoundedOverlayViewport` gives a modal/sheet/portal specimen a same-origin bounded browsing context — a maximum width that still shrinks to its real owning cell, and an exact height — instead of letting the overlay portal into and cover the whole catalog page; Sheet's full-height and TimePickerModal's open examples now use it.
