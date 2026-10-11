@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.5.0
+
+- New `PhoneScreen` (a whole app screen in a phone: header and footer pinned, scrolling body between, a floating layer for toasts) and `OverlayDemo` (a phone with a catalog button that opens a sheet, dialog or toast). The starter kit's overlay and screen demos use them.
+- `doctor` warns (`overlay-without-device-frame`) when a component opens a React Native `Modal` but its page shows it outside a phone frame, where it would cover the whole catalog page.
+- `npx ds-viewer doctor --render` opens every catalog page in a headless browser and reports console errors, pages that don't render, and examples that overflow their cells, with `--json`, `--ci` and `doctor.strict` support. It needs `puppeteer` in your project.
+
 ## 0.4.9
 
 - After an update, the update page no longer stays on the result: it shows as a note at the top (success, or a failure with a button that recovers from the failed step), and Check now, the automatic-check switch and newer updates keep working below it.

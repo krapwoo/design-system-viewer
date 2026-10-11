@@ -1,1 +1,0 @@
-New `PhoneScreen` (a whole app screen in a phone: header and footer pinned, scrolling body between, a floating layer for toasts) and `OverlayDemo` (a phone with a catalog button that opens a sheet, dialog or toast). The starter kit's overlay and screen demos use them.
