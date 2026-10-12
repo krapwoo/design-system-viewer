@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   DEFAULT_SPECIMEN_SURFACE,
   SPECIMEN_CONTENT_CENTER_STYLE,
@@ -8,7 +9,27 @@ import {
   specimenContentAlignItems,
   specimenContentBoundedStyle,
   specimenContentJustifyContent,
+  shouldCenterFilledContent,
 } from '../specimenSurfaceStyle.ts';
+
+test('narrow paint inside a full-width fluid root does not collapse a filled specimen', () => {
+  assert.equal(shouldCenterFilledContent(213, 370, 370), false);
+  assert.equal(shouldCenterFilledContent(160, 370, 160), true, 'a genuinely narrow fixed-width root still centers');
+  assert.equal(shouldCenterFilledContent(213, 370, 369.5), false, 'layout rounding must not collapse a fluid root');
+  assert.equal(shouldCenterFilledContent(160, 370, 0), false, 'unmeasured roots do not opt into centering');
+});
+
+test('SpecimenContent supplies the root layout width to automatic centering', () => {
+  const source = readFileSync(new URL('../SpecimenSurface.tsx', import.meta.url), 'utf8');
+  assert.match(source, /const rootWidth = Math\.max\(0, \.\.\.tree\.children\.map\(\(child\) => child\.right - child\.left\)\);/);
+  assert.match(source, /shouldCenterFilledContent\(visible, wrapperWidth, rootWidth\)/);
+});
+
+test('automatic centering never overrides a later explicit alignment or uncapped layout', () => {
+  const source = readFileSync(new URL('../SpecimenSurface.tsx', import.meta.url), 'utf8');
+  assert.match(source, /const alignItems = capped && align === undefined && centerNarrow \? 'center' : specimenContentAlignItems\(fill, align\);/);
+  assert.match(source, /useEffect\(\(\) => \{\s*setCenterNarrow\(false\);\s*\}, \[fill, capped, align\]\);/);
+});
 
 test('the example wrapper stretches to the cell width instead of shrink-wrapping to its content', () => {
   assert.equal(SPECIMEN_SURFACE_WIDTH_STYLE.alignSelf, 'stretch');

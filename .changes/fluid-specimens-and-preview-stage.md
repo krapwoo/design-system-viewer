@@ -1,0 +1,1 @@
+A filled specimen whose root spans its cell now stays full width instead of being centered at its narrower painted width, and a fixed-width `Preview`'s contrast stage now covers its whole padded card rather than only each frame.

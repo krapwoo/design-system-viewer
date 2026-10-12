@@ -113,22 +113,21 @@ function Preview({ render, widths, surface, layout }: { render: () => React.Reac
   if (widths === 'full') return <SpecimenSurface surface={kind} style={styles.previewCard}>{render()}</SpecimenSurface>;
   if (layout === 'table') return <TablePreview render={render} widths={widths} surface={kind} />;
   return (
-    <View style={styles.previewCard}>
+    <SpecimenSurface surface={kind} style={styles.previewCard}>
       <View style={styles.frames}>
         {widths.map((width, i) => (
-          <SpecimenSurface
+          <View
             key={`${width}-${i}`}
-            surface={kind}
             // Two live instances of the same component: name each so assistive tech can tell them apart.
             {...(widths.length > 1 ? ({ role: 'group', 'aria-label': frameLabel(width) } as Record<string, unknown>) : null)}
             style={[styles.frame, { width }]}
           >
             {widths.length > 1 && <Text style={styles.frameLabel}>{frameLabel(width)}</Text>}
             {render()}
-          </SpecimenSurface>
+          </View>
         ))}
       </View>
-    </View>
+    </SpecimenSurface>
   );
 }
 

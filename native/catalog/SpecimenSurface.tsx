@@ -116,25 +116,30 @@ function readTree(root: MeasurableNode, browser: Browser): LayoutBox {
 }
 
 export function SpecimenContent({ fill, align, capped = true, children }: { fill?: boolean; align?: SpecimenAlign; /** Phone-width cap for a filled example; off for page-width cells. */ capped?: boolean; children: React.ReactNode }) {
-  // After layout (browser only): a `fill` example whose visible content is narrower than the cell
-  // (a fixed-width skeleton, a tooltip around a small trigger) is centred instead of sitting
-  // against the leading edge; an explicit `align` always wins. And in development, an example
+  // After layout (browser only): a genuinely narrow `fill` root (a fixed-width skeleton) is
+  // centred. Narrow text/icons inside a full-width layout do not collapse that layout's root.
+  // An explicit `align` always wins. And in development, an example
   // wider than its cell logs a warning naming a wider `specimenSize`.
   const address = useSpecimenAddress();
   const ref = useRef<View>(null);
   const [centerNarrow, setCenterNarrow] = useState(false);
   const warned = useRef(false);
+  useEffect(() => {
+    setCenterNarrow(false);
+  }, [fill, capped, align]);
   const measure = useCallback(() => {
     const browser = globalThis as unknown as Browser;
     const node = ref.current as unknown as MeasurableNode | null;
     if (!browser.Element || !browser.getComputedStyle || !node?.getBoundingClientRect) return;
     const wrapperWidth = node.getBoundingClientRect().width;
-    const visible = paintedExtent(visibleBoxes(readTree(node, browser)));
+    const tree = readTree(node, browser);
+    const visible = paintedExtent(visibleBoxes(tree));
+    const rootWidth = Math.max(0, ...tree.children.map((child) => child.right - child.left));
     // Only for a phone-width cell. Centring exists for a small control adrift in a wide cell (a
     // tooltip, a fixed-width skeleton); a 'page' cell holds a layout, whose own content is
     // supposed to sit at the left of its own measure, and centring it collapses it to the width of
     // whatever it happens to have painted.
-    if (capped && fill && align === undefined && !centerNarrow && shouldCenterFilledContent(visible, wrapperWidth)) setCenterNarrow(true);
+    if (capped && fill && align === undefined && !centerNarrow && shouldCenterFilledContent(visible, wrapperWidth, rootWidth)) setCenterNarrow(true);
     if ((globalThis as { __DEV__?: boolean }).__DEV__ && !warned.current && overflowsCell(visible, wrapperWidth)) {
       warned.current = true;
       console.warn(
@@ -143,7 +148,7 @@ export function SpecimenContent({ fill, align, capped = true, children }: { fill
     }
   }, [capped, fill, align, centerNarrow, address]);
   if (fill) {
-    const alignItems = centerNarrow ? 'center' : specimenContentAlignItems(fill, align);
+    const alignItems = capped && align === undefined && centerNarrow ? 'center' : specimenContentAlignItems(fill, align);
     return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, filledContentStyle(capped), { alignItems }]}>{children}</View>;
   }
   return <View ref={ref} onLayout={measure} style={specimenContentBoundedStyle(align)}>{children}</View>;
