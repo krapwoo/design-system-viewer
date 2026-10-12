@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.2
+
+- `explain` now reads a page's `previewLayout`, so a `previewLayout: 'table'` preview is priced with the table card's own chrome (a 1px border and `cellPadding` around each frame, 34px) instead of the frames card's (24px padding and a border, 50px). A `previewLayout` the reader cannot resolve to a literal makes the page not statically checkable, the same rule a slot's `maxColumns` follows, rather than letting the CLI report a minimum the viewer does not use.
+
 ## 0.6.1
 
 - `CatalogButton` gains `disabled` (flat grey, not pressable) and `busy` (its own colours, a spinner before the label, and no second press), both reported through `accessibilityState`. The update page now uses it for every action — Check now, Update now, Try again — instead of its own copies, which had kept the 22px black pill the button moved away from. Two new tokens, `controlDisabled` and `controlDisabledText`, carry the disabled colours.
