@@ -51,6 +51,7 @@ const block = (def: SectionDef<'Example'>) => <SectionBlock def={def} headingLev
 export default defineCatalogPage({
   component: 'SectionBlock',
   group: 'Components',
+  whenToUse: 'A whole catalog page — heading, specimen blocks, and reference details. CatalogShell renders one for the selected page, so use it standalone only to embed a single page inside a host screen, as this catalog\'s own SectionBlock page does.',
   source: '../native/catalog/SectionBlock.tsx',
   composedOf: [
     { component: 'ComparisonGrid', role: "A two-prop grid of examples.", relationship: 'built-in' },

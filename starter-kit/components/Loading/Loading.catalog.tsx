@@ -6,6 +6,7 @@ import { DS_SEMANTIC } from '../../tokens';
 export default defineCatalogPage({
   component: 'Loading',
   group: 'Components',
+  whenToUse: 'An indeterminate wait of unknown length — `circle` inline, `linear` where a bar suits the layout better. Button and Pill already show this in their own loading states, so don\'t nest one inside them. For a known number of steps, use ProgressDots.',
   specimenSize: 'regular',
   description: 'An indeterminate loader — the shape fills up, empties out, then fills again, seamlessly. Two variants: circle (used internally by Button and Pill for their own loading states) and linear.',
   a11y: 'Exposed to assistive tech as accessibilityRole="progressbar" with accessibilityLabel="Loading" — no extra wiring needed at the call site.',

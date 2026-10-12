@@ -10,6 +10,7 @@ function TextAreaDemo() {
 export default defineCatalogPage({
   component: 'TextArea',
   group: 'Components',
+  whenToUse: 'Multiline free text that grows from a minimum height. For a single-line labelled row use InputField — both share FieldContainer\'s chrome.',
   specimenSize: 'regular',
   composedOf: [
     { component: 'FieldContainer', role: "The field frame around the multi-line input.", relationship: 'built-in' },

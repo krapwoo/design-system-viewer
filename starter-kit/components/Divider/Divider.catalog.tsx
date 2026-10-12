@@ -12,6 +12,7 @@ const styles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'Divider',
   group: 'Components',
+  whenToUse: 'A single hairline between two pieces of content you are laying out yourself. List already puts one between each pair of its rows, so adding your own there would double them.',
   specimenSize: 'regular',
   description: 'A 1px hairline separator at the divider token colour.',
   a11y: 'A plain, non-interactive View — purely decorative.',

@@ -13,6 +13,7 @@ const styles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'FieldContainer',
   group: 'Components',
+  whenToUse: 'Building a new kind of field. It carries the shared field chrome and reads the ambient Surface tone, so it stays visible on white and on muted backgrounds alike. For the fields that already exist, use InputField or TextArea instead of wrapping this yourself.',
   composedOf: [
     { component: 'Surface', role: "Reads the surrounding Surface tone: a recessed fill on white, opaque white inside a muted Surface.", relationship: 'related' },
   ],

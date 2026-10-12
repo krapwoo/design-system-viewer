@@ -12,6 +12,7 @@ const styles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'TopNav',
   group: 'Components',
+  whenToUse: 'A screen\'s top bar, and BottomSheet\'s header slot. Its leading and trailing slots reserve their width even when empty, so the title stays centred whether one, both, or neither side has content. For actions at the bottom of a screen, use Dock.',
   composedOf: [
     { component: 'Button', role: "The leading and trailing slots, typically small icon Buttons (back, close, an action).", relationship: 'slot' },
   ],

@@ -12,6 +12,7 @@ const styles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'Surface',
   group: 'Components',
+  a11y: 'No semantics of its own: it renders a plain filled View and passes its tone down through context, so it adds nothing to the accessibility tree and neither groups nor labels what sits inside it.',
   specimenSize: 'regular',
   description:
     "Declares \"this subtree's background is tone\" — renders a plain View filled with the matching token (surface.white or surface.main) and provides that tone to descendants via context, so a tone-aware component inside (e.g. FieldContainer/InputField) can automatically pick a fill that contrasts with it instead of assuming white.",

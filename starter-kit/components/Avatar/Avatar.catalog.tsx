@@ -32,6 +32,7 @@ const AVATAR_COMPARISON = grid(
 export default defineCatalogPage({
   component: 'Avatar',
   group: 'Components',
+  whenToUse: 'A person or place\'s identity in a circle. Pass whatever you have: image, icon, or initials are tried in that order, so a missing image degrades to initials without leaving a gap.',
   specimenSize: 'compact',
   comparison: AVATAR_COMPARISON,
   description: 'A circular image, or an initials fallback on a solid fill when there\'s no image (or it fails to load).',
