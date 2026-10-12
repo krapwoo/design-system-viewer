@@ -32,6 +32,11 @@ export default defineCatalogPage({
   component: 'ComparisonGrid',
   internalProps: { size: "The page's specimen size, passed by SectionBlock's layout.", surface: "The page's specimenSurface, passed by SectionBlock." },
   group: 'Components',
+  composedOf: [
+    { component: 'SpecimenSurface', role: "Backs every example cell, so one page's `specimenSurface` fills each cell the same way.", relationship: 'built-in' },
+    { component: 'SpecimenAddressProvider', role: "Wraps each example so a PhoneFrame inside it can reopen that one example in its own document.", relationship: 'built-in' },
+    { component: 'SpecimenContent', role: "Caps, centres and measures the example inside its cell.", relationship: 'built-in' },
+  ],
   whenToUse: 'Two props that combine freely, where a column means the same thing in every row — so a cell genuinely reads as "this value of A with that value of B". If the second axis differs per variant the shared column headers would be lying; use ComparisonGroups. For a single axis, use ComparisonList.',
   source: '../native/catalog/ComparisonGrid.tsx',
   specimenSize: 'page',

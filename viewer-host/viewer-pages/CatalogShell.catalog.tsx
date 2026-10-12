@@ -37,6 +37,7 @@ export default defineCatalogPage({
     { component: 'CatalogSidebar', role: 'The navigation column.', relationship: 'built-in' },
     { component: 'SectionBlock', role: 'Each catalog page.', relationship: 'built-in' },
     { component: 'UpdatePanel', role: 'The update page, opened from the sidebar footer.', relationship: 'built-in' },
+    { component: 'SpecimenAddressProvider', role: "Wraps the selected page so a PhoneFrame in it knows which example it is.", relationship: 'built-in' },
   ],
   hide: { props: true },
   description: "The whole catalog: a searchable sidebar plus one selected page. On web the page lives in the URL fragment (#Button), so refresh, deep links and back/forward work. These examples are live shells with `embedded`, which keeps the selected page in its own state instead of the URL. You're also reading a live CatalogShell right now.",

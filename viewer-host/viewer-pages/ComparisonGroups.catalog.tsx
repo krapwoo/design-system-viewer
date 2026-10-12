@@ -20,6 +20,11 @@ export default defineCatalogPage({
   component: 'ComparisonGroups',
   internalProps: { size: "The page's specimen size, passed by SectionBlock's layout.", surface: "The page's specimenSurface, passed by SectionBlock." },
   group: 'Components',
+  composedOf: [
+    { component: 'SpecimenSurface', role: "Backs every example cell, so one page's `specimenSurface` fills each cell the same way.", relationship: 'built-in' },
+    { component: 'SpecimenAddressProvider', role: "Wraps each example so a PhoneFrame inside it can reopen that one example in its own document.", relationship: 'built-in' },
+    { component: 'SpecimenContent', role: "Caps, centres and measures the example inside its cell.", relationship: 'built-in' },
+  ],
   whenToUse: 'Two axes where the second depends on the first: one variant per row, holding that variant\'s own configurations. Columns deliberately share no meaning across rows (a circle\'s size is not a bar\'s thickness), which is why every cell keeps its own caption. If a column does mean the same thing in every row, ComparisonGrid says so more clearly.',
   source: '../native/catalog/ComparisonGroups.tsx',
   specimenSize: 'page',
