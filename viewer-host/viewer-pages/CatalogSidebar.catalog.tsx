@@ -48,7 +48,7 @@ export default defineCatalogPage({
   ],
   hide: { props: true },
   description: 'Catalog navigation: app name, caption, a filter field, and one link per page under grouped headings. Selecting a link opens that page (CatalogShell owns which page is shown); the filter narrows this list only and never changes the open page. These examples are live — type in the filter or select a link to see it respond. Below the list sits one footer link to the update page: the installed version, or an update notice with a dot.',
-  a11y: 'Each group is a labelled list of links; the open page is the one marked `aria-current="page"`. The filter field is a search box that announces how many pages remain.',
+  a11y: 'A navigation landmark named "Catalog pages". Each entry is a link (a real anchor, so Enter works), and the open page carries `aria-current="page"`. The filter field is named "Filter components"; its group labels are plain text, and the empty result is visible text — neither is announced as a heading or a count yet.',
   variants: {
     items: [
       { key: 'version', name: 'Installed version in the footer', node: <SidebarDemo footer={{ label: 'DS Viewer 0.5.0', kind: 'version' }} /> },

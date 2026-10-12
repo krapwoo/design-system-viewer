@@ -493,6 +493,8 @@ Button
     `variants` (and `states`, where they differ) naming each real configuration. Token galleries
     and a declared `intentionalStaticPreview` are exempt; `render()` stays right for a token
     gallery or a whole-page layout.
+  - `internal-prop-unknown` — `internalProps` names something that is not a prop of the component,
+    so the exemption it was written for is not in effect. Correct the spelling or delete the entry.
   A page's `internalProps: { size: 'why' }` exempts a named prop from `option-not-covered` — for
   plumbing a parent passes (a layout size, an internal surface kind) rather than a value the
   reader picks. It needs a reason per prop, so the exemption is a visible declaration in the page;

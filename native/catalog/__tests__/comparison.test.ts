@@ -6,6 +6,8 @@ import path from 'node:path';
 import {
   COLUMN_MIN_WIDTH,
   MATRIX_LAYOUT,
+  PREVIEW_CARD_CHROME,
+  previewChrome,
   REFERENCE_COLUMN_GAP,
   REFERENCE_MIN_COLUMN_WIDTH,
   cellKey,
@@ -40,7 +42,6 @@ const valid = {
 };
 
 test('layout constants match the approved design', () => {
-  assert.equal(MATRIX_LAYOUT.columnMaxWidth, 402);
   assert.equal(MATRIX_LAYOUT.rowHeaderWidth, 120);
   assert.equal(MATRIX_LAYOUT.rowMinHeight, 150);
   assert.equal(MATRIX_LAYOUT.cellPadding, 16);
@@ -319,7 +320,8 @@ test('blockMinWidth is the narrowest a block renders at, Infinity for a whole-ro
   const [preview] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: 'full', render: () => null });
   assert.equal(blockMinWidth(preview), Infinity);
   const [fixed] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: [402, 320], render: () => null });
-  assert.equal(blockMinWidth(fixed), 320);
+  // The narrowest frame plus the card's padding and border on both sides.
+  assert.equal(blockMinWidth(fixed), 320 + 2 * CATALOG_SPACE.xl + 2);
 });
 
 test('propsColumns uses two columns only for 4+ props with room', () => {
@@ -512,4 +514,22 @@ test('presentationBlocks carries each item\'s own align override onto its ListIt
   const [groupedBlock] = presentationBlocks({ ...base, variants: groupedVariants, states: groupedStates });
   assert.equal(groupedBlock.kind, 'grouped');
   assert.equal(groupedBlock.kind === 'grouped' ? groupedBlock.groups[0].items[0].align : undefined, 'end');
+});
+
+test("a preview's minimum includes the card around it, so a half row never squeezes the frame", () => {
+  // The card's padding and border are real width: SectionBlock's previewCard style is built from
+  // the same constants, so a change to one is a change to both.
+  assert.equal(PREVIEW_CARD_CHROME.padding, CATALOG_SPACE.xl);
+  assert.equal(previewChrome('frames'), 2 * CATALOG_SPACE.xl + 2);
+  assert.equal(previewChrome('table'), 2 * MATRIX_LAYOUT.cellPadding + 2);
+  assert.equal(blockMinWidth({ kind: 'preview', title: 'Preview', widths: [370] }), 370 + 2 * CATALOG_SPACE.xl + 2);
+  assert.equal(blockMinWidth({ kind: 'preview', title: 'Preview', widths: 'full' }), Infinity);
+
+  // A phone-width preview beside a short block: side by side only once the half row covers the
+  // frame AND its card. Half must reach 402 + 50, so available must reach 2 * 452 + 28 = 932.
+  const preview = { kind: 'preview' as const, height: 560, minWidth: blockMinWidth({ kind: 'preview', title: 'Preview', widths: [402] }) };
+  const short = { kind: 'list' as const, height: 240, minWidth: 242, itemCount: 1, size: 'regular' as const };
+  assert.equal(choosePlacement({ available: 900, gap: 28, first: preview, second: short }), 'stacked');
+  assert.equal(choosePlacement({ available: 931, gap: 28, first: preview, second: short }), 'stacked');
+  assert.equal(choosePlacement({ available: 932, gap: 28, first: preview, second: short }), 'side');
 });

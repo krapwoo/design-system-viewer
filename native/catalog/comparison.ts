@@ -17,7 +17,6 @@ import type React from 'react';
  *  content width is a 1280px viewport minus the 264px sidebar and 32px side padding. */
 export const MATRIX_LAYOUT = {
   rowHeaderWidth: 120,
-  columnMaxWidth: 402,
   cellPadding: 16,
   rowMinHeight: 150,
   laptopContentWidth: 952,
@@ -43,7 +42,8 @@ export const REFERENCE_MIN_COLUMN_WIDTH = 280;
  *  use). */
 export const REFERENCE_COLUMN_GAP = 32;
 
-/** Smallest column or cell width per specimen size. Wide specimens are fixed at phone width. */
+/** Smallest column or cell width per specimen size. `wide` is phone width as a minimum, not a
+ *  maximum: cells share their container equally above it. */
 export const COLUMN_MIN_WIDTH: Record<SpecimenSize, number> = { compact: 160, regular: 240, wide: 402, page: 512 };
 
 /** `Array.isArray`'s built-in type guard narrows to a mutable `any[]`, which a `readonly T[]`
@@ -253,7 +253,7 @@ export type PresentationBlock =
   | { kind: 'grid'; title: string; size: SpecimenSize; comparison: ComparisonDef }
   | { kind: 'grouped'; title: string; size: SpecimenSize; groups: ListGroup[] }
   | { kind: 'list'; title: string; size: SpecimenSize; items: ListItem[]; maxColumns?: 1 | 2 | 3 | 4 | 5 }
-  | { kind: 'preview'; title: string; widths: PreviewWidths }
+  | { kind: 'preview'; title: string; widths: PreviewWidths; layout?: 'frames' | 'table' }
   | { kind: 'tokenSections'; title: string; sections: TokenSection[]; columns: 1 | 2 | 3 }
   | { kind: 'empty'; title: string; message: string };
 
@@ -355,7 +355,7 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
         ...slotColumnCap(def.variants),
       });
     } else if (def.render) {
-      blocks.push({ kind: 'preview', title: 'Preview', widths: previewWidths(def.previewWidths, options.defaultPreviewWidths) });
+      blocks.push({ kind: 'preview', title: 'Preview', widths: previewWidths(def.previewWidths, options.defaultPreviewWidths), ...(def.previewLayout ? { layout: def.previewLayout } : {}) });
     }
   }
 
@@ -394,6 +394,20 @@ export interface PlacementBlock {
 /** The narrowest a block renders at. Every card fills the column it is given, so this is a floor,
  *  not the width it will take: below it a grid scrolls inside itself and a list would push its
  *  cells under their minimum. `Infinity` means the block can only have a whole row. */
+/** What a preview card adds around its frames: `padding` (CATALOG_SPACE.xl) and a 1px border on
+ *  each side. `blockMinWidth` must add it, or a preview is offered a half-row that fits its frame
+ *  only after the card has taken its share, and the frame silently renders under phone width.
+ *  SectionBlock's `previewCard` style is built from these, so the two cannot drift. */
+export const PREVIEW_CARD_CHROME = { padding: 24, border: 1 } as const;
+/** The same for a `previewLayout: 'table'` card: no outer padding, a 1px border, and each cell
+ *  carries `cellPadding` on both sides of its frame. */
+export const TABLE_PREVIEW_CHROME = { padding: MATRIX_LAYOUT.cellPadding, border: 1 } as const;
+/** Total horizontal chrome for one preview frame in either card. */
+export function previewChrome(layout: 'frames' | 'table' | undefined): number {
+  const chrome = layout === 'table' ? TABLE_PREVIEW_CHROME : PREVIEW_CARD_CHROME;
+  return 2 * chrome.padding + 2 * chrome.border;
+}
+
 export function blockMinWidth(block: PresentationBlock): number {
   switch (block.kind) {
     case 'grid':
@@ -404,8 +418,9 @@ export function blockMinWidth(block: PresentationBlock): number {
       // One column: a list always wraps further rather than going below its size's minimum.
       return COLUMN_MIN_WIDTH[block.size] + 2;
     case 'preview':
-      // Fixed preview widths can share a row; a 'full' preview is the row.
-      return block.widths === 'full' ? Infinity : Math.min(...block.widths);
+      // Fixed preview widths can share a row; a 'full' preview is the row. The card's own chrome
+      // counts: the frame keeps its width only if the half row also covers the padding and border.
+      return block.widths === 'full' ? Infinity : Math.min(...block.widths) + previewChrome(block.layout);
     default:
       return Infinity;
   }

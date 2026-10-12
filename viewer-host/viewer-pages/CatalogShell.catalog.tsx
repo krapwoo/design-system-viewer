@@ -39,7 +39,7 @@ export default defineCatalogPage({
   ],
   hide: { props: true },
   description: "The whole catalog: a searchable sidebar plus one selected page. On web the page lives in the URL fragment (#Button), so refresh, deep links and back/forward work. These examples are live shells with `embedded`, which keeps the selected page in its own state instead of the URL. You're also reading a live CatalogShell right now.",
-  a11y: 'Selecting a page moves focus to its heading. The sidebar is a list of links grouped under headings.',
+  a11y: 'Selecting a page moves focus to its heading. The sidebar is a navigation landmark of links under plain-text group labels.',
   variants: {
     // A whole catalog is laptop-sized: one per row.
     maxColumns: 1,

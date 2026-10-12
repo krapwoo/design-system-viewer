@@ -177,6 +177,7 @@ export function buildCatalogSections<TId extends string>(
       previewLayout: page.previewLayout,
       hide: component ? page.hide : { ...page.hide, props: true },
       composedOf: page.composedOf,
+      internalProps: page.internalProps,
       intentionalStaticPreview: page.intentionalStaticPreview,
     };
   });

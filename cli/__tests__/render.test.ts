@@ -139,3 +139,31 @@ test('identicalVariantIssues names both examples and the card they share', () =>
   assert.match(issues[0].fix, /wider specimenSize/);
   assert.deepEqual(identicalVariantIssues({ id: 'X' }, []), []);
 });
+
+test('a failing identical-variants script is advisory, not a render-error for the page', async () => {
+  // The heading check answers, then the injected script throws — as it could on a detached child
+  // document. An advisory check must not become this page's error.
+  const browser = {
+    newPage: async () => {
+      let call = 0;
+      return {
+        setViewport: async () => {},
+        on: () => {},
+        goto: async () => {},
+        evaluate: async (arg: unknown) => {
+          call += 1;
+          if (call === 1) return ['#Button'];
+          if (typeof arg === 'string' && arg.includes('fingerprint')) throw new Error('Execution context was destroyed');
+          return true;
+        },
+        close: async () => {},
+      };
+    },
+    close: async () => {},
+  };
+  const issues = await renderCheck('/tmp/x', {
+    settleMs: 0,
+    deps: { puppeteer: { launch: async () => browser }, startDev: startedDev, stopDev: () => {} },
+  });
+  assert.deepEqual(issues, []);
+});

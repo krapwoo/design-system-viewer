@@ -90,7 +90,12 @@ export const IDENTICAL_VARIANTS_SCRIPT = `(() => {
         Math.round(box.width), Math.round(box.height),
         Math.round(box.left - base.left), Math.round(box.top - base.top),
         style.color, style.backgroundColor, style.borderColor, style.borderRadius,
-        style.fontSize, style.fontWeight, style.opacity,
+        style.fontSize, style.fontWeight, style.opacity, style.visibility,
+        // An icon page's variants are same-sized SVGs that differ only in geometry; a card page's
+        // in shadow; a text page's in style, decoration or alignment.
+        style.fill, style.stroke, style.boxShadow, style.fontStyle, style.textDecorationLine, style.textAlign,
+        el.getAttribute && (el.getAttribute('d') || el.getAttribute('points') || ''),
+        el.currentSrc || (el.getAttribute && el.getAttribute('src')) || '',
         el.children.length === 0 ? (el.textContent || '') : '',
         // A field's visible text is its value, not its textContent, which is always empty.
         el.value === undefined ? '' : String(el.value),
@@ -103,6 +108,9 @@ export const IDENTICAL_VARIANTS_SCRIPT = `(() => {
   };
   const pairs = [];
   for (const card of doc.querySelectorAll('[role=list][aria-label]')) {
+    // ComparisonList and ComparisonGroups label their card "<page id>: <block title>". Anything
+    // else with role=list is a consumer's own component inside a specimen, not a card of examples.
+    if (!/^[^:]+: .+/.test(card.getAttribute('aria-label') || '')) continue;
     const cells = [...card.querySelectorAll('[role=listitem]')].filter((c) => c.closest('[role=list]') === card);
     const byPrint = new Map();
     for (const cell of cells) {
@@ -329,9 +337,15 @@ export async function renderCheck(
           return Boolean(doc.querySelector('[role="heading"]')?.textContent?.trim());
         });
         issues.push(...issuesFromPage({ id, file: options.files?.get(id) }, messages, hasHeading, seen));
-        // A browser that can't run the script (or a stub in a test) yields nothing to report
-        // rather than failing the page; the check is advisory.
-        const identical = (await page!.evaluate(IDENTICAL_VARIANTS_SCRIPT)) as IdenticalPair[] | undefined;
+        // Advisory: a script failure (a detached child document mid-navigation, an element whose
+        // `value` getter throws) must not become this page's render-error, so it has its own catch
+        // rather than falling into the one below.
+        let identical: IdenticalPair[] | undefined;
+        try {
+          identical = (await page!.evaluate(IDENTICAL_VARIANTS_SCRIPT)) as IdenticalPair[] | undefined;
+        } catch {
+          identical = undefined;
+        }
         if (Array.isArray(identical)) issues.push(...identicalVariantIssues({ id, file: options.files?.get(id) }, identical));
         await page!.close();
       } catch (error) {

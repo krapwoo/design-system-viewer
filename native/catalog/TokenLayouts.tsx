@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { sectionColumns, tileGeometry, TOKEN_LAYOUT_GAP, TOKEN_SECTION_MIN_WIDTH } from './tokenLayout';
@@ -23,8 +23,14 @@ export function TokenSections({ sections, columns, label }: { sections: TokenSec
   const perRow = sectionColumns(width, columns);
   // Degrading quietly is how a page ends up claiming a column count it never renders: the author
   // reads `columns={3}`, the reader sees one column, and nothing says the space was the reason.
-  if (__DEV__ && width > 0 && perRow < columns) {
-    console.warn(`[Catalog] ${label ?? 'TokenSections'}: asked for ${columns} columns but only ${perRow} fit in ${width}px; sections never go below ${TOKEN_SECTION_MIN_WIDTH}px.`);
+  // Once per transition, not once per render: a resize re-renders continuously.
+  const warned = useRef('');
+  if (width > 0 && perRow < columns && (globalThis as { __DEV__?: boolean }).__DEV__) {
+    const key = `${columns}:${perRow}`;
+    if (warned.current !== key) {
+      warned.current = key;
+      console.warn(`[Catalog] ${label ?? 'TokenSections'}: asked for ${columns} columns but only ${perRow} fit in ${width}px; sections never go below ${TOKEN_SECTION_MIN_WIDTH}px.`);
+    }
   }
   const columnWidth = perRow === 1 ? width : (width - TOKEN_LAYOUT_GAP * (perRow - 1)) / perRow;
   return (

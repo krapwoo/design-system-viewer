@@ -447,6 +447,17 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
     // Props the page declares as plumbing the reader never picks (with a reason) are not expected
     // to have an example per option; see `internalProps`.
     const internalProps = new Set(page.internalProps ?? []);
+    // A misspelled key silently exempts nothing, so the author sees the warnings it was meant to
+    // settle and no reason why — the same reasoning as propNotes' own key check.
+    for (const name of internalProps) {
+      if (!propsByName.has(name)) {
+        issues.push(issue({
+          id: 'internal-prop-unknown', severity: 'warning', ...ref,
+          message: `internalProps names "${name}", which is not a prop of ${component.name}.`,
+          fix: `Correct the spelling, or delete the "${name}" entry — it exempts nothing as written.`,
+        }));
+      }
+    }
     for (const prop of component.props) {
       if (!prop.options || internalProps.has(prop.name)) continue;
       const covered = new Set<string>();

@@ -9,7 +9,7 @@ import { SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
-import { MATRIX_LAYOUT, blockMinWidth, choosePlacement, presentationBlocks, type PlacementBlock, type PresentationBlock } from './comparison';
+import { MATRIX_LAYOUT, PREVIEW_CARD_CHROME, blockMinWidth, choosePlacement, presentationBlocks, type PlacementBlock, type PresentationBlock } from './comparison';
 import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
 
 // Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
@@ -398,10 +398,11 @@ const styles = StyleSheet.create({
   },
   previewCard: {
     backgroundColor: CATALOG_COLOR.surface,
-    borderWidth: 1,
+    // From comparison.ts, which adds the same numbers to a preview's minimum width.
+    borderWidth: PREVIEW_CARD_CHROME.border,
     borderColor: CATALOG_COLOR.borderStrong,
     borderRadius: CATALOG_RADIUS.card,
-    padding: CATALOG_SPACE.xl,
+    padding: PREVIEW_CARD_CHROME.padding,
     gap: CATALOG_SPACE.md,
   },
   // `ComparisonList`'s own card/caption tokens, reused so a 'table' preview reads as the same shared

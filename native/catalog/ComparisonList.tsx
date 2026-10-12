@@ -10,7 +10,7 @@ import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 /**
  * One-axis examples inside ONE shared card. Cells wrap into balanced rows (listGeometry); each cell
  * has its own caption strip so labels stay attached when rows wrap. Blank cells complete an uneven
- * last row. Wide specimens use fixed 402px cells and the card hugs its columns. `maxColumns` caps
+ * last row. Wide specimens keep 402px as a minimum and share the container above it. `maxColumns` caps
  * how many columns a row ever wraps into (from `VariantSlot.maxColumns`); `surface` is the page's
  * `specimenSurface` behind each item.
  */
