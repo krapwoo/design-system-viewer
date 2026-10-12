@@ -9,7 +9,7 @@ import { SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
-import { MATRIX_LAYOUT, choosePlacement, listGeometry, presentationBlocks, type PresentationBlock } from './comparison';
+import { MATRIX_LAYOUT, PREVIEW_CARD_CHROME, blockMinWidth, choosePlacement, presentationBlocks, type PlacementBlock, type PresentationBlock } from './comparison';
 import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
 
 // Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
@@ -184,7 +184,7 @@ function BlockContent<TId extends string>({ block, def, surface }: { block: Pres
         </SpecimenAddressProvider>
       ) : null;
     case 'tokenSections':
-      return <TokenSections sections={block.sections} columns={block.columns} />;
+      return <TokenSections sections={block.sections} columns={block.columns} label={def.id} />;
     default:
       return (
         <View style={styles.previewCard}>
@@ -195,8 +195,13 @@ function BlockContent<TId extends string>({ block, def, surface }: { block: Pres
 }
 
 /** Width a block's card occupies: lists hug their columns; everything else fills the row. */
-function blockWidth(block: PresentationBlock, available: number): number {
-  return block.kind === 'list' ? listGeometry(block.items.length, available, block.size, block.maxColumns).containerWidth : available;
+
+
+/** What `choosePlacement` needs about a block: how narrow it can get, and (for a list) the geometry
+ *  that predicts its height in half a row. */
+function placementBlock(block: PresentationBlock, height: number): PlacementBlock {
+  const base = { kind: block.kind, height, minWidth: blockMinWidth(block) };
+  return block.kind === 'list' ? { ...base, itemCount: block.items.length, size: block.size, maxColumns: block.maxColumns } : base;
 }
 
 /**
@@ -236,10 +241,8 @@ function Blocks<TId extends string>({ blocks, def, surface }: { blocks: Presenta
     const decision = choosePlacement({
       available,
       gap: CATALOG_LAYOUT.blockGap,
-      first: { kind: first.kind, width: blockWidth(first, available), height: heights[0] },
-      second: second.kind === 'list'
-        ? { kind: 'list', height: heights[1], itemCount: second.items.length, size: second.size, maxColumns: second.maxColumns }
-        : { kind: second.kind, height: heights[1] },
+      first: placementBlock(first, heights[0]),
+      second: placementBlock(second, heights[1]),
     });
     if (decision === 'side') setPlacement('side');
   }, [available, blocks, heights, placement]);
@@ -251,7 +254,8 @@ function Blocks<TId extends string>({ blocks, def, surface }: { blocks: Presenta
         <View
           key={block.title || block.kind}
           onLayout={onBlockLayout(i)}
-          style={side ? (i === 0 ? { width: blockWidth(block, available), flexShrink: 0 } : styles.blockFill) : undefined}
+          // Side by side, each block fills its own half: a card always fills the column it is given.
+          style={side ? styles.blockFill : undefined}
         >
           {block.title ? <Text style={styles.blockLabel}>{block.title}</Text> : null}
           <BlockContent block={block} def={def} surface={surface} />
@@ -394,10 +398,11 @@ const styles = StyleSheet.create({
   },
   previewCard: {
     backgroundColor: CATALOG_COLOR.surface,
-    borderWidth: 1,
+    // From comparison.ts, which adds the same numbers to a preview's minimum width.
+    borderWidth: PREVIEW_CARD_CHROME.border,
     borderColor: CATALOG_COLOR.borderStrong,
     borderRadius: CATALOG_RADIUS.card,
-    padding: CATALOG_SPACE.xl,
+    padding: PREVIEW_CARD_CHROME.padding,
     gap: CATALOG_SPACE.md,
   },
   // `ComparisonList`'s own card/caption tokens, reused so a 'table' preview reads as the same shared

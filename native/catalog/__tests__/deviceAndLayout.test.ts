@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeOverlayAddress, encodeOverlayAddress, findOverlayNode } from '../overlayViewport.ts';
 import { DEVICE_FRAME, deviceFrameScale } from '../deviceFrame.ts';
-import { overflowsCell, paintedExtent, shouldCenterFilledContent, visibleBoxes, type LayoutBox } from '../specimenSurfaceStyle.ts';
-import { presentationBlocks } from '../comparison.ts';
+import { FILLED_CONTENT_MAX_WIDTH, filledContentStyle, overflowsCell, paintedExtent, shouldCenterFilledContent, visibleBoxes, type LayoutBox } from '../specimenSurfaceStyle.ts';
+import { COLUMN_MIN_WIDTH, gridMinWidth, listGeometry, presentationBlocks } from '../comparison.ts';
 import type { SectionDef } from '../types.ts';
 
 test('the device frame is a real phone viewport: iPhone SE, 375 × 667 points', () => {
@@ -66,4 +66,31 @@ test('visibleBoxes stops at a clipping or scrolling container: its own box count
   };
   assert.equal(paintedExtent(visibleBoxes(tree)), 370);
   assert.equal(overflowsCell(paintedExtent(visibleBoxes(tree)), 370), false);
+});
+
+test("a filled example (a field, a dropdown, a full-width button) is at most a phone's content width, centred, however wide its cell", () => {
+  assert.equal(FILLED_CONTENT_MAX_WIDTH, 370);
+  assert.deepEqual(filledContentStyle(), { width: '100%', maxWidth: 370, alignSelf: 'center' });
+});
+
+test("specimenSize 'page' is for components wider than a phone: cells at least 512px, sharing the row", () => {
+  assert.equal(COLUMN_MIN_WIDTH.page, 512);
+  // A 1280px laptop (952px content): 4 states → one per row, full width.
+  assert.deepEqual(listGeometry(4, 952, 'page'), { columns: 1, rows: 4, fillers: 0, cellWidth: 950, containerWidth: 952 });
+  // A 1728px window (~1200px content): 2 across, sharing the row equally.
+  assert.deepEqual(listGeometry(4, 1200, 'page'), { columns: 2, rows: 2, fillers: 0, cellWidth: 599, containerWidth: 1200 });
+  // Every size shares the container: phone width caps the specimen inside a cell, not the cell.
+  assert.equal(listGeometry(2, 1200, 'regular').cellWidth, 599);
+  assert.equal(listGeometry(2, 1200, 'regular').containerWidth, 1200);
+  // A grid's columns always share the container; only its minimum depends on the size.
+  assert.equal(gridMinWidth(2, 'page'), 120 + 2 * 512);
+  assert.equal(gridMinWidth(2, 'regular'), 120 + 2 * 240);
+});
+
+test("'page' examples fill their cell by default, without the phone-width cap", () => {
+  const items = [{ key: 'a', name: 'A', node: null }, { key: 'b', name: 'B', node: null, fill: false }];
+  const [block] = presentationBlocks({ id: 'X', path: 'p', description: 'd', specimenSize: 'page', variants: { items } });
+  assert.deepEqual(block.kind === 'list' && block.items.map((i) => i.fill), [true, false], 'an explicit fill: false still wins');
+  assert.deepEqual(filledContentStyle(false), { width: '100%', alignSelf: 'center' });
+  assert.deepEqual(filledContentStyle(), { width: '100%', maxWidth: 370, alignSelf: 'center' });
 });

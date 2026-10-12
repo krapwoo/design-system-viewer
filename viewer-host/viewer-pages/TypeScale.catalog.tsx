@@ -3,7 +3,9 @@ import { defineCatalogPage, TypeScaleGallery, CATALOG_TYPE, CATALOG_TYPE_USE } f
 
 export default defineCatalogPage({
   id: 'Type Scale',
-  group: 'Viewer',
+  title: 'Type scale',
+  group: 'Tokens',
+  source: '../native/catalog/tokens.ts',
   previewWidths: 'full',
   tokenGallery: true,
   description: 'The catalog chrome\'s own font-size scale (sizes only — no weights/line-heights, unlike the host app\'s own typography tokens). Every chrome font size in this framework — headings, labels, prop tables, nav, notes — draws from this scale.',

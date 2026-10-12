@@ -155,6 +155,10 @@ export interface StaticPage {
    *  left unset (not fabricated, not a "not checkable" penalty, same leniency as `whenToUse`/`a11y`
    *  presence checks: this never affects `page.checkable`). */
   intentionalStaticPreviewReason?: string;
+  /** `CatalogPageInput.internalProps` keys whose reason is a string literal — props the reader
+   *  never chooses, exempt from `option-not-covered`. A non-literal reason is not read, the same
+   *  way `intentionalStaticPreviewReason` is literal-only. */
+  internalProps?: string[];
 }
 
 const TRANSPILE_OPTIONS: ts.TranspileOptions = {
@@ -317,6 +321,21 @@ function readStaticPage(file: string): StaticPage {
     if (ts.isObjectLiteralExpression(resolved)) {
       const reasonProp = findProp(resolved, 'reason');
       if (reasonProp) page.intentionalStaticPreviewReason = stringLiteral(resolve(reasonProp.initializer, consts, new Set()));
+    }
+  }
+
+  const internalPropsProp = findProp(pageObject, 'internalProps');
+  if (internalPropsProp) {
+    const resolved = resolve(internalPropsProp.initializer, consts, new Set());
+    if (ts.isObjectLiteralExpression(resolved)) {
+      const names: string[] = [];
+      for (const prop of resolved.properties) {
+        if (!ts.isPropertyAssignment(prop)) continue;
+        const name = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) ? prop.name.text : undefined;
+        const reason = stringLiteral(resolve(prop.initializer, consts, new Set()));
+        if (name && reason) names.push(name);
+      }
+      if (names.length > 0) page.internalProps = names;
     }
   }
 

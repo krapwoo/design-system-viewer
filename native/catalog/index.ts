@@ -50,7 +50,7 @@ export type {
 } from './types';
 export { UpdatePanel } from './UpdatePanel';
 export { UPDATE_PAGE_ID } from './catalogNavigation';
-export type { UpdateNotice } from './types';
+export type { UpdateNotice, VersionStatus, AutoCheckSource } from './types';
 export type { ListGroup, ListItem } from './comparison';
 export {
   CATALOG_TYPE,

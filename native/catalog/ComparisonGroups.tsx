@@ -10,9 +10,10 @@ import type { SpecimenSize, SpecimenSurfaceKind } from './types';
 /**
  * Grouped rows: one row per variant, headed by the variant's name, holding that variant's own
  * configurations. Each cell keeps its own caption because the rows do not share column meanings
- * (a circle's size is not a bar's thickness). Each row is its own labeled list. Shorter rows end
- * in blank cells; a card wider than its container scrolls horizontally inside itself. `surface` is
- * the page's `specimenSurface` behind each item.
+ * (a circle's size is not a bar's thickness). Each row is its own labeled list. Cells share the
+ * card's width equally, the way a grid's columns do, and shorter rows end in blank cells; a card
+ * narrower than its minimum scrolls horizontally inside itself. `surface` is the page's
+ * `specimenSurface` behind each item.
  */
 export function ComparisonGroups({
   groups,
@@ -53,7 +54,7 @@ export function ComparisonGroups({
                     </View>
                     <SpecimenSurface surface={item.surface ?? surface} style={styles.specimen}>
                       <SpecimenAddressProvider address={pageId && item.slot ? { pageId, slot: item.slot, itemKey: item.key } : undefined}>
-                        <SpecimenContent fill={item.fill} align={item.align}>{item.node as React.ReactNode}</SpecimenContent>
+                        <SpecimenContent fill={item.fill} align={item.align} capped={size !== 'page'}>{item.node as React.ReactNode}</SpecimenContent>
                       </SpecimenAddressProvider>
                     </SpecimenSurface>
                   </View>
@@ -91,7 +92,7 @@ const styles = StyleSheet.create({
   },
   rowHeaderText: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
   cells: { flex: 1, flexDirection: 'row' },
-  cell: { flex: 1, maxWidth: MATRIX_LAYOUT.columnMaxWidth, borderRightWidth: 1, borderRightColor: CATALOG_COLOR.border },
+  cell: { flex: 1, borderRightWidth: 1, borderRightColor: CATALOG_COLOR.border },
   lastColumn: { borderRightWidth: 0 },
   caption: {
     padding: MATRIX_LAYOUT.cellPadding,

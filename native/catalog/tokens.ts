@@ -11,15 +11,17 @@
  * `textMuted` stays #666666 because the references' #777777 fails WCAG AA contrast.
  */
 
+/** Owner decision 2026-10-11: only 10, 12, 14, 16, 18, 24, 28, 32 and 40. Named roles share a
+ *  step (tableHeader and panelHeading are 12, brand is 18). */
 export const CATALOG_TYPE = {
   xs: 10,
-  tableHeader: 11,
+  tableHeader: 12,
   sm: 12,
-  panelHeading: 13,
+  panelHeading: 12,
   md: 14,
   lg: 16,
-  brand: 17,
-  xl: 20,
+  brand: 18,
+  xl: 18,
   '2xl': 24,
   pageTitle: 28,
   '3xl': 32,
@@ -82,8 +84,8 @@ export const CATALOG_TYPE_USE: Record<keyof typeof CATALOG_TYPE, string> = {
   md: 'Default body text: descriptions, nav links, grid row headers, quick-reference rows, the filter field.',
   lg: 'Pager arrows and the filter field\'s clear (×) glyph.',
   brand: 'The app name at the top of the sidebar.',
-  xl: 'Reserved — no current consumer.',
-  '2xl': 'Reserved — no current consumer.',
+  xl: "The major-update banner's close (×) glyph.",
+  '2xl': "The update page's version numbers and the arrow between them.",
   pageTitle: 'The selected page\'s title.',
   '3xl': 'Reserved — no current consumer.',
   '4xl': 'Reserved — no current consumer.',

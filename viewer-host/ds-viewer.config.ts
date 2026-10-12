@@ -7,8 +7,9 @@ import { defineConfig } from '@krapwoo/ds-viewer/config';
 export default defineConfig({
   name: 'DS Viewer internals',
   logo: './assets/logo.png',
-  components: [],
+  components: ['../native/catalog/*.tsx'],
   tokens: ['../native/catalog/tokens.ts'],
   pages: ['viewer-pages/*.catalog.tsx'],
+  groupOrder: ['Tokens', 'Components'],
   updateCheck: false,
 });

@@ -45,12 +45,16 @@ test('colors match the approved visual system', () => {
 });
 
 test('type, radius, and layout values match the approved references', () => {
+  // Owner decision 2026-10-11: the catalog's type uses only these sizes.
+  const SCALE = [10, 12, 14, 16, 18, 24, 28, 32, 40];
+  for (const [name, size] of Object.entries(CATALOG_TYPE)) assert.ok(SCALE.includes(size), `${name}: ${size}`);
+  assert.deepEqual([...new Set(Object.values(CATALOG_TYPE))].sort((a, b) => a - b), SCALE, 'every step of the scale has a token');
   assert.equal(CATALOG_TYPE.xs, 10);
-  assert.equal(CATALOG_TYPE.tableHeader, 11);
+  assert.equal(CATALOG_TYPE.tableHeader, 12);
   assert.equal(CATALOG_TYPE.sm, 12);
-  assert.equal(CATALOG_TYPE.panelHeading, 13);
+  assert.equal(CATALOG_TYPE.panelHeading, 12);
   assert.equal(CATALOG_TYPE.md, 14);
-  assert.equal(CATALOG_TYPE.brand, 17);
+  assert.equal(CATALOG_TYPE.brand, 18);
   assert.equal(CATALOG_TYPE.pageTitle, 28);
   assert.deepEqual({ ...CATALOG_RADIUS }, { sm: 8, control: 9, md: 12, card: 14 });
   assert.equal(CATALOG_LAYOUT.sidebarWidth, 264);

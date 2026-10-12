@@ -3,7 +3,7 @@ import { readStaticPages, type StaticListItem, type StaticPage } from './staticP
 import { discoverAllPageFiles, resolvePageId } from './pageIndex.ts';
 import { resolveGlob } from './glob.ts';
 import {
-  axisItems, choosePlacement, gridColumnLimit, listGeometry, presentationBlocks, MATRIX_LAYOUT,
+  axisItems, blockMinWidth, choosePlacement, gridColumnLimit, listGeometry, presentationBlocks, MATRIX_LAYOUT,
   type PlacementBlock, type PresentationBlock,
 } from '../native/catalog/comparison.ts';
 import { CATALOG_LAYOUT } from '../native/catalog/tokens.ts';
@@ -152,23 +152,14 @@ function explainBlock(block: PresentationBlock): ExplainBlockResult {
   return { kind: 'empty', title: block.title, reason: block.message };
 }
 
-/** Mirrors `native/catalog/SectionBlock.tsx`'s own `blockWidth` helper: a list block's width is its
- *  own natural, content-hugging width (`listGeometry`'s `containerWidth`) — the real viewer only
- *  ever moves a *second* block beside a *first* one when that first block doesn't already fill the
- *  whole row, so `choosePlacement` only reads `first.width` (never `second.width`) — but it's
- *  computed uniformly here for either role, since setting it on `second` is simply unused, not wrong. */
-function toPlacementBlock(block: PresentationBlock, height: number, available: number): PlacementBlock {
-  if (block.kind === 'list') {
-    return {
-      kind: 'list',
-      height,
-      itemCount: block.items.length,
-      size: block.size,
-      maxColumns: block.maxColumns,
-      width: listGeometry(block.items.length, available, block.size, block.maxColumns).containerWidth,
-    };
-  }
-  return { kind: block.kind, height };
+/** Mirrors `native/catalog/SectionBlock.tsx`'s own `placementBlock` helper: side by side splits the
+ *  row in two and each block fills its half, so the decision needs each block's narrowest width
+ *  plus, for a list, the geometry that predicts its height in half a row. */
+function toPlacementBlock(block: PresentationBlock, height: number): PlacementBlock {
+  const base = { kind: block.kind, height, minWidth: blockMinWidth(block) };
+  return block.kind === 'list'
+    ? { ...base, itemCount: block.items.length, size: block.size, maxColumns: block.maxColumns }
+    : base;
 }
 
 /** Finds `pageId` among every page `cli/doctor.ts`'s own `discoverAllPageFiles` would find, builds
@@ -205,8 +196,8 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
       const decision = choosePlacement({
         available: MATRIX_LAYOUT.laptopContentWidth,
         gap: CATALOG_LAYOUT.blockGap,
-        first: toPlacementBlock(blocks[0], firstHeight, MATRIX_LAYOUT.laptopContentWidth),
-        second: toPlacementBlock(blocks[1], secondHeight, MATRIX_LAYOUT.laptopContentWidth),
+        first: toPlacementBlock(blocks[0], firstHeight),
+        second: toPlacementBlock(blocks[1], secondHeight),
       });
       placement = {
         decision,

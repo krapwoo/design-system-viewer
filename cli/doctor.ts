@@ -303,6 +303,24 @@ function findControlledPair(component: ComponentRecord): { valueProp: string; ch
  *   - no example directly renders the component at all, or any direct example's value/callback is
  *     `'unknown'` — genuinely uncheckable, and "uncheckable" must never be reported as "inert".
  *  Never a newly-fatal gate: always a warning, same as every other advisory in this file. */
+/** A component page whose only examples are a free-form `render()` preview: nothing is named, so
+ *  the reader sees one picture instead of the component's real variants and states, and several
+ *  other rules here (`missing-working-preview`, the option-coverage rules) are skipped because
+ *  they have no named example to read. A token gallery is exempt — raw token data has no variants
+ *  — and so is a page that says `intentionalStaticPreview` with a reason. */
+function checkPreviewOnlyPages(pages: StaticPage[]): DoctorIssue[] {
+  return pages
+    .filter((page) =>
+      page.component !== undefined && page.checkable && page.hasRender === true && !page.tokenGallery
+      && !page.intentionalStaticPreviewReason
+      && !page.comparison && !page.variantsItems?.length && !page.statesItems?.length && !page.tokenSectionTitles?.length)
+    .map((page) => issue({
+      id: 'preview-only-component-page', severity: 'warning', ...pageRef(page),
+      message: `"${page.component}" is documented by a render() preview alone, with no named variants, states or comparison.`,
+      fix: 'Give the page variants (and states, where they differ) naming each real configuration, so every example has a caption and the other checks can read them. Keep render() for token galleries and whole-page layouts.',
+    }));
+}
+
 function checkMissingWorkingPreview(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
   const componentsByName = new Map(components.map((c) => [c.name, c]));
   const issues: DoctorIssue[] = [];
@@ -426,8 +444,25 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
       }
     }
 
+    // Props the page declares as plumbing the reader never picks (with a reason) are not expected
+    // to have an example per option; see `internalProps`.
+    const internalProps = new Set(page.internalProps ?? []);
+    // A misspelled key silently exempts nothing, so the author sees the warnings it was meant to
+    // settle and no reason why — the same reasoning as propNotes' own key check.
+    for (const name of internalProps) {
+      // `component.props` deliberately omits a node_modules-declared prop (cli/props.ts), so an
+      // inherited name such as `autoCapitalize` is expected to be absent rather than misspelled —
+      // the same exemption the tagged-item check above makes.
+      if (!propsByName.has(name) && component.inheritedFrom.length === 0) {
+        issues.push(issue({
+          id: 'internal-prop-unknown', severity: 'warning', ...ref,
+          message: `internalProps names "${name}", which is not a prop of ${component.name}.`,
+          fix: `Correct the spelling, or delete the "${name}" entry — it exempts nothing as written.`,
+        }));
+      }
+    }
     for (const prop of component.props) {
-      if (!prop.options) continue;
+      if (!prop.options || internalProps.has(prop.name)) continue;
       const covered = new Set<string>();
       if (page.comparison) {
         for (const axis of [page.comparison.rows, page.comparison.columns]) {
@@ -471,10 +506,15 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
         fix: 'Add a one-sentence whenToUse note disambiguating this component from its closest look-alike(s), or omit it only when there genuinely is none.',
       }));
     }
-    if (!page.tokenGallery && page.hasA11y === false && !page.hidesAccessibility) {
+    // `hide: { accessibility: true }` is a display choice, not an exemption from documenting the
+    // component: hiding the section only removes the visible placeholder, so without this the gap
+    // becomes invisible to both the reader and the doctor.
+    if (!page.tokenGallery && page.hasA11y === false) {
       issues.push(issue({
         id: 'missing-guidance-or-a11y', severity: 'warning', ...ref,
-        message: 'No "a11y" notes documented.',
+        message: page.hidesAccessibility
+          ? 'No "a11y" notes documented, and the page hides the accessibility section.'
+          : 'No "a11y" notes documented.',
         fix: 'Add a one-sentence a11y note, grounded in the component\'s real behavior — even "no explicit handling beyond defaults" is better than leaving it blank.',
       }));
     }
@@ -496,6 +536,7 @@ export function collectIssues(pages: StaticPage[], components: ComponentRecord[]
     ...checkComponentPages(pages, components),
     ...checkMissingComposition(pages, components),
     ...checkMissingWorkingPreview(pages, components),
+    ...checkPreviewOnlyPages(pages),
   ];
 }
 

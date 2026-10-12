@@ -142,3 +142,14 @@ export function visibleBoxes(root: LayoutBox): { left: number; right: number; pa
   walk(root, true);
   return out;
 }
+
+/** The widest a filled example gets: a phone's content width (402 minus 16 px padding each side).
+ *  Fields, dropdowns and full-width buttons fill a phone's width in real use, so a wider cell would
+ *  misrepresent them. Examples that aren't filled keep their own width. */
+export const FILLED_CONTENT_MAX_WIDTH = 370;
+
+/** The wrapper style for a filled example: full width up to `FILLED_CONTENT_MAX_WIDTH`, centred.
+ *  `capped: false` (page-width examples) fills the whole cell. */
+export function filledContentStyle(capped = true): { width: '100%'; maxWidth?: number; alignSelf: 'center' } {
+  return capped ? { width: '100%', maxWidth: FILLED_CONTENT_MAX_WIDTH, alignSelf: 'center' } : { width: '100%', alignSelf: 'center' };
+}

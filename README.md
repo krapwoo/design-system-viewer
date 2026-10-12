@@ -175,13 +175,18 @@ when the card is too narrow even for two. The specimens use one of four layouts:
 - **Preview** — `render()` content. Component previews render at phone width (402px), optionally
   with more widths such as a 320px small phone; token galleries and catalog chrome stay full width.
 
-When a page has two blocks, the catalog places them side by side if that makes the page at least
-120px shorter (e.g. Dropdown), and stacks them otherwise. A block with nothing to show is omitted.
+When a page has two blocks, the catalog places them side by side — the row split into two equal
+columns, each block filling its own — if both keep their minimum width there and it makes the page
+at least 120px shorter (e.g. Dropdown); otherwise they stack, each filling the whole row. A block
+with nothing to show is omitted.
 
-Grid columns and list cells are at most 402px wide with 16px padding. A page's `specimenSize`
-(`compact` 160px, `regular` 240px, `wide` 402px) sets the minimum width; full-width (`itemsFill`)
-slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`, never from
-the host app's tokens.
+Every card fills the column it is given, and its columns or cells share that width equally: a
+two-column grid is as wide as a five-column one, and a two-item list is as wide as a six-item one.
+Phone width (402px, 370px of content) caps the specimen inside a cell, not the cell. A page's
+`specimenSize` (`compact` 160px, `regular` 240px, `wide` 402px) sets the minimum column width — a
+card narrower than its minimum scrolls inside itself rather than squeezing its cells. Full-width
+(`itemsFill`) slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`,
+never from the host app's tokens.
 
 ## Adding a component (the recipe)
 
@@ -201,7 +206,9 @@ actually apply:
   combination does not exist. Never multiply `variants` by `states` to fill it. Keep the column axis
   within what fits a 1280px laptop: 5 compact, 3 regular, or 2 wide columns. `states` items whose
   key matches a row or column key are not repeated below the grid.
-- `specimenSize: 'compact' | 'regular' | 'wide'` — the page's specimen width class.
+- `specimenSize: 'compact' | 'regular' | 'wide' | 'page'` — the page's specimen width class. `'page'`
+  is for components wider than a phone (a whole screen layout, a catalog page): cells are at least
+  512px and share the row, with no 402px cap.
 - `specimenSurface: 'auto' | 'neutral' | 'white' | 'dark' | 'transparent'` — the fill of each
   example's cell (list, grouped and grid cells, and a non-token `render()` preview). Defaults to
   `'auto'`: after the page draws, a cell turns light gray only when its own example would vanish
@@ -481,6 +488,17 @@ Button
     or `x`/`onXChange`) but every example that renders it passes a fixed value with no working
     callback. Add `intentionalStaticPreview: { reason: '...' }` to the page to suppress it when the
     static examples are deliberate.
+  - `preview-only-component-page` — a component page's only examples are a free-form `render()`
+    preview, so nothing is named and the checks above have no example to read. Give the page
+    `variants` (and `states`, where they differ) naming each real configuration. Token galleries
+    and a declared `intentionalStaticPreview` are exempt; `render()` stays right for a token
+    gallery or a whole-page layout.
+  - `internal-prop-unknown` — `internalProps` names something that is not a prop of the component,
+    so the exemption it was written for is not in effect. Correct the spelling or delete the entry.
+  A page's `internalProps: { size: 'why' }` exempts a named prop from `option-not-covered` — for
+  plumbing a parent passes (a layout size, an internal surface kind) rather than a value the
+  reader picks. It needs a reason per prop, so the exemption is a visible declaration in the page;
+  when the reader really does choose the value, tag an example with `props` instead.
   The analyzer follows supported aliases and resolved exports, but uncertain wrappers or
   dynamically-constructed references remain uncheckable rather than being guessed at. A
   declared `intentionalStaticPreview` is taken as the author's own call, not independently
@@ -498,6 +516,11 @@ and adds what only a real render shows:
 - `render-error` / `render-no-heading` (errors): a console error, or a page that didn't render.
 - `render-layout` (warning): an example wider than its cell (the viewer's own check), with the
   page and file. `render-catalog-warning` (warning): any other `[Catalog]` warning, reported once.
+- `identical-variants` (warning): two examples in the same card whose specimens render identically,
+  so the difference their names claim isn't visible — usually a cell too narrow to show it, or a
+  prop that was never wired up. The fingerprint reads each specimen's whole subtree (including a
+  PhoneFrame's child document and a field's value) but not the caption carrying the variant's own
+  name, so two examples differing only in colour are not reported.
 - `render-unavailable` / `render-failed` (errors): no browser, or the catalog didn't start.
 
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't

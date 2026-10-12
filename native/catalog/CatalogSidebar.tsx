@@ -13,12 +13,21 @@ function webLinkProps(id: string, active: boolean) {
 
 /** One nav link. Hover via onHoverIn/onHoverOut (react-native-web fires them; native never does);
  *  keyboard focus draws the catalog focus ring because react-native-web removes the browser's. */
-function NavItem<TId extends string>({ id, label, active, onPress }: { id: TId; label: string; active: boolean; onPress: () => void }) {
+/** In an embedded shell, a link's own navigation would change the host page's address; the shell
+ *  handles the press itself, so the browser's default is cancelled. */
+function pressHandler(onPress: () => void, keepDocumentUrl: boolean) {
+  return (event?: { preventDefault?: () => void }) => {
+    if (keepDocumentUrl) event?.preventDefault?.();
+    onPress();
+  };
+}
+
+function NavItem<TId extends string>({ id, label, active, onPress, keepDocumentUrl = false }: { id: TId; label: string; active: boolean; onPress: () => void; keepDocumentUrl?: boolean }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
-      onPress={onPress}
+      onPress={pressHandler(onPress, keepDocumentUrl)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
       onFocus={() => setFocused(true)}
@@ -43,12 +52,12 @@ function NavItem<TId extends string>({ id, label, active, onPress }: { id: TId; 
   );
 }
 
-function FooterLink({ label, kind, active, onPress }: { label: string; kind: 'update' | 'version'; active: boolean; onPress: () => void }) {
+function FooterLink({ label, kind, active, onPress, keepDocumentUrl = false }: { label: string; kind: 'update' | 'version'; active: boolean; onPress: () => void; keepDocumentUrl?: boolean }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
-      onPress={onPress}
+      onPress={pressHandler(onPress, keepDocumentUrl)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
       onFocus={() => setFocused(true)}
@@ -84,8 +93,11 @@ export function CatalogSidebar<TId extends string>({
   active,
   onPress,
   footer,
+  keepDocumentUrl = false,
 }: {
   logo: string;
+  /** For a shell embedded in another page: links never change the document's address. */
+  keepDocumentUrl?: boolean;
   /** Optional logo image, validated and bundled by `cli/workspace.ts` from the project's `logo`
    *  config field. Visual spec: docs/design/2026-10-08-ds-viewer-sidebar-logo-approved.html
    *  ("C · Adaptive", approved 2026-10-08) — a mark (aspect ratio ≤ 2) sits beside the name; a
@@ -195,14 +207,14 @@ export function CatalogSidebar<TId extends string>({
           <View key={group.label}>
             <Text style={styles.groupLabel}>{group.label}</Text>
             {group.ids.map((id) => (
-              <NavItem key={id} id={id} label={labels?.get(id) ?? id} active={active === id} onPress={() => onPress(id)} />
+              <NavItem key={id} id={id} label={labels?.get(id) ?? id} active={active === id} onPress={() => onPress(id)} keepDocumentUrl={keepDocumentUrl} />
             ))}
           </View>
         ))}
       </ScrollView>
       {footer && (
         <View style={styles.footerContainer}>
-          <FooterLink label={footer.label} kind={footer.kind ?? 'update'} active={footer.active} onPress={footer.onPress} />
+          <FooterLink label={footer.label} kind={footer.kind ?? 'update'} active={footer.active} onPress={footer.onPress} keepDocumentUrl={keepDocumentUrl} />
         </View>
       )}
     </View>

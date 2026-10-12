@@ -3,7 +3,7 @@ import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { CATALOG_COLOR } from './tokens';
 import {
   DEFAULT_SPECIMEN_SURFACE, SPECIMEN_SURFACE_WIDTH_STYLE, overflowsCell, paintedExtent, shouldCenterFilledContent, specimenContentAlignItems,
-  specimenContentBoundedStyle, visibleBoxes, type LayoutBox,
+  specimenContentBoundedStyle, visibleBoxes, filledContentStyle, type LayoutBox,
 } from './specimenSurfaceStyle';
 import { useSpecimenAddress } from './SpecimenAddress';
 import { blendsIntoCell, measurePaintedBoxes } from './specimenFill';
@@ -115,7 +115,7 @@ function readTree(root: MeasurableNode, browser: Browser): LayoutBox {
   return read(root);
 }
 
-export function SpecimenContent({ fill, align, children }: { fill?: boolean; align?: SpecimenAlign; children: React.ReactNode }) {
+export function SpecimenContent({ fill, align, capped = true, children }: { fill?: boolean; align?: SpecimenAlign; /** Phone-width cap for a filled example; off for page-width cells. */ capped?: boolean; children: React.ReactNode }) {
   // After layout (browser only): a `fill` example whose visible content is narrower than the cell
   // (a fixed-width skeleton, a tooltip around a small trigger) is centred instead of sitting
   // against the leading edge; an explicit `align` always wins. And in development, an example
@@ -134,13 +134,13 @@ export function SpecimenContent({ fill, align, children }: { fill?: boolean; ali
     if ((globalThis as { __DEV__?: boolean }).__DEV__ && !warned.current && overflowsCell(visible, wrapperWidth)) {
       warned.current = true;
       console.warn(
-        `[Catalog] ${address ? `${address.pageId} (${address.itemKey})` : 'An example'} is ${Math.round(visible)}px wide in a ${Math.round(wrapperWidth)}px cell, so it's cut off. Give the page a wider specimenSize ('regular' or 'wide').`,
+        `[Catalog] ${address ? `${address.pageId} (${address.itemKey})` : 'An example'} is ${Math.round(visible)}px wide in a ${Math.round(wrapperWidth)}px cell, so it's cut off. Give the page a wider specimenSize ('regular', 'wide', or 'page' for components wider than a phone).`,
       );
     }
   }, [fill, align, centerNarrow, address]);
   if (fill) {
     const alignItems = centerNarrow ? 'center' : specimenContentAlignItems(fill, align);
-    return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, { alignItems }]}>{children}</View>;
+    return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, filledContentStyle(capped), { alignItems }]}>{children}</View>;
   }
   return <View ref={ref} onLayout={measure} style={specimenContentBoundedStyle(align)}>{children}</View>;
 }

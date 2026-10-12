@@ -26,7 +26,9 @@ function ColorsGallery() {
 }
 
 export default defineCatalogPage({
-  group: 'Viewer',
+  title: 'Colors',
+  group: 'Tokens',
+  source: '../native/catalog/tokens.ts',
   previewWidths: 'full',
   tokenGallery: true,
   description: 'The catalog chrome\'s own color set — a neutral greyscale plus one accent, used only for the catalog\'s own UI (sidebar, headings, prop tables, cards). Deliberately independent of the host app\'s DS palette.',
