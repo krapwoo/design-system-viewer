@@ -450,7 +450,10 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
     // A misspelled key silently exempts nothing, so the author sees the warnings it was meant to
     // settle and no reason why — the same reasoning as propNotes' own key check.
     for (const name of internalProps) {
-      if (!propsByName.has(name)) {
+      // `component.props` deliberately omits a node_modules-declared prop (cli/props.ts), so an
+      // inherited name such as `autoCapitalize` is expected to be absent rather than misspelled —
+      // the same exemption the tagged-item check above makes.
+      if (!propsByName.has(name) && component.inheritedFrom.length === 0) {
         issues.push(issue({
           id: 'internal-prop-unknown', severity: 'warning', ...ref,
           message: `internalProps names "${name}", which is not a prop of ${component.name}.`,

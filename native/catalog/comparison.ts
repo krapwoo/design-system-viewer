@@ -418,9 +418,11 @@ export function blockMinWidth(block: PresentationBlock): number {
       // One column: a list always wraps further rather than going below its size's minimum.
       return COLUMN_MIN_WIDTH[block.size] + 2;
     case 'preview':
-      // Fixed preview widths can share a row; a 'full' preview is the row. The card's own chrome
-      // counts: the frame keeps its width only if the half row also covers the padding and border.
-      return block.widths === 'full' ? Infinity : Math.min(...block.widths) + previewChrome(block.layout);
+      // A 'full' preview is the row. Otherwise the *widest* frame sets the minimum: the frames wrap,
+      // so each one sits on its own row and `maxWidth: '100%'` would squeeze any frame wider than
+      // the card. The card's own chrome counts too — a frame keeps its width only if the row also
+      // covers the padding and border around it.
+      return block.widths === 'full' ? Infinity : Math.max(...block.widths) + previewChrome(block.layout);
     default:
       return Infinity;
   }

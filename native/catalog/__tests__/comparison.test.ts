@@ -320,8 +320,9 @@ test('blockMinWidth is the narrowest a block renders at, Infinity for a whole-ro
   const [preview] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: 'full', render: () => null });
   assert.equal(blockMinWidth(preview), Infinity);
   const [fixed] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: [402, 320], render: () => null });
-  // The narrowest frame plus the card's padding and border on both sides.
-  assert.equal(blockMinWidth(fixed), 320 + 2 * CATALOG_SPACE.xl + 2);
+  // The WIDEST frame plus the card's padding and border: the frames wrap onto their own rows, so a
+  // card narrower than the widest frame squeezes it rather than dropping it.
+  assert.equal(blockMinWidth(fixed), 402 + 2 * CATALOG_SPACE.xl + 2);
 });
 
 test('propsColumns uses two columns only for 4+ props with room', () => {

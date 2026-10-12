@@ -135,6 +135,29 @@ test('bound-option-removed is never fired for a tagged prop name that is genuine
   assert.deepEqual(inherited.filter((i) => i.id === 'bound-option-removed'), []);
 });
 
+test('internal-prop-unknown catches a misspelled internalProps key, but not a genuinely inherited prop', () => {
+  const twoOptions = [component({ props: [{ name: 'size', type: "'a' | 'b'", required: true, desc: '', options: ['a', 'b'] }] })];
+  // A real key exempts the prop and says nothing.
+  const correct = collectIssues([page({ component: 'Widget', internalProps: ['size'] })], twoOptions);
+  assert.deepEqual(correct.filter((i) => i.id === 'internal-prop-unknown'), []);
+  assert.deepEqual(correct.filter((i) => i.id === 'option-not-covered'), []);
+
+  // A typo exempts nothing, so say so rather than leaving the author with unexplained warnings.
+  const typo = collectIssues([page({ component: 'Widget', internalProps: ['sizee'] })], twoOptions);
+  const unknown = typo.filter((i) => i.id === 'internal-prop-unknown');
+  assert.equal(unknown.length, 1);
+  assert.match(unknown[0].message, /"sizee", which is not a prop of Widget/);
+  assert.equal(typo.filter((i) => i.id === 'option-not-covered').length, 2);
+
+  // An inherited name is absent from component.props by design — the same exemption
+  // bound-option-removed makes for a tagged inherited prop.
+  const inherited = collectIssues([page({
+    component: 'SearchField',
+    internalProps: ['autoCapitalize'],
+  })], [component({ name: 'SearchField', props: [], inheritedFrom: ['TextInput'] })]);
+  assert.deepEqual(inherited.filter((i) => i.id === 'internal-prop-unknown'), []);
+});
+
 test('option-not-covered fires for an uncovered option and not for one covered by a bound axis or a tagged item', () => {
   const twoOptions = [component({ props: [{ name: 'variant', type: "'a' | 'b'", required: true, desc: '', options: ['a', 'b'] }] })];
   const uncovered = collectIssues([page({ component: 'Widget' })], twoOptions);
