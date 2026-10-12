@@ -316,3 +316,41 @@ test('parseHeights accepts "first,second" and rejects anything else', () => {
   assert.equal(parseHeights('a,b'), undefined);
   assert.equal(parseHeights('-1,5'), undefined);
 });
+
+test("explains a 'table' preview page, pricing it with the table card's own chrome", () => {
+  // The preview's minimum is what decides side-by-side, and the two cards differ by 16px. At the
+  // 952px laptop width both land on the same side of the half row (436 and 452 against 462), which
+  // is exactly why carrying previewLayout was invisible until now — so this asserts the plumbing:
+  // the page is read as checkable and explained, rather than skipped or priced as a frames card.
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      previewWidths: [402], previewLayout: 'table', render: () => null,
+      states: { items: [{ key: 'a', name: 'A', node: null }, { key: 'b', name: 'B', node: null }] },
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.ok(result, 'a literal previewLayout must leave the page checkable');
+  assert.equal(result!.blocks[0].kind, 'preview');
+  assert.equal(result!.blocks[1].kind, 'list');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('a page whose previewLayout cannot be read is not explained, rather than explained wrongly', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const pick = () => 'table' as const;
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      previewLayout: pick(), render: () => null,
+    });
+  `);
+  // Reported as not checkable, with no blocks — explain says why rather than pricing a card it
+  // could not identify.
+  const result = explainPage(configFor(dir), 'Widget');
+  assert.equal(result?.notCheckable, true);
+  assert.deepEqual(result?.blocks, []);
+  assert.match(formatExplain(result!), /not statically checkable/);
+  rmSync(dir, { recursive: true, force: true });
+});

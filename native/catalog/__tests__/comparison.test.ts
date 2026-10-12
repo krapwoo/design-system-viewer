@@ -525,6 +525,15 @@ test("a preview's minimum includes the card around it, so a half row never squee
   assert.equal(previewChrome('table'), 2 * MATRIX_LAYOUT.cellPadding + 2);
   assert.equal(blockMinWidth({ kind: 'preview', title: 'Preview', widths: [370] }), 370 + 2 * CATALOG_SPACE.xl + 2);
   assert.equal(blockMinWidth({ kind: 'preview', title: 'Preview', widths: 'full' }), Infinity);
+  // A 'table' card has no outer padding, just a border and `cellPadding` around each frame, so it
+  // is 16px cheaper than a frames card. presentationBlocks carries the page's own previewLayout so
+  // both the viewer and `cli/explain.ts` price the same card.
+  const [tablePreview] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: [402], previewLayout: 'table', render: () => null });
+  assert.equal(tablePreview.kind === 'preview' ? tablePreview.layout : undefined, 'table');
+  assert.equal(blockMinWidth(tablePreview), 402 + 2 * MATRIX_LAYOUT.cellPadding + 2);
+  const [framesPreview] = presentationBlocks({ id: 'X', path: 'p', description: 'd', previewWidths: [402], render: () => null });
+  assert.equal(framesPreview.kind === 'preview' ? framesPreview.layout : undefined, undefined);
+  assert.equal(blockMinWidth(framesPreview), 402 + 2 * CATALOG_SPACE.xl + 2);
 
   // A phone-width preview beside a short block: side by side only once the half row covers the
   // frame AND its card. Half must reach 402 + 50, so available must reach 2 * 452 + 28 = 932.

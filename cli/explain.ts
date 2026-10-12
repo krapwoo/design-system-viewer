@@ -97,6 +97,9 @@ function toSectionDef(page: StaticPage): SectionDef {
     fullWidthLabel: page.fullWidthLabel,
     specimenSize: page.specimenSize as SpecimenSize | undefined,
     previewWidths: page.previewWidths,
+    // Carried because `blockMinWidth` reads it: the two preview cards have different chrome, so
+    // without it `explain` prices a 'table' preview as a frames card.
+    previewLayout: page.previewLayout,
     variants: page.variantsItems ? { itemsFill: page.variantsItemsFill, maxColumns: page.variantsMaxColumns, items: page.variantsItems.map(placeholderItem) } : undefined,
     states: page.statesItems ? { itemsFill: page.statesItemsFill, maxColumns: page.statesMaxColumns, items: page.statesItems.map(placeholderItem) } : undefined,
     comparison,
