@@ -88,6 +88,18 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown, allow
   res.end(JSON.stringify(body));
 }
 
+/** For a refusal the page is *allowed* to read: a wrong secret or an unknown route, where the
+ *  Origin check has already passed. Without the allow-origin header the browser blocks the
+ *  response and the page cannot tell "wrong secret" from "server not running" — both arrive as
+ *  the same opaque network failure, which is how a stale secret looked like a dead server.
+ *
+ *  A rejected or absent Origin deliberately gets no CORS headers at all (see the Origin checks
+ *  below): a page from somewhere else is told nothing, not even which origin is allowed. */
+function sendText(res: http.ServerResponse, status: number, body: string, allowedOrigin: string): void {
+  res.writeHead(status, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': allowedOrigin });
+  res.end(body);
+}
+
 /** Design §5 "Local endpoint safeguards", every one of them, in the exact order this plan's own
  *  `spikes/cors-endpoint/` spike proved: Origin (including `OPTIONS`) → secret → route. Does not
  *  call `.listen()` itself — Task 18's `dev.ts` owns the real port (`0` → OS-assigned, `127.0.0.1`
@@ -143,7 +155,7 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
       return;
     }
     if (!secretMatches(req.headers[DS_VIEWER_SECRET_HEADER], deps.secret)) {
-      res.writeHead(401).end('Missing or wrong secret.');
+      sendText(res, 401, 'Missing or wrong secret.', deps.allowedOrigin);
       return;
     }
 
@@ -286,6 +298,6 @@ export function createUpdateEndpoint(deps: EndpointDeps): http.Server {
       return;
     }
 
-    res.writeHead(404).end('Not found.');
+    sendText(res, 404, 'Not found.', deps.allowedOrigin);
   });
 }

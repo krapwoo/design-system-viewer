@@ -2,6 +2,7 @@
 // only a real render shows (console errors, pages that fail to render, the viewer's own [Catalog]
 // layout warnings). The browser is resolved from the project; ds-viewer never installs one.
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { get as httpGet } from 'node:http';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -198,10 +199,32 @@ function outputTail(): { push: (data: unknown) => void; text: () => string } {
 
 /** Starts the project's own `dev` in its own process group. `onSpawn` receives the child at once,
  *  so a signal during startup can still stop it. */
+/** Polls `http://localhost:<port>/` until it answers, so a caller never navigates to a port Metro
+ *  has not bound yet. Any HTTP reply counts — the page's own content is checked afterwards. */
+async function waitForServer(port: number, timeoutMs = DEV_START_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const answered = await new Promise<boolean>((resolve) => {
+      const request = httpGet({ host: 'localhost', port, path: '/', timeout: 2000 }, () => resolve(true));
+      request.on('error', () => resolve(false));
+      request.on('timeout', () => {
+        request.destroy();
+        resolve(false);
+      });
+    });
+    if (answered) return;
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for the catalog to answer on port ${port}.`);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
 function startDev(projectRoot: string, onSpawn: (child: ChildProcess) => void): Promise<{ child: ChildProcess; port: number }> {
   const main = path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.js');
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [main, 'dev'], {
+    // No update endpoint: this server exists to render pages, and creating one would overwrite the
+    // endpoint of an already-running `dev` in the shared `.ds-viewer/` workspace, pointing that
+    // developer's open catalog at a port that dies with this check.
+    const child = spawn(process.execPath, [main, 'dev', '--no-update-endpoint'], {
       cwd: projectRoot,
       env: { ...process.env, CI: '1', DS_VIEWER_NO_UPDATE_CHECK: '1' },
       detached: process.platform !== 'win32',
@@ -226,7 +249,13 @@ function startDev(projectRoot: string, onSpawn: (child: ChildProcess) => void): 
       if (match && !done) {
         done = true;
         clearTimeout(timer);
-        resolve({ child, port: Number(match[1]) });
+        // `dev` prints that line before it spawns Expo, so the port is known well before Metro is
+        // listening on it. Resolving here raced the bundler: the first navigation could land on a
+        // port nothing was bound to yet. Wait for the server to actually answer.
+        const port = Number(match[1]);
+        waitForServer(port)
+          .then(() => resolve({ child, port }))
+          .catch((error: Error) => fail(`${error.message} `));
       }
     });
     child.on('exit', (code) => fail(`ds-viewer dev exited early (code ${code}).`));

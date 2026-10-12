@@ -526,6 +526,13 @@ and adds what only a real render shows:
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't
 install a browser. It takes about two minutes for 50 pages and works with `--json` (progress
 goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci`.
+
+It starts its own `dev` server with `--no-update-endpoint`, so it never creates a local update
+endpoint. Both servers share one generated `.ds-viewer/` workspace and the last writer decides
+what is in it, so running this beside a catalog you already have open leaves that catalog's update
+page without its actions (Check now, Update now) until you restart `dev`. The pages themselves are
+unaffected. Before this, the check wrote its own short-lived endpoint there instead, and the open
+catalog kept calling a port that died with the check — reporting it as a dead server.
 It stops the viewer it started, including on Ctrl-C (exit codes 130, 143 or 129 for SIGINT,
 SIGTERM or SIGHUP). On Windows it stops the viewer with `taskkill`; that path is unit-tested, not
 run on a real Windows machine.

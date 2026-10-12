@@ -223,7 +223,8 @@ export interface RestartHandoff {
   port: number;
   child: ReturnType<typeof spawn>;
   watchers: FSWatcher[];
-  endpointServer: import('node:http').Server;
+  /** Undefined for a run started with `--no-update-endpoint`, which owns no endpoint to close. */
+  endpointServer: import('node:http').Server | undefined;
   /** Errata 7d: printed alongside the recovery command if the restart itself fails, so a failed
    *  restart never loses the result of an otherwise-successful install/migrate/doctor run. */
   doctorSummary: string;
@@ -298,7 +299,7 @@ export async function performRestart(
 
   try {
     for (const watcher of handoff.watchers) watcher.close();
-    handoff.endpointServer.close();
+    handoff.endpointServer?.close();
     killGroup(handoff.child, 'SIGTERM');
 
     // Errata 7d: race the old child's exit against a 10s timer, then SIGKILL the group — a wedged
@@ -352,7 +353,7 @@ export async function performRestart(
  *  component/token/page changes to re-run `sync`. Metro's own HMR updates the rendered component
  *  when its source changes, but not the generated props table or page list (Task 17 Step 4 relies
  *  on this: editing `Button.tsx` must update its props table, not just hot-reload the component). */
-export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number } = {}): Promise<void> {
+export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number; noUpdateEndpoint?: boolean } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
   let config = initialConfig;
@@ -448,14 +449,23 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     checkNow: version.checkNow,
     setAutoCheck: version.setAutoCheck,
   };
-  const endpointServer = createUpdateEndpoint(endpointDeps);
-  await new Promise<void>((resolve) => endpointServer.listen(0, '127.0.0.1', resolve));
-  const endpointPort = (endpointServer.address() as AddressInfo).port;
-  // Printed for the same reason the Metro port above is printed: a developer (or Task 20's own
-  // verification) checking the endpoint directly (e.g. with curl) needs its port — the secret
-  // itself is never printed; the endpoint rejects anything that doesn't already have it.
-  console.log(`Update endpoint listening on 127.0.0.1:${endpointPort}`);
-  const updateEndpoint = { baseUrl: `http://127.0.0.1:${endpointPort}`, secret };
+  // A throwaway server (a render check's own `dev`) takes no update actions, and creating an
+  // endpoint would bake its short-lived port into the shared workspace — pointing an already-open
+  // catalog at a port that dies with this process. See `writeWorkspace`.
+  let updateEndpoint: { baseUrl: string; secret: string } | undefined;
+  let endpointServer: ReturnType<typeof createUpdateEndpoint> | undefined;
+  if (!devOptions.noUpdateEndpoint) {
+    endpointServer = createUpdateEndpoint(endpointDeps);
+    await new Promise<void>((resolve) => endpointServer!.listen(0, '127.0.0.1', resolve));
+    const endpointPort = (endpointServer.address() as AddressInfo).port;
+    // Printed for the same reason the Metro port above is printed: a developer (or Task 20's own
+    // verification) checking the endpoint directly (e.g. with curl) needs its port — the secret
+    // itself is never printed; the endpoint rejects anything that doesn't already have it.
+    console.log(`Update endpoint listening on 127.0.0.1:${endpointPort}`);
+    updateEndpoint = { baseUrl: `http://127.0.0.1:${endpointPort}`, secret };
+  } else {
+    console.log('Update endpoint disabled for this run (--no-update-endpoint).');
+  }
 
   const workspace = writeWorkspace(config, updateEndpoint);
 
@@ -508,7 +518,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   child.on('error', (error) => console.warn(`Could not start Expo: ${error.message}`));
   child.on('exit', (code) => {
     for (const watcher of watchers) watcher.close();
-    endpointServer.close();
+    endpointServer?.close();
     process.exitCode = code ?? 0;
   });
   // Node's default SIGTERM/SIGINT/SIGHUP behavior exits this process without touching its
@@ -520,7 +530,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
     process.on(signal, () => {
       for (const watcher of watchers) watcher.close();
-      endpointServer.close();
+      endpointServer?.close();
       killGroup(child, signal);
       process.exit(0);
     });
@@ -532,7 +542,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   const killExpoAndExit = (error: unknown) => {
     console.error(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
     for (const watcher of watchers) watcher.close();
-    endpointServer.close();
+    endpointServer?.close();
     killGroup(child, 'SIGTERM');
     process.exit(1);
   };
