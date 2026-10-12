@@ -1,0 +1,5 @@
+`CatalogButton` gains `disabled` (flat grey, not pressable) and `busy` (its own colours, a spinner before the label, and no second press), both reported through `accessibilityState`. The update page now uses it for every action — Check now, Update now, Try again — instead of its own copies, which had kept the 22px black pill the button moved away from. Two new tokens, `controlDisabled` and `controlDisabledText`, carry the disabled colours.
+
+A `specimenSize: 'page'` example no longer centres when its painted content is narrower than the cell. That centring is for a small control adrift in a wide cell; a page-width cell holds a layout, whose content sits at the left of its own measure, and centring collapsed it to whatever it happened to have painted — which is why the four UpdatePanel examples rendered at four different widths.
+
+When the catalog is open through a tunnel or a LAN address, the update page now says so instead of blaming the local server: the viewer only takes actions from the machine it runs on, because that endpoint installs packages and restarts the server.

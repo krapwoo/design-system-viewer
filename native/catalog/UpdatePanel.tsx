@@ -1,14 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CatalogButton } from './CatalogButton';
 import { DS_VIEWER_SECRET_HEADER } from './catalogNavigation';
 import {
-  autoCheckHelp, bumpLabel, checkedAgoLabel, resultNote, daysAgoLabel, isAlreadyUpToDateError, resolvePanelPhase, versionOverview, type UpdatePlanView, type UpdateStatusView,
+  autoCheckHelp, bumpLabel, checkedAgoLabel, resultNote, daysAgoLabel, isAlreadyUpToDateError, isRemoteOrigin, resolvePanelPhase, versionOverview, type UpdatePlanView, type UpdateStatusView,
 } from './updatePanelState';
 import type { UpdateNotice, VersionStatus } from './types';
 
 function isWeb(): boolean {
   return Platform.OS === 'web' && typeof window !== 'undefined';
+}
+
+/** The page is open from somewhere other than the machine running the viewer, so every action will
+ *  be refused however healthy the server is — see `isRemoteOrigin`. */
+function remoteOrigin(endpoint: Endpoint | undefined): boolean {
+  if (!endpoint || !isWeb()) return false;
+  return isRemoteOrigin(window.location.protocol, window.location.hostname);
 }
 
 type Endpoint = { baseUrl: string; secret: string };
@@ -225,7 +233,12 @@ function VersionDetails({
       setJustChecked(next.lastOutcome === 'ok' && !next.update);
       onStatus(next);
     } catch {
-      setLocalError('Couldn’t reach the viewer’s local server. If this keeps happening, restart npx ds-viewer dev.');
+      setLocalError(remoteOrigin(endpoint)
+        // The endpoint only answers its own origin, and it can install packages and restart the
+        // server — so saying "restart the viewer" here would send the reader after a fault that
+        // isn't there. The page itself is fine over a tunnel; only its actions are local.
+        ? 'This page is open from another address, and the viewer only takes actions from the machine it runs on. Open the catalog on that machine, or run npx ds-viewer update there.'
+        : 'Couldn’t reach the viewer’s local server. If this keeps happening, restart npx ds-viewer dev.');
     } finally {
       setChecking(false);
     }
@@ -304,18 +317,12 @@ function VersionDetails({
       {localError && <NoteBox variant="err">{localError}</NoteBox>}
       {live && (
         <View style={styles.actions}>
-          <Pressable
+          <CatalogButton
+            variant="secondary"
+            busy={checking}
             onPress={checkNow}
-            disabled={checking}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: checking, busy: checking }}
-            style={[styles.secondaryButton, styles.buttonRow, checking && styles.busyButton]}
-          >
-            {checking && <ActivityIndicator size="small" color={CATALOG_COLOR.textMuted} />}
-            <Text style={[styles.secondaryButtonText, checking && styles.busyButtonText]}>
-              {checking ? 'Checking…' : overview.action === 'retry' ? 'Try again' : 'Check now'}
-            </Text>
-          </Pressable>
+            label={checking ? 'Checking…' : overview.action === 'retry' ? 'Try again' : 'Check now'}
+          />
           {unreachable && !checking && <Text style={styles.muted}>or run <Code>npm view @krapwoo/ds-viewer version</Code></Text>}
         </View>
       )}
@@ -504,15 +511,7 @@ export function UpdatePanel({
           <Text style={styles.muted}>Not a git repository, so uncommitted changes couldn’t be checked.</Text>
         )}
         <View style={styles.actions}>
-          <Pressable
-            onPress={startUpdate}
-            disabled={starting}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: starting }}
-            style={[styles.primaryButton, starting && styles.disabledButton]}
-          >
-            <Text style={[styles.primaryButtonText, starting && styles.disabledButtonText]}>Update now</Text>
-          </Pressable>
+          <CatalogButton label="Update now" onPress={startUpdate} disabled={starting} />
           {starting ? <Text style={styles.muted}>Starting…</Text> : <Text style={styles.muted}>or run <Code>npx ds-viewer update</Code></Text>}
         </View>
       </>
@@ -542,17 +541,8 @@ export function UpdatePanel({
         </NoteBox>
         <FilesList files={plan.files} />
         <View style={styles.actions}>
-          <Pressable
-            disabled
-            accessibilityRole="button"
-            accessibilityState={{ disabled: true }}
-            style={[styles.primaryButton, styles.disabledButton]}
-          >
-            <Text style={[styles.primaryButtonText, styles.disabledButtonText]}>Update now</Text>
-          </Pressable>
-          <Pressable onPress={fetchPlan} accessibilityRole="button" style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Check again</Text>
-          </Pressable>
+          <CatalogButton label="Update now" disabled />
+          <CatalogButton label="Check again" variant="secondary" onPress={fetchPlan} />
         </View>
       </>
     );
@@ -570,9 +560,7 @@ export function UpdatePanel({
           {' You may be offline, or npm didn’t respond. Nothing was changed.'}
         </NoteBox>
         <View style={styles.actions}>
-          <Pressable onPress={fetchPlan} accessibilityRole="button" style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Try again</Text>
-          </Pressable>
+          <CatalogButton label="Try again" variant="secondary" onPress={fetchPlan} />
           <Text style={styles.muted}>or run <Code>npx ds-viewer update</Code></Text>
         </View>
       </>
@@ -681,9 +669,6 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
   switch: { width: 44, height: 26 },
   switchHelp: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
-  buttonRow: { flexDirection: 'row', gap: CATALOG_SPACE.sm },
-  busyButton: { borderColor: CATALOG_COLOR.border },
-  busyButtonText: { color: CATALOG_COLOR.textMuted },
   muted: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, marginTop: 4 },
   block: { marginTop: 18 },
   h3: { fontSize: CATALOG_TYPE.panelHeading, textTransform: 'uppercase', letterSpacing: 0.5, color: CATALOG_COLOR.text, marginBottom: 8 },
@@ -695,12 +680,6 @@ const styles = StyleSheet.create({
   fileReason: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
   fileReasonDirty: { color: CATALOG_COLOR.warning, fontWeight: '700' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md, marginTop: 20 },
-  primaryButton: { height: CATALOG_LAYOUT.controlSize, paddingHorizontal: 18, borderRadius: 22, backgroundColor: CATALOG_COLOR.text, alignItems: 'center', justifyContent: 'center' },
-  primaryButtonText: { color: '#fff', fontWeight: '700', fontSize: CATALOG_TYPE.md },
-  secondaryButton: { height: CATALOG_LAYOUT.controlSize, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1, borderColor: CATALOG_COLOR.borderStrong, alignItems: 'center', justifyContent: 'center' },
-  secondaryButtonText: { fontWeight: '700', fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.text },
-  disabledButton: { backgroundColor: '#e6e6e6', borderColor: '#e6e6e6' },
-  disabledButtonText: { color: '#8a8a8a' },
   noteBox: { borderRadius: CATALOG_RADIUS.md, padding: 12, marginTop: 18 },
   noteBoxText: { fontSize: CATALOG_TYPE.md },
   noteBoxBold: { fontWeight: '700' },
