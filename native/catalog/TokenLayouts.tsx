@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
-import { sectionColumns, tileGeometry, TOKEN_LAYOUT_GAP } from './tokenLayout';
+import { sectionColumns, tileGeometry, TOKEN_LAYOUT_GAP, TOKEN_SECTION_MIN_WIDTH } from './tokenLayout';
 import type { TokenSection } from './types';
 
 /** Measures its own width; renders nothing inside until the width is known. */
@@ -18,9 +18,14 @@ function useWidth(): [number, (event: LayoutChangeEvent) => void] {
  * in up to `columns` columns. A `wide` section takes a full row; the page drops to fewer columns
  * rather than squeeze a section under its minimum width.
  */
-export function TokenSections({ sections, columns }: { sections: TokenSection[]; columns: 1 | 2 | 3 }) {
+export function TokenSections({ sections, columns, label }: { sections: TokenSection[]; columns: 1 | 2 | 3; label?: string }) {
   const [width, onLayout] = useWidth();
   const perRow = sectionColumns(width, columns);
+  // Degrading quietly is how a page ends up claiming a column count it never renders: the author
+  // reads `columns={3}`, the reader sees one column, and nothing says the space was the reason.
+  if (__DEV__ && width > 0 && perRow < columns) {
+    console.warn(`[Catalog] ${label ?? 'TokenSections'}: asked for ${columns} columns but only ${perRow} fit in ${width}px; sections never go below ${TOKEN_SECTION_MIN_WIDTH}px.`);
+  }
   const columnWidth = perRow === 1 ? width : (width - TOKEN_LAYOUT_GAP * (perRow - 1)) / perRow;
   return (
     <View onLayout={onLayout} style={styles.sections}>

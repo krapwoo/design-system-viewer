@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { issuesFromPage, loadProjectPuppeteer, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
+import { identicalVariantIssues, issuesFromPage, loadProjectPuppeteer, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
 
 test('console errors and a missing heading are errors; overflow warnings are render-layout; other [Catalog] warnings are render-catalog-warning; noise is ignored', () => {
   const seen = new Set<string>();
@@ -125,4 +125,17 @@ test('stopDev kills the whole tree on Windows and the whole process group elsewh
   calls.length = 0;
   stopDev(child as never, { platform: 'linux', kill: (pid: number, sig: string) => { calls.push(`kill ${pid} ${sig}`); } });
   assert.deepEqual(calls, ['kill -77 SIGTERM', 'stdout', 'stderr', 'unref']);
+});
+
+test('identicalVariantIssues names both examples and the card they share', () => {
+  const issues = identicalVariantIssues({ id: 'TokenSections', file: 'pages/TokenSections.catalog.tsx' }, [
+    { card: 'TokenSections: Variants', names: ['Two columns', 'Three columns, with a wide section'] },
+  ]);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].id, 'identical-variants');
+  assert.equal(issues[0].severity, 'warning');
+  assert.equal(issues[0].page, 'TokenSections');
+  assert.match(issues[0].message, /"Two columns" and "Three columns, with a wide section" render identically/);
+  assert.match(issues[0].fix, /wider specimenSize/);
+  assert.deepEqual(identicalVariantIssues({ id: 'X' }, []), []);
 });

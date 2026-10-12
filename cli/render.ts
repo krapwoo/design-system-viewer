@@ -53,6 +53,85 @@ export function issuesFromPage(
   return issues;
 }
 
+export interface IdenticalPair {
+  /** The card the two examples share, from its accessible name. */
+  card: string;
+  names: [string, string];
+}
+
+/**
+ * Runs in the browser: finds any two examples in the same list card whose specimens render
+ * identically. A variant's name is a claim that something differs; two cells that render the same
+ * teach the reader nothing and usually mean the difference needs a wider cell (a column count in a
+ * cell too narrow to show it) or was never wired up.
+ *
+ * The fingerprint covers each specimen's whole subtree — tag, box size, colours, radius and text —
+ * but never the caption strip that carries the variant's own name, which always differs. Colour is
+ * part of it, so a "default vs disabled" pair that differs only in tone is not reported.
+ */
+export const IDENTICAL_VARIANTS_SCRIPT = `(() => {
+  const doc = document;
+  const fingerprint = (root) => {
+    const out = [];
+    const base = root.getBoundingClientRect();
+    const walk = (el) => {
+      // PhoneFrame renders its example into a same-origin child document, so without reaching in
+      // every phone looks like an identical empty box.
+      if (el.tagName === 'IFRAME') {
+        try {
+          const body = el.contentDocument && el.contentDocument.body;
+          if (body) { out.push('IFRAME'); walk(body); return; }
+        } catch (error) { out.push('IFRAME|unreadable'); return; }
+      }
+      const box = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      out.push([
+        el.tagName,
+        Math.round(box.width), Math.round(box.height),
+        Math.round(box.left - base.left), Math.round(box.top - base.top),
+        style.color, style.backgroundColor, style.borderColor, style.borderRadius,
+        style.fontSize, style.fontWeight, style.opacity,
+        el.children.length === 0 ? (el.textContent || '') : '',
+        // A field's visible text is its value, not its textContent, which is always empty.
+        el.value === undefined ? '' : String(el.value),
+        el.placeholder || '', el.disabled ? 'disabled' : '',
+      ].join('|'));
+      for (const child of el.children) walk(child);
+    };
+    walk(root);
+    return out.join('\\n');
+  };
+  const pairs = [];
+  for (const card of doc.querySelectorAll('[role=list][aria-label]')) {
+    const cells = [...card.querySelectorAll('[role=listitem]')].filter((c) => c.closest('[role=list]') === card);
+    const byPrint = new Map();
+    for (const cell of cells) {
+      // children[0] is the caption strip (the variant's own name); the specimen follows it.
+      const specimen = cell.children.length > 1 ? cell.children[1] : cell.children[0];
+      if (!specimen) continue;
+      const name = (cell.children[0] ? cell.children[0].textContent : '') || '';
+      const print = fingerprint(specimen);
+      if (!print.trim()) continue;
+      const first = byPrint.get(print);
+      if (first === undefined) byPrint.set(print, name);
+      else pairs.push({ card: card.getAttribute('aria-label') || '', names: [first, name] });
+    }
+  }
+  return pairs;
+})()`;
+
+/** Turns the browser's findings into doctor issues, one per identical pair. */
+export function identicalVariantIssues(page: { id: string; file?: string }, pairs: readonly IdenticalPair[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  return pairs.map((pair) => ({
+    id: 'identical-variants',
+    severity: 'warning' as const,
+    ...ref,
+    message: `"${pair.names[0]}" and "${pair.names[1]}" render identically in ${pair.card || 'the same card'}.`,
+    fix: "Make the difference visible — a wider specimenSize when the cell is too narrow to show it, or the prop the name claims — or drop one of the two examples.",
+  }));
+}
+
 /** The project's own puppeteer, or `undefined` when it isn't installed. */
 export function loadProjectPuppeteer(projectRoot: string): unknown | undefined {
   try {
@@ -250,6 +329,10 @@ export async function renderCheck(
           return Boolean(doc.querySelector('[role="heading"]')?.textContent?.trim());
         });
         issues.push(...issuesFromPage({ id, file: options.files?.get(id) }, messages, hasHeading, seen));
+        // A browser that can't run the script (or a stub in a test) yields nothing to report
+        // rather than failing the page; the check is advisory.
+        const identical = (await page!.evaluate(IDENTICAL_VARIANTS_SCRIPT)) as IdenticalPair[] | undefined;
+        if (Array.isArray(identical)) issues.push(...identicalVariantIssues({ id, file: options.files?.get(id) }, identical));
         await page!.close();
       } catch (error) {
         // A stuck page's tab is closed, so it doesn't keep loading next to the remaining pages.

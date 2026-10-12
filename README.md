@@ -514,6 +514,11 @@ and adds what only a real render shows:
 - `render-error` / `render-no-heading` (errors): a console error, or a page that didn't render.
 - `render-layout` (warning): an example wider than its cell (the viewer's own check), with the
   page and file. `render-catalog-warning` (warning): any other `[Catalog]` warning, reported once.
+- `identical-variants` (warning): two examples in the same card whose specimens render identically,
+  so the difference their names claim isn't visible — usually a cell too narrow to show it, or a
+  prop that was never wired up. The fingerprint reads each specimen's whole subtree (including a
+  PhoneFrame's child document and a field's value) but not the caption carrying the variant's own
+  name, so two examples differing only in colour are not reported.
 - `render-unavailable` / `render-failed` (errors): no browser, or the catalog didn't start.
 
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't

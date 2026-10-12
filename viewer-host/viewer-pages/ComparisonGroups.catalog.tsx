@@ -10,7 +10,9 @@ const DEMO: ListGroup[] = [
 // A row of four against a row of one: the long row sets the column count, so the short row ends in
 // three blank cells rather than stretching its single example across the card.
 const UNEVEN: ListGroup[] = [
-  { key: 'circle', label: 'Circle', items: ['XS', 'S', 'M', 'L'].map((l) => ({ key: l.toLowerCase(), label: l, node: <Text>●</Text> })) },
+  // Each size draws at its own size: four cells labelled XS–L that all rendered the same dot
+  // would name a difference the reader cannot see.
+  { key: 'circle', label: 'Circle', items: ([['XS', 10], ['S', 14], ['M', 20], ['L', 28]] as const).map(([l, size]) => ({ key: l.toLowerCase(), label: l, node: <Text style={{ fontSize: size }}>●</Text> })) },
   { key: 'linear', label: 'Linear', items: [{ key: 'thin', label: 'Thin', node: <Text>▬</Text> }] },
 ];
 

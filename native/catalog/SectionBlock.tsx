@@ -184,7 +184,7 @@ function BlockContent<TId extends string>({ block, def, surface }: { block: Pres
         </SpecimenAddressProvider>
       ) : null;
     case 'tokenSections':
-      return <TokenSections sections={block.sections} columns={block.columns} />;
+      return <TokenSections sections={block.sections} columns={block.columns} label={def.id} />;
     default:
       return (
         <View style={styles.previewCard}>
