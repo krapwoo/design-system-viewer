@@ -29,6 +29,7 @@ function Examples() {
 export default defineCatalogPage({
   component: 'VariantGroup',
   group: 'Components',
+  whenToUse: 'A label and one-line description above a single example inside an Examples card; both are optional, so omit them when the example speaks for itself. For a captioned set of examples that wrap into rows, ComparisonList already labels every cell.',
   source: '../native/catalog/VariantGroup.tsx',
   hide: { props: true },
   description: 'Labels one example (or small cluster of examples) inside a freeform `render()` — a bold uppercase name plus a one-line description, sitting above whatever demo content is passed as children. Both labels are optional, and `align` decides whether the group centres its content or stacks it against the left edge. SectionBlock itself doesn\'t use this for `variants` clusters (those get their own card, titled directly); reach for it inside a `render()` that needs an inline sub-heading, e.g. a Colors gallery.',

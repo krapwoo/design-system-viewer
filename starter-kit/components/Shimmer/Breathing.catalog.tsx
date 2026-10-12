@@ -11,6 +11,7 @@ const styles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'Breathing',
   group: 'Components',
+  whenToUse: 'The raw pulsing block behind Shimmer, exported so a composite skeleton can pulse in lockstep with plain Shimmers off the one shared clock. For an ordinary loading placeholder, use Shimmer.',
   specimenSize: 'regular',
   description:
     "The shared animated primitive behind Shimmer — a solid block that breathes between a low and high colour on one shared, module-level clock, so every Breathing/Shimmer instance on screen stays phase-locked instead of drifting out of sync. Exported so a custom composite skeleton can reuse the same pulse directly instead of going through Shimmer's fixed text/circle/container shapes.",

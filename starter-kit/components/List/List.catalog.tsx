@@ -9,6 +9,7 @@ import { DS_SEMANTIC } from '../../tokens';
 export default defineCatalogPage({
   component: 'List',
   group: 'Components',
+  whenToUse: 'A set of ListItem rows as one rounded surface, with dividers between rows and never after the last. For a single row standing on its own, use ListItem directly.',
   specimenSize: 'regular',
   composedOf: [
     { component: 'Divider', role: "The hairline between consecutive items (none after the last).", relationship: 'built-in' },

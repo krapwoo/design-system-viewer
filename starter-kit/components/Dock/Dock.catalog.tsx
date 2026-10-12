@@ -6,6 +6,7 @@ import { Dock } from './Dock';
 export default defineCatalogPage({
   component: 'Dock',
   group: 'Components',
+  whenToUse: 'A screen\'s bottom action area: up to three full-width buttons above the home indicator, with an optional caption. It is not positioned absolutely itself — the composing screen decides whether to pin it or lay it out inline at the end of a column. For actions inside a card or dialog, use ButtonGroup.',
   composedOf: [
     { component: 'Button', role: "Its children: up to three full-width Buttons, stacked.", relationship: 'slot' },
   ],

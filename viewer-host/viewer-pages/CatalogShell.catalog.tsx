@@ -30,6 +30,7 @@ const shell = (update: UpdateNotice | null, current: string) => (
 export default defineCatalogPage({
   component: 'CatalogShell',
   group: 'Components',
+  whenToUse: 'The whole catalog in one component: the persistent sidebar plus the single selected page. Use it to mount the catalog, or to embed it inside a host app\'s own screen. For the navigation list alone, use CatalogSidebar.',
   source: '../native/catalog/CatalogShell.tsx',
   specimenSize: 'page',
   composedOf: [

@@ -32,6 +32,7 @@ function TooltipDemo() {
 export default defineCatalogPage({
   component: 'Tooltip',
   group: 'Components',
+  whenToUse: 'A brief floating label for a control whose purpose an icon alone doesn\'t carry. It measures the trigger\'s real screen position, so the bubble stays inside the screen\'s edges and the arrow still points at the trigger\'s true centre. For something the reader must acknowledge, use Dialog.',
   specimenSize: 'regular',
   description: 'A small floating label anchored above or below its wrapped trigger. Fully controlled — drive `visible` from the trigger\'s own onLongPress/onPressIn, since mobile has no hover.',
   a11y: 'The bubble is a plain, non-interactive View; the trigger you wrap it around carries its own accessibility.',

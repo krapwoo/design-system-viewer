@@ -5,6 +5,8 @@ export default defineCatalogPage({
   component: 'TypeScaleGallery',
   intentionalStaticPreview: { reason: 'Generic over whatever type scale it is given: one real scale is the demonstration, and a second would only repeat it with other numbers.' },
   group: 'Components',
+  whenToUse: 'A type scale, with each step\'s name rendered at its own real style so the name doubles as the sample. For spacing steps shown as bars, use SpacingScaleGallery.',
+  a11y: 'No explicit handling beyond the defaults: each step\'s name doubles as its sample, and the meta caption repeats the size as text, so the scale can be read without comparing glyph sizes by eye.',
   composedOf: [
     { component: 'TokenRow', role: "One TokenRow per type step: a sample at that size, its name and value, with its note.", relationship: 'built-in' },
   ],

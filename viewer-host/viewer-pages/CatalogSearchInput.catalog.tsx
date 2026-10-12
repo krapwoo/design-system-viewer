@@ -10,6 +10,7 @@ function SearchDemo({ initial = '' }: { initial?: string }) {
 export default defineCatalogPage({
   component: 'CatalogSearchInput',
   group: 'Components',
+  whenToUse: 'The catalog\'s own sidebar filter, and only that. It is built from bare RN primitives on purpose, because the catalog documents the host app\'s search field rather than consuming it — in a host app, reach for that app\'s own field component instead.',
   source: '../native/catalog/CatalogSearchInput.tsx',
   hide: { props: true },
   description: 'A plain filter input, deliberately built from bare RN primitives rather than the host app\'s own search field — the catalog\'s own chrome shouldn\'t depend on (or break alongside) the thing it\'s documenting. It has no width of its own: it fills whatever column it sits in, 264px in the sidebar and a phone\'s content width here. A clear button appears as soon as there is something to clear.',
