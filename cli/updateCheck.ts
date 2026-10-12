@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { compareVersions, isBreakingUpgrade, parseVersion } from './semver.ts';
+import { DEFAULT_WORKSPACE_DIR } from './types.ts';
 import type { AutoCheckSource, VersionStatus } from '../native/catalog/types.ts';
 
 /** Exactly what the user-wide cache file holds — deliberately missing `current`/`breaking`
@@ -285,9 +286,10 @@ export function statusFromCheck(
   };
 }
 
-/** `dev` writes this next to `update.json`; the generated entry file imports it. */
-export function writeVersionFile(projectRoot: string, status: VersionStatus): string {
-  const file = path.join(projectRoot, '.ds-viewer', 'version.json');
+/** `dev` writes this next to `update.json`; the generated entry file imports it. `workspaceDir`
+ *  is the run's own generated directory — see `workspacePath`. */
+export function writeVersionFile(projectRoot: string, status: VersionStatus, workspaceDir: string = DEFAULT_WORKSPACE_DIR): string {
+  const file = path.join(projectRoot, workspaceDir, 'version.json');
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(status));
   return file;
@@ -296,8 +298,8 @@ export function writeVersionFile(projectRoot: string, status: VersionStatus): st
 /** Design §5: "`dev` writes the result to `.ds-viewer/update.json`; the viewer reads it." Always
  *  writes something — `null` when there is no result — so the generated entry file (Task 17) can
  *  unconditionally `import updateNotice from './update.json'` without ever hitting a missing file. */
-export function writeUpdateFile(projectRoot: string, result: UpdateCheckResult | undefined): string {
-  const file = path.join(projectRoot, '.ds-viewer', 'update.json');
+export function writeUpdateFile(projectRoot: string, result: UpdateCheckResult | undefined, workspaceDir: string = DEFAULT_WORKSPACE_DIR): string {
+  const file = path.join(projectRoot, workspaceDir, 'update.json');
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(result ?? null));
   return file;

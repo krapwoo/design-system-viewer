@@ -4,7 +4,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import * as ts from 'typescript';
-import { writeWorkspace } from '../workspace.ts';
+import { writeWorkspace, workspacePath } from '../workspace.ts';
+import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from '../types.ts';
 import type { ResolvedConfig } from '../types.ts';
 
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, '../../fixtures/existing-project');
@@ -201,4 +202,21 @@ test('a run with no endpoint of its own inlines none, so its pages make no endpo
   const without = writeWorkspace(baseConfig(projectRoot));
   assert.match(readFileSync(path.join(without, 'entry.tsx'), 'utf8'), /const updateEndpoint = undefined;/);
   rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a run can own a different generated directory, and nothing of it lands in the default one', () => {
+  // Two dev servers share one project root: `doctor --render` starts its own beside whatever the
+  // developer has open. Before this, the second one's files replaced the first one's.
+  const projectRoot = copyFixture();
+  const own = writeWorkspace({ ...baseConfig(projectRoot), workspaceDir: RENDER_WORKSPACE_DIR }, { baseUrl: 'http://127.0.0.1:1', secret: 's' });
+  assert.equal(path.basename(own), RENDER_WORKSPACE_DIR);
+  assert.ok(existsSync(path.join(own, 'entry.tsx')));
+  // The default directory was never created by that call.
+  assert.equal(existsSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR)), false);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('workspacePath resolves inside the run\'s own directory, defaulting to .ds-viewer', () => {
+  assert.equal(workspacePath({ projectRoot: '/p' }, 'generated'), path.join('/p', DEFAULT_WORKSPACE_DIR, 'generated'));
+  assert.equal(workspacePath({ projectRoot: '/p', workspaceDir: RENDER_WORKSPACE_DIR }, 'update.json'), path.join('/p', RENDER_WORKSPACE_DIR, 'update.json'));
 });

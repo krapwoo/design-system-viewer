@@ -7,6 +7,7 @@ import { detectComponentFolders, detectTokenFiles, type DetectedComponentFolder,
 import { ensureAgentsFileSection } from './agentsFile.ts';
 import { ensureGithubAction } from './githubAction.ts';
 import { readOwnVersion } from './packageVersion.ts';
+import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from './types.ts';
 
 export interface InitResult {
   messages: string[];
@@ -179,11 +180,15 @@ function ensureSharedProjectFiles(projectRoot: string): string[] {
   }
 
   const gitignorePath = path.join(projectRoot, '.gitignore');
-  const gitignoreEntry = '.ds-viewer/';
+  // Both generated workspaces: the one `dev` owns, and the one `doctor --render`'s own server uses
+  // so it never writes the files `dev` is serving.
+  const gitignoreEntries = [`${DEFAULT_WORKSPACE_DIR}/`, `${RENDER_WORKSPACE_DIR}/`];
   const existingGitignore = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf8') : '';
-  if (!existingGitignore.split('\n').some((line) => line.replace(/\r$/, '') === gitignoreEntry)) {
+  const presentLines = new Set(existingGitignore.split('\n').map((line) => line.replace(/\r$/, '')));
+  const missing = gitignoreEntries.filter((entry) => !presentLines.has(entry));
+  if (missing.length > 0) {
     const separator = existingGitignore === '' || existingGitignore.endsWith('\n') ? '' : '\n';
-    writeFileSync(gitignorePath, `${existingGitignore}${separator}${gitignoreEntry}\n`);
+    writeFileSync(gitignorePath, `${existingGitignore}${separator}${missing.join('\n')}\n`);
     written.push(gitignorePath);
   }
   written.push(...ensureAgentsFileSection(projectRoot));

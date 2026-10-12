@@ -47,7 +47,8 @@ test('initExistingProject writes the config, missing drafts, the script, the dev
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
   assert.deepEqual(packageJson.scripts, { 'ds-viewer': 'ds-viewer' });
   assert.match(packageJson.devDependencies['@krapwoo/ds-viewer'], /^\^\d+\.\d+\.\d+$/);
-  assert.equal(readFileSync(gitignorePath, 'utf8'), '.ds-viewer/\n');
+  // Both generated workspaces: `dev`'s own, and the throwaway one `doctor --render` uses.
+  assert.equal(readFileSync(gitignorePath, 'utf8'), '.ds-viewer/\n.ds-viewer-render/\n');
 
   rmSync(projectRoot, { recursive: true, force: true });
 });
@@ -71,11 +72,11 @@ test('initExistingProject writes nothing on a second --yes run (idempotence)', a
 
 test('initExistingProject treats a CRLF .gitignore\'s existing entry as already present', async () => {
   const projectRoot = copyFixture();
-  writeFileSync(path.join(projectRoot, '.gitignore'), 'node_modules/\r\n.ds-viewer/\r\n');
+  writeFileSync(path.join(projectRoot, '.gitignore'), 'node_modules/\r\n.ds-viewer/\r\n.ds-viewer-render/\r\n');
   const result = await initExistingProject(projectRoot, { yes: true });
   const gitignorePath = path.join(projectRoot, '.gitignore');
   assert.ok(!result.written.includes(gitignorePath));
-  assert.equal(readFileSync(gitignorePath, 'utf8'), 'node_modules/\r\n.ds-viewer/\r\n');
+  assert.equal(readFileSync(gitignorePath, 'utf8'), 'node_modules/\r\n.ds-viewer/\r\n.ds-viewer-render/\r\n');
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
@@ -177,7 +178,7 @@ test('initNewProject installs missing kit packages via the injected installer, c
   const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['ds-viewer'], 'ds-viewer');
   assert.match(packageJson.devDependencies['@krapwoo/ds-viewer'], /^\^\d+\.\d+\.\d+$/);
-  assert.equal(readFileSync(path.join(projectRoot, '.gitignore'), 'utf8'), '.ds-viewer/\n');
+  assert.equal(readFileSync(path.join(projectRoot, '.gitignore'), 'utf8'), '.ds-viewer/\n.ds-viewer-render/\n');
   assert.ok(result.written.some((f) => f.endsWith('AGENTS.md')));
   assert.equal(readFileSync(path.join(projectRoot, 'AGENTS.md'), 'utf8').includes('<!-- ds-viewer:start v1 -->'), true);
   assert.ok(result.written.some((f) => f.endsWith(path.join('.github', 'workflows', 'ds-viewer.yml'))));

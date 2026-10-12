@@ -2,9 +2,18 @@ import type { DsViewerConfig } from '../config/index.ts';
 
 /** `DsViewerConfig` plus where it came from. Every CLI command after config loading works with
  *  this, not the raw `DsViewerConfig`, so paths are always resolved against the right project. */
+/** The generated Expo workspace's directory name, relative to `projectRoot`. The default is the
+ *  only one a user ever sees; a throwaway server (a render check's own `dev`) uses its own so the
+ *  two never write the same files. */
+export const DEFAULT_WORKSPACE_DIR = '.ds-viewer';
+/** Used by `doctor --render`'s own `dev`. Gitignored next to the default. */
+export const RENDER_WORKSPACE_DIR = '.ds-viewer-render';
+
 export interface ResolvedConfig extends DsViewerConfig {
   projectRoot: string;
   configPath: string;
+  /** Which generated workspace this run owns. Defaults to `DEFAULT_WORKSPACE_DIR`. */
+  workspaceDir?: string;
 }
 
 export interface PropRecord {

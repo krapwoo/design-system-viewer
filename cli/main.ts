@@ -7,6 +7,7 @@ import { dev } from './dev.ts';
 import { sync } from './sync.ts';
 import { formatHuman, runDoctor, toDoctorJson, withExtraIssues } from './doctor.ts';
 import { renderCheck } from './render.ts';
+import { RENDER_WORKSPACE_DIR } from './types.ts';
 import { explainPage, formatExplain, parseHeights } from './explain.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { checkForUpdate, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck } from './updateCheck.ts';
@@ -28,6 +29,8 @@ Commands:
            Pin the catalog (and its update endpoint's restart handoff) to this port
            [--no-update-endpoint]
            Serve with no local update endpoint, leaving the one a running dev server recorded alone
+           [--workspace-dir <name>]
+           Generate into this directory instead of .ds-viewer, so two servers never share files
   doctor   Check every page for drift and coverage gaps
            --json          print the machine-readable report instead
            --ci            exit 1 when any error was found (never on a warning alone)
@@ -271,7 +274,18 @@ async function main(): Promise<void> {
     // endpoint an already-running `dev` recorded in the shared workspace alone. `doctor --render`
     // starts its own server this way.
     const noUpdateEndpoint = rest.includes('--no-update-endpoint');
-    await dev(config, { pinnedPort, noUpdateEndpoint });
+    // `--workspace-dir <name>`: which generated directory this run owns, so a second server (a
+    // render check's own) never writes the files the first one is serving. A bare directory name
+    // only — anything with a path separator, or a parent reference, would let an argument write
+    // outside the project.
+    const dirIndex = rest.indexOf('--workspace-dir');
+    const requestedDir = dirIndex !== -1 ? rest[dirIndex + 1] : undefined;
+    if (requestedDir !== undefined && (requestedDir === '' || requestedDir !== path.basename(requestedDir) || requestedDir.startsWith('.') === false)) {
+      console.error(`--workspace-dir must be a single hidden directory name such as ${RENDER_WORKSPACE_DIR}.`);
+      process.exitCode = 1;
+      return;
+    }
+    await dev(config, { pinnedPort, noUpdateEndpoint, workspaceDir: requestedDir });
     return;
   }
 
