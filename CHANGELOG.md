@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.5
+
+- The internals catalog documents the four components its own cells are built from — `SpecimenSurface` (the cell backing, with the `auto` rule shown against an example that needs it and one that doesn't), `SpecimenContent` (the phone-width cap, the centring of a narrow filled example, and all three explicit alignments), `TokenTile` and `SpecimenAddressProvider`. The three comparison layouts and `CatalogShell` now declare these in `composedOf`, so a page says what it is actually made of. `doctor` is clean across both catalogs.
+
+  `SpecimenContent` and `SpecimenAddressProvider` stay out of the package's public exports: they are documented from the source tree, because a catalog page is a reason to explain a component, not a reason to widen an API.
+
 ## 0.6.4
 
 - Every component page in both catalogs now documents when to reach for it, and what its accessibility actually does — `doctor`'s `missing-guidance-or-a11y` is clean, where before 30 pages rendered a visible "No usage guidance documented." or "No accessibility notes documented." placeholder to the reader.
