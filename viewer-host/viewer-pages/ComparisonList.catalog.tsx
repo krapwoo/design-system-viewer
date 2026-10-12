@@ -15,6 +15,11 @@ export default defineCatalogPage({
   component: 'ComparisonList',
   internalProps: { size: "The page's specimen size, passed by SectionBlock's layout.", surface: "The page's specimenSurface, passed by SectionBlock." },
   group: 'Components',
+  composedOf: [
+    { component: 'SpecimenSurface', role: "Backs every example cell, so one page's `specimenSurface` fills each cell the same way.", relationship: 'built-in' },
+    { component: 'SpecimenAddressProvider', role: "Wraps each example so a PhoneFrame inside it can reopen that one example in its own document.", relationship: 'built-in' },
+    { component: 'SpecimenContent', role: "Caps, centres and measures the example inside its cell.", relationship: 'built-in' },
+  ],
   whenToUse: 'One axis: a flat set of examples differing in a single respect, wrapped into balanced rows with a caption on each cell. For two props that combine, use ComparisonGrid; for a second axis that means something different per variant, use ComparisonGroups.',
   source: '../native/catalog/ComparisonList.tsx',
   specimenSize: 'page',
