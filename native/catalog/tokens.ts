@@ -121,6 +121,10 @@ export const CATALOG_COLOR = {
   surfaceMuted: '#fafafa',
   /** Hover and pressed feedback on nav rows and buttons. */
   surfacePressed: '#f1f3f8',
+  /** A disabled control's surface, and its label. Approved with the update page's buttons
+   *  (docs/design/2026-10-10-ds-viewer-update-page-always-approved.html). */
+  controlDisabled: '#e6e6e6',
+  controlDisabledText: '#8a8a8a',
   /** An example's cell when the example itself is white (`specimenSurface`), darker than surfaceMuted so a white card's edges show. */
   specimenStage: '#f2f2f2',
   pageBackground: '#f6f6f4',

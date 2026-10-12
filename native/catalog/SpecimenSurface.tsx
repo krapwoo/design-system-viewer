@@ -130,14 +130,18 @@ export function SpecimenContent({ fill, align, capped = true, children }: { fill
     if (!browser.Element || !browser.getComputedStyle || !node?.getBoundingClientRect) return;
     const wrapperWidth = node.getBoundingClientRect().width;
     const visible = paintedExtent(visibleBoxes(readTree(node, browser)));
-    if (fill && align === undefined && !centerNarrow && shouldCenterFilledContent(visible, wrapperWidth)) setCenterNarrow(true);
+    // Only for a phone-width cell. Centring exists for a small control adrift in a wide cell (a
+    // tooltip, a fixed-width skeleton); a 'page' cell holds a layout, whose own content is
+    // supposed to sit at the left of its own measure, and centring it collapses it to the width of
+    // whatever it happens to have painted.
+    if (capped && fill && align === undefined && !centerNarrow && shouldCenterFilledContent(visible, wrapperWidth)) setCenterNarrow(true);
     if ((globalThis as { __DEV__?: boolean }).__DEV__ && !warned.current && overflowsCell(visible, wrapperWidth)) {
       warned.current = true;
       console.warn(
         `[Catalog] ${address ? `${address.pageId} (${address.itemKey})` : 'An example'} is ${Math.round(visible)}px wide in a ${Math.round(wrapperWidth)}px cell, so it's cut off. Give the page a wider specimenSize ('regular', 'wide', or 'page' for components wider than a phone).`,
       );
     }
-  }, [fill, align, centerNarrow, address]);
+  }, [capped, fill, align, centerNarrow, address]);
   if (fill) {
     const alignItems = centerNarrow ? 'center' : specimenContentAlignItems(fill, align);
     return <View ref={ref} onLayout={measure} style={[SPECIMEN_SURFACE_WIDTH_STYLE, filledContentStyle(capped), { alignItems }]}>{children}</View>;

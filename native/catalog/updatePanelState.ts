@@ -211,3 +211,11 @@ export function resultNote(
       );
   }
 }
+
+/** Whether a page at this protocol and hostname can use the viewer's local endpoint. The endpoint
+ *  allows exactly `http://localhost:<dev port>` — it installs packages and restarts the server —
+ *  so a tunnel, a LAN address or a reverse proxy is refused before the secret is read. Comparing
+ *  the page's origin with the endpoint's would be wrong: the endpoint is always on its own port. */
+export function isRemoteOrigin(protocol: string, hostname: string): boolean {
+  return !(protocol === 'http:' && hostname === 'localhost');
+}
