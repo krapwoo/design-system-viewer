@@ -3,6 +3,15 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.4
+
+- Every component page in both catalogs now documents when to reach for it, and what its accessibility actually does — `doctor`'s `missing-guidance-or-a11y` is clean, where before 30 pages rendered a visible "No usage guidance documented." or "No accessibility notes documented." placeholder to the reader.
+
+  The three comparison layouts now state the rule that decides between them, which the catalog had never said out loud: one axis is a `ComparisonList`, two axes whose columns mean the same thing in every row are a `ComparisonGrid`, and two axes where the second belongs to each variant are `ComparisonGroups`. Each page names the others, so arriving at the wrong one leads you to the right one.
+
+  Where a component genuinely has no special accessibility handling, the note says so and says what that means for the reader — for the scale galleries, that every value is real text beside the bar rather than being carried by the bar's length.
+- The starter kit's last four preview-only pages now name their real variants instead of showing one unlabelled demo: `SegmentedToggle` (two options, an icon per segment, a badge beside a label-only segment, and the thumb at each end of the track), `UnderlineTabs` (labels only, a leading icon, a badge, and the underline at each end), `BottomSheet` (content only, a TopNav header, a header with a Dock footer, and content long enough to scroll) and `Dialog` (two actions, one action, title and actions only). The overlay examples start open, because a closed one is the same empty phone and trigger in every cell, whatever it is named for. `doctor`'s `preview-only-component-page` is now clean across both catalogs.
+
 ## 0.6.3
 
 - `doctor --render` no longer disturbs a catalog you already have open. It starts its own `dev` server, and that server now has its own generated directory (`.ds-viewer-render/`, which `init` gitignores beside `.ds-viewer/`) and no local update endpoint (`dev --no-update-endpoint`). Before, both servers wrote the one `.ds-viewer/` workspace and the last writer decided what was in it: the check wrote its own short-lived endpoint there and exited, leaving the open catalog calling a port that had died with it — reported on the update page as "Couldn't reach the viewer's local server. If this keeps happening, restart npx ds-viewer dev," against a server that was perfectly healthy. The update page's actions (Check now, Update now) now keep working across a render check.
