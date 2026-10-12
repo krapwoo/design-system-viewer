@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.3
+
+- `doctor --render` no longer disturbs a catalog you already have open. It starts its own `dev` server, and that server now has its own generated directory (`.ds-viewer-render/`, which `init` gitignores beside `.ds-viewer/`) and no local update endpoint (`dev --no-update-endpoint`). Before, both servers wrote the one `.ds-viewer/` workspace and the last writer decided what was in it: the check wrote its own short-lived endpoint there and exited, leaving the open catalog calling a port that had died with it — reported on the update page as "Couldn't reach the viewer's local server. If this keeps happening, restart npx ds-viewer dev," against a server that was perfectly healthy. The update page's actions (Check now, Update now) now keep working across a render check.
+- A refusal the page is allowed to read — a wrong secret (401) or an unknown route (404), where the endpoint's Origin check has already passed — now carries the `Access-Control-Allow-Origin` header. Without it the browser blocked the response and the update page could not tell a wrong secret from a server that was not running: both arrived as the same opaque network failure, which is what disguised the stale port above. A rejected or absent Origin still gets no CORS headers at all.
+- `doctor --render` waits for the catalog's sidebar before it starts opening pages, instead of reading the page once as soon as the server answers. A workspace Metro has never bundled takes longer the first time, and an empty read was reported as a catalog that failed to render. `startDev` likewise waits for the catalog to answer before the first navigation: it used to resolve as soon as `dev` printed the port, which `dev` does before it spawns Expo, so the first page load raced the bundler.
+
 ## 0.6.2
 
 - `explain` now reads a page's `previewLayout`, so a `previewLayout: 'table'` preview is priced with the table card's own chrome (a 1px border and `cellPadding` around each frame, 34px) instead of the frames card's (24px padding and a border, 50px). A `previewLayout` the reader cannot resolve to a literal makes the page not statically checkable, the same rule a slot's `maxColumns` follows, rather than letting the CLI report a minimum the viewer does not use.
