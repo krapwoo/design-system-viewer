@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { resolveConfig } from './config.ts';
 import { sync } from './sync.ts';
-import { writeWorkspace } from './workspace.ts';
+import { workspacePath, writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
 import {
@@ -20,11 +20,11 @@ import { createUpdateEndpoint, type EndpointDeps, type UpdateStatus } from './en
 import { buildUpdatePlan, type UpdatePlan } from './updatePlan.ts';
 import { lastSummaryLine } from './doctor.ts';
 import { detectPackageManager, installUpgradeCommand, platformCommand, type PackageManager } from './packageManager.ts';
-import type { ResolvedConfig } from './types.ts';
+import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR, type ResolvedConfig } from './types.ts';
 
 export class LocalInstallMissingError extends Error {}
 
-const IGNORED_WATCH_SEGMENTS = new Set(['.ds-viewer', 'node_modules', '.git']);
+const IGNORED_WATCH_SEGMENTS = new Set([DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR, 'node_modules', '.git']);
 
 /** False for a changed path under `.ds-viewer/` (package-owned output — reacting to it would make
  *  `dev`'s own `sync` retrigger itself), `node_modules/`, or `.git/`; true for everything else, so
@@ -71,8 +71,16 @@ export function watchTargetFolders(config: ResolvedConfig): string[] {
  *  workspace until `dev` was restarted, because `writeWorkspace` was never called again with the
  *  new value (controller end-to-end finding E1). Returns the freshly-resolved config so `dev` can
  *  keep watching with it. */
-export function reloadWorkspace(projectRoot: string, updateEndpoint?: { baseUrl: string; secret: string }): ResolvedConfig {
-  const config = resolveConfig(projectRoot);
+export function reloadWorkspace(
+  projectRoot: string,
+  updateEndpoint?: { baseUrl: string; secret: string },
+  // `resolveConfig` reads the user's file, which never names a workspace directory, so a run that
+  // owns a non-default one has to put it back — otherwise a config change moves every generated
+  // file into `.ds-viewer`, which is the collision this parameter exists to prevent.
+  workspaceDir?: string,
+): ResolvedConfig {
+  const resolved = resolveConfig(projectRoot);
+  const config: ResolvedConfig = workspaceDir ? { ...resolved, workspaceDir } : resolved;
   sync(config);
   writeWorkspace(config, updateEndpoint);
   return config;
@@ -99,8 +107,8 @@ export async function refreshUpdateFile(
       ? statusFromCheck(ownVersion, autoCheck, { result: await injected(ownVersion), reached: true })
       : { current: ownVersion, autoCheck, lastOutcome: 'not-run' as const, update: null }
     : await buildVersionStatus(ownVersion, autoCheck);
-  writeUpdateFile(config.projectRoot, status.update ? { ...status.update, checkedAt: status.lastCheckedAt ?? new Date().toISOString() } : undefined);
-  writeVersionFile(config.projectRoot, status);
+  writeUpdateFile(config.projectRoot, status.update ? { ...status.update, checkedAt: status.lastCheckedAt ?? new Date().toISOString() } : undefined, config.workspaceDir);
+  writeVersionFile(config.projectRoot, status, config.workspaceDir);
   return status;
 }
 
@@ -353,16 +361,18 @@ export async function performRestart(
  *  component/token/page changes to re-run `sync`. Metro's own HMR updates the rendered component
  *  when its source changes, but not the generated props table or page list (Task 17 Step 4 relies
  *  on this: editing `Button.tsx` must update its props table, not just hot-reload the component). */
-export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number; noUpdateEndpoint?: boolean } = {}): Promise<void> {
+export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number; noUpdateEndpoint?: boolean; workspaceDir?: string } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
-  let config = initialConfig;
+  // Carried on the config so every writer (sync, writeWorkspace, the update files) lands in this
+  // run's own directory, and so a config reload cannot silently drop it.
+  let config: ResolvedConfig = devOptions.workspaceDir ? { ...initialConfig, workspaceDir: devOptions.workspaceDir } : initialConfig;
   const version = createVersionController({
     ownVersion,
     projectRoot: initialConfig.projectRoot,
     prefsDir: defaultPreferencesDir(),
     env: process.env,
-    initial: await refreshUpdateFile(initialConfig, ownVersion),
+    initial: await refreshUpdateFile(config, ownVersion),
     getConfig: () => config,
     // **Check now** always asks npm, even with automatic checks off: you asked for this one check.
     // The result lives only in this process; `update.json` and `version.json` are rewritten at
@@ -374,7 +384,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   // Restart handoff step 2/4: a status file left by the *previous* `dev` process (right before it
   // exited to restart) is read once, then deleted — a plain refresh afterward shows "idle"/"no
   // update known" instead of replaying a stale success/failure forever.
-  const statusFile = path.join(config.projectRoot, '.ds-viewer', 'update-status.json');
+  const statusFile = workspacePath(config, 'update-status.json');
   let updateStatus: UpdateStatus = { phase: 'idle' };
   if (existsSync(statusFile)) {
     try {
@@ -493,7 +503,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     clearTimeout(configDebounceTimer);
     configDebounceTimer = setTimeout(() => {
       try {
-        config = reloadWorkspace(config.projectRoot, updateEndpoint);
+        config = reloadWorkspace(config.projectRoot, updateEndpoint, config.workspaceDir);
         version.refreshAutoCheck();
       } catch (error) {
         console.warn(`Could not reload ds-viewer.config.ts after a change: ${(error as Error).message}`);

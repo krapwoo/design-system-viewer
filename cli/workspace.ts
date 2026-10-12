@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { globBaseFolder } from './glob.ts';
-import type { ResolvedConfig } from './types.ts';
+import { DEFAULT_WORKSPACE_DIR, type ResolvedConfig } from './types.ts';
 
 function metroConfigJs(extraWatchFolders: string[]): string {
   return `const path = require('path');
@@ -111,6 +111,12 @@ function projectIncludeGlobs(config: ResolvedConfig): string[] {
   return configGlobFolders(config).map((folder) => `../${folder}/**/*`);
 }
 
+/** This run's generated workspace directory. Every writer goes through here, so a run that owns a
+ *  different directory (a render check's throwaway server) cannot touch another server's files. */
+export function workspacePath(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>, ...segments: string[]): string {
+  return path.join(config.projectRoot, config.workspaceDir ?? DEFAULT_WORKSPACE_DIR, ...segments);
+}
+
 /** Writes the self-contained Expo web workspace at `.ds-viewer/` (design §2 "The preview
  *  workspace and `npx ds-viewer dev`"). Rewritten freely on every `dev` run — nothing here is
  *  user-owned.
@@ -122,7 +128,7 @@ function projectIncludeGlobs(config: ResolvedConfig): string[] {
  *  one directory, so the last writer decides — see the README on running a render check beside an
  *  open catalog. */
 export function writeWorkspace(config: ResolvedConfig, updateEndpoint?: { baseUrl: string; secret: string }): string {
-  const workspace = path.join(config.projectRoot, '.ds-viewer');
+  const workspace = workspacePath(config);
   mkdirSync(workspace, { recursive: true });
 
   writeFileSync(path.join(workspace, 'package.json'), `${JSON.stringify({ name: 'ds-viewer-workspace', private: true, main: 'entry.tsx' }, null, 2)}\n`);

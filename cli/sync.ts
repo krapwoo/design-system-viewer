@@ -4,6 +4,7 @@ import { globBaseFolder, resolveGlob } from './glob.ts';
 import { createComponentReader, type ReadComponentsOptions } from './props.ts';
 import { readTokenModules } from './tokens.ts';
 import { discoverPages, writePageIndex } from './pageIndex.ts';
+import { workspacePath } from './workspace.ts';
 import type { ComponentRecord, ResolvedConfig } from './types.ts';
 
 export interface SyncResult {
@@ -23,7 +24,7 @@ const GENERATED_INDEX = "export { default as components } from './components.jso
  *  sorted and deterministic). Nothing from the project is executed. `resolveOptions` is test-only
  *  (see this task's Interfaces note) — production callers omit it. */
 export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOptions): SyncResult {
-  const generatedDir = path.join(config.projectRoot, '.ds-viewer', 'generated');
+  const generatedDir = workspacePath(config, 'generated');
   mkdirSync(generatedDir, { recursive: true });
 
   const excluded = new Set((config.exclude ?? []).flatMap((pattern) => resolveGlob(config.projectRoot, pattern)));

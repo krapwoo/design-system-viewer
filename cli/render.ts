@@ -6,6 +6,7 @@ import { get as httpGet } from 'node:http';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RENDER_WORKSPACE_DIR } from './types.ts';
 import type { DoctorIssue } from './doctor.ts';
 
 export interface PageMessage {
@@ -221,10 +222,11 @@ async function waitForServer(port: number, timeoutMs = DEV_START_TIMEOUT_MS): Pr
 function startDev(projectRoot: string, onSpawn: (child: ChildProcess) => void): Promise<{ child: ChildProcess; port: number }> {
   const main = path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.js');
   return new Promise((resolve, reject) => {
-    // No update endpoint: this server exists to render pages, and creating one would overwrite the
-    // endpoint of an already-running `dev` in the shared `.ds-viewer/` workspace, pointing that
-    // developer's open catalog at a port that dies with this check.
-    const child = spawn(process.execPath, [main, 'dev', '--no-update-endpoint'], {
+    // Its own workspace directory and no update endpoint: this server exists to render pages, and
+    // every file it generates would otherwise overwrite the ones an already-running `dev` is
+    // serving — including that developer's endpoint, pointing their open catalog at a port that
+    // dies with this check.
+    const child = spawn(process.execPath, [main, 'dev', '--no-update-endpoint', '--workspace-dir', RENDER_WORKSPACE_DIR], {
       cwd: projectRoot,
       env: { ...process.env, CI: '1', DS_VIEWER_NO_UPDATE_CHECK: '1' },
       detached: process.platform !== 'win32',
@@ -338,10 +340,18 @@ export async function renderCheck(
       }
     }
     // Runs in the browser; `document` is typed loosely because the CLI compiles without DOM types.
-    const hrefs: string[] = await home.evaluate(() => {
+    const readHrefs = (): Promise<string[]> => home.evaluate(() => {
       const doc = (globalThis as unknown as { document: { querySelectorAll: (s: string) => ArrayLike<{ getAttribute: (n: string) => string | null }> } }).document;
       return [...new Set(Array.from(doc.querySelectorAll('a[href^="#"]')).map((a) => a.getAttribute('href') ?? ''))];
     });
+    // The server answers before the bundle has run, and a workspace Metro has never bundled before
+    // (a fresh `.ds-viewer-render`) is slow the first time. Keep asking until the sidebar is there,
+    // rather than reading once and calling an empty page a failed render.
+    let hrefs = await readHrefs();
+    while (hrefs.length === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500));
+      hrefs = await readHrefs();
+    }
     await home.close();
     const ids = hrefs.map(idFromHref).filter(Boolean);
     if (ids.length === 0) {
