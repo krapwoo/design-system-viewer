@@ -597,3 +597,44 @@ test('viewerImports lists the imported names from @krapwoo/ds-viewer, even when 
   rmSync(path.dirname(literal), { recursive: true, force: true });
   rmSync(path.dirname(notLiteral), { recursive: true, force: true });
 });
+
+test("previewLayout is read when literal, and a non-literal one makes the page not checkable", () => {
+  const table = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'A widget.',
+      previewWidths: [402, 320], previewLayout: 'table', render: () => null,
+    });
+  `);
+  const [page] = readStaticPages([table]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.previewLayout, 'table');
+  rmSync(path.dirname(table), { recursive: true, force: true });
+
+  // Absent is fine: the viewer's own default is the frames card.
+  const absent = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'A widget.', render: () => null,
+    });
+  `);
+  const [plain] = readStaticPages([absent]);
+  assert.equal(plain.checkable, true);
+  assert.equal(plain.previewLayout, undefined);
+  rmSync(path.dirname(absent), { recursive: true, force: true });
+
+  // Unreadable is not: the two cards have different chrome, so guessing would make `explain`
+  // report a different minimum than the viewer uses — the same rule `maxColumns` follows.
+  const computed = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const pick = () => 'table' as const;
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'A widget.',
+      previewLayout: pick(), render: () => null,
+    });
+  `);
+  const [opaque] = readStaticPages([computed]);
+  assert.equal(opaque.checkable, false);
+  assert.equal(opaque.previewLayout, undefined);
+  rmSync(path.dirname(computed), { recursive: true, force: true });
+});

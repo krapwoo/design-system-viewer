@@ -132,6 +132,11 @@ export interface StaticPage {
    *  list geometry `cli/explain.ts` reports, so a non-literal or out-of-range cap makes the page not
    *  checkable rather than letting the CLI drift from the viewer. */
   previewWidths?: readonly number[] | 'full';
+  /** Literal `previewLayout`. Like `maxColumns`, this one changes the geometry `explain` reports —
+   *  a 'table' card puts `cellPadding` around each frame where a frames card puts its own padding,
+   *  so `blockMinWidth` prices the two differently — hence a non-literal value makes the page not
+   *  checkable rather than letting the CLI quietly price a table preview as frames. */
+  previewLayout?: 'frames' | 'table';
   fullWidthLabel?: string;
   hideVariants?: boolean;
   hideStates?: boolean;
@@ -274,6 +279,18 @@ function readStaticPage(file: string): StaticPage {
     }
     // Anything else (a function call, a non-literal expression) is simply left unset — `previewWidths`
     // isn't in design §4's literal-checkable list, so it's never a reason to flip `checkable`.
+  }
+  const previewLayoutProp = findProp(pageObject, 'previewLayout');
+  if (previewLayoutProp) {
+    // Unlike `previewWidths`, an unread value here is not harmless: the two card shapes have
+    // different chrome, so a missed 'table' would make `explain` price the preview 16px wider
+    // than the viewer does.
+    const resolved = resolve(previewLayoutProp.initializer, consts, new Set());
+    if (ts.isStringLiteral(resolved) && (resolved.text === 'frames' || resolved.text === 'table')) {
+      page.previewLayout = resolved.text;
+    } else {
+      page.checkable = false;
+    }
   }
   const fullWidthLabelProp = findProp(pageObject, 'fullWidthLabel');
   if (fullWidthLabelProp) page.fullWidthLabel = stringLiteral(resolve(fullWidthLabelProp.initializer, consts, new Set()));
