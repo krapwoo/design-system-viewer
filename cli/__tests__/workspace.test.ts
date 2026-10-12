@@ -190,3 +190,15 @@ test('entry.tsx bakes in the endpoint base URL and secret when given one', () =>
   assert.match(entry, /const updateEndpoint = \{"baseUrl":"http:\/\/127\.0\.0\.1:54321","secret":"abc123"\};/);
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('a run with no endpoint of its own inlines none, so its pages make no endpoint calls', () => {
+  // The shell polls /version from every page, so a throwaway server (`--no-update-endpoint`, used
+  // by `doctor --render`) must not inherit another server's endpoint: every page would call it
+  // from the wrong origin. Two dev servers share this directory, so the last writer decides.
+  const projectRoot = copyFixture();
+  const withEndpoint = writeWorkspace(baseConfig(projectRoot), { baseUrl: 'http://127.0.0.1:54321', secret: 'abc' });
+  assert.match(readFileSync(path.join(withEndpoint, 'entry.tsx'), 'utf8'), /"baseUrl":"http:\/\/127\.0\.0\.1:54321"/);
+  const without = writeWorkspace(baseConfig(projectRoot));
+  assert.match(readFileSync(path.join(without, 'entry.tsx'), 'utf8'), /const updateEndpoint = undefined;/);
+  rmSync(projectRoot, { recursive: true, force: true });
+});

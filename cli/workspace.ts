@@ -113,7 +113,14 @@ function projectIncludeGlobs(config: ResolvedConfig): string[] {
 
 /** Writes the self-contained Expo web workspace at `.ds-viewer/` (design §2 "The preview
  *  workspace and `npx ds-viewer dev`"). Rewritten freely on every `dev` run — nothing here is
- *  user-owned. */
+ *  user-owned.
+ *
+ *  `updateEndpoint` is the caller's own, inlined into `entry.tsx`. Without one (a render check's
+ *  throwaway server, `--no-update-endpoint`) the catalog is served with no endpoint at all, so it
+ *  makes no calls: the shell polls `/version` from every page, so inlining a *different* server's
+ *  endpoint here would have every page call it from the wrong origin. Two `dev` servers share this
+ *  one directory, so the last writer decides — see the README on running a render check beside an
+ *  open catalog. */
 export function writeWorkspace(config: ResolvedConfig, updateEndpoint?: { baseUrl: string; secret: string }): string {
   const workspace = path.join(config.projectRoot, '.ds-viewer');
   mkdirSync(workspace, { recursive: true });

@@ -26,6 +26,8 @@ Commands:
   dev      Sync, then serve the catalog on a local web address and keep it current as files change
            [--port <number>]
            Pin the catalog (and its update endpoint's restart handoff) to this port
+           [--no-update-endpoint]
+           Serve with no local update endpoint, leaving the one a running dev server recorded alone
   doctor   Check every page for drift and coverage gaps
            --json          print the machine-readable report instead
            --ci            exit 1 when any error was found (never on a warning alone)
@@ -265,7 +267,11 @@ async function main(): Promise<void> {
     const portIndex = rest.indexOf('--port');
     const parsedPort = portIndex !== -1 ? Number(rest[portIndex + 1]) : undefined;
     const pinnedPort = parsedPort !== undefined && Number.isInteger(parsedPort) ? parsedPort : undefined;
-    await dev(config, { pinnedPort });
+    // `--no-update-endpoint`: run the catalog without the local update endpoint, and leave the
+    // endpoint an already-running `dev` recorded in the shared workspace alone. `doctor --render`
+    // starts its own server this way.
+    const noUpdateEndpoint = rest.includes('--no-update-endpoint');
+    await dev(config, { pinnedPort, noUpdateEndpoint });
     return;
   }
 

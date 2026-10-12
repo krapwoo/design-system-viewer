@@ -336,3 +336,23 @@ test('POST /update/resume continues a failed migrate or doctor step; anything el
     assert.deepEqual(resumed, ['migrate']);
   });
 });
+
+test('every refusal carries the allow-origin header, so the page sees the status instead of an opaque network failure', async () => {
+  await withServer({}, async (baseUrl) => {
+    // Right origin, no secret: a 401 the page can actually read and report.
+    const unauthorized = await fetch(`${baseUrl}/plan`, { method: 'POST', headers: { Origin: ALLOWED_ORIGIN } });
+    assert.equal(unauthorized.status, 401);
+    assert.equal(unauthorized.headers.get('access-control-allow-origin'), ALLOWED_ORIGIN);
+
+    // Unknown route, right origin and secret.
+    const notFound = await fetch(`${baseUrl}/nope`, { headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET } });
+    assert.equal(notFound.status, 404);
+    assert.equal(notFound.headers.get('access-control-allow-origin'), ALLOWED_ORIGIN);
+
+    // A rejected origin still gets no CORS headers at all — it is not told which origin is
+    // allowed, and the browser blocks the body either way.
+    const rejected = await fetch(`${baseUrl}/plan`, { method: 'POST', headers: { Origin: 'http://evil.test' } });
+    assert.equal(rejected.status, 403);
+    assert.equal(rejected.headers.get('access-control-allow-origin'), null);
+  });
+});
