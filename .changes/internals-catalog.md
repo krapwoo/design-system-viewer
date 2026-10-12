@@ -1,1 +1,0 @@
-The DS Viewer internals catalog (`npm run viewer:dev`) covers every viewer export, including PhoneFrame, PhoneScreen, OverlayDemo, CatalogButton, MotionSpecimen, TokenGrid and TokenSections, with Tokens and Components groups. `VersionStatus` and `AutoCheckSource` are now exported types, for `UpdatePanel`'s `versionStatus` prop.
