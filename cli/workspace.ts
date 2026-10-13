@@ -172,6 +172,20 @@ export function liveDevLock(
   return lock;
 }
 
+/** The files `writeWorkspace` always writes: the ones that define the workspace to Expo and Metro.
+ *  `babel.config.js` is conditional and the update files are written separately, so neither counts
+ *  as missing here. */
+export const WORKSPACE_DEFINING_FILES = ['package.json', 'app.json', 'tsconfig.json', 'metro.config.js', 'entry.tsx'] as const;
+
+/** Which of those a workspace has lost. A running `dev` owns these files and nothing else should
+ *  remove them, so a non-empty answer means something outside this process deleted them — see
+ *  issue #41, where the cause is still unidentified. Reported rather than diagnosed: the point is
+ *  that the server can say what happened instead of leaving Expo to blame the project's own
+ *  `package.json` with `Cannot resolve entry file`. */
+export function missingWorkspaceFiles(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>): string[] {
+  return WORKSPACE_DEFINING_FILES.filter((name) => !existsSync(workspacePath(config, name)));
+}
+
 /** Writes the self-contained Expo web workspace at `.ds-viewer/` (design §2 "The preview
  *  workspace and `npx ds-viewer dev`"). Rewritten freely on every `dev` run — nothing here is
  *  user-owned.
@@ -179,9 +193,9 @@ export function liveDevLock(
  *  `updateEndpoint` is the caller's own, inlined into `entry.tsx`. Without one (a render check's
  *  throwaway server, `--no-update-endpoint`) the catalog is served with no endpoint at all, so it
  *  makes no calls: the shell polls `/version` from every page, so inlining a *different* server's
- *  endpoint here would have every page call it from the wrong origin. Two `dev` servers share this
- *  one directory, so the last writer decides — see the README on running a render check beside an
- *  open catalog. */
+ *  endpoint here would have every page call it from the wrong origin. Each `dev` owns its own
+ *  workspace directory (`dev-lock.json`), so a render check beside an open catalog writes to
+ *  `.ds-viewer-render/` rather than this one — see the README. */
 export function writeWorkspace(config: ResolvedConfig, updateEndpoint?: { baseUrl: string; secret: string }): string {
   const workspace = workspacePath(config);
   mkdirSync(workspace, { recursive: true });

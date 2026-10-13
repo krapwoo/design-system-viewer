@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import * as ts from 'typescript';
-import { writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock } from '../workspace.ts';
+import { writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock, missingWorkspaceFiles, WORKSPACE_DEFINING_FILES } from '../workspace.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from '../types.ts';
 import type { ResolvedConfig } from '../types.ts';
 
@@ -264,5 +264,39 @@ test('each workspace directory has its own lock, so a render check never collide
   // The render check owns `.ds-viewer-render`, so it sees no owner and proceeds.
   assert.equal(liveDevLock({ projectRoot, workspaceDir: RENDER_WORKSPACE_DIR }, process.pid + 1), undefined);
   assert.ok(liveDevLock({ projectRoot }, process.pid + 1));
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a workspace that has lost its defining files reports exactly which, and writing it again restores them', () => {
+  // The failure this exists for (issue #41): something outside the server removes the workspace's
+  // files while it is serving, and Metro then blames the *project's* package.json with
+  // "Cannot resolve entry file" — a file the developer never touched and which is perfectly fine.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config);
+  assert.deepEqual(missingWorkspaceFiles(config), [], 'a freshly written workspace is intact');
+
+  // The observed shape of the failure: every defining file gone, `generated/` left behind.
+  for (const name of WORKSPACE_DEFINING_FILES) rmSync(workspacePath(config, name), { force: true });
+  assert.deepEqual(missingWorkspaceFiles(config).sort(), [...WORKSPACE_DEFINING_FILES].sort());
+
+  writeWorkspace(config);
+  assert.deepEqual(missingWorkspaceFiles(config), [], 'writeWorkspace is idempotent, so it is also the repair');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a single lost file is reported on its own, not as a wholesale failure', () => {
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config);
+  rmSync(workspacePath(config, 'entry.tsx'), { force: true });
+  assert.deepEqual(missingWorkspaceFiles(config), ['entry.tsx']);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a workspace that was never written reports every file rather than throwing', () => {
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  assert.equal(missingWorkspaceFiles(config).length, WORKSPACE_DEFINING_FILES.length);
   rmSync(projectRoot, { recursive: true, force: true });
 });

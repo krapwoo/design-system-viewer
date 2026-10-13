@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { resolveConfig } from './config.ts';
 import { sync } from './sync.ts';
-import { clearDevLock, liveDevLock, workspacePath, writeDevLock, writeWorkspace } from './workspace.ts';
+import { clearDevLock, liveDevLock, missingWorkspaceFiles, workspacePath, writeDevLock, writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
 import {
@@ -388,6 +388,15 @@ export async function performRestart(
  *  component/token/page changes to re-run `sync`. Metro's own HMR updates the rendered component
  *  when its source changes, but not the generated props table or page list (Task 17 Step 4 relies
  *  on this: editing `Button.tsx` must update its props table, not just hot-reload the component). */
+/** How often a running `dev` checks that its own workspace still exists. Cheap (five `existsSync`
+ *  calls), and slow enough to be invisible: the failure it covers is rare, and noticing within a
+ *  few seconds is soon enough to repair before the next page load. */
+const WORKSPACE_WATCH_INTERVAL_MS = 4000;
+
+/** How many times one `dev` run will rewrite a workspace that keeps losing files. Past this,
+ *  something is deleting continuously and repairing again would only hide it. */
+const WORKSPACE_REPAIR_LIMIT = 5;
+
 export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number; noUpdateEndpoint?: boolean; workspaceDir?: string } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
@@ -572,8 +581,48 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     shell: process.platform === 'win32',
     detached: true,
   });
+
+  // This process owns its workspace: nothing else should remove the files that define it. When
+  // they vanish anyway, Metro reports it as `Cannot resolve entry file: the 'main' field defined
+  // in your package.json points to an unresolvable or non-existent path` — which names the
+  // *project's* package.json, a file that is fine and that the developer did not touch. The cause
+  // is still unidentified (issue #41), so this does not pretend to prevent it; it notices, says
+  // plainly what happened, and writes the files back, because `writeWorkspace` is idempotent and
+  // already knows how.
+  //
+  // Capped rather than endless: if something is deleting continuously, rewriting forever would
+  // hide it behind a repair loop. After the cap this stops repairing and keeps saying so, which
+  // leaves the evidence visible.
+  let repairs = 0;
+  const workspaceWatch = setInterval(() => {
+    if (watchersPaused) return; // an update is rewriting the workspace on purpose.
+    const missing = missingWorkspaceFiles(config);
+    if (missing.length === 0) return;
+    if (repairs >= WORKSPACE_REPAIR_LIMIT) {
+      console.warn(
+        `The catalog workspace is still losing files (missing ${missing.join(', ')}). Not rewriting them again — ` +
+          'something outside this server is deleting them. Please report what else was running at https://github.com/krapwoo/design-system-viewer/issues/41',
+      );
+      return;
+    }
+    repairs += 1;
+    console.warn(
+      `Something outside this server deleted ${missing.join(', ')} from ${config.workspaceDir ?? DEFAULT_WORKSPACE_DIR}/. ` +
+        'Rewriting them — your project is fine, this is the catalog\'s own generated workspace. ' +
+        'If the catalog looks broken, reload the page.',
+    );
+    try {
+      writeWorkspace(config, endpointServer ? { baseUrl: `http://localhost:${port}`, secret } : undefined);
+      sync(config);
+    } catch (error) {
+      console.warn(`Could not rewrite the workspace: ${(error as Error).message}`);
+    }
+  }, WORKSPACE_WATCH_INTERVAL_MS);
+  workspaceWatch.unref?.();
+
   child.on('error', (error) => console.warn(`Could not start Expo: ${error.message}`));
   child.on('exit', (code) => {
+    clearInterval(workspaceWatch);
     for (const watcher of watchers) watcher.close();
     endpointServer?.close();
     // Released so the next `dev` is not refused by a lock naming a process that has gone.
