@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import * as ts from 'typescript';
-import { writeWorkspace, workspacePath } from '../workspace.ts';
+import { writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock } from '../workspace.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from '../types.ts';
 import type { ResolvedConfig } from '../types.ts';
 
@@ -219,4 +219,50 @@ test('a run can own a different generated directory, and nothing of it lands in 
 test('workspacePath resolves inside the run\'s own directory, defaulting to .ds-viewer', () => {
   assert.equal(workspacePath({ projectRoot: '/p' }, 'generated'), path.join('/p', DEFAULT_WORKSPACE_DIR, 'generated'));
   assert.equal(workspacePath({ projectRoot: '/p', workspaceDir: RENDER_WORKSPACE_DIR }, 'update.json'), path.join('/p', RENDER_WORKSPACE_DIR, 'update.json'));
+});
+
+test('a live dev lock is reported, so a second dev can refuse the workspace', () => {
+  const projectRoot = copyFixture();
+  const config = { projectRoot };
+  assert.equal(liveDevLock(config), undefined, 'no lock yet');
+
+  // This test's own process is certainly alive, so it stands in for the other server.
+  writeDevLock(config, { pid: process.pid, port: 5181 });
+  assert.deepEqual(liveDevLock(config, process.pid + 1), { pid: process.pid, port: 5181 });
+
+  // A process never finds itself: `dev` re-reads the lock it just wrote.
+  assert.equal(liveDevLock(config, process.pid), undefined);
+
+  clearDevLock(config);
+  assert.equal(liveDevLock(config, process.pid + 1), undefined, 'cleared');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a lock left behind by a crashed dev never blocks the next one', () => {
+  const projectRoot = copyFixture();
+  const config = { projectRoot };
+  // A pid that cannot be running: the kernel reserves 0, and `process.kill(0, 0)` targets this
+  // process's own group rather than a process, so use an unused high pid instead.
+  let deadPid = 999_999;
+  while (true) {
+    try { process.kill(deadPid, 0); deadPid += 1; } catch { break; }
+  }
+  writeDevLock(config, { pid: deadPid, port: 5181 });
+  assert.equal(liveDevLock(config), undefined, 'a dead owner owns nothing');
+
+  // A half-written lock is ignored rather than throwing.
+  writeFileSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR, 'dev-lock.json'), '{ "pid": ');
+  assert.equal(liveDevLock(config), undefined);
+  writeFileSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR, 'dev-lock.json'), '{}');
+  assert.equal(liveDevLock(config), undefined, 'a lock with no pid owns nothing');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('each workspace directory has its own lock, so a render check never collides', () => {
+  const projectRoot = copyFixture();
+  writeDevLock({ projectRoot }, { pid: process.pid, port: 5181 });
+  // The render check owns `.ds-viewer-render`, so it sees no owner and proceeds.
+  assert.equal(liveDevLock({ projectRoot, workspaceDir: RENDER_WORKSPACE_DIR }, process.pid + 1), undefined);
+  assert.ok(liveDevLock({ projectRoot }, process.pid + 1));
+  rmSync(projectRoot, { recursive: true, force: true });
 });

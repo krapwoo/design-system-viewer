@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { resolveConfig } from './config.ts';
 import { sync } from './sync.ts';
-import { workspacePath, writeWorkspace } from './workspace.ts';
+import { clearDevLock, liveDevLock, workspacePath, writeDevLock, writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
 import {
@@ -24,6 +24,11 @@ import { localInstallRefusal } from './update.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR, type ResolvedConfig } from './types.ts';
 
 export class LocalInstallMissingError extends Error {}
+
+/** Another `dev` already owns this project's generated workspace. Its own class so `main` can
+ *  print the message plainly, the way it already does for a missing local install, instead of a
+ *  stack trace. */
+export class DevWorkspaceBusyError extends Error {}
 
 const IGNORED_WATCH_SEGMENTS = new Set([DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR, 'node_modules', '.git']);
 
@@ -244,6 +249,8 @@ export async function performUpdate(
 
 export interface RestartHandoff {
   projectRoot: string;
+  /** The generated directory this run owns, so the restart releases that run's own lock. */
+  workspaceDir?: string;
   port: number;
   child: ReturnType<typeof spawn>;
   watchers: FSWatcher[];
@@ -339,6 +346,10 @@ export async function performRestart(
 
     await waitForPortFree(handoff.port, deps.probePortFree ?? defaultProbePortFree);
 
+    // Released before the replacement starts. This process stays alive as the new `dev`'s
+    // supervisor, so a lock still naming it would make its own replacement refuse the workspace.
+    clearDevLock({ projectRoot: handoff.projectRoot, workspaceDir: handoff.workspaceDir });
+
     // The old child is gone and the port is free — if a signal arrived in the window above (before
     // there was anything to forward it to), this restart is itself cancelled: the user asked to
     // stop, not to come back up on the new version.
@@ -412,6 +423,26 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   }
 
   const port = await findFreePort(devOptions.pinnedPort ?? 5181, devOptions.pinnedPort ?? 5199);
+
+  // Refused before anything is written: a second `dev` on the same workspace rewrites entry.tsx,
+  // package.json, app.json, metro.config.js and tsconfig.json underneath the first, and the loser
+  // ends up serving a workspace that no longer describes it — Expo reports that as an unresolvable
+  // `main` field, which names neither the other server nor the shared directory.
+  const existing = liveDevLock(config);
+  if (existing) {
+    throw new DevWorkspaceBusyError(
+      [
+        `Another ds-viewer dev (pid ${existing.pid}) is already serving this project at http://localhost:${existing.port}.`,
+        '',
+        `Both would generate into ${config.workspaceDir ?? DEFAULT_WORKSPACE_DIR}/ and overwrite each other's files.`,
+        '',
+        'Stop that one first, or give this run its own directory:',
+        `  npx ds-viewer dev --workspace-dir .ds-viewer-second`,
+      ].join('\n'),
+    );
+  }
+  writeDevLock(config, { pid: process.pid, port });
+
   console.log(`Starting the catalog at http://localhost:${port}`);
 
   let watchersPaused = false;
@@ -435,7 +466,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       },
       restart: async (result) => {
         writeFileSync(statusFile, JSON.stringify({ phase: 'success', ...result }));
-        await performRestart({ projectRoot: config.projectRoot, port, child, watchers, endpointServer, doctorSummary: result.doctorSummary, files: result.files });
+        await performRestart({ projectRoot: config.projectRoot, workspaceDir: config.workspaceDir, port, child, watchers, endpointServer, doctorSummary: result.doctorSummary, files: result.files });
       },
     }).catch((error) => {
       // `performUpdate` only reports 'failure' from its own guarded steps; anything thrown outside
@@ -545,6 +576,10 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   child.on('exit', (code) => {
     for (const watcher of watchers) watcher.close();
     endpointServer?.close();
+    // Released so the next `dev` is not refused by a lock naming a process that has gone.
+    // `liveDevLock` already ignores a dead pid, so this is tidiness, not correctness — it keeps a
+    // stale file out of a directory a developer may well read.
+    clearDevLock(config);
     process.exitCode = code ?? 0;
   });
   // Node's default SIGTERM/SIGINT/SIGHUP behavior exits this process without touching its
@@ -557,6 +592,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     process.on(signal, () => {
       for (const watcher of watchers) watcher.close();
       endpointServer?.close();
+      clearDevLock(config);
       killGroup(child, signal);
       process.exit(0);
     });
