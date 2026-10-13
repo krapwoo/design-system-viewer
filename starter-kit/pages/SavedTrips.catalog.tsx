@@ -14,7 +14,7 @@ import { PillRow, type PillRowItem } from '../components/PillRow';
 import { SearchField } from '../components/SearchField';
 import { SectionHeader } from '../components/SectionHeader';
 import { SegmentedToggle } from '../components/SegmentedToggle';
-import { Surface } from '../components/Surface';
+import { SurfaceScope } from '../components/SurfaceScope';
 import { Toast } from '../components/Toast';
 import { Tooltip } from '../components/Tooltip';
 import { TopNav } from '../components/TopNav';
@@ -123,7 +123,7 @@ function SavedTripsDemo() {
             }
           />
         }
-        bodyWrapper={(body) => <Surface tone="muted" style={styles.savedTripsBody}>{body}</Surface>}
+        bodyWrapper={(body) => <SurfaceScope tone="muted" style={styles.savedTripsBody}>{body}</SurfaceScope>}
         contentContainerStyle={styles.savedTripsScrollContent}
         // Toasts float over the top of the screen instead of pushing the Dock down. One per
         // pending removal, newest on top; each stays mounted (visible: false) through its exit.
@@ -239,7 +239,7 @@ export default defineCatalogPage({
   composedOf: [
     { component: 'TopNav', role: "The screen header, titled Saved trips, with a Filters button.", relationship: 'built-in' },
     { component: 'Tooltip', role: "The Filter by mode hint on the Filters button.", relationship: 'built-in' },
-    { component: 'Surface', role: "The muted background behind the search, toggles and list.", relationship: 'built-in' },
+    { component: 'SurfaceScope', role: "Declares the muted background behind the search, toggles and list, so the fields inside it pick a fill that stays visible on it.", relationship: 'built-in' },
     { component: 'SearchField', role: "Searches stations.", relationship: 'built-in' },
     { component: 'SegmentedToggle', role: "Switches between List and Map views.", relationship: 'built-in' },
     { component: 'UnderlineTabs', role: "The All, Nearby and Favorites tabs.", relationship: 'built-in' },

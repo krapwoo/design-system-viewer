@@ -1,0 +1,1 @@
+`Banner` and `Toast` declare `specimenSize: 'wide'`. At `'regular'` their two blocks fit side by side, which halves the row and rendered every specimen about 270px wide — a quarter of the page, for components that span the screen. A 402px minimum means a block no longer fits in half a row the same way, so the specimens keep a width these components are actually used at.
