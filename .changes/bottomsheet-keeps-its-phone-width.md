@@ -1,0 +1,1 @@
+`BottomSheet` declares `specimenSize: 'wide'`. Every example on that page is a phone, and at the default size its two blocks shared the row, dropping each cell to 270px and squeezing the frame until the sheet's own title and body text were barely readable. The page now stacks at full width, with each phone at 555px — the width the sheet is actually used at.

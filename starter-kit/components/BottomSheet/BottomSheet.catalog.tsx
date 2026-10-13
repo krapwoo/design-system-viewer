@@ -65,6 +65,10 @@ const dock = (close: () => void) => (
 export default defineCatalogPage({
   component: 'BottomSheet',
   group: 'Components',
+  // Every example is a phone. At the default size two blocks share the row and each cell falls to
+  // 270px, which squeezes the frame until the sheet's own text is barely readable — 'wide' keeps a
+  // 402px minimum, the width the sheet is actually used at.
+  specimenSize: 'wide',
   composedOf: [
     { component: 'TopNav', role: "The header slot, typically a TopNav with a close or back action.", relationship: 'slot' },
     { component: 'Dock', role: "The footer slot, typically a Dock with the sheet's primary actions; a Dock footer gets its shadow once the content scrolls.", relationship: 'slot' },
