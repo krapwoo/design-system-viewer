@@ -12,7 +12,7 @@ import {
   type TextInputProps,
 } from 'react-native';
 import { InputClearButton } from '../InputClearButton';
-import { useSurfaceTone } from '../Surface';
+import { useSurfaceTone } from '../SurfaceScope';
 import { DS_SEMANTIC, DS_SPACING, DS_RADIUS, DS_TYPOGRAPHY, DS_FONT_WEIGHT } from '../../tokens';
 import { Icon } from '../../icons/Icon.native';
 import type { IconName } from '../../icons';

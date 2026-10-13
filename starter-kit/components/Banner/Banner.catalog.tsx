@@ -5,7 +5,9 @@ import { Banner } from './Banner';
 export default defineCatalogPage({
   component: 'Banner',
   group: 'Components',
-  specimenSize: 'regular',
+  // Spans the screen: 'wide' keeps a 402px minimum, so two blocks never share a row and each
+  // specimen keeps a width the component is actually used at.
+  specimenSize: 'wide',
   composedOf: [
     { component: 'AnimatedChevron', role: "The expand/collapse chevron in the header of a collapsible banner.", relationship: 'built-in' },
   ],

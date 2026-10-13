@@ -1,16 +1,16 @@
 import React from 'react';
 import { View, Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { DS_SEMANTIC, DS_RADIUS } from '../../tokens';
-import { useSurfaceTone } from '../Surface';
+import { useSurfaceTone } from '../SurfaceScope';
 import type { FieldContainerProps } from './FieldContainer.types';
 
 /**
  * The shared "field" chrome: medium radius, a 1px subtle border that darkens to border.dark on
  * focus, and a fill that contrasts with whatever it's actually placed on — reads the ambient
- * `useSurfaceTone()` (see `Surface`) rather than assuming one fixed background. On the default
+ * `useSurfaceTone()` (see `SurfaceScope`) rather than assuming one fixed background. On the default
  * white tone it's a translucent recessed fill (the same adaptive-overlay mechanism SegmentedToggle's
  * track and Button's own `secondary` variant use); on a `muted` surface (wrapped in
- * `<Surface tone="muted">`) it flips to opaque white instead, so it never goes invisible against
+ * `<SurfaceScope tone="muted">`) it flips to opaque white instead, so it never goes invisible against
  * whatever's behind it either way. It owns *only* the container look — consumers (InputField,
  * TextArea, SearchField) supply their own layout (height, padding, content) via `style` and
  * children, so a single-line row and a multiline area stay visually consistent.

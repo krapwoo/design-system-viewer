@@ -27,7 +27,7 @@ export * from './SearchField';
 export * from './SectionHeader';
 export * from './SegmentedToggle';
 export * from './Shimmer';
-export * from './Surface';
+export * from './SurfaceScope';
 export * from './Switch';
 export * from './TextArea';
 export * from './Toast';
