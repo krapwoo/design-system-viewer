@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.7
+
+- A filled specimen whose root spans its cell now stays full width instead of being centered at its narrower painted width, and a fixed-width `Preview`'s contrast stage now covers its whole padded card rather than only each frame.
+
 ## 0.6.6
 
 - `npm run release` keeps a note's later paragraphs inside the bullet that note became. Only a note's first line gets the `- ` marker, and the rest were left at column 0, so a multi-paragraph note rendered as one bullet followed by detached top-level prose — three consecutive releases had their CHANGELOG entry corrected by hand before this was fixed. The entry assembly moved into `scripts/changelogEntry.mjs` so it can be tested without running a release.
