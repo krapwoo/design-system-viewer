@@ -4,7 +4,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import * as ts from 'typescript';
-import { writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock } from '../workspace.ts';
+import { writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock, missingWorkspaceFiles, WORKSPACE_DEFINING_FILES } from '../workspace.ts';
+import { repairWorkspaceIfMissing } from '../dev.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from '../types.ts';
 import type { ResolvedConfig } from '../types.ts';
 
@@ -264,5 +265,136 @@ test('each workspace directory has its own lock, so a render check never collide
   // The render check owns `.ds-viewer-render`, so it sees no owner and proceeds.
   assert.equal(liveDevLock({ projectRoot, workspaceDir: RENDER_WORKSPACE_DIR }, process.pid + 1), undefined);
   assert.ok(liveDevLock({ projectRoot }, process.pid + 1));
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a workspace that has lost its defining files reports exactly which, and writing it again restores them', () => {
+  // The failure this exists for (issue #41): something outside the server removes the workspace's
+  // files while it is serving, and Metro then blames the *project's* package.json with
+  // "Cannot resolve entry file" — a file the developer never touched and which is perfectly fine.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config);
+  assert.deepEqual(missingWorkspaceFiles(config), [], 'a freshly written workspace is intact');
+
+  // The observed shape of the failure: every defining file gone, `generated/` left behind.
+  for (const name of WORKSPACE_DEFINING_FILES) rmSync(workspacePath(config, name), { force: true });
+  assert.deepEqual(missingWorkspaceFiles(config).sort(), [...WORKSPACE_DEFINING_FILES].sort());
+
+  writeWorkspace(config);
+  assert.deepEqual(missingWorkspaceFiles(config), [], 'writeWorkspace is idempotent, so it is also the repair');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a single lost file is reported on its own, not as a wholesale failure', () => {
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config);
+  rmSync(workspacePath(config, 'entry.tsx'), { force: true });
+  assert.deepEqual(missingWorkspaceFiles(config), ['entry.tsx']);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a workspace that was never written reports every file rather than throwing', () => {
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  assert.equal(missingWorkspaceFiles(config).length, WORKSPACE_DEFINING_FILES.length);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+const ENDPOINT = { baseUrl: 'http://127.0.0.1:54321', secret: 'test-secret' };
+const VERSION_STATUS = { current: '1.0.0', latest: '1.0.0', behind: false } as never;
+
+test('a repair writes back exactly what the server originally wrote, endpoint included', () => {
+  // The defect this pins (found in review): the repair rebuilt the endpoint from Metro's port,
+  // so a repaired entry.tsx pointed the catalog at the wrong server — the update panel broke
+  // while the server reported a successful repair.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  const original = readFileSync(workspacePath(config, 'entry.tsx'), 'utf8');
+
+  for (const name of WORKSPACE_DEFINING_FILES) rmSync(workspacePath(config, name), { force: true });
+  const result = repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {},
+  });
+
+  assert.equal(result.repaired, true);
+  assert.equal(readFileSync(workspacePath(config, 'entry.tsx'), 'utf8'), original, 'a repaired entry.tsx must be byte-identical to the original');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair also restores the files entry.tsx imports, not just the five it watches', () => {
+  // The observed failure empties the whole workspace root. entry.tsx imports ./update.json and
+  // ./version.json unconditionally, so restoring it without them leaves Metro unable to resolve
+  // its imports — a repair that reports success over a catalog that is still broken.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  for (const name of [...WORKSPACE_DEFINING_FILES, 'update.json', 'version.json']) {
+    rmSync(workspacePath(config, name), { force: true });
+  }
+
+  repairWorkspaceIfMissing({ config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {} });
+
+  // Contents, not just existence: an empty file satisfies `existsSync` and then fails Metro's
+  // JSON import at runtime, which is the failure this repair exists to prevent.
+  assert.deepEqual(JSON.parse(readFileSync(workspacePath(config, 'version.json'), 'utf8')), VERSION_STATUS);
+  assert.equal(JSON.parse(readFileSync(workspacePath(config, 'update.json'), 'utf8')), null);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair writes into the run\'s own workspace directory, not the default one', () => {
+  // A server given --workspace-dir owns that directory; repairing into `.ds-viewer` instead would
+  // write over whatever is there — possibly another server's live workspace.
+  const projectRoot = copyFixture();
+  const config = { ...baseConfig(projectRoot), workspaceDir: '.ds-viewer-second' };
+  writeWorkspace(config, ENDPOINT);
+  for (const name of [...WORKSPACE_DEFINING_FILES, 'update.json', 'version.json']) {
+    rmSync(workspacePath(config, name), { force: true });
+  }
+
+  repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {},
+  });
+
+  assert.ok(existsSync(path.join(projectRoot, '.ds-viewer-second', 'entry.tsx')));
+  assert.ok(existsSync(path.join(projectRoot, '.ds-viewer-second', 'update.json')));
+  assert.equal(existsSync(path.join(projectRoot, '.ds-viewer', 'entry.tsx')), false, 'the default directory must be left alone');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('an intact workspace is left alone and reports no repair', () => {
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  let logged = 0;
+  const result = repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => { throw new Error('must not sync an intact workspace'); }, reclaimLock: () => { throw new Error('must not touch the lock of an intact workspace'); }, log: () => { logged += 1; },
+  });
+  assert.deepEqual(result, { missing: [], repaired: false });
+  assert.equal(logged, 0, 'an intact workspace says nothing');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair re-asserts this server\'s ownership of the directory', () => {
+  // The observed failure removes dev-lock.json too. Without it a second `dev` is no longer
+  // refused, so a repair that restored the files but not the lock would quietly give up the
+  // protection in #39 — two servers back to clobbering one directory.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  writeDevLock(config, { pid: process.pid, port: 5182 });
+  for (const name of [...WORKSPACE_DEFINING_FILES, 'update.json', 'version.json', 'dev-lock.json']) {
+    rmSync(workspacePath(config, name), { force: true });
+  }
+  assert.equal(liveDevLock(config, process.pid + 1), undefined, 'the lock really is gone');
+
+  repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {},
+    reclaimLock: () => writeDevLock(config, { pid: process.pid, port: 5182 }), log: () => {},
+  });
+
+  assert.ok(liveDevLock(config, process.pid + 1), 'a second dev must still be refused after a repair');
   rmSync(projectRoot, { recursive: true, force: true });
 });

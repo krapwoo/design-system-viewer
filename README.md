@@ -72,6 +72,23 @@ loser then serves a workspace that no longer describes it, which Expo reports as
 with `--workspace-dir .ds-viewer-second`. A lock left behind by a crashed `dev` never blocks the
 next one.
 
+`.ds-viewer/` belongs to the running server, and it repairs it. If something outside the server
+deletes the generated files while it is serving, it says so and writes them back, rather than
+leaving Expo to report an unresolvable `main` field — which names your project's `package.json`, a
+file that is fine and that you never touched:
+
+```
+Something outside this server deleted package.json, app.json, tsconfig.json, metro.config.js,
+entry.tsx from .ds-viewer/. Rewriting them — your project is fine, this is the catalog's own
+generated workspace. If the catalog looks broken, reload the page.
+```
+
+Metro picks the files back up without a restart. The repair is capped at five per run: if
+something is deleting continuously, repairing forever would only hide it, so past the cap the
+server stops and keeps reporting. If you ever see that message, what else was running at the time
+would be useful on [issue #41](https://github.com/krapwoo/design-system-viewer/issues/41) — the
+cause is not yet identified.
+
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
 and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `starterKit` (new-project only —

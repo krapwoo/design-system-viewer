@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { resolveConfig } from './config.ts';
 import { sync } from './sync.ts';
-import { clearDevLock, liveDevLock, workspacePath, writeDevLock, writeWorkspace } from './workspace.ts';
+import { clearDevLock, liveDevLock, missingWorkspaceFiles, workspacePath, writeDevLock, writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
 import {
@@ -388,6 +388,62 @@ export async function performRestart(
  *  component/token/page changes to re-run `sync`. Metro's own HMR updates the rendered component
  *  when its source changes, but not the generated props table or page list (Task 17 Step 4 relies
  *  on this: editing `Button.tsx` must update its props table, not just hot-reload the component). */
+/** How often a running `dev` checks that its own workspace still exists. Cheap (five `existsSync`
+ *  calls), and slow enough to be invisible: the failure it covers is rare, and noticing within a
+ *  few seconds is soon enough to repair before the next page load. */
+const WORKSPACE_WATCH_INTERVAL_MS = 4000;
+
+/** How many times one `dev` run will rewrite a workspace that keeps losing files. Past this,
+ *  something is deleting continuously and repairing again would only hide it. */
+const WORKSPACE_REPAIR_LIMIT = 5;
+
+/** Everything the generated `entry.tsx` needs beside it. The update files are listed too because
+ *  `entry.tsx` imports them unconditionally (`./update.json`, `./version.json`), so restoring the
+ *  entry without them leaves Metro unable to resolve its imports — a repair that reports success
+ *  over a catalog that is still broken. */
+export type WorkspaceRepairDeps = {
+  config: ResolvedConfig;
+  updateEndpoint: { baseUrl: string; secret: string } | undefined;
+  versionStatus: () => VersionStatus;
+  sync: (config: ResolvedConfig) => void;
+  /** Re-asserts this server's ownership of the directory. The observed failure removes
+   *  `dev-lock.json` along with everything else, and without it a second `dev` is no longer
+   *  refused — so a repair that skipped it would quietly give up the protection in #39. */
+  reclaimLock: () => void;
+  log?: (message: string) => void;
+};
+
+/** One pass of the workspace integrity check. Returns what it did, so the caller owns the repair
+ *  budget and the tests can drive it without a timer.
+ *
+ *  `updateEndpoint` is the caller's own, passed through unchanged: rebuilding it here from the
+ *  Metro port would point the repaired catalog at the wrong server, silently breaking the update
+ *  panel while telling the developer everything is fine. */
+export function repairWorkspaceIfMissing(deps: WorkspaceRepairDeps): { missing: string[]; repaired: boolean } {
+  const { config, updateEndpoint, versionStatus, sync, reclaimLock, log = console.warn } = deps;
+  const missing = missingWorkspaceFiles(config);
+  if (missing.length === 0) return { missing, repaired: false };
+
+  log(
+    `Something outside this server deleted ${missing.join(', ')} from ${config.workspaceDir ?? DEFAULT_WORKSPACE_DIR}/. ` +
+      "Rewriting them — your project is fine, this is the catalog's own generated workspace. " +
+      'If the catalog looks broken, reload the page.',
+  );
+  writeWorkspace(config, updateEndpoint);
+  // `entry.tsx` imports both of these, so a rewrite that skips them resolves nothing. Both come
+  // from one status, the way `refreshUpdateFile` writes them, so a repair cannot leave
+  // `version.json` announcing an update that `update.json` denies.
+  const status = versionStatus();
+  if (!existsSync(workspacePath(config, 'update.json'))) {
+    const update = status.update ? { ...status.update, checkedAt: status.lastCheckedAt ?? new Date().toISOString() } : undefined;
+    writeUpdateFile(config.projectRoot, update, config.workspaceDir);
+  }
+  if (!existsSync(workspacePath(config, 'version.json'))) writeVersionFile(config.projectRoot, status, config.workspaceDir);
+  reclaimLock();
+  sync(config);
+  return { missing, repaired: true };
+}
+
 export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number; noUpdateEndpoint?: boolean; workspaceDir?: string } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
@@ -572,8 +628,61 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     shell: process.platform === 'win32',
     detached: true,
   });
+
+  // This process owns its workspace: nothing else should remove the files that define it. When
+  // they vanish anyway, Metro reports it as `Cannot resolve entry file: the 'main' field defined
+  // in your package.json points to an unresolvable or non-existent path` — which names the
+  // *project's* package.json, a file that is fine and that the developer did not touch. The cause
+  // is still unidentified (issue #41), so this does not pretend to prevent it; it notices, says
+  // plainly what happened, and writes the files back, because `writeWorkspace` is idempotent and
+  // already knows how.
+  //
+  // Capped rather than endless: if something is deleting continuously, rewriting forever would
+  // hide it behind a repair loop. After the cap this stops repairing and keeps saying so, which
+  // leaves the evidence visible.
+  let repairs = 0;
+  const workspaceWatch = setInterval(() => {
+    if (watchersPaused) return; // an update is rewriting the workspace on purpose.
+    if (repairs >= WORKSPACE_REPAIR_LIMIT) {
+      const missing = missingWorkspaceFiles(config);
+      if (missing.length > 0) {
+        console.warn(
+          `The catalog workspace is still losing files (missing ${missing.join(', ')}). Not rewriting them again — ` +
+            'something outside this server is deleting them. Please report what else was running at https://github.com/krapwoo/design-system-viewer/issues/41',
+        );
+      }
+      return;
+    }
+    // Counted as an attempt, not a success: a workspace that cannot be rewritten (a permission
+    // error, a sync failure) would otherwise retry every four seconds forever.
+    if (missingWorkspaceFiles(config).length > 0) repairs += 1;
+    try {
+      // `updateEndpoint` is passed through, never rebuilt: the endpoint listens on its own
+      // ephemeral port, so deriving one from Metro's port here would repair the files and break
+      // the update panel in the same breath.
+      repairWorkspaceIfMissing({
+        config, updateEndpoint, versionStatus: version.getVersionStatus, sync,
+        // Only if no one else took it meanwhile: between losing the lock and this tick, a second
+        // `dev` can legitimately have started and be serving the directory. Overwriting its lock
+        // would leave two servers each believing they own it.
+        reclaimLock: () => {
+          const other = liveDevLock(config);
+          if (other && other.pid !== process.pid) {
+            console.warn(`Not reclaiming ${config.workspaceDir ?? DEFAULT_WORKSPACE_DIR}/: pid ${other.pid} owns it now.`);
+            return;
+          }
+          writeDevLock(config, { pid: process.pid, port });
+        },
+      });
+    } catch (error) {
+      console.warn(`Could not rewrite the workspace: ${(error as Error).message}`);
+    }
+  }, WORKSPACE_WATCH_INTERVAL_MS);
+  workspaceWatch.unref?.();
+
   child.on('error', (error) => console.warn(`Could not start Expo: ${error.message}`));
   child.on('exit', (code) => {
+    clearInterval(workspaceWatch);
     for (const watcher of watchers) watcher.close();
     endpointServer?.close();
     // Released so the next `dev` is not refused by a lock naming a process that has gone.
