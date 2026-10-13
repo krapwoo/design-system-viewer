@@ -2,6 +2,7 @@
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
+import { changelogEntry } from './changelogEntry.mjs';
 
 const bump = process.argv[2];
 if (!['patch', 'minor', 'major'].includes(bump)) {
@@ -30,7 +31,7 @@ const existingChangelog = readFileSync(changelogPath, 'utf8');
 const paragraphs = existingChangelog.split('\n\n');
 const header = paragraphs.slice(0, 2);
 const rest = paragraphs.slice(2);
-const entry = `## ${nextVersion}\n\n${notes.map((note) => `- ${note}`).join('\n')}`;
+const entry = changelogEntry(nextVersion, notes);
 writeFileSync(changelogPath, [...header, entry, ...rest].join('\n\n'));
 
 packageJson.version = nextVersion;
