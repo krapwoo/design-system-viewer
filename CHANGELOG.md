@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.6
+
+- `npm run release` keeps a note's later paragraphs inside the bullet that note became. Only a note's first line gets the `- ` marker, and the rest were left at column 0, so a multi-paragraph note rendered as one bullet followed by detached top-level prose — three consecutive releases had their CHANGELOG entry corrected by hand before this was fixed. The entry assembly moved into `scripts/changelogEntry.mjs` so it can be tested without running a release.
+
 ## 0.6.5
 
 - The internals catalog documents the four components its own cells are built from — `SpecimenSurface` (the cell backing, with the `auto` rule shown against an example that needs it and one that doesn't), `SpecimenContent` (the phone-width cap, the centring of a narrow filled example, and all three explicit alignments), `TokenTile` and `SpecimenAddressProvider`. The three comparison layouts and `CatalogShell` now declare these in `composedOf`, so a page says what it is actually made of. `doctor` is clean across both catalogs.
