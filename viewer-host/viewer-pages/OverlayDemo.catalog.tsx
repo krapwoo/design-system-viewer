@@ -71,6 +71,9 @@ function ToastDemo() {
 export default defineCatalogPage({
   component: 'OverlayDemo',
   group: 'Components',
+  // Every example is a phone. The default size left 283px for a 375px device, rendering it at 75%
+  // — the catalog's own device-scale warning, which is the right size to document it at.
+  specimenSize: 'wide',
   source: '../native/catalog/OverlayDemo.tsx',
   hide: { props: true },
   description: "A phone with a catalog button that opens an overlay: a sheet, a dialog, a toast. Children get `{ open, close }`; keep an app's overlay mounted and drive its own `visible` from `open`, so its animations play. `keepTrigger` makes the button a toggle rather than hiding it, `triggerLabel` can be a function of the open state, and `initiallyOpen` starts the example open.",

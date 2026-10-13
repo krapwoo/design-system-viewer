@@ -354,3 +354,40 @@ test('a page whose previewLayout cannot be read is not explained, rather than ex
   assert.match(formatExplain(result!), /not statically checkable/);
   rmSync(dir, { recursive: true, force: true });
 });
+
+const WIDE_TWO_BLOCK = `
+  import { defineCatalogPage } from '@krapwoo/ds-viewer';
+  export default defineCatalogPage({
+    component: 'Widget', group: 'Components', description: 'x',
+    specimenSize: 'wide',
+    variants: { items: [{ key: 'v0', name: 'V0', node: null }, { key: 'v1', name: 'V1', node: null }, { key: 'v2', name: 'V2', node: null }, { key: 'v3', name: 'V3', node: null }, { key: 'v4', name: 'V4', node: null }] },
+    states: { items: [{ key: 's0', name: 'S0', node: null }, { key: 's1', name: 'S1', node: null }, { key: 's2', name: 'S2', node: null }, { key: 's3', name: 'S3', node: null }, { key: 's4', name: 'S4', node: null }] },
+  });
+`;
+
+test('a side-by-side placement reports the columns that fit in half a row, not the full-row count', () => {
+  // The defect: counts were computed at the full row width and printed as fact, while the viewer
+  // halved the row — so a page author sized examples for a layout that never rendered.
+  const dir = makeProject(WIDE_TWO_BLOCK);
+
+  const side = explainPage(configFor(dir), 'Widget', { heights: [600, 600] });
+  assert.equal(side?.placement?.decision, 'side');
+  assert.match(side!.placement!.reason, /each block gets 462px/);
+  for (const block of side!.blocks) assert.match(block.reason, /1 column × 5 rows/);
+
+  // Short blocks: stacking wins, and the full-row count is then the correct one to report.
+  const stacked = explainPage(configFor(dir), 'Widget', { heights: [40, 40] });
+  assert.equal(stacked?.placement?.decision, 'stacked');
+  assert.match(stacked!.placement!.reason, /the full 952px/);
+  for (const block of stacked!.blocks) assert.match(block.reason, /2 columns × 3 rows/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('without heights, the counts say which row width they assume', () => {
+  const dir = makeProject(WIDE_TWO_BLOCK);
+  const result = explainPage(configFor(dir), 'Widget', {});
+  assert.equal(result?.placement?.decision, 'decided-in-viewer');
+  assert.match(result!.placement!.reason, /counts above are for the full 952px row/);
+  assert.match(result!.placement!.reason, /462px instead, which can fit fewer columns/);
+  rmSync(dir, { recursive: true, force: true });
+});

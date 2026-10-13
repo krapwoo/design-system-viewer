@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeOverlayAddress, encodeOverlayAddress, findOverlayNode } from '../overlayViewport.ts';
-import { DEVICE_FRAME, deviceFrameScale } from '../deviceFrame.ts';
+import { DEVICE_FRAME, DEVICE_SCALE_WARN_BELOW, deviceFrameScale } from '../deviceFrame.ts';
 import { FILLED_CONTENT_MAX_WIDTH, filledContentStyle, overflowsCell, paintedExtent, shouldCenterFilledContent, visibleBoxes, type LayoutBox } from '../specimenSurfaceStyle.ts';
 import { COLUMN_MIN_WIDTH, gridMinWidth, listGeometry, presentationBlocks } from '../comparison.ts';
 import type { SectionDef } from '../types.ts';
@@ -93,4 +93,17 @@ test("'page' examples fill their cell by default, without the phone-width cap", 
   assert.deepEqual(block.kind === 'list' && block.items.map((i) => i.fill), [true, false], 'an explicit fill: false still wins');
   assert.deepEqual(filledContentStyle(false), { width: '100%', alignSelf: 'center' });
   assert.deepEqual(filledContentStyle(), { width: '100%', maxWidth: 370, alignSelf: 'center' });
+});
+
+test('the device-scale warning threshold ignores rounding but catches a squeezed phone', () => {
+  // A regular cell leaves 370px for a 375px device. Warning about a 1.3% reduction nobody can see
+  // would train an author to ignore the warning.
+  assert.ok(deviceFrameScale(370) >= DEVICE_SCALE_WARN_BELOW, 'a regular cell must not warn');
+  assert.ok(deviceFrameScale(DEVICE_FRAME.width) >= DEVICE_SCALE_WARN_BELOW, 'an exact fit must not warn');
+
+  // The real cases this exists for: a side-by-side block leaves ~283px, rendering the phone at 75%
+  // — the difference between readable body text and not.
+  assert.ok(deviceFrameScale(283) < DEVICE_SCALE_WARN_BELOW, '283px must warn');
+  assert.ok(deviceFrameScale(220) < DEVICE_SCALE_WARN_BELOW, 'a deliberately narrow 220px cell must warn unless exempted');
+  assert.equal(Math.round(deviceFrameScale(283) * 100), 75);
 });

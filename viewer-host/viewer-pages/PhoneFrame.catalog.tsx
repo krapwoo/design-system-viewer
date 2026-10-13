@@ -10,9 +10,9 @@ const demo = StyleSheet.create({
   narrow: { width: 220 },
 });
 
-function Screen({ note }: { note: string }) {
+function Screen({ note, intentionalScale }: { note: string; intentionalScale?: boolean }) {
   return (
-    <PhoneFrame>
+    <PhoneFrame intentionalScale={intentionalScale}>
       <View style={demo.content}>
         <Text style={demo.title}>375 × 667</Text>
         <Text style={demo.body}>{note}</Text>
@@ -33,7 +33,7 @@ export default defineCatalogPage({
     items: [
       { key: 'device', name: 'At the device size', node: <Screen note="Anything inside lays out at the device's real size." /> },
       // Same device, 220px of room: the frame scales, the layout inside does not change.
-      { key: 'narrow', name: 'In a narrower cell (scaled, not reflowed)', node: <View style={demo.narrow}><Screen note="The frame scaled down to fit; the layout inside is unchanged." /></View> },
+      { key: 'narrow', name: 'In a narrower cell (scaled, not reflowed)', node: <View style={demo.narrow}><Screen intentionalScale note="The frame scaled down to fit; the layout inside is unchanged." /></View> },
     ],
   },
 });
