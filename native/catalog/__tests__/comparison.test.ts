@@ -151,6 +151,18 @@ test('SectionBlock\'s table-layout cell reserves the requested width plus the sh
   );
 });
 
+test('numeric frames Preview stages its entire padded body with one contrast owner', () => {
+  const source = readFileSync(new URL('../SectionBlock.tsx', import.meta.url), 'utf8');
+  const start = source.indexOf('function Preview(');
+  const end = source.indexOf('function TablePreview(');
+  assert.ok(start >= 0 && end > start);
+  const preview = source.slice(start, end);
+  assert.match(preview, /return \(\s*<SpecimenSurface surface=\{kind\} style=\{styles\.previewCard\}>/);
+  assert.match(preview, /widths\.map\(\(width, i\) => \(\s*<View\s+key=\{`\$\{width\}-\$\{i\}`\}/);
+  assert.match(preview, /style=\{\[styles\.frame, \{ width \}\]\}/);
+  assert.match(preview, /'aria-label': frameLabel\(width\)/);
+});
+
 test('a complete comparison validates cleanly and indexes every cell', () => {
   assert.deepEqual(validateComparison(valid), []);
   const index = indexCells(valid);
