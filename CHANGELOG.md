@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.8
+
+- `update` refuses when the package is installed from local source instead of the registry — a `file:`, `link:`, `workspace:` or `portal:` spec, or a bare path. Installing a published version over one of those replaces the checkout the project deliberately points at, and the catalog keeps running while no longer reflecting the source being edited, which is hard to notice. The refusal names the spec it found and how to proceed either way; `--force` does not override it, because it exists for uncommitted files rather than for changing where the package comes from. The update page's Update now refuses identically, reported as a failed install step so the page offers its normal recovery rather than appearing to succeed.
+
+  The upgrade also keeps the package in whichever section `package.json` already declares it in, instead of always writing a devDependency — a host app that ships it as a runtime dependency no longer silently changes section by accepting an update.
+
 ## 0.6.7
 
 - A filled specimen whose root spans its cell now stays full width instead of being centered at its narrower painted width, and a fixed-width `Preview`'s contrast stage now covers its whole padded card rather than only each frame.
