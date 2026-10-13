@@ -19,7 +19,8 @@ import { readOwnVersion } from './packageVersion.ts';
 import { createUpdateEndpoint, type EndpointDeps, type UpdateStatus } from './endpoint.ts';
 import { buildUpdatePlan, type UpdatePlan } from './updatePlan.ts';
 import { lastSummaryLine } from './doctor.ts';
-import { detectPackageManager, installUpgradeCommand, platformCommand, type PackageManager } from './packageManager.ts';
+import { declaredDependency, detectPackageManager, installUpgradeCommand, isLocalSpec, platformCommand, type PackageManager } from './packageManager.ts';
+import { localInstallRefusal } from './update.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR, type ResolvedConfig } from './types.ts';
 
 export class LocalInstallMissingError extends Error {}
@@ -184,7 +185,22 @@ export async function performUpdate(
   report(startAt);
 
   if (startAt <= 1) {
-    const { command, args } = installUpgradeCommand(pm, '@krapwoo/ds-viewer', plan.latest);
+    // The same refusal the CLI gives: installing a registry version over a `file:`/`link:`/
+    // `workspace:` spec would replace the local checkout the project points at, and the catalog
+    // would keep serving while no longer reflecting the source being edited. Reported as a
+    // failure of the install step, so the page offers its normal recovery rather than appearing
+    // to succeed.
+    const declared = declaredDependency(config.projectRoot, '@krapwoo/ds-viewer');
+    if (declared && isLocalSpec(declared.spec)) {
+      deps.onStatus({
+        phase: 'failure',
+        log: localInstallRefusal(declared.spec, plan.latest),
+        failedStep: stepDefs[1].failLabel ?? stepDefs[1].label,
+        step: 'install',
+      });
+      return;
+    }
+    const { command, args } = installUpgradeCommand(pm, '@krapwoo/ds-viewer', plan.latest, declared?.section);
     try {
       await deps.execImpl(command, args, { cwd: config.projectRoot, encoding: 'utf8' });
     } catch (error) {

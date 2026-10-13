@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildUpdatePlan, isAlreadyUpToDate, type BuildPlanOptions, type UpdatePlan } from './updatePlan.ts';
-import { detectPackageManager, installUpgradeCommand, platformCommand } from './packageManager.ts';
+import { declaredDependency, detectPackageManager, installUpgradeCommand, isLocalSpec, platformCommand } from './packageManager.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { lastSummaryLine } from './doctor.ts';
 import type { ResolvedConfig } from './types.ts';
@@ -48,6 +48,23 @@ function installedMainJs(projectRoot: string): string {
   return path.join(projectRoot, 'node_modules', '@krapwoo', 'ds-viewer', 'dist', 'cli', 'main.js');
 }
 
+/** Why an update cannot run over a local checkout, and what to do instead. Shared by the CLI and
+ *  the update page so both refuse in the same words. */
+export function localInstallRefusal(spec: string, latest: string): string {
+  return [
+    `Refusing: @krapwoo/ds-viewer is installed from "${spec}", not from the registry.`,
+    '',
+    'Updating would install the published package over it, replacing the local checkout this',
+    'project deliberately points at — the catalog would keep running while no longer reflecting',
+    'the source being edited.',
+    '',
+    `To move this project onto the published ${latest}, change the dependency yourself:`,
+    `  npm install --save-dev @krapwoo/ds-viewer@${latest}`,
+    '',
+    'To stay on local source, pull and rebuild it instead.',
+  ].join('\n');
+}
+
 /** Design §5 "`npx ds-viewer update`", steps 1-6. */
 export async function runUpdate(config: ResolvedConfig, options: UpdateRunOptions = {}): Promise<{ output: string; exitCode: number }> {
   const currentVersion = options.currentVersion ?? readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
@@ -56,6 +73,15 @@ export async function runUpdate(config: ResolvedConfig, options: UpdateRunOption
 
   const planText = formatPlanHuman(plan);
   if (options.dryRun) return { output: planText, exitCode: 0 };
+
+  // Refused before the dirty-file check and before any prompt: a `--yes --force` script must not
+  // be able to swap a local checkout for a registry copy either. `--force` deliberately does not
+  // override this — it exists for uncommitted files, not for changing where the package comes
+  // from, which is a decision the project's own package.json already recorded.
+  const declared = declaredDependency(config.projectRoot, '@krapwoo/ds-viewer');
+  if (declared && isLocalSpec(declared.spec)) {
+    return { output: `${planText}\n\n${localInstallRefusal(declared.spec, plan.latest)}`, exitCode: 1 };
+  }
 
   // Step 2: refuses on any dirty planned file, unless --force — checked before the confirmation
   // prompt, so a script passing --yes without --force still gets refused instead of silently
@@ -76,7 +102,13 @@ export async function runUpdate(config: ResolvedConfig, options: UpdateRunOption
     const run = platformCommand(cmd, args);
     return execFileSync(run.command, run.args, { ...opts, encoding: 'utf8', shell: run.shell }) as unknown as string;
   });
-  const { command, args } = installUpgradeCommand(detectPackageManager(config.projectRoot), '@krapwoo/ds-viewer', plan.latest);
+  const { command, args } = installUpgradeCommand(
+    detectPackageManager(config.projectRoot),
+    '@krapwoo/ds-viewer',
+    plan.latest,
+    // Keep it in the section the project already declared, instead of forcing devDependencies.
+    declared?.section,
+  );
   try {
     execImpl(command, args, { cwd: config.projectRoot, encoding: 'utf8' });
   } catch (error) {

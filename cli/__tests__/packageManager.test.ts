@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { detectPackageManager, installUpgradeCommand, platformCommand } from '../packageManager.ts';
+import { declaredDependency, detectPackageManager, installUpgradeCommand, isLocalSpec, platformCommand } from '../packageManager.ts';
 
 function project(files: Record<string, string>): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-pm-'));
@@ -65,4 +65,43 @@ test('platformCommand: real executables (node, tar, git) never get a shell, even
   for (const exe of ['node', 'tar', 'git']) {
     assert.deepEqual(platformCommand(exe, ['a b'], 'win32'), { command: exe, args: ['a b'], shell: false });
   }
+});
+
+test('installUpgradeCommand: keeps the package in the section it is already declared in', () => {
+  // A host app that ships the package as a runtime dependency must not silently become a
+  // devDependency because it accepted an update.
+  assert.deepEqual(installUpgradeCommand('npm', 'p', '1.0.0', 'dependencies'), { command: 'npm', args: ['install', '--save-prod', 'p@1.0.0'] });
+  assert.deepEqual(installUpgradeCommand('pnpm', 'p', '1.0.0', 'dependencies'), { command: 'pnpm', args: ['add', '--save-prod', 'p@1.0.0'] });
+  // Yarn has no --save-prod: a plain `yarn add` is already a production dependency.
+  assert.deepEqual(installUpgradeCommand('yarn-classic', 'p', '1.0.0', 'dependencies'), { command: 'yarn', args: ['add', 'p@1.0.0'] });
+  assert.deepEqual(installUpgradeCommand('yarn-berry', 'p', '1.0.0', 'dependencies'), { command: 'yarn', args: ['add', 'p@1.0.0'] });
+  // Omitted stays devDependencies, which is where `init` puts it.
+  assert.deepEqual(installUpgradeCommand('npm', 'p', '1.0.0'), { command: 'npm', args: ['install', '--save-dev', 'p@1.0.0'] });
+});
+
+test('isLocalSpec: a registry range is not local, every local form is', () => {
+  for (const registry of ['^0.6.7', '~1.2.3', '0.6.7', '*', 'latest', 'npm:other@^1.0.0']) {
+    assert.equal(isLocalSpec(registry), false, registry);
+  }
+  for (const local of ['file:..', 'file:../pkg', 'link:../pkg', 'workspace:*', 'workspace:^1.0.0', 'portal:../pkg', '../pkg', './pkg', '/abs/pkg', '~/pkg', '  file:..  ', 'FILE:..']) {
+    assert.equal(isLocalSpec(local), true, local);
+  }
+});
+
+test('declaredDependency: finds the section, and prefers dependencies when both name it', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsv-declared-'));
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ dependencies: { p: 'file:..' }, devDependencies: { q: '^1.0.0' } }));
+  assert.deepEqual(declaredDependency(dir, 'p'), { section: 'dependencies', spec: 'file:..' });
+  assert.deepEqual(declaredDependency(dir, 'q'), { section: 'devDependencies', spec: '^1.0.0' });
+  assert.equal(declaredDependency(dir, 'missing'), undefined);
+
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ dependencies: { p: '1.0.0' }, devDependencies: { p: '2.0.0' } }));
+  assert.deepEqual(declaredDependency(dir, 'p'), { section: 'dependencies', spec: '1.0.0' }, 'dependencies wins, as npm resolves it');
+
+  // Neither an absent nor an unparseable package.json is this function's error to report.
+  writeFileSync(path.join(dir, 'package.json'), '{ not json');
+  assert.equal(declaredDependency(dir, 'p'), undefined);
+  rmSync(path.join(dir, 'package.json'));
+  assert.equal(declaredDependency(dir, 'p'), undefined);
+  rmSync(dir, { recursive: true, force: true });
 });

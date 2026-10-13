@@ -1,7 +1,7 @@
 // cli/__tests__/update.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runUpdate } from '../update.ts';
@@ -157,5 +157,43 @@ test('a successful update\'s output carries only doctor\'s last summary line, no
   assert.ok(result.output.endsWith('0 errors, 1 warning — 12 components (12 with examples), 3 unbound examples.'));
   assert.ok(!result.output.includes('option-not-covered'));
   assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('a local checkout is refused, and nothing is installed over it', async () => {
+  // The real defect this guards: with `file:..` declared, accepting an update replaced the local
+  // source the project points at, and the catalog kept serving a registry copy while the
+  // developer edited files that no longer had any effect.
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsv-update-local-'));
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ dependencies: { '@krapwoo/ds-viewer': 'file:..' } }));
+  const ran: string[] = [];
+  const result = await runUpdate(baseConfig(dir), {
+    // --yes --force together: neither a prompt nor the dirty-file override may get past this.
+    yes: true,
+    force: true,
+    currentVersion: '0.4.0',
+    buildPlan: async () => samplePlan(),
+    execImpl: (cmd, args) => { ran.push([cmd, ...args].join(' ')); return ''; },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.output, /Refusing: @krapwoo\/ds-viewer is installed from "file:\.\."/);
+  assert.match(result.output, /npm install --save-dev @krapwoo\/ds-viewer@0\.5\.0/);
+  assert.deepEqual(ran, [], 'no command may run: not the install, not migrate, not doctor');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('a registry dependency still updates, and stays in its own section', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsv-update-registry-'));
+  // Declared under dependencies, not devDependencies: the install must not move it.
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ dependencies: { '@krapwoo/ds-viewer': '^0.4.0' } }));
+  const ran: string[] = [];
+  const result = await runUpdate(baseConfig(dir), {
+    yes: true,
+    currentVersion: '0.4.0',
+    buildPlan: async () => samplePlan(),
+    execImpl: (cmd, args) => { ran.push([cmd, ...args].join(' ')); return 'All pages are documented.'; },
+  });
+  assert.equal(result.exitCode, 0);
+  assert.ok(ran[0].startsWith('npm install --save-prod @krapwoo/ds-viewer@0.5.0'), ran[0]);
   rmSync(dir, { recursive: true, force: true });
 });
