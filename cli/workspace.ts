@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { globBaseFolder } from './glob.ts';
 import { DEFAULT_WORKSPACE_DIR, type ResolvedConfig } from './types.ts';
@@ -115,6 +115,61 @@ function projectIncludeGlobs(config: ResolvedConfig): string[] {
  *  different directory (a render check's throwaway server) cannot touch another server's files. */
 export function workspacePath(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>, ...segments: string[]): string {
   return path.join(config.projectRoot, config.workspaceDir ?? DEFAULT_WORKSPACE_DIR, ...segments);
+}
+
+/** Names the `dev` process that owns this workspace right now. */
+export interface DevLock {
+  pid: number;
+  port: number;
+}
+
+const LOCK_FILE = 'dev-lock.json';
+
+/** Records which `dev` owns this workspace, so a second one can refuse instead of writing over it.
+ *  Two servers sharing one directory both rewrite `entry.tsx`, `package.json`, `app.json`,
+ *  `metro.config.js` and `tsconfig.json`, and the loser is left serving a workspace that no longer
+ *  describes it — reported by Expo as an unresolvable `main` field, which names neither cause. */
+export function writeDevLock(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>, lock: DevLock): void {
+  mkdirSync(workspacePath(config), { recursive: true });
+  writeFileSync(workspacePath(config, LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
+}
+
+export function clearDevLock(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>): void {
+  rmSync(workspacePath(config, LOCK_FILE), { force: true });
+}
+
+/** True when `pid` is a process this user can signal. Signal 0 performs the permission and
+ *  existence checks without delivering anything. EPERM means it exists but belongs to someone
+ *  else, which still counts as alive. */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** The live `dev` already serving this workspace, or undefined when there isn't one.
+ *
+ *  A lock left behind by a crashed process is not live, so it never blocks a restart: the pid is
+ *  gone and the file is ignored. `ownPid` is excluded so a process cannot find itself — `dev`'s own
+ *  restart path re-enters this with the lock it just wrote. */
+export function liveDevLock(
+  config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>,
+  ownPid: number = process.pid,
+): DevLock | undefined {
+  const lockPath = workspacePath(config, LOCK_FILE);
+  if (!existsSync(lockPath)) return undefined;
+  let lock: DevLock;
+  try {
+    lock = JSON.parse(readFileSync(lockPath, 'utf8')) as DevLock;
+  } catch {
+    return undefined; // A partial write from a process that died mid-write owns nothing.
+  }
+  if (typeof lock.pid !== 'number' || typeof lock.port !== 'number') return undefined;
+  if (lock.pid === ownPid || !processAlive(lock.pid)) return undefined;
+  return lock;
 }
 
 /** Writes the self-contained Expo web workspace at `.ds-viewer/` (design §2 "The preview

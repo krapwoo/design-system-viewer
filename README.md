@@ -65,6 +65,13 @@ npm run ds-viewer doctor   # checks every page for drift and coverage gaps (--js
 npm run ds-viewer explain <Page>   # prints why a page's specimens are laid out the way they are
 ```
 
+Only one `dev` serves a project at a time. A second one refuses, naming the port the first is on,
+because both would generate into the same `.ds-viewer/` and overwrite each other's files — the
+loser then serves a workspace that no longer describes it, which Expo reports as an unresolvable
+`main` field rather than as a second server. To run two deliberately, give one its own directory
+with `--workspace-dir .ds-viewer-second`. A lock left behind by a crashed `dev` never blocks the
+next one.
+
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
 and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `starterKit` (new-project only —
