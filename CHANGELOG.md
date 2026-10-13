@@ -3,6 +3,18 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.9
+
+- Only one `dev` serves a project at a time. A second one now refuses, naming the pid and port of the one already running, instead of starting beside it and sharing its generated directory. Two servers both rewrote `entry.tsx`, `package.json`, `app.json`, `metro.config.js` and `tsconfig.json`, and the loser was left serving a workspace that no longer described it — which Expo reports as an unresolvable `main` field, naming neither the other server nor the shared directory. To run two deliberately, give one its own directory with `--workspace-dir`.
+
+  The ownership is a small `dev-lock.json` in the workspace holding the owning pid and port, released on exit, on a signal, and before a restart replaces the process. A lock whose process is gone owns nothing, so a crashed `dev` never blocks the next one, and a half-written one is ignored rather than throwing. Each workspace directory has its own lock, so `doctor --render` — which owns `.ds-viewer-render/` — still runs beside an open catalog.
+- `Banner` and `Toast` declare `specimenSize: 'wide'`. At `'regular'` their two blocks fit side by side, which halves the row and rendered every specimen about 270px wide — a quarter of the page, for components that span the screen. A 402px minimum means a block no longer fits in half a row the same way, so the specimens keep a width these components are actually used at.
+- `Surface` is renamed `SurfaceScope`, and its page now shows the reason it is a component at all rather than just the `surface.*` tokens it paints with. It does two things: it fills a View with `surface.white` or `surface.main`, and it publishes that tone to everything inside it. The second half is what a token cannot do — `DS_SEMANTIC.surface.*` already holds the values, but a value cannot tell a descendant what it is sitting on, which is how `FieldContainer` and `InputField` choose between a recessed fill and an opaque white one. The name now says it is a scope rather than a surface, so it no longer reads as a component version of the token group.
+
+  The page gained a states group putting the same `InputField` inside each tone, so the fill really changes between the two cells instead of the page asserting that it would.
+
+  Starter-kit files are copied once by `init` and never touched again, so an existing project keeps its own `Surface.tsx` and is unaffected. Only new copies get the new name — and `kit diff Surface` will no longer find a counterpart, because the path moved.
+
 ## 0.6.8
 
 - `update` refuses when the package is installed from local source instead of the registry — a `file:`, `link:`, `workspace:` or `portal:` spec, or a bare path. Installing a published version over one of those replaces the checkout the project deliberately points at, and the catalog keeps running while no longer reflecting the source being edited, which is hard to notice. The refusal names the spec it found and how to proceed either way; `--force` does not override it, because it exists for uncommitted files rather than for changing where the package comes from. The update page's Update now refuses identically, reported as a failed install step so the page offers its normal recovery rather than appearing to succeed.

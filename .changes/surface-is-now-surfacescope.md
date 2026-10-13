@@ -1,5 +1,0 @@
-`Surface` is renamed `SurfaceScope`, and its page now shows the reason it is a component at all rather than just the `surface.*` tokens it paints with. It does two things: it fills a View with `surface.white` or `surface.main`, and it publishes that tone to everything inside it. The second half is what a token cannot do — `DS_SEMANTIC.surface.*` already holds the values, but a value cannot tell a descendant what it is sitting on, which is how `FieldContainer` and `InputField` choose between a recessed fill and an opaque white one. The name now says it is a scope rather than a surface, so it no longer reads as a component version of the token group.
-
-The page gained a states group putting the same `InputField` inside each tone, so the fill really changes between the two cells instead of the page asserting that it would.
-
-Starter-kit files are copied once by `init` and never touched again, so an existing project keeps its own `Surface.tsx` and is unaffected. Only new copies get the new name — and `kit diff Surface` will no longer find a counterpart, because the path moved.
