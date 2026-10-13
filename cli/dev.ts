@@ -430,9 +430,15 @@ export function repairWorkspaceIfMissing(deps: WorkspaceRepairDeps): { missing: 
       'If the catalog looks broken, reload the page.',
   );
   writeWorkspace(config, updateEndpoint);
-  // `entry.tsx` imports both of these, so a rewrite that skips them resolves nothing.
-  if (!existsSync(workspacePath(config, 'update.json'))) writeUpdateFile(config.projectRoot, undefined, config.workspaceDir);
-  if (!existsSync(workspacePath(config, 'version.json'))) writeVersionFile(config.projectRoot, versionStatus(), config.workspaceDir);
+  // `entry.tsx` imports both of these, so a rewrite that skips them resolves nothing. Both come
+  // from one status, the way `refreshUpdateFile` writes them, so a repair cannot leave
+  // `version.json` announcing an update that `update.json` denies.
+  const status = versionStatus();
+  if (!existsSync(workspacePath(config, 'update.json'))) {
+    const update = status.update ? { ...status.update, checkedAt: status.lastCheckedAt ?? new Date().toISOString() } : undefined;
+    writeUpdateFile(config.projectRoot, update, config.workspaceDir);
+  }
+  if (!existsSync(workspacePath(config, 'version.json'))) writeVersionFile(config.projectRoot, status, config.workspaceDir);
   reclaimLock();
   sync(config);
   return { missing, repaired: true };
@@ -647,15 +653,27 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       }
       return;
     }
+    // Counted as an attempt, not a success: a workspace that cannot be rewritten (a permission
+    // error, a sync failure) would otherwise retry every four seconds forever.
+    if (missingWorkspaceFiles(config).length > 0) repairs += 1;
     try {
       // `updateEndpoint` is passed through, never rebuilt: the endpoint listens on its own
       // ephemeral port, so deriving one from Metro's port here would repair the files and break
       // the update panel in the same breath.
-      const { repaired } = repairWorkspaceIfMissing({
+      repairWorkspaceIfMissing({
         config, updateEndpoint, versionStatus: version.getVersionStatus, sync,
-        reclaimLock: () => writeDevLock(config, { pid: process.pid, port }),
+        // Only if no one else took it meanwhile: between losing the lock and this tick, a second
+        // `dev` can legitimately have started and be serving the directory. Overwriting its lock
+        // would leave two servers each believing they own it.
+        reclaimLock: () => {
+          const other = liveDevLock(config);
+          if (other && other.pid !== process.pid) {
+            console.warn(`Not reclaiming ${config.workspaceDir ?? DEFAULT_WORKSPACE_DIR}/: pid ${other.pid} owns it now.`);
+            return;
+          }
+          writeDevLock(config, { pid: process.pid, port });
+        },
       });
-      if (repaired) repairs += 1;
     } catch (error) {
       console.warn(`Could not rewrite the workspace: ${(error as Error).message}`);
     }

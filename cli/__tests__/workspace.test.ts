@@ -337,8 +337,30 @@ test('a repair also restores the files entry.tsx imports, not just the five it w
 
   repairWorkspaceIfMissing({ config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {} });
 
-  assert.ok(existsSync(workspacePath(config, 'update.json')), 'update.json is imported by entry.tsx');
-  assert.ok(existsSync(workspacePath(config, 'version.json')), 'version.json is imported by entry.tsx');
+  // Contents, not just existence: an empty file satisfies `existsSync` and then fails Metro's
+  // JSON import at runtime, which is the failure this repair exists to prevent.
+  assert.deepEqual(JSON.parse(readFileSync(workspacePath(config, 'version.json'), 'utf8')), VERSION_STATUS);
+  assert.equal(JSON.parse(readFileSync(workspacePath(config, 'update.json'), 'utf8')), null);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair writes into the run\'s own workspace directory, not the default one', () => {
+  // A server given --workspace-dir owns that directory; repairing into `.ds-viewer` instead would
+  // write over whatever is there — possibly another server's live workspace.
+  const projectRoot = copyFixture();
+  const config = { ...baseConfig(projectRoot), workspaceDir: '.ds-viewer-second' };
+  writeWorkspace(config, ENDPOINT);
+  for (const name of [...WORKSPACE_DEFINING_FILES, 'update.json', 'version.json']) {
+    rmSync(workspacePath(config, name), { force: true });
+  }
+
+  repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {},
+  });
+
+  assert.ok(existsSync(path.join(projectRoot, '.ds-viewer-second', 'entry.tsx')));
+  assert.ok(existsSync(path.join(projectRoot, '.ds-viewer-second', 'update.json')));
+  assert.equal(existsSync(path.join(projectRoot, '.ds-viewer', 'entry.tsx')), false, 'the default directory must be left alone');
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
