@@ -33,6 +33,9 @@ function Demo({ title, body, actions }: { title: string; body?: string; actions:
 export default defineCatalogPage({
   component: 'Dialog',
   group: 'Components',
+  // Every example is a phone. The default size left 283px for a 375px device, rendering it at 75%
+  // — small enough that the dialog's own body text stopped being the size a reader sees.
+  specimenSize: 'wide',
   composedOf: [
     { component: 'ButtonGroup', role: "Lays out the dialog's actions; a dialog's own children decide this, not Dialog.", relationship: 'related' },
   ],

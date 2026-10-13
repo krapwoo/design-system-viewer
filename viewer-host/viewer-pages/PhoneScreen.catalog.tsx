@@ -26,6 +26,9 @@ const rows = Array.from({ length: 12 }, (_, i) => (
 export default defineCatalogPage({
   component: 'PhoneScreen',
   group: 'Components',
+  // Every example is a phone. The default size left 283px for a 375px device, rendering it at 75%
+  // — the catalog's own device-scale warning, which is the right size to document it at.
+  specimenSize: 'wide',
   source: '../native/catalog/PhoneScreen.tsx',
   hide: { props: true },
   description: "A whole app screen inside a PhoneFrame: `header` stays at the top, `footer` at the phone's bottom, and the children scroll between them instead of pushing the footer off the screen. `scroll: false` lays the body out to fit instead, for a screen with nothing to scroll. `floating` is a layer over the top for toasts (position its content yourself); `bodyWrapper` puts the app's own surface around the scrolling body.",

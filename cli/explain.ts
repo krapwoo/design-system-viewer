@@ -110,7 +110,7 @@ function toSectionDef(page: StaticPage): SectionDef {
   };
 }
 
-function explainBlock(block: PresentationBlock): ExplainBlockResult {
+function explainBlock(block: PresentationBlock, availableWidth: number): ExplainBlockResult {
   if (block.kind === 'grid') {
     const rows = axisItems(block.comparison.rows).length;
     const columns = axisItems(block.comparison.columns).length;
@@ -122,10 +122,10 @@ function explainBlock(block: PresentationBlock): ExplainBlockResult {
     };
   }
   if (block.kind === 'list') {
-    const geometry = listGeometry(block.items.length, MATRIX_LAYOUT.laptopContentWidth, block.size, block.maxColumns);
+    const geometry = listGeometry(block.items.length, availableWidth, block.size, block.maxColumns);
     return {
       kind: 'list', title: block.title,
-      reason: `${block.items.length} items (${block.size}) → ${geometry.columns} columns × ${geometry.rows} row${geometry.rows === 1 ? '' : 's'}` +
+      reason: `${block.items.length} items (${block.size}) → ${geometry.columns} column${geometry.columns === 1 ? '' : 's'} × ${geometry.rows} row${geometry.rows === 1 ? '' : 's'}` +
         (geometry.fillers > 0 ? ` (${geometry.fillers} filler${geometry.fillers === 1 ? '' : 's'})` : '') + '.' +
         surfaceOverrideNote(block.items) + alignOverrideNote(block.items),
     };
@@ -190,29 +190,40 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
 
   const def = toSectionDef(page);
   const blocks = presentationBlocks(def, { defaultPreviewWidths: [402] });
-  const explained = blocks.map(explainBlock);
+
+  // Two blocks placed side by side get half the row each, which changes how many columns fit.
+  // Reporting the full-width counts for a page the viewer will halve states the wrong geometry as
+  // fact, so the width every block is measured at follows the placement decision.
+  const full = MATRIX_LAYOUT.laptopContentWidth;
+  const half = Math.floor((full - CATALOG_LAYOUT.blockGap) / 2);
 
   let placement: ExplainResult['placement'];
+  let blockWidth: number = full;
   if (blocks.length === 2) {
     if (options.heights) {
       const [firstHeight, secondHeight] = options.heights;
       const decision = choosePlacement({
-        available: MATRIX_LAYOUT.laptopContentWidth,
+        available: full,
         gap: CATALOG_LAYOUT.blockGap,
         first: toPlacementBlock(blocks[0], firstHeight),
         second: toPlacementBlock(blocks[1], secondHeight),
       });
+      if (decision === 'side') blockWidth = half;
       placement = {
         decision,
-        reason: `With heights ${firstHeight}px/${secondHeight}px on a 1280px laptop (${MATRIX_LAYOUT.laptopContentWidth}px content width): ${decision}.`,
+        reason: `With heights ${firstHeight}px/${secondHeight}px on a 1280px laptop (${full}px content width): ${decision}` +
+          (decision === 'side' ? `, so each block gets ${half}px.` : `, so each block gets the full ${full}px.`),
       };
     } else {
       placement = {
         decision: 'decided-in-viewer',
-        reason: "Side-by-side placement depends on each block's measured height — decided in the viewer at runtime. Pass --heights <first>,<second> to check it here.",
+        reason: "Side-by-side placement depends on each block's measured height — decided in the viewer at runtime. " +
+          `The counts above are for the full ${full}px row; side by side each block gets ${half}px instead, which can fit fewer columns. ` +
+          'Pass --heights <first>,<second> to resolve it here.',
       };
     }
   }
+  const explained = blocks.map((block) => explainBlock(block, blockWidth));
 
   return { pageId, blocks: explained, placement, intentionalStaticPreviewReason: page.intentionalStaticPreviewReason };
 }

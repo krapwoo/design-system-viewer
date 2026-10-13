@@ -12,3 +12,12 @@ export function deviceFrameScale(availableWidth: number): number {
   if (!(availableWidth > 0)) return 1;
   return Math.min(1, availableWidth / DEVICE_FRAME.width);
 }
+
+/** Below this, a device is scaled enough that its own text is no longer the size a reader sees it
+ *  at, and the page should declare a wider specimen instead.
+ *
+ *  Not exactly 1. A regular cell leaves 370px for a 375px device — a 1.3% reduction nobody can
+ *  see, and warning about it would train authors to ignore the warning. The cases worth a page's
+ *  attention are the ones that shrink a phone by a tenth or more: a 283px cell renders the device
+ *  at 75%, which is the difference between readable body text and not. */
+export const DEVICE_SCALE_WARN_BELOW = 0.95;

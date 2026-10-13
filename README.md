@@ -502,6 +502,22 @@ Button
     gallery or a whole-page layout.
   - `internal-prop-unknown` — `internalProps` names something that is not a prop of the component,
     so the exemption it was written for is not in effect. Correct the spelling or delete the entry.
+
+  The catalog also warns at render time when a page under-declares the width its examples need.
+  A `PhoneFrame` given a cell narrower than the 375px device scales the whole phone down, and its
+  own body text shrinks with it, so it reports the page, the example and the cell:
+
+      [Catalog] BottomSheet (variants/content-only) is shown at 75% of device size: its cell is
+      283px, narrower than the 375px device. Declare a larger specimenSize so the example keeps
+      the width it is used at.
+
+  `check:catalog` fails on any `[Catalog]` warning, so this is caught in CI. The threshold is 95%,
+  not 100%: a regular cell leaves 370px for a 375px device, and warning about a reduction nobody
+  can see would only train you to ignore the warning. Where the scaling *is* the subject — a page
+  documenting that a narrow cell shrinks the device rather than reflowing it — write
+  `<PhoneFrame intentionalScale>` in that example, so the exemption is visible where the decision
+  was made.
+
   A page's `internalProps: { size: 'why' }` exempts a named prop from `option-not-covered` — for
   plumbing a parent passes (a layout size, an internal surface kind) rather than a value the
   reader picks. It needs a reason per prop, so the exemption is a visible declaration in the page;

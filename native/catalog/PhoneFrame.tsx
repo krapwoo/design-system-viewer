@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Platform, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
-import { DEVICE_FRAME, deviceFrameScale } from './deviceFrame';
+import { DEVICE_FRAME, DEVICE_SCALE_WARN_BELOW, deviceFrameScale } from './deviceFrame';
 import { resolveOverlayViewport } from './overlayViewport';
 import { useSpecimenAddress } from './SpecimenAddress';
 
@@ -27,7 +27,16 @@ function isWeb(): boolean {
  * Purely a documentation device: a real app screen never frames itself, so this lives in the
  * catalog framework rather than in an app's component library.
  */
-export function PhoneFrame({ children }: { children: React.ReactNode }) {
+export function PhoneFrame({
+  children,
+  intentionalScale = false,
+}: {
+  children: React.ReactNode;
+  /** This example is *about* the scaling — a page demonstrating that a narrow cell shrinks the
+   *  device rather than reflowing it. Declared here, in the example itself, so the exemption is
+   *  visible where the decision was made instead of hidden in config. */
+  intentionalScale?: boolean;
+}) {
   const address = useSpecimenAddress();
   const [available, setAvailable] = useState(0);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
@@ -36,6 +45,23 @@ export function PhoneFrame({ children }: { children: React.ReactNode }) {
     if (width > 0 && width !== available) setAvailable(width);
   };
   const scale = deviceFrameScale(available);
+  // A scaled device is a page that under-declared its width: the cell it was given is narrower
+  // than the phone, so the whole viewport shrinks and the example's own text shrinks with it,
+  // which is not the size anyone reads the component at. The scale is already computed, so this
+  // needs no measurement of its own. Guarded to once per transition, like TokenSections' own
+  // degradation warning; `check:catalog` fails on any [Catalog] warning, so this blocks CI.
+  const warnedScale = useRef<string | undefined>(undefined);
+  if (!intentionalScale && available > 0 && scale < DEVICE_SCALE_WARN_BELOW && (globalThis as { __DEV__?: boolean }).__DEV__) {
+    const key = `${available}`;
+    if (warnedScale.current !== key) {
+      warnedScale.current = key;
+      const where = address ? `${address.pageId} (${address.slot}/${address.itemKey})` : 'a PhoneFrame';
+      console.warn(
+        `[Catalog] ${where} is shown at ${Math.round(scale * 100)}% of device size: its cell is ${available}px, ` +
+          `narrower than the ${DEVICE_FRAME.width}px device. Declare a larger specimenSize so the example keeps the width it is used at.`,
+      );
+    }
+  }
   // Until the cell is measured, fit it at the device's proportions rather than drawing at full size
   // for a frame (which would briefly overflow a cell narrower than the device).
   const box = available > 0
