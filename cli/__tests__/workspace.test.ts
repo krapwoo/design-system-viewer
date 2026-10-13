@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import * as ts from 'typescript';
 import { writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock, missingWorkspaceFiles, WORKSPACE_DEFINING_FILES } from '../workspace.ts';
+import { repairWorkspaceIfMissing } from '../dev.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from '../types.ts';
 import type { ResolvedConfig } from '../types.ts';
 
@@ -298,5 +299,80 @@ test('a workspace that was never written reports every file rather than throwing
   const projectRoot = copyFixture();
   const config = baseConfig(projectRoot);
   assert.equal(missingWorkspaceFiles(config).length, WORKSPACE_DEFINING_FILES.length);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+const ENDPOINT = { baseUrl: 'http://127.0.0.1:54321', secret: 'test-secret' };
+const VERSION_STATUS = { current: '1.0.0', latest: '1.0.0', behind: false } as never;
+
+test('a repair writes back exactly what the server originally wrote, endpoint included', () => {
+  // The defect this pins (found in review): the repair rebuilt the endpoint from Metro's port,
+  // so a repaired entry.tsx pointed the catalog at the wrong server — the update panel broke
+  // while the server reported a successful repair.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  const original = readFileSync(workspacePath(config, 'entry.tsx'), 'utf8');
+
+  for (const name of WORKSPACE_DEFINING_FILES) rmSync(workspacePath(config, name), { force: true });
+  const result = repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {},
+  });
+
+  assert.equal(result.repaired, true);
+  assert.equal(readFileSync(workspacePath(config, 'entry.tsx'), 'utf8'), original, 'a repaired entry.tsx must be byte-identical to the original');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair also restores the files entry.tsx imports, not just the five it watches', () => {
+  // The observed failure empties the whole workspace root. entry.tsx imports ./update.json and
+  // ./version.json unconditionally, so restoring it without them leaves Metro unable to resolve
+  // its imports — a repair that reports success over a catalog that is still broken.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  for (const name of [...WORKSPACE_DEFINING_FILES, 'update.json', 'version.json']) {
+    rmSync(workspacePath(config, name), { force: true });
+  }
+
+  repairWorkspaceIfMissing({ config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {} });
+
+  assert.ok(existsSync(workspacePath(config, 'update.json')), 'update.json is imported by entry.tsx');
+  assert.ok(existsSync(workspacePath(config, 'version.json')), 'version.json is imported by entry.tsx');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('an intact workspace is left alone and reports no repair', () => {
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  let logged = 0;
+  const result = repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => { throw new Error('must not sync an intact workspace'); }, reclaimLock: () => { throw new Error('must not touch the lock of an intact workspace'); }, log: () => { logged += 1; },
+  });
+  assert.deepEqual(result, { missing: [], repaired: false });
+  assert.equal(logged, 0, 'an intact workspace says nothing');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair re-asserts this server\'s ownership of the directory', () => {
+  // The observed failure removes dev-lock.json too. Without it a second `dev` is no longer
+  // refused, so a repair that restored the files but not the lock would quietly give up the
+  // protection in #39 — two servers back to clobbering one directory.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config, ENDPOINT);
+  writeDevLock(config, { pid: process.pid, port: 5182 });
+  for (const name of [...WORKSPACE_DEFINING_FILES, 'update.json', 'version.json', 'dev-lock.json']) {
+    rmSync(workspacePath(config, name), { force: true });
+  }
+  assert.equal(liveDevLock(config, process.pid + 1), undefined, 'the lock really is gone');
+
+  repairWorkspaceIfMissing({
+    config, updateEndpoint: ENDPOINT, versionStatus: () => VERSION_STATUS, sync: () => {},
+    reclaimLock: () => writeDevLock(config, { pid: process.pid, port: 5182 }), log: () => {},
+  });
+
+  assert.ok(liveDevLock(config, process.pid + 1), 'a second dev must still be refused after a repair');
   rmSync(projectRoot, { recursive: true, force: true });
 });

@@ -397,6 +397,47 @@ const WORKSPACE_WATCH_INTERVAL_MS = 4000;
  *  something is deleting continuously and repairing again would only hide it. */
 const WORKSPACE_REPAIR_LIMIT = 5;
 
+/** Everything the generated `entry.tsx` needs beside it. The update files are listed too because
+ *  `entry.tsx` imports them unconditionally (`./update.json`, `./version.json`), so restoring the
+ *  entry without them leaves Metro unable to resolve its imports — a repair that reports success
+ *  over a catalog that is still broken. */
+export type WorkspaceRepairDeps = {
+  config: ResolvedConfig;
+  updateEndpoint: { baseUrl: string; secret: string } | undefined;
+  versionStatus: () => VersionStatus;
+  sync: (config: ResolvedConfig) => void;
+  /** Re-asserts this server's ownership of the directory. The observed failure removes
+   *  `dev-lock.json` along with everything else, and without it a second `dev` is no longer
+   *  refused — so a repair that skipped it would quietly give up the protection in #39. */
+  reclaimLock: () => void;
+  log?: (message: string) => void;
+};
+
+/** One pass of the workspace integrity check. Returns what it did, so the caller owns the repair
+ *  budget and the tests can drive it without a timer.
+ *
+ *  `updateEndpoint` is the caller's own, passed through unchanged: rebuilding it here from the
+ *  Metro port would point the repaired catalog at the wrong server, silently breaking the update
+ *  panel while telling the developer everything is fine. */
+export function repairWorkspaceIfMissing(deps: WorkspaceRepairDeps): { missing: string[]; repaired: boolean } {
+  const { config, updateEndpoint, versionStatus, sync, reclaimLock, log = console.warn } = deps;
+  const missing = missingWorkspaceFiles(config);
+  if (missing.length === 0) return { missing, repaired: false };
+
+  log(
+    `Something outside this server deleted ${missing.join(', ')} from ${config.workspaceDir ?? DEFAULT_WORKSPACE_DIR}/. ` +
+      "Rewriting them — your project is fine, this is the catalog's own generated workspace. " +
+      'If the catalog looks broken, reload the page.',
+  );
+  writeWorkspace(config, updateEndpoint);
+  // `entry.tsx` imports both of these, so a rewrite that skips them resolves nothing.
+  if (!existsSync(workspacePath(config, 'update.json'))) writeUpdateFile(config.projectRoot, undefined, config.workspaceDir);
+  if (!existsSync(workspacePath(config, 'version.json'))) writeVersionFile(config.projectRoot, versionStatus(), config.workspaceDir);
+  reclaimLock();
+  sync(config);
+  return { missing, repaired: true };
+}
+
 export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number; noUpdateEndpoint?: boolean; workspaceDir?: string } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
@@ -596,24 +637,25 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   let repairs = 0;
   const workspaceWatch = setInterval(() => {
     if (watchersPaused) return; // an update is rewriting the workspace on purpose.
-    const missing = missingWorkspaceFiles(config);
-    if (missing.length === 0) return;
     if (repairs >= WORKSPACE_REPAIR_LIMIT) {
-      console.warn(
-        `The catalog workspace is still losing files (missing ${missing.join(', ')}). Not rewriting them again — ` +
-          'something outside this server is deleting them. Please report what else was running at https://github.com/krapwoo/design-system-viewer/issues/41',
-      );
+      const missing = missingWorkspaceFiles(config);
+      if (missing.length > 0) {
+        console.warn(
+          `The catalog workspace is still losing files (missing ${missing.join(', ')}). Not rewriting them again — ` +
+            'something outside this server is deleting them. Please report what else was running at https://github.com/krapwoo/design-system-viewer/issues/41',
+        );
+      }
       return;
     }
-    repairs += 1;
-    console.warn(
-      `Something outside this server deleted ${missing.join(', ')} from ${config.workspaceDir ?? DEFAULT_WORKSPACE_DIR}/. ` +
-        'Rewriting them — your project is fine, this is the catalog\'s own generated workspace. ' +
-        'If the catalog looks broken, reload the page.',
-    );
     try {
-      writeWorkspace(config, endpointServer ? { baseUrl: `http://localhost:${port}`, secret } : undefined);
-      sync(config);
+      // `updateEndpoint` is passed through, never rebuilt: the endpoint listens on its own
+      // ephemeral port, so deriving one from Metro's port here would repair the files and break
+      // the update panel in the same breath.
+      const { repaired } = repairWorkspaceIfMissing({
+        config, updateEndpoint, versionStatus: version.getVersionStatus, sync,
+        reclaimLock: () => writeDevLock(config, { pid: process.pid, port }),
+      });
+      if (repaired) repairs += 1;
     } catch (error) {
       console.warn(`Could not rewrite the workspace: ${(error as Error).message}`);
     }
