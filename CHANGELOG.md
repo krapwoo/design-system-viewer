@@ -3,6 +3,40 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.6.10
+
+- A `PhoneFrame` that has to shrink now says so. Any example given a cell narrower than the 375px device scales the whole phone down, and its own body text shrinks with it — which is no longer the size anyone reads the component at. The frame already computes that scale to lay itself out, so it now warns when it drops below 95%, naming the page, the example and the cell width:
+
+      [Catalog] BottomSheet (variants/content-only) is shown at 75% of device size: its cell is
+      283px, narrower than the 375px device. Declare a larger specimenSize so the example keeps
+      the width it is used at.
+
+  `check:catalog` fails on any `[Catalog]` warning, so an under-declared page is caught in CI rather than by someone noticing that a screenshot looks cramped.
+
+  The threshold is 95%, not 100%: a regular cell leaves 370px for a 375px device, and warning about a 1.3% reduction nobody can see would only train authors to ignore the warning.
+
+  Where the scaling is the point — a page documenting that a narrow cell shrinks the device rather than reflowing it — the example declares `<PhoneFrame intentionalScale>`. The exemption sits in the example itself, visible where the decision was made, rather than in config.
+
+  This found four pages whose phones were being rendered at 75%: `BottomSheet`, `Dialog`, `OverlayDemo` and `PhoneScreen`. All four now declare `specimenSize: 'wide'`.
+- `BottomSheet` declares `specimenSize: 'wide'`. Every example on that page is a phone, and at the default size its two blocks shared the row, dropping each cell to 270px and squeezing the frame until the sheet's own title and body text were barely readable. The page now stacks at full width, with each phone at 555px — the width the sheet is actually used at.
+- `explain` reports the column counts for the layout that will actually render. Two blocks placed side by side get half the row each, but the counts were computed at the full row width and printed as fact — so a page whose blocks the viewer halved was described with a geometry it never had. `explain Banner` claimed 3 columns where the catalog rendered 2, at 270px specimens.
+
+  With `--heights`, the placement decision now chooses the width every block is measured at:
+
+      Variants
+        5 items (wide) → 1 column × 5 rows.
+
+      Placement
+        With heights 600px/600px on a 1280px laptop (952px content width): side, so each
+        block gets 462px.
+
+  Without `--heights` the placement is still decided in the viewer at runtime, so the counts stay full-width — but they now say so, instead of leaving the reader to assume they are final:
+
+      The counts above are for the full 952px row; side by side each block gets 462px instead,
+      which can fit fewer columns. Pass --heights <first>,<second> to resolve it here.
+
+  Closes #37.
+
 ## 0.6.9
 
 - Only one `dev` serves a project at a time. A second one now refuses, naming the pid and port of the one already running, instead of starting beside it and sharing its generated directory. Two servers both rewrote `entry.tsx`, `package.json`, `app.json`, `metro.config.js` and `tsconfig.json`, and the loser was left serving a workspace that no longer described it — which Expo reports as an unresolvable `main` field, naming neither the other server nor the shared directory. To run two deliberately, give one its own directory with `--workspace-dir`.
