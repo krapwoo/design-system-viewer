@@ -314,3 +314,26 @@ test('performUpdate: resuming from a failed step skips the steps already done', 
   }
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('performUpdate: a local checkout fails the install step instead of replacing it', async () => {
+  // The update page's own path to the same defect: one click on Update now ran a registry install
+  // over a `file:` dependency, detaching the project from the source it was serving.
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-local-'));
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ devDependencies: { '@krapwoo/ds-viewer': 'workspace:*' } }));
+  const config: ResolvedConfig = { name: 'X', components: [], tokens: [], updateCheck: true, doctor: { strict: false }, projectRoot: dir, configPath: path.join(dir, 'x.ts') };
+  const calls: string[] = [];
+  const deps = recordingDeps();
+  await performUpdate(config, '0.4.0', samplePlan(), {
+    execImpl: async (command, args) => { calls.push(`${command} ${args[0]}`); return ''; },
+    onStatus: deps.onStatus,
+    restart: deps.restart,
+    delayMs: 0,
+  });
+  assert.deepEqual(calls, [], 'nothing may be installed, migrated or checked');
+  assert.deepEqual(deps.restartCalls, [], 'the viewer must not restart as though it had updated');
+  const last = deps.statuses[deps.statuses.length - 1];
+  assert.equal(last.phase, 'failure');
+  assert.equal(last.step, 'install');
+  assert.match(last.log ?? '', /installed from "workspace:\*"/);
+  rmSync(dir, { recursive: true, force: true });
+});

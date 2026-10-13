@@ -622,6 +622,16 @@ Downloads the target version, runs its own `migrate --from <your version>`, upgr
 whichever package manager your lockfile names, re-runs `migrate` for real, then `doctor`. Changes
 are left uncommitted — review them like any other change.
 
+The upgrade keeps the package in whichever section your `package.json` already declares it in,
+rather than always writing a devDependency.
+
+If that spec is a local one — `file:`, `link:`, `workspace:`, `portal:`, or a bare path — `update`
+refuses and tells you how to proceed, because installing a published version would replace the
+checkout your project deliberately points at. The catalog would keep running while no longer
+reflecting the source you are editing, which is hard to notice. `--force` does not override this:
+it exists for uncommitted files, not for changing where the package comes from. The update page's
+**Update now** refuses the same way, reporting it as a failed install step.
+
 ### `npx ds-viewer migrate --from <version>`
 
 Runs every migration introduced after `<version>` — `update` calls this for you; run it directly
