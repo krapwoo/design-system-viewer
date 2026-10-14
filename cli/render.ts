@@ -142,6 +142,80 @@ export function identicalVariantIssues(page: { id: string; file?: string }, pair
   }));
 }
 
+export interface ClippedSpecimen {
+  /** The cell's own caption, so the message names the example the reader is looking at. */
+  name: string;
+  /** How far outside its cell the content paints, in px, on the worst side. */
+  overflow: number;
+  side: 'left' | 'right';
+}
+
+/**
+ * Runs in the browser: finds specimen content that paints outside its cell and cannot be reached.
+ *
+ * A cell is the width the page gives an example. Content wider than it is either clipped — the
+ * reader sees a cut-off component and no indication anything is missing — or drawn over its
+ * neighbour. Either way the page is showing something other than the component.
+ *
+ * Scrollable content is deliberately not reported. `hidden` means the content is lost; `auto` and
+ * `scroll` mean it is reachable, which is the whole point of a specimen like PillRow's "Many pills
+ * (scrollable)" — measured at 220px outside its cell at 1280, and correct. So the test is not
+ * "crosses its cell" but "crosses its cell with nothing between it and the document that scrolls
+ * on that axis". The walk runs past the cell to the document element, because the thing that clips
+ * a specimen is often the card above it rather than anything inside it.
+ */
+export const CLIPPED_SPECIMEN_SCRIPT = `(() => {
+  const doc = document;
+  const scrolls = (style, axis) => {
+    const v = axis === 'x' ? style.overflowX : style.overflowY;
+    return v === 'auto' || v === 'scroll';
+  };
+  const out = [];
+  for (const card of doc.querySelectorAll('[role=list][aria-label]')) {
+    if (!/^[^:]+: .+/.test(card.getAttribute('aria-label') || '')) continue;
+    for (const cell of card.querySelectorAll('[role=listitem]')) {
+      if (cell.closest('[role=list]') !== card) continue;
+      const box = cell.getBoundingClientRect();
+      if (box.width < 2) continue;
+      let worst = 0;
+      let side = 'right';
+      for (const el of cell.querySelectorAll('*')) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) continue;
+        const style = getComputedStyle(el);
+        if (style.visibility === 'hidden' || style.opacity === '0' || style.display === 'none') continue;
+        const over = Math.max(box.left - r.left, r.right - box.right);
+        if (over <= worst) continue;
+        // Reachable by scrolling somewhere above it? Then it is off the cell on purpose.
+        let reachable = false;
+        for (let p = el.parentElement; p && p !== doc.documentElement; p = p.parentElement) {
+          if (scrolls(getComputedStyle(p), 'x')) { reachable = true; break; }
+        }
+        if (reachable) continue;
+        worst = over;
+        side = box.left - r.left >= r.right - box.right ? 'left' : 'right';
+      }
+      if (worst > 1) {
+        const caption = cell.children[0] ? (cell.children[0].textContent || '') : '';
+        out.push({ name: caption.trim(), overflow: Math.round(worst), side });
+      }
+    }
+  }
+  return out;
+})()`;
+
+/** Turns the browser's findings into doctor issues, one per clipped example. */
+export function clippedSpecimenIssues(page: { id: string; file?: string }, clipped: readonly ClippedSpecimen[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  return clipped.map((c) => ({
+    id: 'specimen-clipped',
+    severity: 'warning' as const,
+    ...ref,
+    message: `${c.name ? `"${c.name}"` : 'An example'} paints ${c.overflow}px past the ${c.side} of its cell, where it is cut off rather than scrollable.`,
+    fix: 'Give the page a wider specimenSize, stack the blocks so the example gets the full row, or drop `itemsFill` if the example is a small instance that should sit centered.',
+  }));
+}
+
 /** The project's own puppeteer, or `undefined` when it isn't installed. */
 export function loadProjectPuppeteer(projectRoot: string): unknown | undefined {
   try {
@@ -386,6 +460,15 @@ export async function renderCheck(
           identical = undefined;
         }
         if (Array.isArray(identical)) issues.push(...identicalVariantIssues({ id, file: options.files?.get(id) }, identical));
+        // Advisory for the same reason as the pass above, and kept separate so one failing script
+        // does not cost the other its findings.
+        let clipped: ClippedSpecimen[] | undefined;
+        try {
+          clipped = (await page!.evaluate(CLIPPED_SPECIMEN_SCRIPT)) as ClippedSpecimen[] | undefined;
+        } catch {
+          clipped = undefined;
+        }
+        if (Array.isArray(clipped)) issues.push(...clippedSpecimenIssues({ id, file: options.files?.get(id) }, clipped));
         await page!.close();
       } catch (error) {
         // A stuck page's tab is closed, so it doesn't keep loading next to the remaining pages.

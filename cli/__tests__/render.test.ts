@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { identicalVariantIssues, issuesFromPage, loadProjectPuppeteer, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
+import { clippedSpecimenIssues, identicalVariantIssues, issuesFromPage, loadProjectPuppeteer, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
 
 test('console errors and a missing heading are errors; overflow warnings are render-layout; other [Catalog] warnings are render-catalog-warning; noise is ignored', () => {
   const seen = new Set<string>();
@@ -138,6 +138,28 @@ test('identicalVariantIssues names both examples and the card they share', () =>
   assert.match(issues[0].message, /"Two columns" and "Three columns, with a wide section" render identically/);
   assert.match(issues[0].fix, /wider specimenSize/);
   assert.deepEqual(identicalVariantIssues({ id: 'X' }, []), []);
+});
+
+test('clippedSpecimenIssues names the example, the distance and the side', () => {
+  const issues = clippedSpecimenIssues({ id: 'Tooltip', file: 'components/Tooltip/Tooltip.catalog.tsx' }, [
+    { name: 'Placement: bottom', overflow: 234, side: 'left' },
+  ]);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].id, 'specimen-clipped');
+  assert.equal(issues[0].severity, 'warning');
+  assert.equal(issues[0].page, 'Tooltip');
+  assert.match(issues[0].message, /"Placement: bottom" paints 234px past the left of its cell/);
+  // The message has to say why this is a finding when PillRow's scrolling row is not.
+  assert.match(issues[0].message, /cut off rather than scrollable/);
+  assert.match(issues[0].fix, /itemsFill/);
+  assert.deepEqual(clippedSpecimenIssues({ id: 'X' }, []), []);
+});
+
+test('a clipped specimen with no caption still reports', () => {
+  // Cells in a token grid have no caption strip; the finding must still name the page and distance
+  // rather than render as an empty pair of quotes.
+  const [issue] = clippedSpecimenIssues({ id: 'Radius' }, [{ name: '', overflow: 12, side: 'right' }]);
+  assert.match(issue.message, /^An example paints 12px past the right of its cell/);
 });
 
 test('a failing identical-variants script is advisory, not a render-error for the page', async () => {
