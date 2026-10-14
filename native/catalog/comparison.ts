@@ -437,14 +437,44 @@ function heightAtWidth(block: PlacementBlock, width: number, available: number):
   return (block.height / Math.max(1, stackedRows)) * rows;
 }
 
-/** Side by side or stacked, for a page with exactly two blocks. Side by side splits the row into
- *  two equal columns and each block fills its own, so it is only possible when both blocks keep
- *  their minimum width in half a row; it is only taken when it saves at least PLACEMENT_MIN_SAVING
- *  against stacking, measuring each block at the width it would actually have. */
+/** Whether a block still fits on a single row in half the width. Deliberately stricter than "the
+ *  same number of rows as a full row would give": a column cap can already force a block to wrap
+ *  at full width, and two wrapped rows staying two wrapped rows is not a reason to halve every
+ *  specimen on the page. One row is the case where sharing genuinely costs nothing. */
+function fitsOneRow(block: PlacementBlock, half: number): boolean {
+  if (block.kind !== 'list' || !block.itemCount || !block.size) return true;
+  return listGeometry(block.itemCount, half, block.size, block.maxColumns).rows <= 1;
+}
+
+/** Side by side or stacked, for a page with exactly two blocks.
+ *
+ *  **Stacked is the default.** A page reads top to bottom, each block gets the whole row, and every
+ *  specimen keeps the width its component is actually used at. Side by side halves that width, so
+ *  it has to earn the space rather than be taken whenever it happens to save height — which is how
+ *  `Banner` ended up showing five full-width banners in a 462px column.
+ *
+ *  Two things earn it:
+ *
+ *  - **A single tall specimen.** One specimen taller than the column is wide leaves a long empty
+ *    strip beside it (an open `Dropdown` is 738px tall in a 462px column), and the other block
+ *    fits there for free.
+ *  - **Both still fit one row.** Specimens small enough that each block is a single row in half
+ *    the width lose nothing by sharing it.
+ *
+ *  Both still require each block to keep its minimum width in half a row, and the result to save
+ *  at least `PLACEMENT_MIN_SAVING` of height — side by side that saves nothing is just a narrower
+ *  page. */
 export function choosePlacement({ available, gap, first, second }: { available: number; gap: number; first: PlacementBlock; second: PlacementBlock }): 'side' | 'stacked' {
   const half = Math.floor((available - gap) / 2);
   if (half <= 0) return 'stacked';
   if ((first.minWidth ?? Infinity) > half || (second.minWidth ?? Infinity) > half) return 'stacked';
+
+  // Measured at the width it would have: a specimen is "tall" when it runs longer than the column
+  // it would sit in, which is what leaves room beside it.
+  const singleTallSpecimen = first.itemCount === 1 && first.height > half;
+  const bothFitOneRow = fitsOneRow(first, half) && fitsOneRow(second, half);
+  if (!singleTallSpecimen && !bothFitOneRow) return 'stacked';
+
   const sideHeight = Math.max(heightAtWidth(first, half, available), heightAtWidth(second, half, available));
   const stackedHeight = first.height + gap + second.height;
   return sideHeight <= stackedHeight - PLACEMENT_MIN_SAVING ? 'side' : 'stacked';

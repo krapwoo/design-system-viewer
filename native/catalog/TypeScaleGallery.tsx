@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, type TextStyle } from 'react-native';
-import { TokenRow } from './TokenRow';
+import { TokenRow, TokenRowGroup } from './TokenRow';
 import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
 
 /**
@@ -22,9 +22,9 @@ export function TypeScaleGallery<TStep extends string>({
   useNotes: Record<TStep, string>;
 }) {
   return (
-    <View style={styles.tokenStack}>
+    <TokenRowGroup><View style={styles.tokenStack}>
       {steps.map((step, i) => (
-        <TokenRow key={String(step)} use={useNotes[step]} last={i === steps.length - 1}>
+        <TokenRow key={String(step)} use={useNotes[step]} last={i === steps.length - 1} notePlacement="right">
           <View style={styles.row}>
             <Text style={[sampleStyle(step), styles.sample]} numberOfLines={1}>
               {String(step)}
@@ -33,7 +33,7 @@ export function TypeScaleGallery<TStep extends string>({
           </View>
         </TokenRow>
       ))}
-    </View>
+    </View></TokenRowGroup>
   );
 }
 

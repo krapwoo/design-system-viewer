@@ -81,13 +81,19 @@ file that is fine and that you never touched:
 Something outside this server deleted package.json, app.json, tsconfig.json, metro.config.js,
 entry.tsx from .ds-viewer/. Rewriting them — your project is fine, this is the catalog's own
 generated workspace. If the catalog looks broken, reload the page.
+Restarting Metro so the catalog picks the files back up — the page reloads itself in a few seconds.
 ```
 
-Metro picks the files back up without a restart. The repair is capped at five per run: if
-something is deleting continuously, repairing forever would only hide it, so past the cap the
-server stops and keeps reporting. If you ever see that message, what else was running at the time
-would be useful on [issue #41](https://github.com/krapwoo/design-system-viewer/issues/41) — the
-cause is not yet identified.
+Metro is restarted as part of the repair, because rewriting the files is not enough on its own: it
+keeps serving the module map it cached before they went missing, and answers every request with
+`Unable to resolve "expo" from "entry.tsx"` until it starts again. The server stays up and the page
+reloads itself.
+
+The repair is capped at five per run: if something is deleting continuously, repairing forever
+would only hide it, so past the cap the server stops and keeps reporting. If you ever see that
+message, what else was running at the time would be useful on
+[issue #41](https://github.com/krapwoo/design-system-viewer/issues/41) — the cause is not yet
+identified.
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time

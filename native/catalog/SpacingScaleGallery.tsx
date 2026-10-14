@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { TokenRow } from './TokenRow';
+import { TokenRow, TokenRowGroup } from './TokenRow';
 import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './tokens';
 
 /**
@@ -18,11 +18,11 @@ export function SpacingScaleGallery<TStep extends string | number>({
   useNotes: Record<TStep, string>;
 }) {
   return (
-    <View style={styles.tokenStack}>
+    <TokenRowGroup><View style={styles.tokenStack}>
       {steps.map((step, i) => {
         const px = values[step];
         return (
-          <TokenRow key={String(step)} use={useNotes[step]} last={i === steps.length - 1}>
+          <TokenRow key={String(step)} use={useNotes[step]} last={i === steps.length - 1} notePlacement="right">
             <View style={styles.row}>
               <Text style={styles.label}>{String(step)}</Text>
               <View style={[styles.bar, { width: Math.max(px, 1) }]} />
@@ -31,7 +31,7 @@ export function SpacingScaleGallery<TStep extends string | number>({
           </TokenRow>
         );
       })}
-    </View>
+    </View></TokenRowGroup>
   );
 }
 

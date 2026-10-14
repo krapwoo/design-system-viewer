@@ -51,7 +51,10 @@ export default defineCatalogPage({
     ],
   },
   states: {
-    itemsFill: true,
+    // No `itemsFill`: these specimens are a small icon trigger with a floating bubble, not a
+    // block-level component that wants the row's width. Filling pins the trigger to the cell's
+    // left edge (a filled specimen aligns to start, which is right for a Banner and wrong here),
+    // and the bubble — which centres on its trigger — then overflows the cell and is clipped.
     items: [
       {
         key: 'bottom',

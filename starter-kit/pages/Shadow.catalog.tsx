@@ -1,28 +1,40 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage, TokenRow } from '@krapwoo/ds-viewer';
-import { DS_RADIUS, DS_SEMANTIC, DS_SHADOW, DS_SHADOW_USE, DS_SPACING, DS_TYPOGRAPHY, type ShadowToken } from '../tokens';
+import { View, StyleSheet } from 'react-native';
+import { defineCatalogPage, TokenGrid, TokenTile } from '@krapwoo/ds-viewer';
+import { DS_RADIUS, DS_SEMANTIC, DS_SHADOW, DS_SHADOW_USE, DS_SPACING, type ShadowToken } from '../tokens';
 
 const styles = StyleSheet.create({
-  tokenStack: { gap: DS_SPACING[800] },
-  previewRow: { flexDirection: 'row', alignItems: 'center', gap: DS_SPACING[600] },
-  previewLabel: { minWidth: 64, ...DS_TYPOGRAPHY.labelSm, color: DS_SEMANTIC.text.regular },
-  shadowBox: { width: 56, height: 40, borderRadius: DS_RADIUS.medium, backgroundColor: DS_SEMANTIC.surface.white },
+  // A shadow is cast *onto* something. On the catalog's own white card the elevated surface is
+  // white on white and the token reads as an empty space, so each tile gives it a tinted backdrop
+  // to fall on — the same reason a product screen sits a card on a page colour, not on paper.
+  stage: {
+    backgroundColor: DS_SEMANTIC.surface.main,
+    borderRadius: DS_RADIUS.small,
+    paddingVertical: DS_SPACING[800],
+    alignItems: 'center',
+  },
+  surface: {
+    width: 76,
+    height: 48,
+    borderRadius: DS_RADIUS.medium,
+    backgroundColor: DS_SEMANTIC.surface.white,
+  },
 });
 
 function ShadowGallery() {
   const steps = Object.keys(DS_SHADOW) as ShadowToken[];
   return (
-    <View style={styles.tokenStack}>
-      {steps.map((step, i) => (
-        <TokenRow key={step} use={DS_SHADOW_USE[step]} last={i === steps.length - 1}>
-          <View style={styles.previewRow}>
-            <Text style={styles.previewLabel}>{step}</Text>
-            <View style={[styles.shadowBox, DS_SHADOW[step]]} />
+    // Tiles: an elevation preview is small and self-contained, and seeing `resting` beside
+    // `bottomSheet` is the only way to judge how much stronger one lift is than another.
+    <TokenGrid minTileWidth={170}>
+      {steps.map((step) => (
+        <TokenTile key={step} name={step} note={DS_SHADOW_USE[step]}>
+          <View style={styles.stage}>
+            <View style={[styles.surface, DS_SHADOW[step]]} />
           </View>
-        </TokenRow>
+        </TokenTile>
       ))}
-    </View>
+    </TokenGrid>
   );
 }
 

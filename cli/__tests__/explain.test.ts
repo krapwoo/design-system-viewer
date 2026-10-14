@@ -229,12 +229,14 @@ test('--heights lets explain compute the same side/stacked decision the viewer w
       states: { items: [{ key: 'b', name: 'B', node: null }, { key: 'c', name: 'C', node: null }] },
     });
   `);
-  // A tall first block (a single-item "Variants" list, which hugs a narrow ~404px content width —
-  // see `toPlacementBlock` below) and a much shorter second block: side by side saves more than
-  // `PLACEMENT_MIN_SAVING` (120px) here, by the same arithmetic `choosePlacement`'s own tests in
-  // `native/catalog/__tests__/comparison.test.ts` use.
-  const result = explainPage(configFor(dir), 'Widget', { heights: [300, 120] });
-  assert.equal(result?.placement?.decision, 'side');
+  // One Variants specimen 600px tall in a 462px column: taller than it is wide, so it leaves an
+  // empty strip the States block fills. That is what earns the split under the stack-by-default
+  // rule — the same arithmetic `choosePlacement`'s own tests use.
+  assert.equal(explainPage(configFor(dir), 'Widget', { heights: [600, 120] })?.placement?.decision, 'side');
+
+  // The same page with a short first block earns nothing: a single specimen wider than it is tall
+  // leaves no strip, and the two States items need two rows in half a row. Stacked is the default.
+  assert.equal(explainPage(configFor(dir), 'Widget', { heights: [300, 120] })?.placement?.decision, 'stacked');
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -355,6 +357,16 @@ test('a page whose previewLayout cannot be read is not explained, rather than ex
   rmSync(dir, { recursive: true, force: true });
 });
 
+const ONE_TALL_TWO_BLOCK = `
+  import { defineCatalogPage } from '@krapwoo/ds-viewer';
+  export default defineCatalogPage({
+    component: 'Widget', group: 'Components', description: 'x',
+    specimenSize: 'wide',
+    variants: { items: [{ key: 'v0', name: 'V0', node: null }] },
+    states: { items: [{ key: 's0', name: 'S0', node: null }] },
+  });
+`;
+
 const WIDE_TWO_BLOCK = `
   import { defineCatalogPage } from '@krapwoo/ds-viewer';
   export default defineCatalogPage({
@@ -370,10 +382,18 @@ test('a side-by-side placement reports the columns that fit in half a row, not t
   // halved the row — so a page author sized examples for a layout that never rendered.
   const dir = makeProject(WIDE_TWO_BLOCK);
 
-  const side = explainPage(configFor(dir), 'Widget', { heights: [600, 600] });
+  // Five wide specimens per block no longer share a row at any height — halving turns three rows
+  // into five and draws every banner-width specimen at 462px. A tall single specimen still does,
+  // so that is the shape this reporting test drives.
+  const stackedTall = explainPage(configFor(dir), 'Widget', { heights: [600, 600] });
+  assert.equal(stackedTall?.placement?.decision, 'stacked');
+
+  const singleDir = makeProject(ONE_TALL_TWO_BLOCK);
+  const side = explainPage(configFor(singleDir), 'Widget', { heights: [700, 120] });
   assert.equal(side?.placement?.decision, 'side');
   assert.match(side!.placement!.reason, /each block gets 462px/);
-  for (const block of side!.blocks) assert.match(block.reason, /1 column × 5 rows/);
+  assert.match(side!.blocks[0].reason, /1 column × 1 row/);
+  rmSync(singleDir, { recursive: true, force: true });
 
   // Short blocks: stacking wins, and the full-row count is then the correct one to report.
   const stacked = explainPage(configFor(dir), 'Widget', { heights: [40, 40] });

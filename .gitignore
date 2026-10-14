@@ -18,3 +18,4 @@ web-build/
 .ds-viewer/
 # The same, for the throwaway server `doctor --render` starts
 .ds-viewer-render/
+.mockups/
