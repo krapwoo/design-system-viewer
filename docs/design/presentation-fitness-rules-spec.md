@@ -133,6 +133,14 @@ but it covers the common case without guessing.
 
 ## Layout diff across versions
 
+**Built in 0.8.0** as `explain --all` + `layout-diff`. The snapshot records what is decidable
+without a browser — block kind, size, item count, `minWidth`, and column×row geometry at full and
+half width — plus `sideEligible`, the height-independent half of `choosePlacement`. The final
+side/stacked decision also weighs a single tall specimen and the height saved, so the snapshot
+reports eligibility rather than the outcome, and says so.
+
+What follows is the original proposal, kept for the reasoning.
+
 Not a rule — the answer to "if a layout rule changes, how does a consumer find out?"
 
 Layout rules live in the package and reach every consuming project on `update`; their page files
