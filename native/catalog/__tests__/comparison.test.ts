@@ -305,6 +305,10 @@ test('choosePlacement splits the row in two and keeps the shorter arrangement', 
   // the split even though the three states beside it drop to one column.
   const wideFirst = { kind: 'list', minWidth: 404, itemCount: 1, size: 'wide', height: 600 };
   assert.equal(choosePlacement({ available: 952, gap: 28, first: wideFirst, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 640 } }), 'side');
+  // ...and it earns it from either side. The rule is "a single specimen taller than its column",
+  // which says nothing about which block the page declares first; checking only `first` made the
+  // same two blocks land differently depending on whether variants or states came first.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 640 }, second: wideFirst }), 'side');
   // The same page at 1100: half a row is 372px, under a wide cell's 402px minimum.
   assert.equal(choosePlacement({ available: 772, gap: 28, first: wideFirst, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 600 } }), 'stacked');
   // A block that can only fill a whole row (a 'full' preview, token sections) never shares one.

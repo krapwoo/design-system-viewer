@@ -65,16 +65,22 @@ export function TokenRow({
 
   if (notePlacement === 'right') {
     const measured = lane && lane.width > 0 ? lane.width : undefined;
-    const column = measured ?? sampleWidth;
+    // Inside a group the lane governs, and only the lane: falling back to `sampleWidth` on the
+    // first frame would pin the sample to 280 before anything is measured, and the measurement
+    // taken through that constraint can never report wider than 280 — capping a lane that exists
+    // precisely to grow to the widest sample (a type scale's `display` needs ~470).
+    // `sampleWidth` is for a row standing on its own, where there is nothing to measure against.
+    const column = lane ? measured : sampleWidth;
     const onLayout = lane
       ? (event: LayoutChangeEvent) => lane.report(Math.ceil(event.nativeEvent.layout.width))
       : undefined;
     return (
       <View style={[styles.itemRight, !last && styles.itemDivider]}>
-        {/* The inner view is never given a width, so it reports what the sample naturally takes;
-            the outer one carries the shared column. */}
+        {/* While measuring, the inner view sits at its natural width so it reports what the sample
+            actually takes. Standing alone there is nothing to report, so it stretches to the column
+            instead — otherwise a sample sized as a percentage would collapse to nothing. */}
         <View style={[styles.sample, column !== undefined && { width: column }]}>
-          <View style={styles.natural} onLayout={onLayout}>{children}</View>
+          <View style={onLayout ? styles.natural : undefined} onLayout={onLayout}>{children}</View>
         </View>
         {use ? <Text style={[styles.use, styles.useRight]}>{use}</Text> : null}
       </View>

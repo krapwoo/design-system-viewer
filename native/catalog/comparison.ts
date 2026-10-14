@@ -471,7 +471,11 @@ export function choosePlacement({ available, gap, first, second }: { available: 
 
   // Measured at the width it would have: a specimen is "tall" when it runs longer than the column
   // it would sit in, which is what leaves room beside it.
-  const singleTallSpecimen = first.itemCount === 1 && first.height > half;
+  // Either block can be the tall one. Checking `first` alone made placement depend on the order the
+  // page happens to declare its blocks in, so the same two blocks laid out variants-then-states and
+  // states-then-variants got different answers — and the rule says "a single specimen taller than
+  // its column", which says nothing about order.
+  const singleTallSpecimen = (first.itemCount === 1 && first.height > half) || (second.itemCount === 1 && second.height > half);
   const bothFitOneRow = fitsOneRow(first, half) && fitsOneRow(second, half);
   if (!singleTallSpecimen && !bothFitOneRow) return 'stacked';
 

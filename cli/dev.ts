@@ -703,18 +703,29 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       // A Metro we killed on purpose: respawn it on the same port rather than tearing the server
       // down, once the port it held is actually free again.
       if (restartingMetro) {
-        restartingMetro = false;
-        // The port is not free the instant this child exits. `performRestart` already carries that
-        // knowledge — it waits for the port before re-spawning, and Errata 7c records that Metro
-        // listens on `[::1]`, so a naive probe reports free while it is still bound. Respawning
-        // immediately lets Expo find its own port taken, at which point it either prompts (and in
-        // a non-interactive shell gives up with "Skipping dev server") or quietly moves to another
-        // port, leaving the catalog somewhere the dev lock does not name.
-        waitForPortFree(port, defaultProbePortFree)
-          .catch(() => {})
+        // The flag stays set for the whole restart, not just until this handler returns. Clearing
+        // it before the wait left a window where the repair timer could ask for another restart,
+        // find no live child to kill, and leave the flag set with nothing pending — after which
+        // the next genuine Metro crash would be mistaken for a deliberate restart and silently
+        // respawn, skipping the shutdown path that releases the watchers and the dev lock.
+        // `repairWorkspaceIfMissing`'s caller already checks this flag, so holding it also stops a
+        // second repair stacking a restart on top of this one.
+        //
+        // The port is not free the instant this child exits: `performRestart` waits for the same
+        // reason, and Errata 7c records that Metro listens on `[::1]`, so a naive probe reports
+        // free while it is still bound. Respawning early lets Expo find its own port taken and
+        // either prompt — giving up with "Skipping dev server" in a non-interactive shell — or move
+        // to another port, leaving the catalog where the dev lock does not name.
+        void waitForPortFree(port, defaultProbePortFree)
+          .catch(() => {
+            // Still spawn: a catalog that tried and failed to come back is recoverable, one that
+            // silently never tries is not. Expo reports the port conflict itself if there is one.
+            console.warn(`Port ${port} was still held after the wait; starting Metro anyway.`);
+          })
           .then(() => {
             child = spawnMetro();
             bindChild();
+            restartingMetro = false;
           });
         return;
       }
