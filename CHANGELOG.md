@@ -3,6 +3,77 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.7.0
+
+- A repair now restarts Metro, because rewriting the files was not enough. 0.6.11 claimed "Metro picks the files back up without a restart; the catalog keeps serving" — that held in a staged test and was wrong in the wild. Observed four times since: the files came back, and Metro went on answering every request with
+
+      Unable to resolve "expo" from "entry.tsx"
+
+  because it had already cached a module map that no longer matched the directory. The catalog stayed blank until someone restarted the server by hand, which is exactly the interruption the repair exists to prevent.
+
+  The server now restarts Metro as part of the repair and says so:
+
+      Restarting Metro so the catalog picks the files back up — the page reloads itself in a few seconds.
+
+  The server itself stays up and the page reloads itself. The respawn waits for the port to come free before starting Metro again — it is not free the instant the old process exits — and says so if it is still held after the wait, rather than letting Expo quietly move the catalog to a port the dev lock does not name. The restart is bounded by the same five-repair cap, so a continuous deleter cannot turn it into a restart loop.
+
+  Verified by deleting all eight generated files from a serving catalog: the files came back, Metro restarted on the same port, and the catalog rendered 50 pages with zero console errors — with no manual restart.
+
+  The cause of the deletion is still unidentified (#41). A sixth theory died this round: a render check running beside a live server was the obvious suspect, but fingerprinting the live workspace across one proved every file byte-identical, with no repair triggered.
+- The starter kit's `Motion` page gives each kind of token its own card, and lays a spring out as the config object it is.
+
+  Duration, loop duration, easing and spring shared one card, so four different things — a scale in milliseconds, another scale in milliseconds, a set of bezier curves, and a config object — read as one long box. They are now four `tokenSections` cards. That also fixes a heading that was centred while the other three were left-aligned, which was not a choice: that one group was missing `align="left"`.
+
+  The spring section was laid out as a wrapping grid of six fixed-width fields, which broke `restDisplacementThreshold` mid-word and orphaned the sixth field on its own row. It is now a table: the field names read down, and each spring token is a column. The field vocabulary is fixed at six and the number of tokens is what grows, so a second spring adds a column rather than repeating all six names, and `damping` can be compared across tokens along one line. The preview and the "when to use" note are rows of their own instead of loose content under a grid.
+
+  `Tooltip` drops `itemsFill` from its states. That flag is for "wide block-level components (Banner, Card, Toast, InputField) rather than small instances meant to sit centered" — a floating bubble on an icon trigger is the second kind. Filling pinned each trigger to its cell's left edge, and the bubble, which centres on its trigger, overflowed the cell: the first specimen rendered as "to add a stop" with the first word clipped off.
+- Token pages put each token's note where it can be read against its specimen, and small self-contained previews are tiles rather than rows.
+
+  `Radius` and `Shadow` use `TokenGrid`/`TokenTile`, which is what that component exists for: "tokens whose preview is small and self-contained (radius, shadow, colour, control height)". Six radii side by side can be compared against each other, which is the only way to read a scale; one per row, 100px apart, cannot. `Shadow` also gives each tile a tinted stage to cast onto — an elevated white surface on the catalog's own white card was, accurately, invisible.
+
+  `Font`, `Typography`, `Spacing` and `Motion` keep their rows, because a type sample and a spacing bar need real width, but the note now sits beside the specimen instead of beneath it. The column it sits in is measured from the widest sample in that stack (`TokenRowGroup`) rather than fixed: a fixed column has to be wide enough for the largest sample a page might hold, which strands every smaller one. A font-weight sample is ~110px, and in a column sized for an 88px display sample its note sat 700px away.
+
+  Measured, each page now fits its own content — the Font page's column is as wide as a font weight, the type scale's as wide as `display`, the internals type scale's as wide as `pageTitle` — and the notes stay aligned in one column to read down. The width only ever grows, so it settles after the first layout.
+- Two blocks stack by default, and share a row only when sharing costs nothing.
+
+  Side by side used to be taken whenever it saved 120px of height. That is how `Banner` ended up drawing five full-width banners in a 462px column: the saving was real, and the specimens were half the width the component is ever used at.
+
+  Stacked is now the default, and a split has to earn the space. Two things earn it:
+
+  - **A single tall specimen.** One specimen taller than the column is wide leaves a long empty strip beside it — an open `Dropdown` is 738px tall in a 462px column — and the other block fits there for free.
+  - **Both blocks still fit one row.** Specimens small enough that each block is a single row at half width lose nothing by sharing it.
+
+  Deliberately stricter than "the same number of rows as a full row would give": with the default three-column cap a block can already be two rows at full width, and two wrapped rows staying two wrapped rows is not a reason to halve every specimen on the page. That looser rule was written first, and a rendered pass caught it — `EmptyState` and `Shimmer` kept sharing a row when they should not have.
+
+  Both blocks must still keep their minimum width in half a row, and the result must still save real height; side by side that saves nothing is just a narrower page.
+
+  Across the starter kit this changes three pages and leaves the rest alone: `Banner` (specimens 540px → 555px), `EmptyState` (540px → 1110px) and `Shimmer` (270px → 555px) now stack, while `Dropdown` and `TextArea` keep sharing their row.
+- `doctor --render` gains `specimen-clipped`: an example in a list card painting past the left or right of its cell, where it is cut off rather than contained.
+
+  The check already drove a real browser over every page and asked it almost nothing: of its seven rules, six read the console. `render-layout`, despite the name, does not measure overflow — it matches an overflow *string* inside a `[Catalog]` warning a component chose to emit about itself. A specimen that silently paints past its cell produced no warning and no finding, which is how a `Tooltip` example that rendered as "to add a stop", with the first word clipped off, passed a clean check.
+
+  The rule is not "crosses its cell" but "crosses its cell without being held by anything between it and that cell". Content inside something that scrolls (`auto`/`scroll`) is reachable; content inside something that clips (`hidden`/`clip`) is the component's own doing — a carousel, a shimmer sweep, a card rounding its corners. Either way the specimen is containing its own overflow, and the page is not at fault.
+
+  The walk stops at the cell deliberately. Looking past it consults the catalog's own chrome: `ComparisonGroups` wraps every grouped card in a horizontal `ScrollView`, so a walk to the document element would find that scroller above every grouped cell and exempt all of them.
+
+  Two limits worth knowing. Treating `hidden` as containment means a full-width component clipping its own corners hides a genuinely too-narrow cell from this rule — that is the price of staying quiet about carousels. And only horizontal crossings in `role=list` cells are measured: a cell's width is what the page allocates, while its height grows with content, and matrix (`ComparisonGrid`) cells are not visited.
+
+  Calibrated before shipping rather than after. Across all 50 starter-kit pages at 1280 and 1728 the rule reports nothing; with `Tooltip`'s `itemsFill` restored it reports exactly its three cells — `Placement: bottom` (32px), `Top-right arrow` (25px), `Bottom-right arrow` (45px), all leftward, at both widths. Only one of the three had been noticed by eye.
+
+  Like `identical-variants`, the pass is advisory: if its script throws, the page keeps its own findings instead of inheriting a render error.
+
+- `doctor --render` takes `--port`, so the check can be steered off a port something else is holding.
+
+  The check starts its own `dev` on the first free port from 5181 and had no way to be told otherwise. That is fine alone and bad in company: run it while another project's catalog is on that range and the two contend for the same port. Observed — a run that collided with another catalog on 5182 reported **257 errors**, every one `ERR_CONNECTION_REFUSED`, naming this project's pages for a server that was never this project's.
+
+  ```
+  ds-viewer doctor --render --port 5190
+  ```
+
+  A port that cannot be a port is refused rather than ignored. Silently falling back to a self-chosen port is how the 257-error run happened in the first place: a check that renders against something other than what you pointed it at reports another server's pages as your failures.
+
+  What this does *not* fix, and is worth knowing: `waitForServer` accepts **any** HTTP reply on the port as proof the catalog is up — its own comment says so. A stranger's server still satisfies it. The flag lets you avoid the collision; it does not let the check notice one. Telling the two apart needs its own change.
+
 ## 0.6.11
 
 - A running `dev` notices when something deletes its workspace, and writes it back. The server owns the generated files under `.ds-viewer/` and nothing else should remove them — but something does, rarely, and the symptom was badly misleading:

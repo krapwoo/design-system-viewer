@@ -1,7 +1,0 @@
-Token pages put each token's note where it can be read against its specimen, and small self-contained previews are tiles rather than rows.
-
-`Radius` and `Shadow` use `TokenGrid`/`TokenTile`, which is what that component exists for: "tokens whose preview is small and self-contained (radius, shadow, colour, control height)". Six radii side by side can be compared against each other, which is the only way to read a scale; one per row, 100px apart, cannot. `Shadow` also gives each tile a tinted stage to cast onto — an elevated white surface on the catalog's own white card was, accurately, invisible.
-
-`Font`, `Typography`, `Spacing` and `Motion` keep their rows, because a type sample and a spacing bar need real width, but the note now sits beside the specimen instead of beneath it. The column it sits in is measured from the widest sample in that stack (`TokenRowGroup`) rather than fixed: a fixed column has to be wide enough for the largest sample a page might hold, which strands every smaller one. A font-weight sample is ~110px, and in a column sized for an 88px display sample its note sat 700px away.
-
-Measured, each page now fits its own content — the Font page's column is as wide as a font weight, the type scale's as wide as `display`, the internals type scale's as wide as `pageTitle` — and the notes stay aligned in one column to read down. The width only ever grows, so it settles after the first layout.
