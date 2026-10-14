@@ -567,12 +567,14 @@ and adds what only a real render shows:
   prop that was never wired up. The fingerprint reads each specimen's whole subtree (including a
   PhoneFrame's child document and a field's value) but not the caption carrying the variant's own
   name, so two examples differing only in colour are not reported.
-- `specimen-clipped` (warning): an example painting outside its cell, where it is cut off rather
-  than reachable. Content inside something that scrolls on that axis is not reported — `hidden`
-  means the content is lost, `auto`/`scroll` means the reader can get to it, which is the point of
-  a scrollable specimen. Usually fixed with a wider `specimenSize`, by stacking the blocks so the
-  example gets the full row, or by dropping `itemsFill` from a small instance that should sit
-  centered.
+- `specimen-clipped` (warning): an example painting past the left or right of its cell, where it is
+  cut off rather than contained. Content the specimen contains itself is not reported — anything
+  inside something that scrolls (`auto`/`scroll`, so the reader can reach it) or clips itself
+  (`hidden`/`clip`, so the component meant to) is the specimen's own decision, not width the page
+  failed to give it. Only horizontal crossings are measured: a cell's width is what the page
+  allocates, while its height grows with its content. Usually fixed with a wider `specimenSize`, by
+  stacking the blocks so the example gets the full row, or by dropping `itemsFill` from a small
+  instance that should sit centered.
 - `render-unavailable` / `render-failed` (errors): no browser, or the catalog didn't start.
 
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't

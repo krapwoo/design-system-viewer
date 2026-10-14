@@ -189,3 +189,48 @@ test('a failing identical-variants script is advisory, not a render-error for th
   });
   assert.deepEqual(issues, []);
 });
+
+test('renderCheck turns a clipped specimen into an issue, and a throwing clip script is advisory', async () => {
+  // The rule's own script runs in the browser and cannot be unit-tested here, but the wiring can:
+  // a page that reports a clipped specimen must reach the findings, and a script that throws must
+  // cost the page nothing — the same contract the identical-variants pass has.
+  const pageFor = (clipped: unknown) => ({
+    setViewport: async () => {},
+    on: () => {},
+    goto: async () => {},
+    evaluate: async (arg: unknown, ...rest: unknown[]) => {
+      if (typeof arg !== 'string') return true; // the heading probe is a function
+      if (arg.includes('fingerprint')) return [];
+      if (arg.includes('CONTAINS')) {
+        if (clipped instanceof Error) throw clipped;
+        return clipped;
+      }
+      return rest.length ? true : ['#Button'];
+    },
+    close: async () => {},
+  });
+  const run = async (clipped: unknown) => {
+    let first = true;
+    const browser = {
+      newPage: async () => {
+        if (first) {
+          first = false;
+          return { ...pageFor(clipped), evaluate: async () => ['#Button'] };
+        }
+        return pageFor(clipped);
+      },
+      close: async () => {},
+    };
+    return renderCheck('/tmp/x', {
+      settleMs: 0,
+      deps: { puppeteer: { launch: async () => browser }, startDev: startedDev, stopDev: () => {} },
+    });
+  };
+
+  const reported = await run([{ name: 'Placement: bottom', overflow: 34, side: 'left' }]);
+  const clip = reported.find((i) => i.id === 'specimen-clipped');
+  assert.ok(clip, 'a clipped specimen must reach the findings');
+  assert.match(clip!.message, /34px past the left/);
+
+  assert.deepEqual((await run(new Error('Execution context was destroyed'))).filter((i) => i.id === 'specimen-clipped'), []);
+});

@@ -47,14 +47,17 @@ export function TokenRow({
   use,
   last = false,
   notePlacement = 'below',
-  sampleWidth,
+  sampleWidth = 280,
 }: {
   children: React.ReactNode;
   use: string;
   last?: boolean;
   /** `'right'` puts the note beside the sample (font weights, spacing, type sizes) so each token is
    *  one line. Inside a `TokenRowGroup` the sample column is measured from the widest sample in the
-   *  stack; `sampleWidth` is the fallback when there is no group to measure against. */
+   *  stack; a `TokenRowGroup`'s measured column wins when there is one, and `sampleWidth`
+   *  (default 280) is the fallback for a row standing on its own. Keeping the default matters for
+   *  rows outside a group: without it every row sizes to its own sample and the notes stop lining
+   *  up in a column, which is the thing `notePlacement="right"` exists to do. */
   notePlacement?: 'below' | 'right';
   sampleWidth?: number;
 }) {

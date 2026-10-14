@@ -35,6 +35,8 @@ Commands:
            --json          print the machine-readable report instead
            --ci            exit 1 when any error was found (never on a warning alone)
            --render        also open every page in a headless browser (needs puppeteer)
+           --port <n>      pin the render server's port (with --render), for when something
+                           else already holds the range it would pick from
   explain <Page>
            Print why a page's specimens are laid out the way they are
            --heights <first>,<second>  check side-by-side placement with these measured heights

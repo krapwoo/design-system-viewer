@@ -701,12 +701,21 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     child.on('error', (error) => console.warn(`Could not start Expo: ${error.message}`));
     child.on('exit', (code) => {
       // A Metro we killed on purpose: respawn it on the same port rather than tearing the server
-      // down. Respawning from inside the exit handler is also what keeps the port free — the old
-      // process has already released it by the time this runs.
+      // down, once the port it held is actually free again.
       if (restartingMetro) {
         restartingMetro = false;
-        child = spawnMetro();
-        bindChild();
+        // The port is not free the instant this child exits. `performRestart` already carries that
+        // knowledge — it waits for the port before re-spawning, and Errata 7c records that Metro
+        // listens on `[::1]`, so a naive probe reports free while it is still bound. Respawning
+        // immediately lets Expo find its own port taken, at which point it either prompts (and in
+        // a non-interactive shell gives up with "Skipping dev server") or quietly moves to another
+        // port, leaving the catalog somewhere the dev lock does not name.
+        waitForPortFree(port, defaultProbePortFree)
+          .catch(() => {})
+          .then(() => {
+            child = spawnMetro();
+            bindChild();
+          });
         return;
       }
       clearInterval(workspaceWatch);

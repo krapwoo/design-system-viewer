@@ -157,19 +157,24 @@ export interface ClippedSpecimen {
  * reader sees a cut-off component and no indication anything is missing — or drawn over its
  * neighbour. Either way the page is showing something other than the component.
  *
- * Scrollable content is deliberately not reported. `hidden` means the content is lost; `auto` and
- * `scroll` mean it is reachable, which is the whole point of a specimen like PillRow's "Many pills
- * (scrollable)" — measured at 220px outside its cell at 1280, and correct. So the test is not
- * "crosses its cell" but "crosses its cell with nothing between it and the document that scrolls
- * on that axis". The walk runs past the cell to the document element, because the thing that clips
- * a specimen is often the card above it rather than anything inside it.
+ * Scrollable content is deliberately not reported, and so is content a component clips itself:
+ * both are decisions the specimen made, not width the page failed to give it. `PillRow`'s "Many
+ * pills (scrollable)" paints 220px outside its cell at 1280 and is correct; a shimmer sweep or a
+ * carousel that hides its own overflow is equally deliberate.
+ *
+ * The containment walk stops at the cell. Looking past it was wrong: `ComparisonGroups` wraps every
+ * grouped card in a horizontal `ScrollView`, which react-native-web renders as `overflow-x: auto`,
+ * so a walk to the document root found that scroller above every grouped cell and exempted all of
+ * them — the rule covered plain list blocks only, while its calibration claimed the whole corpus.
+ * What matters is whether the *specimen* contains its own overflow, which is a question about the
+ * ancestors inside the cell.
+ *
+ * Only horizontal crossings are measured. A cell's width is what the page allocates and what
+ * `specimenSize` controls; its height grows with content.
  */
 export const CLIPPED_SPECIMEN_SCRIPT = `(() => {
   const doc = document;
-  const scrolls = (style, axis) => {
-    const v = axis === 'x' ? style.overflowX : style.overflowY;
-    return v === 'auto' || v === 'scroll';
-  };
+  const CONTAINS = /^(auto|scroll|hidden|clip)$/;
   const out = [];
   for (const card of doc.querySelectorAll('[role=list][aria-label]')) {
     if (!/^[^:]+: .+/.test(card.getAttribute('aria-label') || '')) continue;
@@ -182,16 +187,20 @@ export const CLIPPED_SPECIMEN_SCRIPT = `(() => {
       for (const el of cell.querySelectorAll('*')) {
         const r = el.getBoundingClientRect();
         if (r.width < 2 || r.height < 2) continue;
-        const style = getComputedStyle(el);
-        if (style.visibility === 'hidden' || style.opacity === '0' || style.display === 'none') continue;
         const over = Math.max(box.left - r.left, r.right - box.right);
         if (over <= worst) continue;
-        // Reachable by scrolling somewhere above it? Then it is off the cell on purpose.
-        let reachable = false;
-        for (let p = el.parentElement; p && p !== doc.documentElement; p = p.parentElement) {
-          if (scrolls(getComputedStyle(p), 'x')) { reachable = true; break; }
+        // Invisible content, including anything inside an invisible or offscreen wrapper: an exit
+        // animation mid-flight, or a visually-hidden node parked at a large negative offset.
+        let hidden = false;
+        let contained = false;
+        for (let p = el; p && p !== cell; p = p.parentElement) {
+          const style = getComputedStyle(p);
+          if (style.visibility === 'hidden' || style.opacity === '0' || style.display === 'none') { hidden = true; break; }
+          // Anything between the content and the cell that handles its own overflow — scrolling it
+          // or clipping it — is the specimen's own decision, not the page denying it width.
+          if (p !== el && CONTAINS.test(style.overflowX)) { contained = true; break; }
         }
-        if (reachable) continue;
+        if (hidden || contained) continue;
         worst = over;
         side = box.left - r.left >= r.right - box.right ? 'left' : 'right';
       }
