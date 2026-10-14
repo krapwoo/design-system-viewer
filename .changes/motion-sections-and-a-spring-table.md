@@ -1,0 +1,7 @@
+The starter kit's `Motion` page gives each kind of token its own card, and lays a spring out as the config object it is.
+
+Duration, loop duration, easing and spring shared one card, so four different things — a scale in milliseconds, another scale in milliseconds, a set of bezier curves, and a config object — read as one long box. They are now four `tokenSections` cards. That also fixes a heading that was centred while the other three were left-aligned, which was not a choice: that one group was missing `align="left"`.
+
+The spring section was laid out as a wrapping grid of six fixed-width fields, which broke `restDisplacementThreshold` mid-word and orphaned the sixth field on its own row. It is now a table: the field names read down, and each spring token is a column. The field vocabulary is fixed at six and the number of tokens is what grows, so a second spring adds a column rather than repeating all six names, and `damping` can be compared across tokens along one line. The preview and the "when to use" note are rows of their own instead of loose content under a grid.
+
+`Tooltip` drops `itemsFill` from its states. That flag is for "wide block-level components (Banner, Card, Toast, InputField) rather than small instances meant to sit centered" — a floating bubble on an icon trigger is the second kind. Filling pinned each trigger to its cell's left edge, and the bubble, which centres on its trigger, overflowed the cell: the first specimen rendered as "to add a stop" with the first word clipped off.

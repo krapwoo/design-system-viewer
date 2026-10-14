@@ -300,10 +300,15 @@ test('states that name their variant become grouped rows', () => {
 
 test('choosePlacement splits the row in two and keeps the shorter arrangement', () => {
   // Each block fills half a row (952 - 28 gap = 462 each), so both must keep their minimum there.
-  const wideFirst = { kind: 'list', minWidth: 404, height: 600 };
-  // Dropdown at 1280: one wide variant (≈600 tall) beside three wide states that drop to one
-  // column in half a row — still far shorter than stacking.
+  // Dropdown at 1280: ONE variant, 600px tall in a 462px column. A single specimen longer than its
+  // column leaves an empty strip beside it, which is what the other block fills — so this earns
+  // the split even though the three states beside it drop to one column.
+  const wideFirst = { kind: 'list', minWidth: 404, itemCount: 1, size: 'wide', height: 600 };
   assert.equal(choosePlacement({ available: 952, gap: 28, first: wideFirst, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 640 } }), 'side');
+  // ...and it earns it from either side. The rule is "a single specimen taller than its column",
+  // which says nothing about which block the page declares first; checking only `first` made the
+  // same two blocks land differently depending on whether variants or states came first.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 640 }, second: wideFirst }), 'side');
   // The same page at 1100: half a row is 372px, under a wide cell's 402px minimum.
   assert.equal(choosePlacement({ available: 772, gap: 28, first: wideFirst, second: { kind: 'list', minWidth: 404, itemCount: 3, size: 'wide', height: 600 } }), 'stacked');
   // A block that can only fill a whole row (a 'full' preview, token sections) never shares one.
@@ -313,13 +318,33 @@ test('choosePlacement splits the row in two and keeps the shorter arrangement', 
   // Switch at 1280: four compact states wrap from one row to two beside the first block, so the
   // page gets no real saving and stays stacked.
   assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, height: 230 }, second: { kind: 'list', minWidth: 162, itemCount: 4, size: 'compact', height: 230 } }), 'stacked');
-  // A column cap participates in the same calculation: four measured one-column rows stay four
-  // rows beside the first block, instead of being wrongly predicted as two.
-  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, height: 230 }, second: { kind: 'list', minWidth: 162, itemCount: 4, size: 'compact', maxColumns: 1, height: 640 } }), 'side');
+  // A column cap participates in the same calculation: capped to one column, those four items are
+  // four rows in half a row, not two — so the page keeps the whole row even though splitting it
+  // would save height. Stacking is the default; saving height alone does not buy the split.
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, height: 230 }, second: { kind: 'list', minWidth: 162, itemCount: 4, size: 'compact', maxColumns: 1, height: 640 } }), 'stacked');
   // Two single-row blocks that both fit save a full row and go side by side.
   assert.equal(choosePlacement({ available: 952, gap: 28, first: { kind: 'list', minWidth: 404, height: 230 }, second: { kind: 'list', minWidth: 404, itemCount: 1, size: 'wide', height: 230 } }), 'side');
   // Only a list reflows in half a row; a grid keeps its height and scrolls inside its own card.
   assert.equal(choosePlacement({ available: 952, gap: 28, first: wideFirst, second: { kind: 'grid', minWidth: 360, height: 640 } }), 'side');
+
+  // Banner at 1280: five wide variants fit two columns in a whole row but only one in half, so
+  // sharing the row turns three rows into five and every banner is drawn at 462px — a width the
+  // component is never used at. Stacking keeps them honest even though the split saves height.
+  const fiveWide = { kind: 'list', minWidth: 404, itemCount: 5, size: 'wide', height: 600 } as const;
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: fiveWide, second: { ...fiveWide } }), 'stacked');
+
+  // EmptyState at 1280: also exactly one variant, but 262px tall in a 462px column — wider than it
+  // is tall, so there is no empty strip to fill and nothing earns the split. This is the case that
+  // separates it from Dropdown, which has the same single-specimen shape.
+  const shortSingle = { kind: 'list', minWidth: 404, itemCount: 1, size: 'wide', height: 262 } as const;
+  assert.equal(choosePlacement({ available: 952, gap: 28, first: shortSingle, second: { kind: 'list', minWidth: 240, itemCount: 4, size: 'regular', height: 500 } }), 'stacked');
+
+  // The case a rendered pass caught that the rule first got wrong: with the default three-column
+  // cap those four items are two rows at full width *and* two rows in half, so a test for "the
+  // same number of rows" let the split through. Two wrapped rows staying two wrapped rows is not a
+  // reason to halve every specimen — only a block that still fits ONE row costs nothing.
+  const cappedFour = { kind: 'list', minWidth: 242, itemCount: 4, size: 'regular', maxColumns: 3, height: 760 } as const;
+  assert.equal(choosePlacement({ available: 1112, gap: 28, first: { kind: 'list', minWidth: 242, itemCount: 1, size: 'regular', maxColumns: 3, height: 293 }, second: cappedFour }), 'stacked');
 });
 
 test('blockMinWidth is the narrowest a block renders at, Infinity for a whole-row block', () => {

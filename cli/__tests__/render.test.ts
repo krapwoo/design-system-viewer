@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { identicalVariantIssues, issuesFromPage, loadProjectPuppeteer, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
+import { clippedSpecimenIssues, identicalVariantIssues, issuesFromPage, loadProjectPuppeteer, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
 
 test('console errors and a missing heading are errors; overflow warnings are render-layout; other [Catalog] warnings are render-catalog-warning; noise is ignored', () => {
   const seen = new Set<string>();
@@ -140,6 +140,28 @@ test('identicalVariantIssues names both examples and the card they share', () =>
   assert.deepEqual(identicalVariantIssues({ id: 'X' }, []), []);
 });
 
+test('clippedSpecimenIssues names the example, the distance and the side', () => {
+  const issues = clippedSpecimenIssues({ id: 'Tooltip', file: 'components/Tooltip/Tooltip.catalog.tsx' }, [
+    { name: 'Placement: bottom', overflow: 234, side: 'left' },
+  ]);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].id, 'specimen-clipped');
+  assert.equal(issues[0].severity, 'warning');
+  assert.equal(issues[0].page, 'Tooltip');
+  assert.match(issues[0].message, /"Placement: bottom" paints 234px past the left of its cell/);
+  // The message has to say why this is a finding when PillRow's scrolling row is not.
+  assert.match(issues[0].message, /cut off rather than scrollable/);
+  assert.match(issues[0].fix, /itemsFill/);
+  assert.deepEqual(clippedSpecimenIssues({ id: 'X' }, []), []);
+});
+
+test('a clipped specimen with no caption still reports', () => {
+  // Cells in a token grid have no caption strip; the finding must still name the page and distance
+  // rather than render as an empty pair of quotes.
+  const [issue] = clippedSpecimenIssues({ id: 'Radius' }, [{ name: '', overflow: 12, side: 'right' }]);
+  assert.match(issue.message, /^An example paints 12px past the right of its cell/);
+});
+
 test('a failing identical-variants script is advisory, not a render-error for the page', async () => {
   // The heading check answers, then the injected script throws — as it could on a detached child
   // document. An advisory check must not become this page's error.
@@ -166,4 +188,49 @@ test('a failing identical-variants script is advisory, not a render-error for th
     deps: { puppeteer: { launch: async () => browser }, startDev: startedDev, stopDev: () => {} },
   });
   assert.deepEqual(issues, []);
+});
+
+test('renderCheck turns a clipped specimen into an issue, and a throwing clip script is advisory', async () => {
+  // The rule's own script runs in the browser and cannot be unit-tested here, but the wiring can:
+  // a page that reports a clipped specimen must reach the findings, and a script that throws must
+  // cost the page nothing — the same contract the identical-variants pass has.
+  const pageFor = (clipped: unknown) => ({
+    setViewport: async () => {},
+    on: () => {},
+    goto: async () => {},
+    evaluate: async (arg: unknown, ...rest: unknown[]) => {
+      if (typeof arg !== 'string') return true; // the heading probe is a function
+      if (arg.includes('fingerprint')) return [];
+      if (arg.includes('CONTAINS')) {
+        if (clipped instanceof Error) throw clipped;
+        return clipped;
+      }
+      return rest.length ? true : ['#Button'];
+    },
+    close: async () => {},
+  });
+  const run = async (clipped: unknown) => {
+    let first = true;
+    const browser = {
+      newPage: async () => {
+        if (first) {
+          first = false;
+          return { ...pageFor(clipped), evaluate: async () => ['#Button'] };
+        }
+        return pageFor(clipped);
+      },
+      close: async () => {},
+    };
+    return renderCheck('/tmp/x', {
+      settleMs: 0,
+      deps: { puppeteer: { launch: async () => browser }, startDev: startedDev, stopDev: () => {} },
+    });
+  };
+
+  const reported = await run([{ name: 'Placement: bottom', overflow: 34, side: 'left' }]);
+  const clip = reported.find((i) => i.id === 'specimen-clipped');
+  assert.ok(clip, 'a clipped specimen must reach the findings');
+  assert.match(clip!.message, /34px past the left/);
+
+  assert.deepEqual((await run(new Error('Execution context was destroyed'))).filter((i) => i.id === 'specimen-clipped'), []);
 });

@@ -142,6 +142,89 @@ export function identicalVariantIssues(page: { id: string; file?: string }, pair
   }));
 }
 
+export interface ClippedSpecimen {
+  /** The cell's own caption, so the message names the example the reader is looking at. */
+  name: string;
+  /** How far outside its cell the content paints, in px, on the worst side. */
+  overflow: number;
+  side: 'left' | 'right';
+}
+
+/**
+ * Runs in the browser: finds specimen content that paints outside its cell and cannot be reached.
+ *
+ * A cell is the width the page gives an example. Content wider than it is either clipped — the
+ * reader sees a cut-off component and no indication anything is missing — or drawn over its
+ * neighbour. Either way the page is showing something other than the component.
+ *
+ * Scrollable content is deliberately not reported, and so is content a component clips itself:
+ * both are decisions the specimen made, not width the page failed to give it. `PillRow`'s "Many
+ * pills (scrollable)" paints 220px outside its cell at 1280 and is correct; a shimmer sweep or a
+ * carousel that hides its own overflow is equally deliberate.
+ *
+ * The containment walk stops at the cell. Looking past it was wrong: `ComparisonGroups` wraps every
+ * grouped card in a horizontal `ScrollView`, which react-native-web renders as `overflow-x: auto`,
+ * so a walk to the document root found that scroller above every grouped cell and exempted all of
+ * them — the rule covered plain list blocks only, while its calibration claimed the whole corpus.
+ * What matters is whether the *specimen* contains its own overflow, which is a question about the
+ * ancestors inside the cell.
+ *
+ * Only horizontal crossings are measured. A cell's width is what the page allocates and what
+ * `specimenSize` controls; its height grows with content.
+ */
+export const CLIPPED_SPECIMEN_SCRIPT = `(() => {
+  const doc = document;
+  const CONTAINS = /^(auto|scroll|hidden|clip)$/;
+  const out = [];
+  for (const card of doc.querySelectorAll('[role=list][aria-label]')) {
+    if (!/^[^:]+: .+/.test(card.getAttribute('aria-label') || '')) continue;
+    for (const cell of card.querySelectorAll('[role=listitem]')) {
+      if (cell.closest('[role=list]') !== card) continue;
+      const box = cell.getBoundingClientRect();
+      if (box.width < 2) continue;
+      let worst = 0;
+      let side = 'right';
+      for (const el of cell.querySelectorAll('*')) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) continue;
+        const over = Math.max(box.left - r.left, r.right - box.right);
+        if (over <= worst) continue;
+        // Invisible content, including anything inside an invisible or offscreen wrapper: an exit
+        // animation mid-flight, or a visually-hidden node parked at a large negative offset.
+        let hidden = false;
+        let contained = false;
+        for (let p = el; p && p !== cell; p = p.parentElement) {
+          const style = getComputedStyle(p);
+          if (style.visibility === 'hidden' || style.opacity === '0' || style.display === 'none') { hidden = true; break; }
+          // Anything between the content and the cell that handles its own overflow — scrolling it
+          // or clipping it — is the specimen's own decision, not the page denying it width.
+          if (p !== el && CONTAINS.test(style.overflowX)) { contained = true; break; }
+        }
+        if (hidden || contained) continue;
+        worst = over;
+        side = box.left - r.left >= r.right - box.right ? 'left' : 'right';
+      }
+      if (worst > 1) {
+        const caption = cell.children[0] ? (cell.children[0].textContent || '') : '';
+        out.push({ name: caption.trim(), overflow: Math.round(worst), side });
+      }
+    }
+  }
+  return out;
+})()`;
+
+/** Turns the browser's findings into doctor issues, one per clipped example. */
+export function clippedSpecimenIssues(page: { id: string; file?: string }, clipped: readonly ClippedSpecimen[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  return clipped.map((c) => ({
+    id: 'specimen-clipped',
+    severity: 'warning' as const,
+    ...ref,
+    message: `${c.name ? `"${c.name}"` : 'An example'} paints ${c.overflow}px past the ${c.side} of its cell, where it is cut off rather than scrollable.`,
+    fix: 'Give the page a wider specimenSize, stack the blocks so the example gets the full row, or drop `itemsFill` if the example is a small instance that should sit centered.',
+  }));
+}
+
 /** The project's own puppeteer, or `undefined` when it isn't installed. */
 export function loadProjectPuppeteer(projectRoot: string): unknown | undefined {
   try {
@@ -219,14 +302,14 @@ async function waitForServer(port: number, timeoutMs = DEV_START_TIMEOUT_MS): Pr
   }
 }
 
-function startDev(projectRoot: string, onSpawn: (child: ChildProcess) => void): Promise<{ child: ChildProcess; port: number }> {
+function startDev(projectRoot: string, onSpawn: (child: ChildProcess) => void, pinnedPort?: number): Promise<{ child: ChildProcess; port: number }> {
   const main = path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.js');
   return new Promise((resolve, reject) => {
     // Its own workspace directory and no update endpoint: this server exists to render pages, and
     // every file it generates would otherwise overwrite the ones an already-running `dev` is
     // serving — including that developer's endpoint, pointing their open catalog at a port that
     // dies with this check.
-    const child = spawn(process.execPath, [main, 'dev', '--no-update-endpoint', '--workspace-dir', RENDER_WORKSPACE_DIR], {
+    const child = spawn(process.execPath, [main, 'dev', '--no-update-endpoint', '--workspace-dir', RENDER_WORKSPACE_DIR, ...(pinnedPort ? ['--port', String(pinnedPort)] : [])], {
       cwd: projectRoot,
       env: { ...process.env, CI: '1', DS_VIEWER_NO_UPDATE_CHECK: '1' },
       detached: process.platform !== 'win32',
@@ -288,9 +371,16 @@ export async function renderCheck(
     log?: (line: string) => void;
     /** Wait after each page loads before reading it (lets deferred effects log). @default 900 */
     settleMs?: number;
+    /**
+     * Pin the render server to this port instead of letting it take the first free one from 5181.
+     * Worth setting when something else is already using that range — another project's catalog,
+     * or a second `dev` — because the check's server and anything else on its port cannot both
+     * win, and the check has no way to tell a stranger's server from its own.
+     */
+    port?: number;
     deps?: {
       puppeteer?: unknown;
-      startDev?: (projectRoot: string, onSpawn: (child: ChildProcess) => void) => Promise<{ child: ChildProcess; port: number }>;
+      startDev?: (projectRoot: string, onSpawn: (child: ChildProcess) => void, port?: number) => Promise<{ child: ChildProcess; port: number }>;
       stopDev?: (child: ChildProcess) => void;
       exit?: (code: number) => void;
     };
@@ -327,7 +417,7 @@ export async function renderCheck(
     }
     ({ port } = await (deps.startDev ?? startDev)(projectRoot, (child) => {
       devChild = child;
-    }));
+    }, options.port));
     const home = await browser.newPage();
     const deadline = Date.now() + FIRST_LOAD_TIMEOUT_MS;
     for (;;) {
@@ -386,6 +476,15 @@ export async function renderCheck(
           identical = undefined;
         }
         if (Array.isArray(identical)) issues.push(...identicalVariantIssues({ id, file: options.files?.get(id) }, identical));
+        // Advisory for the same reason as the pass above, and kept separate so one failing script
+        // does not cost the other its findings.
+        let clipped: ClippedSpecimen[] | undefined;
+        try {
+          clipped = (await page!.evaluate(CLIPPED_SPECIMEN_SCRIPT)) as ClippedSpecimen[] | undefined;
+        } catch {
+          clipped = undefined;
+        }
+        if (Array.isArray(clipped)) issues.push(...clippedSpecimenIssues({ id, file: options.files?.get(id) }, clipped));
         await page!.close();
       } catch (error) {
         // A stuck page's tab is closed, so it doesn't keep loading next to the remaining pages.

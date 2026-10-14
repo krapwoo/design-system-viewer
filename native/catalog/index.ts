@@ -23,7 +23,7 @@ export { ComparisonList } from './ComparisonList';
 export { ReferenceDetails } from './ReferenceDetails';
 export { PropsTable } from './PropsTable';
 export { VariantGroup } from './VariantGroup';
-export { TokenRow } from './TokenRow';
+export { TokenRow, TokenRowGroup } from './TokenRow';
 export { MotionSpecimen } from './MotionSpecimen';
 export type { MotionSpecimenProps, MotionSpecimenSpringConfig } from './MotionSpecimen';
 export { SpecimenSurface } from './SpecimenSurface';

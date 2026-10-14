@@ -622,12 +622,21 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
     watcher.on('error', (error) => console.warn(`File watcher error: ${(error as Error).message}`));
   }
 
-  child = spawn('npx', ['expo', 'start', '--web', '--host', 'localhost', '--port', String(port)], {
-    cwd: workspace,
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-    detached: true,
-  });
+  const spawnMetro = () =>
+    spawn('npx', ['expo', 'start', '--web', '--host', 'localhost', '--port', String(port)], {
+      cwd: workspace,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+      detached: true,
+    });
+
+  // Set while this process is deliberately replacing Metro, so the exit handler below respawns it
+  // instead of running the shutdown path. Restoring the files is not enough on its own: Metro has
+  // already cached a module map that no longer matches the directory, and it answers every request
+  // with `Unable to resolve "expo" from "entry.tsx"` until it is restarted. Observed four times —
+  // the files came back and the catalog stayed blank.
+  let restartingMetro = false;
+  child = spawnMetro();
 
   // This process owns its workspace: nothing else should remove the files that define it. When
   // they vanish anyway, Metro reports it as `Cannot resolve entry file: the 'main' field defined
@@ -660,7 +669,7 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
       // `updateEndpoint` is passed through, never rebuilt: the endpoint listens on its own
       // ephemeral port, so deriving one from Metro's port here would repair the files and break
       // the update panel in the same breath.
-      repairWorkspaceIfMissing({
+      const { repaired } = repairWorkspaceIfMissing({
         config, updateEndpoint, versionStatus: version.getVersionStatus, sync,
         // Only if no one else took it meanwhile: between losing the lock and this tick, a second
         // `dev` can legitimately have started and be serving the directory. Overwriting its lock
@@ -674,23 +683,63 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
           writeDevLock(config, { pid: process.pid, port });
         },
       });
+      // Rewritten files are not enough: Metro keeps serving the module map it cached before they
+      // went missing. Restarting it is the only thing that gets the catalog back, and the repair
+      // cap bounds how often this can happen.
+      if (repaired && !restartingMetro) {
+        console.warn('Restarting Metro so the catalog picks the files back up — the page reloads itself in a few seconds.');
+        restartingMetro = true;
+        killGroup(child, 'SIGTERM');
+      }
     } catch (error) {
       console.warn(`Could not rewrite the workspace: ${(error as Error).message}`);
     }
   }, WORKSPACE_WATCH_INTERVAL_MS);
   workspaceWatch.unref?.();
 
-  child.on('error', (error) => console.warn(`Could not start Expo: ${error.message}`));
-  child.on('exit', (code) => {
-    clearInterval(workspaceWatch);
-    for (const watcher of watchers) watcher.close();
-    endpointServer?.close();
-    // Released so the next `dev` is not refused by a lock naming a process that has gone.
-    // `liveDevLock` already ignores a dead pid, so this is tidiness, not correctness — it keeps a
-    // stale file out of a directory a developer may well read.
-    clearDevLock(config);
-    process.exitCode = code ?? 0;
-  });
+  const bindChild = () => {
+    child.on('error', (error) => console.warn(`Could not start Expo: ${error.message}`));
+    child.on('exit', (code) => {
+      // A Metro we killed on purpose: respawn it on the same port rather than tearing the server
+      // down, once the port it held is actually free again.
+      if (restartingMetro) {
+        // The flag stays set for the whole restart, not just until this handler returns. Clearing
+        // it before the wait left a window where the repair timer could ask for another restart,
+        // find no live child to kill, and leave the flag set with nothing pending — after which
+        // the next genuine Metro crash would be mistaken for a deliberate restart and silently
+        // respawn, skipping the shutdown path that releases the watchers and the dev lock.
+        // `repairWorkspaceIfMissing`'s caller already checks this flag, so holding it also stops a
+        // second repair stacking a restart on top of this one.
+        //
+        // The port is not free the instant this child exits: `performRestart` waits for the same
+        // reason, and Errata 7c records that Metro listens on `[::1]`, so a naive probe reports
+        // free while it is still bound. Respawning early lets Expo find its own port taken and
+        // either prompt — giving up with "Skipping dev server" in a non-interactive shell — or move
+        // to another port, leaving the catalog where the dev lock does not name.
+        void waitForPortFree(port, defaultProbePortFree)
+          .catch(() => {
+            // Still spawn: a catalog that tried and failed to come back is recoverable, one that
+            // silently never tries is not. Expo reports the port conflict itself if there is one.
+            console.warn(`Port ${port} was still held after the wait; starting Metro anyway.`);
+          })
+          .then(() => {
+            child = spawnMetro();
+            bindChild();
+            restartingMetro = false;
+          });
+        return;
+      }
+      clearInterval(workspaceWatch);
+      for (const watcher of watchers) watcher.close();
+      endpointServer?.close();
+      // Released so the next `dev` is not refused by a lock naming a process that has gone.
+      // `liveDevLock` already ignores a dead pid, so this is tidiness, not correctness — it keeps a
+      // stale file out of a directory a developer may well read.
+      clearDevLock(config);
+      process.exitCode = code ?? 0;
+    });
+  };
+  bindChild();
   // Node's default SIGTERM/SIGINT/SIGHUP behavior exits this process without touching its
   // children — left alone, a signal sent only to `dev`'s own pid (not its process group) would
   // leave the spawned `expo start` running, still bound to its port (Important finding, Fable

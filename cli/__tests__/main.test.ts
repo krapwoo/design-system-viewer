@@ -367,5 +367,33 @@ test('doctor --render adds render findings to --json output and drives --ci; str
   writeFileSync(path.join(dir, 'ds-viewer.config.ts'), readFileSync(path.join(dir, 'ds-viewer.config.ts'), 'utf8').replace('defineConfig({', 'defineConfig({ doctor: { strict: true },'));
   const strict = await runDoctorCommand(dir, ['--render', '--ci'], { renderCheck: async () => [layout] });
   assert.equal(strict.exitCode, 1);
+
+  // `--port` reaches the render check, so it can be steered off a port something else holds.
+  let sawPort: number | undefined;
+  await runDoctorCommand(dir, ['--render', '--port', '5190'], {
+    renderCheck: async (_root, options) => {
+      sawPort = options?.port;
+      return [];
+    },
+  });
+  assert.equal(sawPort, 5190);
+
+  // Without the flag the check keeps choosing its own port.
+  let defaulted: number | undefined = 1;
+  await runDoctorCommand(dir, ['--render'], {
+    renderCheck: async (_root, options) => {
+      defaulted = options?.port;
+      return [];
+    },
+  });
+  assert.equal(defaulted, undefined);
+
+  // A port it cannot use is refused rather than silently ignored: rendering 50 pages against
+  // whichever port got picked instead would report another server's pages as this project's.
+  for (const bad of [['--port', 'abc'], ['--port', '0'], ['--port', '70000'], ['--port']]) {
+    const result = await runDoctorCommand(dir, ['--render', ...bad], { renderCheck: async () => { throw new Error('must not run'); } });
+    assert.equal(result.exitCode, 1);
+    assert.match(result.output, /--port needs a port between 1 and 65535/);
+  }
   rmSync(dir, { recursive: true, force: true });
 });

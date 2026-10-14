@@ -81,13 +81,19 @@ file that is fine and that you never touched:
 Something outside this server deleted package.json, app.json, tsconfig.json, metro.config.js,
 entry.tsx from .ds-viewer/. Rewriting them — your project is fine, this is the catalog's own
 generated workspace. If the catalog looks broken, reload the page.
+Restarting Metro so the catalog picks the files back up — the page reloads itself in a few seconds.
 ```
 
-Metro picks the files back up without a restart. The repair is capped at five per run: if
-something is deleting continuously, repairing forever would only hide it, so past the cap the
-server stops and keeps reporting. If you ever see that message, what else was running at the time
-would be useful on [issue #41](https://github.com/krapwoo/design-system-viewer/issues/41) — the
-cause is not yet identified.
+Metro is restarted as part of the repair, because rewriting the files is not enough on its own: it
+keeps serving the module map it cached before they went missing, and answers every request with
+`Unable to resolve "expo" from "entry.tsx"` until it starts again. The server stays up and the page
+reloads itself.
+
+The repair is capped at five per run: if something is deleting continuously, repairing forever
+would only hide it, so past the cap the server stops and keeps reporting. If you ever see that
+message, what else was running at the time would be useful on
+[issue #41](https://github.com/krapwoo/design-system-viewer/issues/41) — the cause is not yet
+identified.
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
@@ -561,11 +567,27 @@ and adds what only a real render shows:
   prop that was never wired up. The fingerprint reads each specimen's whole subtree (including a
   PhoneFrame's child document and a field's value) but not the caption carrying the variant's own
   name, so two examples differing only in colour are not reported.
+- `specimen-clipped` (warning): an example in a list card painting past the left or right of its
+  cell, where it is cut off rather than contained. Content the specimen holds itself is not
+  reported — anything inside something that scrolls (`auto`/`scroll`, so the reader can reach it)
+  or clips (`hidden`/`clip`) is treated as the specimen's own containment. That last one is a
+  trade-off worth knowing: a full-width component clipping its own corners hides a genuinely
+  too-narrow cell from this rule, so `hidden` buys quiet for carousels and shimmer sweeps at the
+  cost of that case. Only horizontal crossings in `role=list` cells are measured — a cell's width
+  is what the page allocates, while its height grows with content, and matrix (`ComparisonGrid`)
+  cells are not visited at all. Usually fixed with a wider `specimenSize`, by stacking the blocks so
+  the example gets the full row, or by dropping `itemsFill` from a small instance that should sit
+  centered.
 - `render-unavailable` / `render-failed` (errors): no browser, or the catalog didn't start.
 
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't
 install a browser. It takes about two minutes for 50 pages and works with `--json` (progress
 goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci`.
+
+It starts its own catalog on the first free port from 5181. `--port <n>` pins it instead, which
+you want when something else already holds that range — another project's catalog, or a second
+`dev`. The check cannot tell a stranger's server on its port from its own, so a collision reports
+that server's pages as your project's failures.
 
 It starts its own `dev` server, with `--no-update-endpoint` and its own generated directory
 (`.ds-viewer-render/`, gitignored by `init` alongside `.ds-viewer/`). Nothing it generates touches
