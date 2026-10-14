@@ -55,6 +55,37 @@ test('a page that stops being statically readable is a change, not a disappearan
   assert.match(changes[0].detail, /no longer statically readable/);
 });
 
+test('a block inserted at the front does not report its neighbours as changed', () => {
+  // Comparing blocks by position made an inserted block diff every later block against its
+  // neighbour: a page that gained an intro block reported four changes, including a brand-new
+  // block "changing" from a geometry it never had. A tool whose output is meant to be believed
+  // must not invent changes that did not happen.
+  const blk = (title: string, columns: number) => ({
+    title, kind: 'list' as const, size: 'regular', items: 2, minWidth: 242,
+    full: { columns, rows: 1, fillers: 0 }, half: { columns, rows: 1, fillers: 0 },
+  });
+  const before = snapshot('a', [{ page: 'X', blocks: [blk('Variants', 2), blk('States', 3)] }]);
+  const after = snapshot('b', [{ page: 'X', blocks: [blk('Intro', 1), blk('Variants', 2), blk('States', 3)] }]);
+  const changes = diffLayouts(before, after);
+  assert.deepEqual(changes.map((c) => c.detail), ['"Intro" is new']);
+
+  // ...and removing one names the block that went, not the ones that shifted up.
+  const removed = diffLayouts(after, before);
+  assert.deepEqual(removed.map((c) => c.detail), ['"Intro" is gone']);
+});
+
+test('a renamed block reads as one gone and one new, never as a geometry change', () => {
+  const blk = (title: string) => ({
+    title, kind: 'list' as const, size: 'regular', items: 2, minWidth: 242,
+    full: { columns: 2, rows: 1, fillers: 0 }, half: { columns: 1, rows: 2, fillers: 0 },
+  });
+  const changes = diffLayouts(
+    snapshot('a', [{ page: 'X', blocks: [blk('States')] }]),
+    snapshot('b', [{ page: 'X', blocks: [blk('Configurations')] }]),
+  );
+  assert.deepEqual(changes.map((c) => c.detail).sort(), ['"Configurations" is new', '"States" is gone']);
+});
+
 test('snapshots taken at different widths refuse to be compared', () => {
   // Geometry at 952px and at 1112px legitimately differs, so diffing them would report rule
   // changes that never happened — the most expensive kind of false alarm for this command.
@@ -62,6 +93,19 @@ test('snapshots taken at different widths refuse to be compared', () => {
   const after = { ...snapshot('b', [banner(1)]), width: 1112 };
   const text = formatLayoutDiff(before, after, diffLayouts(before, after));
   assert.match(text, /different widths \(952px and 1112px\), so their geometry is not comparable/);
+});
+
+test('layout-diff refuses mismatched widths on the --json path too, not just when printing prose', () => {
+  // The guard lived only in formatLayoutDiff, so --json — the path most likely to be automated —
+  // returned a confident list of changes computed across incomparable widths.
+  const narrow = JSON.stringify({ ...snapshot('a', [banner(2)]), width: 952 });
+  const wide = JSON.stringify({ ...snapshot('b', [banner(1)]), width: 1112 });
+  const read = (file: string) => (file === 'narrow.json' ? narrow : wide);
+  for (const args of [['narrow.json', 'wide.json'], ['narrow.json', 'wide.json', '--json']]) {
+    const result = runLayoutDiffCommand(args, { readFile: read });
+    assert.equal(result.exitCode, 1, `${args.join(' ')} must refuse`);
+    assert.match(result.output, /different widths \(952px and 1112px\)/);
+  }
 });
 
 test('layout-diff refuses a file that is not a snapshot instead of reporting every page removed', () => {

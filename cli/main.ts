@@ -10,7 +10,7 @@ import { formatHuman, runDoctor, toDoctorJson, withExtraIssues } from './doctor.
 import { renderCheck } from './render.ts';
 import { RENDER_WORKSPACE_DIR } from './types.ts';
 import { explainPage, formatExplain, parseHeights } from './explain.ts';
-import { diffLayouts, formatLayoutDiff, layoutSnapshot, type LayoutSnapshot } from './layout.ts';
+import { comparableWidths, diffLayouts, formatLayoutDiff, layoutSnapshot, type LayoutSnapshot } from './layout.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { checkForUpdate, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck } from './updateCheck.ts';
 import { runKitDiffCommand } from './kitDiff.ts';
@@ -251,6 +251,15 @@ export function runLayoutDiffCommand(
   const after = load(afterPath);
   if (typeof after === 'string') return { output: after, exitCode: 1 };
 
+  // Before diffing, not only before printing: the guard used to live in `formatLayoutDiff`, so
+  // `--json` — the path most likely to be automated in CI — returned a confident list of changes
+  // computed across incomparable widths.
+  if (!comparableWidths(before, after)) {
+    return {
+      output: `These snapshots were taken at different widths (${before.width}px and ${after.width}px), so their geometry is not comparable. Take both with the same version of \`explain --all\`.`,
+      exitCode: 1,
+    };
+  }
   const changes = diffLayouts(before, after);
   if (args.includes('--json')) return { output: JSON.stringify(changes, null, 2), exitCode: 0 };
   return { output: formatLayoutDiff(before, after, changes), exitCode: 0 };

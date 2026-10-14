@@ -115,7 +115,13 @@ function describeGeometry(g: BlockGeometry | undefined): string {
   return g ? `${g.columns}×${g.rows}` : '—';
 }
 
-/** What changed between two snapshots. Pure, so it is the part worth testing. */
+/** What changed between two snapshots. Pure, so it is the part worth testing.
+ *
+ *  Blocks are matched by title, not by position. Comparing by index means a block inserted at the
+ *  front diffs every later block against its neighbour: a page that gained an intro block reported
+ *  four changes, including a brand-new block "changing" from a geometry it never had and an
+ *  untouched block changing to its neighbour's. A tool whose output is meant to be believed cannot
+ *  invent changes that did not happen. */
 export function diffLayouts(before: LayoutSnapshot, after: LayoutSnapshot): LayoutChange[] {
   const changes: LayoutChange[] = [];
   const beforePages = new Map(before.pages.map((p) => [p.page, p]));
@@ -137,30 +143,56 @@ export function diffLayouts(before: LayoutSnapshot, after: LayoutSnapshot): Layo
       });
       continue;
     }
-    if (was.blocks.length !== page.blocks.length) {
-      changes.push({ page: page.page, kind: 'blocks', detail: `${was.blocks.length} blocks → ${page.blocks.length}` });
+
+    // Title is a block's identity here. Two blocks on one page sharing a title would be
+    // indistinguishable, so those fall back to their position *within that title* — which keeps a
+    // page with two "Variants" blocks comparing like for like instead of silently dropping one.
+    const index = (blocks: readonly BlockSnapshot[]) => {
+      const map = new Map<string, BlockSnapshot[]>();
+      for (const block of blocks) {
+        const list = map.get(block.title) ?? [];
+        list.push(block);
+        map.set(block.title, list);
+      }
+      return map;
+    };
+    const oldBlocks = index(was.blocks);
+    const newBlocks = index(page.blocks);
+
+    for (const [title, list] of oldBlocks) {
+      const now = newBlocks.get(title) ?? [];
+      for (let i = now.length; i < list.length; i += 1) {
+        changes.push({ page: page.page, kind: 'blocks', detail: `"${title}" is gone` });
+      }
     }
-    for (const [i, block] of page.blocks.entries()) {
-      const old = was.blocks[i];
-      if (!old) continue;
-      if (old.kind !== block.kind) {
-        changes.push({ page: page.page, kind: 'blocks', detail: `"${block.title}" is a ${block.kind} block, was ${old.kind}` });
-        continue;
-      }
-      if (old.minWidth !== block.minWidth) {
-        changes.push({ page: page.page, kind: 'geometry', detail: `"${block.title}" needs ${block.minWidth}px, was ${old.minWidth}px` });
-      }
-      for (const width of ['full', 'half'] as const) {
-        const a = old[width];
-        const b = block[width];
-        if (describeGeometry(a) !== describeGeometry(b)) {
-          changes.push({
-            page: page.page, kind: 'geometry',
-            detail: `"${block.title}" at ${width} width: ${describeGeometry(a)} → ${describeGeometry(b)}`,
-          });
+    for (const [title, list] of newBlocks) {
+      const before_ = oldBlocks.get(title) ?? [];
+      for (const [i, block] of list.entries()) {
+        const old = before_[i];
+        if (!old) {
+          changes.push({ page: page.page, kind: 'blocks', detail: `"${title}" is new` });
+          continue;
+        }
+        if (old.kind !== block.kind) {
+          changes.push({ page: page.page, kind: 'blocks', detail: `"${block.title}" is a ${block.kind} block, was ${old.kind}` });
+          continue;
+        }
+        if (old.minWidth !== block.minWidth) {
+          changes.push({ page: page.page, kind: 'geometry', detail: `"${block.title}" needs ${block.minWidth}px, was ${old.minWidth}px` });
+        }
+        for (const width of ['full', 'half'] as const) {
+          const a = old[width];
+          const b = block[width];
+          if (describeGeometry(a) !== describeGeometry(b)) {
+            changes.push({
+              page: page.page, kind: 'geometry',
+              detail: `"${block.title}" at ${width} width: ${describeGeometry(a)} → ${describeGeometry(b)}`,
+            });
+          }
         }
       }
     }
+
     if (was.sideEligible !== page.sideEligible) {
       changes.push({
         page: page.page, kind: 'placement',
@@ -171,6 +203,14 @@ export function diffLayouts(before: LayoutSnapshot, after: LayoutSnapshot): Layo
     }
   }
   return changes;
+}
+
+/** True when two snapshots were measured at the same width, and so can be compared at all.
+ *  Geometry at 952px and at 1112px legitimately differs; diffing across them reports rule changes
+ *  that never happened. Exported because every caller needs the guard, not just the one that
+ *  prints prose. */
+export function comparableWidths(before: LayoutSnapshot, after: LayoutSnapshot): boolean {
+  return before.width === after.width;
 }
 
 /** Human output. Silence is the useful answer, so it says so explicitly rather than printing
