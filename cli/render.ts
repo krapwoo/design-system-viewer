@@ -293,14 +293,14 @@ async function waitForServer(port: number, timeoutMs = DEV_START_TIMEOUT_MS): Pr
   }
 }
 
-function startDev(projectRoot: string, onSpawn: (child: ChildProcess) => void): Promise<{ child: ChildProcess; port: number }> {
+function startDev(projectRoot: string, onSpawn: (child: ChildProcess) => void, pinnedPort?: number): Promise<{ child: ChildProcess; port: number }> {
   const main = path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.js');
   return new Promise((resolve, reject) => {
     // Its own workspace directory and no update endpoint: this server exists to render pages, and
     // every file it generates would otherwise overwrite the ones an already-running `dev` is
     // serving — including that developer's endpoint, pointing their open catalog at a port that
     // dies with this check.
-    const child = spawn(process.execPath, [main, 'dev', '--no-update-endpoint', '--workspace-dir', RENDER_WORKSPACE_DIR], {
+    const child = spawn(process.execPath, [main, 'dev', '--no-update-endpoint', '--workspace-dir', RENDER_WORKSPACE_DIR, ...(pinnedPort ? ['--port', String(pinnedPort)] : [])], {
       cwd: projectRoot,
       env: { ...process.env, CI: '1', DS_VIEWER_NO_UPDATE_CHECK: '1' },
       detached: process.platform !== 'win32',
@@ -362,9 +362,16 @@ export async function renderCheck(
     log?: (line: string) => void;
     /** Wait after each page loads before reading it (lets deferred effects log). @default 900 */
     settleMs?: number;
+    /**
+     * Pin the render server to this port instead of letting it take the first free one from 5181.
+     * Worth setting when something else is already using that range — another project's catalog,
+     * or a second `dev` — because the check's server and anything else on its port cannot both
+     * win, and the check has no way to tell a stranger's server from its own.
+     */
+    port?: number;
     deps?: {
       puppeteer?: unknown;
-      startDev?: (projectRoot: string, onSpawn: (child: ChildProcess) => void) => Promise<{ child: ChildProcess; port: number }>;
+      startDev?: (projectRoot: string, onSpawn: (child: ChildProcess) => void, port?: number) => Promise<{ child: ChildProcess; port: number }>;
       stopDev?: (child: ChildProcess) => void;
       exit?: (code: number) => void;
     };
@@ -401,7 +408,7 @@ export async function renderCheck(
     }
     ({ port } = await (deps.startDev ?? startDev)(projectRoot, (child) => {
       devChild = child;
-    }));
+    }, options.port));
     const home = await browser.newPage();
     const deadline = Date.now() + FIRST_LOAD_TIMEOUT_MS;
     for (;;) {

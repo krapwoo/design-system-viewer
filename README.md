@@ -579,6 +579,11 @@ It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-vi
 install a browser. It takes about two minutes for 50 pages and works with `--json` (progress
 goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci`.
 
+It starts its own catalog on the first free port from 5181. `--port <n>` pins it instead, which
+you want when something else already holds that range — another project's catalog, or a second
+`dev`. The check cannot tell a stranger's server on its port from its own, so a collision reports
+that server's pages as your project's failures.
+
 It starts its own `dev` server, with `--no-update-endpoint` and its own generated directory
 (`.ds-viewer-render/`, gitignored by `init` alongside `.ds-viewer/`). Nothing it generates touches
 the workspace a running `dev` owns, so you can run it beside a catalog you already have open and

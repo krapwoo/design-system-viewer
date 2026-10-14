@@ -147,7 +147,23 @@ export async function runDoctorCommand(
   // Progress goes to stderr, so `--json` output stays pure JSON.
   if (rest.includes('--render')) {
     const files = (result as ReturnType<typeof runDoctor>).pageFiles;
-    const rendered = await (options.renderCheck ?? renderCheck)(config.projectRoot, { files, log: (line) => process.stderr.write(`${line}\n`) });
+    // `--port <n>`: pin the render server instead of taking the first free port from 5181. Needed
+    // when something else already holds that range (another project's catalog, a second `dev`),
+    // because the check cannot tell a stranger's server on its port from its own and would report
+    // that server's pages as this project's failures.
+    const portFlag = rest.indexOf('--port');
+    let renderPort: number | undefined;
+    if (portFlag !== -1) {
+      const raw = rest[portFlag + 1];
+      renderPort = Number(raw);
+      if (!raw || !Number.isInteger(renderPort) || renderPort < 1 || renderPort > 65535) {
+        // Refused rather than quietly falling back to a port it picked itself: a check that
+        // ignores the port you gave it would render against whatever else is there and report a
+        // stranger's pages as this project's failures.
+        return { output: `doctor --render --port needs a port between 1 and 65535, not ${raw ?? '(nothing)'}.`, exitCode: 1 };
+      }
+    }
+    const rendered = await (options.renderCheck ?? renderCheck)(config.projectRoot, { files, log: (line) => process.stderr.write(`${line}\n`), ...(renderPort ? { port: renderPort } : {}) });
     result = withExtraIssues(result, rendered, Boolean(config.doctor?.strict));
   }
   // Design §4 "`--ci`: ... no update check." — `--ci` skips this whole block even when
