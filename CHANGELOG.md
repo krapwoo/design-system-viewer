@@ -3,6 +3,14 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.8.0
+
+- `explain --all` now writes a deterministic JSON layout snapshot for every statically readable catalog page, and the new `layout-diff <before.json> <after.json>` command explains viewer-owned layout changes across package upgrades. This makes changes visible even though a consumer's `.catalog.tsx` files remain unchanged.
+
+  Snapshots record block identity, order, minimum width, responsive list and token-section geometry, and static side-by-side eligibility. Final placement can also depend on measured browser height, so the command deliberately reports eligibility rather than claiming an unmeasured side-by-side or stacked outcome.
+
+  `layout-diff` refuses malformed or duplicate-page snapshots and snapshots captured at different catalog content widths, including in `--json` mode, so an incomparable input cannot produce a plausible but incorrect report.
+
 ## 0.7.0
 
 - A repair now restarts Metro, because rewriting the files was not enough. 0.6.11 claimed "Metro picks the files back up without a restart; the catalog keeps serving" — that held in a staged test and was wrong in the wild. Observed four times since: the files came back, and Metro went on answering every request with
