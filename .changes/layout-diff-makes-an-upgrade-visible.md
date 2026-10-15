@@ -17,9 +17,9 @@ Banner
   its two blocks can no longer share a row
 ```
 
-The snapshot records what can be decided without a browser: each block's kind, declared size, item count, minimum width, and its column×row geometry at both full and half width — plus, for a two-block page, whether both blocks still fit one row at half width.
+The snapshot records what can be decided without a browser: every block's kind and minimum width; list blocks' declared size, item count, and column×row geometry at full and half width; and token-section blocks' section count and responsive geometry.
 
-That last field is the honest part. `choosePlacement` also weighs a single tall specimen and the height actually saved, and neither is knowable without measuring a real render, so the snapshot reports **eligibility** rather than the outcome. It is the height-independent half of the decision, and it is the half a rule change moves.
+For a two-block page, `sideEligible` records every gate known before measurement: both blocks must keep their minimum width and both must fit one row in the half-width column. `choosePlacement` also weighs a single tall specimen and the height actually saved, and neither is knowable without measuring a real render, so the snapshot reports **eligibility** rather than the outcome.
 
 Blocks are matched by title, not by position. Comparing by index meant a block inserted at the front diffed every later block against its neighbour: a page that gained an intro block reported four changes, including a brand-new block "changing" from a geometry it never had, and an untouched block changing to its neighbour's. A tool whose output is meant to be believed must not invent changes that did not happen.
 

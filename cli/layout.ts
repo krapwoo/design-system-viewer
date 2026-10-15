@@ -1,4 +1,4 @@
-// cli/layout.ts — `explain --all --json` and `layout-diff`: capture every page's geometry as data,
+// cli/layout.ts — `explain --all` and `layout-diff`: capture every page's geometry as data,
 // and report what a version changed.
 //
 // Layout rules live in this package and reach every consuming project on `update`, while their page
@@ -13,6 +13,7 @@ import {
   type PresentationBlock,
 } from '../native/catalog/comparison.ts';
 import { CATALOG_LAYOUT } from '../native/catalog/tokens.ts';
+import { sectionColumns } from '../native/catalog/tokenLayout.ts';
 import { toSectionDef } from './explain.ts';
 import type { ResolvedConfig } from './types.ts';
 
@@ -29,8 +30,8 @@ export interface BlockSnapshot {
   /** Lists only — the declared specimen size, which drives the column minimum. */
   size?: string;
   items?: number;
-  /** The narrowest width this block can take, from the viewer's own `blockMinWidth`. */
-  minWidth: number;
+  /** The narrowest width this block can take. `null` means the block deliberately owns a full row. */
+  minWidth: number | null;
   /** Geometry with the whole row, and with half of it. Both are recorded because which one applies
    *  depends on a placement decision that needs measured heights (see `sideEligible`). */
   full?: BlockGeometry;
@@ -40,10 +41,10 @@ export interface BlockSnapshot {
 export interface PageSnapshot {
   page: string;
   blocks: BlockSnapshot[];
-  /** For a two-block page: whether both blocks still fit one row at half width. This is the
-   *  height-independent half of `choosePlacement` — the part a rule change moves. The decision
-   *  itself also weighs a single tall specimen and the height actually saved, neither of which is
-   *  knowable without a browser, so this is reported as eligibility, not as the outcome. */
+  /** For a two-block page: whether both blocks keep their minimum width and still fit one row at
+   *  half width. These are the gates `choosePlacement` can decide without measured height. The
+   *  decision itself also weighs a single tall specimen and the height actually saved, neither of
+   *  which is knowable without a browser, so this is reported as eligibility, not as the outcome. */
   sideEligible?: boolean;
   /** A page whose layout data is not a literal this reader can resolve. Recorded rather than
    *  skipped, so a page that *becomes* uncheckable shows up as a change instead of vanishing. */
@@ -60,10 +61,42 @@ export interface LayoutSnapshot {
   pages: PageSnapshot[];
 }
 
-function geometryFor(block: PresentationBlock, width: number): BlockGeometry | undefined {
-  if (block.kind !== 'list') return undefined;
-  const { columns, rows, fillers } = listGeometry(block.items.length, width, block.size, block.maxColumns);
+function tokenSectionGeometry(block: Extract<PresentationBlock, { kind: 'tokenSections' }>, width: number): BlockGeometry {
+  const columns = sectionColumns(width, block.columns);
+  let rows = 0;
+  let used = 0;
+  let fillers = 0;
+  const closePartialRow = () => {
+    if (used === 0) return;
+    rows += 1;
+    fillers += columns - used;
+    used = 0;
+  };
+  for (const section of block.sections) {
+    if (section.wide) {
+      closePartialRow();
+      rows += 1;
+      continue;
+    }
+    used += 1;
+    if (used === columns) closePartialRow();
+  }
+  closePartialRow();
   return { columns, rows, fillers };
+}
+
+function geometryFor(block: PresentationBlock, width: number): BlockGeometry | undefined {
+  if (block.kind === 'list') {
+    const { columns, rows, fillers } = listGeometry(block.items.length, width, block.size, block.maxColumns);
+    return { columns, rows, fillers };
+  }
+  if (block.kind === 'tokenSections') return tokenSectionGeometry(block, width);
+  return undefined;
+}
+
+function snapshotMinWidth(block: PresentationBlock): number | null {
+  const width = blockMinWidth(block);
+  return Number.isFinite(width) ? width : null;
 }
 
 /** One page's geometry, from the same static read `explain` uses. */
@@ -75,31 +108,50 @@ export function pageSnapshot(page: Parameters<typeof toSectionDef>[0], pageId: s
 
   const snapshot: PageSnapshot = {
     page: pageId,
-    blocks: blocks.map((block) => ({
-      title: block.kind === 'tokenSections' ? 'Token sections' : block.title,
-      kind: block.kind,
-      ...(block.kind === 'list' ? { size: block.size, items: block.items.length } : {}),
-      minWidth: blockMinWidth(block),
-      ...(geometryFor(block, full) ? { full: geometryFor(block, full) } : {}),
-      ...(geometryFor(block, half) ? { half: geometryFor(block, half) } : {}),
-    })),
+    blocks: blocks.map((block) => {
+      const fullGeometry = geometryFor(block, full);
+      const halfGeometry = geometryFor(block, half);
+      return {
+        title: block.kind === 'tokenSections' ? 'Token sections' : block.title,
+        kind: block.kind,
+        ...(block.kind === 'list' ? { size: block.size, items: block.items.length } : {}),
+        ...(block.kind === 'tokenSections' ? { items: block.sections.length } : {}),
+        minWidth: snapshotMinWidth(block),
+        ...(fullGeometry ? { full: fullGeometry } : {}),
+        ...(halfGeometry ? { half: halfGeometry } : {}),
+      };
+    }),
   };
   if (blocks.length === 2) {
     const [first, second] = blocks;
+    const firstMin = blockMinWidth(first);
+    const secondMin = blockMinWidth(second);
     const asPlacement = (b: PresentationBlock) => ({
       kind: b.kind, height: 0, minWidth: blockMinWidth(b),
       ...(b.kind === 'list' ? { itemCount: b.items.length, size: b.size, maxColumns: b.maxColumns } : {}),
     });
-    snapshot.sideEligible = fitsOneRow(asPlacement(first), half) && fitsOneRow(asPlacement(second), half);
+    // This is every static gate that runs before measured height enters choosePlacement. Omitting
+    // the min-width check made Avatar claim eligibility even though its 600px grid can never fit the
+    // 462px half-row; a later fitsOneRow change would then fabricate a placement change for it.
+    snapshot.sideEligible = half > 0 && firstMin <= half && secondMin <= half
+      && fitsOneRow(asPlacement(first), half) && fitsOneRow(asPlacement(second), half);
   }
   return snapshot;
 }
 
 /** Every page's geometry, ordered by page id so two snapshots diff line for line. */
 export function layoutSnapshot(config: ResolvedConfig, version: string): LayoutSnapshot {
-  const pages = discoverStaticPages(config)
-    .map((page) => pageSnapshot(page, resolvePageId(page, page.file)))
-    .sort((a, b) => a.page.localeCompare(b.page));
+  const staticPages = discoverStaticPages(config);
+  const ids = staticPages.map((page) => resolvePageId(page, page.file));
+  const duplicates = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
+  if (duplicates.length > 0) {
+    throw new Error(`Cannot snapshot duplicate page id${duplicates.length === 1 ? '' : 's'}: ${duplicates.join(', ')}. Run ds-viewer doctor and give each page a unique id.`);
+  }
+  const pages = staticPages
+    .map((page, index) => pageSnapshot(page, ids[index]))
+    // Code-point order is stable across machines; localeCompare can produce different snapshot text
+    // under different host locales, defeating a committed artifact's textual review.
+    .sort((a, b) => (a.page < b.page ? -1 : a.page > b.page ? 1 : 0));
   return { version, width: MATRIX_LAYOUT.laptopContentWidth, pages };
 }
 
@@ -113,6 +165,24 @@ export interface LayoutChange {
 
 function describeGeometry(g: BlockGeometry | undefined): string {
   return g ? `${g.columns}×${g.rows}` : '—';
+}
+
+function describeMinWidth(width: number | null): string {
+  return width === null ? 'a full row' : `${width}px`;
+}
+
+function blockKeys(blocks: readonly BlockSnapshot[]): { key: string; label: string }[] {
+  const seen = new Map<string, number>();
+  const totals = new Map<string, number>();
+  for (const block of blocks) totals.set(block.title, (totals.get(block.title) ?? 0) + 1);
+  return blocks.map((block) => {
+    const occurrence = (seen.get(block.title) ?? 0) + 1;
+    seen.set(block.title, occurrence);
+    return {
+      key: `${block.title}\u0000${occurrence}`,
+      label: (totals.get(block.title) ?? 0) > 1 ? `${block.title} (${occurrence})` : block.title,
+    };
+  });
 }
 
 /** What changed between two snapshots. Pure, so it is the part worth testing.
@@ -178,7 +248,11 @@ export function diffLayouts(before: LayoutSnapshot, after: LayoutSnapshot): Layo
           continue;
         }
         if (old.minWidth !== block.minWidth) {
-          changes.push({ page: page.page, kind: 'geometry', detail: `"${block.title}" needs ${block.minWidth}px, was ${old.minWidth}px` });
+          changes.push({
+            page: page.page,
+            kind: 'geometry',
+            detail: `"${block.title}" needs ${describeMinWidth(block.minWidth)}, was ${describeMinWidth(old.minWidth)}`,
+          });
         }
         for (const width of ['full', 'half'] as const) {
           const a = old[width];
@@ -193,7 +267,28 @@ export function diffLayouts(before: LayoutSnapshot, after: LayoutSnapshot): Layo
       }
     }
 
-    if (was.sideEligible !== page.sideEligible) {
+    // Compare relative order among blocks that exist on both sides. Inserting a new block at the
+    // front does not falsely say every existing block moved, but swapping two existing blocks does
+    // remain visible rather than disappearing behind title-based identity.
+    const oldKeyed = blockKeys(was.blocks);
+    const newKeyed = blockKeys(page.blocks);
+    const oldSet = new Set(oldKeyed.map(({ key }) => key));
+    const newSet = new Set(newKeyed.map(({ key }) => key));
+    const oldCommon = oldKeyed.filter(({ key }) => newSet.has(key));
+    const newCommon = newKeyed.filter(({ key }) => oldSet.has(key));
+    const oldPositions = new Map(oldCommon.map(({ key }, index) => [key, index]));
+    for (const [index, { key, label }] of newCommon.entries()) {
+      const oldIndex = oldPositions.get(key);
+      if (oldIndex !== undefined && oldIndex !== index) {
+        changes.push({
+          page: page.page,
+          kind: 'blocks',
+          detail: `"${label}" moved from block ${oldIndex + 1} to ${index + 1}`,
+        });
+      }
+    }
+
+    if (typeof was.sideEligible === 'boolean' && typeof page.sideEligible === 'boolean' && was.sideEligible !== page.sideEligible) {
       changes.push({
         page: page.page, kind: 'placement',
         detail: page.sideEligible

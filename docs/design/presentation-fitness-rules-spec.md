@@ -134,10 +134,12 @@ but it covers the common case without guessing.
 ## Layout diff across versions
 
 **Built in 0.8.0** as `explain --all` + `layout-diff`. The snapshot records what is decidable
-without a browser — block kind, size, item count, `minWidth`, and column×row geometry at full and
-half width — plus `sideEligible`, the height-independent half of `choosePlacement`. The final
-side/stacked decision also weighs a single tall specimen and the height saved, so the snapshot
-reports eligibility rather than the outcome, and says so.
+without a browser: every block's kind and `minWidth`; list blocks' size, item count, and full/half
+column×row geometry; and token-section blocks' section count and responsive full/half geometry. Its
+`sideEligible` field includes the two static gates from `choosePlacement`: minimum widths must fit the
+half-row and both blocks must still fit one row there. The final side/stacked decision also weighs a
+single tall specimen and the height saved, so the snapshot reports eligibility rather than the
+outcome, and says so.
 
 What follows is the original proposal, kept for the reasoning.
 

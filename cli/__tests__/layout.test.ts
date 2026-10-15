@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { diffLayouts, formatLayoutDiff, type LayoutSnapshot } from '../layout.ts';
+import { diffLayouts, formatLayoutDiff, pageSnapshot, type LayoutSnapshot } from '../layout.ts';
 import { runLayoutDiffCommand } from '../main.ts';
+import type { StaticPage } from '../staticPage.ts';
 
 const snapshot = (version: string, pages: LayoutSnapshot['pages']): LayoutSnapshot => ({ version, width: 952, pages });
 
 const banner = (columns: number, half = columns) => ({
   page: 'Banner',
   blocks: [
-    { title: 'Variants', kind: 'list' as const, size: 'wide', items: 5, minWidth: 404, full: { columns, rows: 5 / columns, fillers: 0 }, half: { columns: half, rows: 5, fillers: 0 } },
+    { title: 'Variants', kind: 'list' as const, size: 'wide', items: 5, minWidth: 404, full: { columns, rows: Math.ceil(5 / columns), fillers: columns * Math.ceil(5 / columns) - 5 }, half: { columns: half, rows: Math.ceil(5 / half), fillers: half * Math.ceil(5 / half) - 5 } },
   ],
   sideEligible: false,
 });
@@ -29,6 +30,60 @@ test('a column count that moved is reported with both numbers', () => {
   assert.match(geometry[0].detail, /"Variants" at full width: 2×/);
 });
 
+test('pageSnapshot applies the same static min-width gate as choosePlacement', () => {
+  const avatar = {
+    file: '/x/Avatar.catalog.tsx',
+    checkable: true,
+    comparison: {
+      rowLabel: 'Size', columnLabel: 'Tone',
+      rows: { items: [{ key: 'sm', label: 'Small' }] },
+      columns: { items: [
+        { key: 'a', label: 'A' }, { key: 'b', label: 'B' }, { key: 'c', label: 'C' },
+      ] },
+      size: 'compact',
+    },
+    statesItems: [{ key: 'loading', name: 'Loading' }],
+  } satisfies StaticPage;
+  const result = pageSnapshot(avatar, 'Avatar');
+  assert.equal(result.blocks.length, 2);
+  assert.equal(result.blocks[0].kind, 'grid');
+  assert.equal(result.blocks[0].minWidth, 600);
+  assert.equal(result.sideEligible, false, 'a 600px grid cannot be eligible for a 462px half-row');
+});
+
+test('pageSnapshot records token-section geometry at full and half width', () => {
+  const tokens = {
+    file: '/x/Tokens.catalog.tsx',
+    checkable: true,
+    tokenSectionTitles: ['Foundation', 'Semantic', 'Motion'],
+    tokenSectionWide: [false, true, false],
+    tokenColumns: 3,
+  } satisfies StaticPage;
+  const result = pageSnapshot(tokens, 'Tokens');
+  assert.deepEqual(result.blocks, [{
+    title: 'Token sections', kind: 'tokenSections', items: 3, minWidth: null,
+    // The wide middle section closes the partial row on either side; both widths therefore use
+    // three rows, but the captured column count still exposes a section-layout rule change.
+    full: { columns: 3, rows: 3, fillers: 4 },
+    half: { columns: 1, rows: 3, fillers: 0 },
+  }]);
+  assert.doesNotMatch(JSON.stringify(result), /Infinity/);
+});
+
+test('layout-diff accepts a snapshot the tool writes for an empty literal list', () => {
+  const emptyPage = {
+    file: '/x/Empty.catalog.tsx',
+    checkable: true,
+    variantsItems: [],
+  } satisfies StaticPage;
+  const generated = snapshot('a', [pageSnapshot(emptyPage, 'Empty')]);
+  assert.deepEqual(generated.pages[0].blocks[0].full, { columns: 0, rows: 0, fillers: 0 });
+  const raw = JSON.stringify(generated);
+  const result = runLayoutDiffCommand(['before.json', 'after.json'], { readFile: () => raw });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output, /No page changes layout/);
+});
+
 test('a page that can no longer share a row is reported as a placement change', () => {
   // The case this command exists for: a rule in the package moves, and a consumer's page is laid
   // out differently with nothing in their repository to explain it.
@@ -39,6 +94,36 @@ test('a page that can no longer share a row is reported as a placement change', 
   assert.equal(changes[0].kind, 'placement');
   assert.match(changes[0].detail, /can no longer share a row/);
   assert.match(formatLayoutDiff(before, after, changes), /Layout changes on 1 page: Banner\./);
+});
+
+test('adding or removing a second block does not fabricate a placement transition', () => {
+  const one = { page: 'X', blocks: [banner(2).blocks[0]] };
+  const two = { page: 'X', blocks: [
+    banner(2).blocks[0],
+    { title: 'States', kind: 'list' as const, size: 'regular', items: 1, minWidth: 242, full: { columns: 1, rows: 1, fillers: 0 }, half: { columns: 1, rows: 1, fillers: 0 } },
+  ], sideEligible: false };
+  assert.equal(diffLayouts(snapshot('a', [one]), snapshot('b', [two])).filter((c) => c.kind === 'placement').length, 0);
+  assert.equal(diffLayouts(snapshot('a', [two]), snapshot('b', [one])).filter((c) => c.kind === 'placement').length, 0);
+});
+
+test('reordering surviving blocks is visible, while inserting one does not fabricate moves', () => {
+  const block = (title: string) => ({ title, kind: 'list' as const, size: 'regular', items: 1, minWidth: 242 });
+  const before = snapshot('a', [{ page: 'X', blocks: [block('A'), block('B')] }]);
+  const swapped = snapshot('b', [{ page: 'X', blocks: [block('B'), block('A')] }]);
+  assert.deepEqual(
+    diffLayouts(before, swapped).filter((c) => /moved/.test(c.detail)).map((c) => c.detail),
+    ['"B" moved from block 2 to 1', '"A" moved from block 1 to 2'],
+  );
+  const inserted = snapshot('b', [{ page: 'X', blocks: [block('Intro'), block('A'), block('B')] }]);
+  assert.deepEqual(diffLayouts(before, inserted).map((c) => c.detail), ['"Intro" is new']);
+});
+
+test('a full-row minimum is reported deliberately, never as nullpx', () => {
+  const before = snapshot('a', [{ page: 'X', blocks: [{ title: 'Preview', kind: 'preview', minWidth: 402 }] }]);
+  const after = snapshot('b', [{ page: 'X', blocks: [{ title: 'Preview', kind: 'preview', minWidth: null }] }]);
+  const [change] = diffLayouts(before, after);
+  assert.match(change.detail, /needs a full row, was 402px/);
+  assert.doesNotMatch(change.detail, /nullpx/);
 });
 
 test('added and removed pages are named, not silently dropped', () => {
@@ -113,6 +198,12 @@ test('layout-diff refuses a file that is not a snapshot instead of reporting eve
     'good.json': JSON.stringify(snapshot('a', [banner(2)])),
     'notjson.json': 'this is not json',
     'other.json': JSON.stringify({ hello: 'world' }),
+    'missing-blocks.json': JSON.stringify({ version: 'a', width: 952, pages: [{ page: 'X' }] }),
+    'null-page.json': JSON.stringify({ version: 'a', width: 952, pages: [null] }),
+    'missing-width.json': JSON.stringify({ version: 'a', pages: [] }),
+    'duplicate-pages.json': JSON.stringify({ version: 'a', width: 952, pages: [
+      { page: 'X', blocks: [] }, { page: 'X', blocks: [] },
+    ] }),
   };
   const read = (file: string) => {
     if (!(file in files)) throw new Error('ENOENT');
@@ -132,6 +223,12 @@ test('layout-diff refuses a file that is not a snapshot instead of reporting eve
   const wrong = runLayoutDiffCommand(['other.json', 'good.json'], { readFile: read });
   assert.equal(wrong.exitCode, 1);
   assert.match(wrong.output, /is not a layout snapshot/);
+
+  for (const file of ['missing-blocks.json', 'null-page.json', 'missing-width.json', 'duplicate-pages.json']) {
+    const malformed = runLayoutDiffCommand([file, 'good.json'], { readFile: read });
+    assert.equal(malformed.exitCode, 1, `${file} must be rejected rather than crash or fabricate a diff`);
+    assert.match(malformed.output, /is not a layout snapshot/);
+  }
 
   assert.equal(runLayoutDiffCommand(['good.json'], { readFile: read }).exitCode, 1);
   assert.match(runLayoutDiffCommand([], { readFile: read }).output, /Usage: ds-viewer layout-diff/);

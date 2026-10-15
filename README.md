@@ -89,11 +89,13 @@ Banner
   its two blocks can no longer share a row
 ```
 
-The snapshot holds what can be decided without a browser: each block's kind, size, item count,
-minimum width, and its column×row geometry at full and half width, plus whether a two-block page's
-blocks still fit one row at half width. That last one is eligibility, not the outcome — placement
-also weighs a single tall specimen and the height actually saved, and neither is knowable without
-measuring a real render. It is the half of the decision a rule change moves.
+The snapshot holds what can be decided without a browser: each block's kind and minimum width;
+list blocks add specimen size, item count, and column×row geometry at full and half width, while
+token-section blocks add section count and their responsive column×row geometry. For a two-block
+page, `sideEligible` records every gate known before measurement: both blocks must keep their minimum
+width and both must still fit one row at half width. Eligibility is not the outcome — placement also
+weighs a single tall specimen and the height actually saved, and neither is knowable without measuring
+a real render.
 
 Snapshots taken at different widths refuse to compare, since geometry at 952px and 1112px
 legitimately differs and diffing them would report changes that never happened.

@@ -204,7 +204,11 @@ export function runExplainCommand(projectRoot: string, pageId: string | undefine
   if (pageId === '--all' || rest.includes('--all')) {
     const config = resolveConfig(projectRoot);
     const version = readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
-    return { output: JSON.stringify(layoutSnapshot(config, version), null, 2), exitCode: 0 };
+    try {
+      return { output: JSON.stringify(layoutSnapshot(config, version), null, 2), exitCode: 0 };
+    } catch (error) {
+      return { output: (error as Error).message, exitCode: 1 };
+    }
   }
   if (!pageId) return { output: 'Usage: ds-viewer explain <Page> [--heights <first>,<second>] [--json], or explain --all for every page as JSON', exitCode: 1 };
   const heightsIndex = rest.indexOf('--heights');
@@ -217,6 +221,44 @@ export function runExplainCommand(projectRoot: string, pageId: string | undefine
   const result = explainPage(config, pageId, { heights });
   if (!result) return { output: `No page named "${pageId}" was found.`, exitCode: 1 };
   return { output: rest.includes('--json') ? JSON.stringify(result, null, 2) : formatExplain(result), exitCode: 0 };
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isGeometry(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const geometry = value as Record<string, unknown>;
+  return Number.isInteger(geometry.columns) && (geometry.columns as number) >= 0
+    && Number.isInteger(geometry.rows) && (geometry.rows as number) >= 0
+    && Number.isInteger(geometry.fillers) && (geometry.fillers as number) >= 0;
+}
+
+function isLayoutSnapshot(value: unknown): value is LayoutSnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = value as Record<string, unknown>;
+  if (typeof snapshot.version !== 'string' || !isFiniteNumber(snapshot.width) || snapshot.width <= 0 || !Array.isArray(snapshot.pages)) return false;
+  const ids = new Set<string>();
+  for (const entry of snapshot.pages) {
+    if (!entry || typeof entry !== 'object') return false;
+    const page = entry as Record<string, unknown>;
+    if (typeof page.page !== 'string' || page.page.length === 0 || ids.has(page.page) || !Array.isArray(page.blocks)) return false;
+    ids.add(page.page);
+    if (page.sideEligible !== undefined && typeof page.sideEligible !== 'boolean') return false;
+    if (page.notCheckable !== undefined && page.notCheckable !== true) return false;
+    for (const entryBlock of page.blocks) {
+      if (!entryBlock || typeof entryBlock !== 'object') return false;
+      const block = entryBlock as Record<string, unknown>;
+      if (typeof block.title !== 'string' || !['grid', 'grouped', 'list', 'preview', 'tokenSections', 'empty'].includes(String(block.kind))) return false;
+      if (!(block.minWidth === null || isFiniteNumber(block.minWidth))) return false;
+      if (block.items !== undefined && (!Number.isInteger(block.items) || (block.items as number) < 0)) return false;
+      if (block.size !== undefined && typeof block.size !== 'string') return false;
+      if (block.full !== undefined && !isGeometry(block.full)) return false;
+      if (block.half !== undefined && !isGeometry(block.half)) return false;
+    }
+  }
+  return true;
 }
 
 /** `layout-diff <before.json> <after.json>`: what a version changed about every page's geometry. */
@@ -237,10 +279,13 @@ export function runLayoutDiffCommand(
       return `Could not read ${file}.`;
     }
     try {
-      const parsed = JSON.parse(raw) as LayoutSnapshot;
-      // A snapshot missing `pages` is not a snapshot: diffing it would report every page as
-      // removed, which reads like a catastrophic regression rather than the wrong file.
-      if (!Array.isArray(parsed?.pages)) return `${file} is not a layout snapshot (no "pages"). Write one with \`ds-viewer explain --all\`.`;
+      const parsed = JSON.parse(raw) as unknown;
+      // Refuse plausible-but-incomplete JSON before the diff touches it. Treating an absent block
+      // array as empty reports invented removals; dereferencing it reports a raw TypeError instead
+      // of telling the user they selected the wrong file.
+      if (!isLayoutSnapshot(parsed)) {
+        return `${file} is not a layout snapshot. Write one with \`ds-viewer explain --all\`.`;
+      }
       return parsed;
     } catch {
       return `${file} is not valid JSON.`;
@@ -256,7 +301,7 @@ export function runLayoutDiffCommand(
   // computed across incomparable widths.
   if (!comparableWidths(before, after)) {
     return {
-      output: `These snapshots were taken at different widths (${before.width}px and ${after.width}px), so their geometry is not comparable. Take both with the same version of \`explain --all\`.`,
+      output: `These snapshots were taken at different widths (${before.width}px and ${after.width}px), so their geometry is not comparable. The two viewer versions use different catalog content widths; compare releases whose snapshot widths match.`,
       exitCode: 1,
     };
   }
