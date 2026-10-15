@@ -441,7 +441,7 @@ function heightAtWidth(block: PlacementBlock, width: number, available: number):
  *  same number of rows as a full row would give": a column cap can already force a block to wrap
  *  at full width, and two wrapped rows staying two wrapped rows is not a reason to halve every
  *  specimen on the page. One row is the case where sharing genuinely costs nothing. */
-function fitsOneRow(block: PlacementBlock, half: number): boolean {
+export function fitsOneRow(block: PlacementBlock, half: number): boolean {
   if (block.kind !== 'list' || !block.itemCount || !block.size) return true;
   return listGeometry(block.itemCount, half, block.size, block.maxColumns).rows <= 1;
 }

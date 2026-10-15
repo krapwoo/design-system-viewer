@@ -73,7 +73,7 @@ function cellOverrideNote(cells: { surface?: SpecimenSurfaceKind; align?: Specim
  *  look at it; only the counts/keys/sizes they do look at are carried over. Every field Task 3
  *  reads is carried through here, including `previewWidths`/`fullWidthLabel`/`hide`/`itemsFill`/
  *  `maxColumns` — dropping any of them makes `explain` report different geometry than the viewer. */
-function toSectionDef(page: StaticPage): SectionDef {
+export function toSectionDef(page: StaticPage): SectionDef {
   const comparison: ComparisonDef | undefined = page.comparison && {
     rowLabel: page.comparison.rowLabel ?? '',
     columnLabel: page.comparison.columnLabel ?? '',
@@ -165,12 +165,11 @@ function toPlacementBlock(block: PresentationBlock, height: number): PlacementBl
     : base;
 }
 
-/** Finds `pageId` among every page `cli/doctor.ts`'s own `discoverAllPageFiles` would find, builds
- *  its throwaway `SectionDef`, and asks the viewer's own pure layout functions for each block's
- *  decision — undefined when no page resolves to that id. */
-export function explainPage(config: ResolvedConfig, pageId: string, options: ExplainOptions = {}): ExplainResult | undefined {
-  // Same exclusion `cli/doctor.ts`'s `runDoctor` applies (mirroring `sync`) — an excluded folder's
-  // page should never resolve here either.
+/** Every page `cli/doctor.ts`'s own `discoverAllPageFiles` would find, with the same exclusions
+ *  `runDoctor` applies (mirroring `sync`), so an excluded folder's page never resolves. Shared with
+ *  `cli/layout.ts` rather than copied: a snapshot built from a different page set than `explain`
+ *  reads would diff pages the viewer does not have. */
+export function discoverStaticPages(config: ResolvedConfig): StaticPage[] {
   const excluded = new Set((config.exclude ?? []).flatMap((pattern) => resolveGlob(config.projectRoot, pattern)));
   const componentFolders = [
     ...new Set(
@@ -181,7 +180,14 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
     ),
   ];
   const pageFiles = discoverAllPageFiles({ componentFolders, standalonePageGlobs: config.pages ?? [], projectRoot: config.projectRoot });
-  const page = readStaticPages(pageFiles).find((p) => resolvePageId(p, p.file) === pageId);
+  return readStaticPages(pageFiles);
+}
+
+/** Finds `pageId` among every page `cli/doctor.ts`'s own `discoverAllPageFiles` would find, builds
+ *  its throwaway `SectionDef`, and asks the viewer's own pure layout functions for each block's
+ *  decision — undefined when no page resolves to that id. */
+export function explainPage(config: ResolvedConfig, pageId: string, options: ExplainOptions = {}): ExplainResult | undefined {
+  const page = discoverStaticPages(config).find((p) => resolvePageId(p, p.file) === pageId);
   if (!page) return undefined;
   // Important finding 4 (Fable's review): a page whose layout data isn't a literal (or that has a
   // syntax error) must never be explained from partial/empty data — design §4 requires `explain`

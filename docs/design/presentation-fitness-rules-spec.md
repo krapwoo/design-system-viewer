@@ -133,6 +133,16 @@ but it covers the common case without guessing.
 
 ## Layout diff across versions
 
+**Built in 0.8.0** as `explain --all` + `layout-diff`. The snapshot records what is decidable
+without a browser: every block's kind and `minWidth`; list blocks' size, item count, and full/half
+column×row geometry; and token-section blocks' section count and responsive full/half geometry. Its
+`sideEligible` field includes the two static gates from `choosePlacement`: minimum widths must fit the
+half-row and both blocks must still fit one row there. The final side/stacked decision also weighs a
+single tall specimen and the height saved, so the snapshot reports eligibility rather than the
+outcome, and says so.
+
+What follows is the original proposal, kept for the reasoning.
+
 Not a rule — the answer to "if a layout rule changes, how does a consumer find out?"
 
 Layout rules live in the package and reach every consuming project on `update`; their page files

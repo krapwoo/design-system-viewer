@@ -63,7 +63,42 @@ npm run ds-viewer dev    # opens the catalog in a browser, re-syncing on every f
 npm run ds-viewer sync   # regenerates component/token/page data without starting a server
 npm run ds-viewer doctor   # checks every page for drift and coverage gaps (--json, --ci)
 npm run ds-viewer explain <Page>   # prints why a page's specimens are laid out the way they are
+npm run ds-viewer explain --all   # every page's geometry as JSON, to diff across versions
+npm run ds-viewer layout-diff before.json after.json   # what an upgrade changed about your layout
 ```
+
+### Seeing what an upgrade changes
+
+Layout rules live in this package and reach your catalog on `update`, while your page files never
+change. So a new version can reshape a page with nothing in your repository to explain it. Snapshot
+before and after, and the change becomes something you can read:
+
+```
+npx ds-viewer explain --all > before.json   # on the version you have
+# ...upgrade...
+npx ds-viewer explain --all > after.json
+npx ds-viewer layout-diff before.json after.json
+```
+
+```
+0.6.11 → 0.7.0, measured at 952px
+
+Layout changes on 3 pages: Banner, EmptyState, Shimmer.
+
+Banner
+  its two blocks can no longer share a row
+```
+
+The snapshot holds what can be decided without a browser: each block's kind and minimum width;
+list blocks add specimen size, item count, and column×row geometry at full and half width, while
+token-section blocks add section count and their responsive column×row geometry. For a two-block
+page, `sideEligible` records every gate known before measurement: both blocks must keep their minimum
+width and both must still fit one row at half width. Eligibility is not the outcome — placement also
+weighs a single tall specimen and the height actually saved, and neither is knowable without measuring
+a real render.
+
+Snapshots taken at different widths refuse to compare, since geometry at 952px and 1112px
+legitimately differs and diffing them would report changes that never happened.
 
 Only one `dev` serves a project at a time. A second one refuses, naming the port the first is on,
 because both would generate into the same `.ds-viewer/` and overwrite each other's files — the

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig } from './config.ts';
 import { initExistingProject, initNewProject, promptInitMode, type InitOptions, type InitResult, type NewProjectOptions } from './init.ts';
@@ -9,6 +10,7 @@ import { formatHuman, runDoctor, toDoctorJson, withExtraIssues } from './doctor.
 import { renderCheck } from './render.ts';
 import { RENDER_WORKSPACE_DIR } from './types.ts';
 import { explainPage, formatExplain, parseHeights } from './explain.ts';
+import { comparableWidths, diffLayouts, formatLayoutDiff, layoutSnapshot, type LayoutSnapshot } from './layout.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { checkForUpdate, defaultPreferencesDir, readPersonalAutoCheck, resolveAutoCheck } from './updateCheck.ts';
 import { runKitDiffCommand } from './kitDiff.ts';
@@ -41,6 +43,11 @@ Commands:
            Print why a page's specimens are laid out the way they are
            --heights <first>,<second>  check side-by-side placement with these measured heights
            --json          print the machine-readable report instead
+           --all           every page's geometry as JSON, for layout-diff
+  layout-diff <before.json> <after.json>
+           What changed about every page's layout between two explain --all snapshots, so a
+           viewer upgrade that reshapes your catalog is visible rather than silent
+           --json          print the changes as JSON
   kit diff <Component>
            Show the user's kit file(s) for <Component> against the installed kit's copy
   migrate --from <version>
@@ -191,7 +198,19 @@ export async function runDoctorCommand(
 
 /** Same "testable without spawning" shape as `runDoctorCommand` above. */
 export function runExplainCommand(projectRoot: string, pageId: string | undefined, rest: string[]): { output: string; exitCode: number } {
-  if (!pageId) return { output: 'Usage: ds-viewer explain <Page> [--heights <first>,<second>] [--json]', exitCode: 1 };
+  // `--all`: every page's geometry as one JSON document, for `layout-diff` to compare across
+  // versions. It takes no page id, and it is JSON only — the whole point is a machine-readable
+  // artifact, and a prose dump of 50 pages would be read by nobody.
+  if (pageId === '--all' || rest.includes('--all')) {
+    const config = resolveConfig(projectRoot);
+    const version = readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
+    try {
+      return { output: JSON.stringify(layoutSnapshot(config, version), null, 2), exitCode: 0 };
+    } catch (error) {
+      return { output: (error as Error).message, exitCode: 1 };
+    }
+  }
+  if (!pageId) return { output: 'Usage: ds-viewer explain <Page> [--heights <first>,<second>] [--json], or explain --all for every page as JSON', exitCode: 1 };
   const heightsIndex = rest.indexOf('--heights');
   const heightsRaw = heightsIndex !== -1 ? rest[heightsIndex + 1] : undefined;
   const heights = heightsRaw ? parseHeights(heightsRaw) : undefined;
@@ -202,6 +221,93 @@ export function runExplainCommand(projectRoot: string, pageId: string | undefine
   const result = explainPage(config, pageId, { heights });
   if (!result) return { output: `No page named "${pageId}" was found.`, exitCode: 1 };
   return { output: rest.includes('--json') ? JSON.stringify(result, null, 2) : formatExplain(result), exitCode: 0 };
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isGeometry(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const geometry = value as Record<string, unknown>;
+  return Number.isInteger(geometry.columns) && (geometry.columns as number) >= 0
+    && Number.isInteger(geometry.rows) && (geometry.rows as number) >= 0
+    && Number.isInteger(geometry.fillers) && (geometry.fillers as number) >= 0;
+}
+
+function isLayoutSnapshot(value: unknown): value is LayoutSnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = value as Record<string, unknown>;
+  if (typeof snapshot.version !== 'string' || !isFiniteNumber(snapshot.width) || snapshot.width <= 0 || !Array.isArray(snapshot.pages)) return false;
+  const ids = new Set<string>();
+  for (const entry of snapshot.pages) {
+    if (!entry || typeof entry !== 'object') return false;
+    const page = entry as Record<string, unknown>;
+    if (typeof page.page !== 'string' || page.page.length === 0 || ids.has(page.page) || !Array.isArray(page.blocks)) return false;
+    ids.add(page.page);
+    if (page.sideEligible !== undefined && typeof page.sideEligible !== 'boolean') return false;
+    if (page.notCheckable !== undefined && page.notCheckable !== true) return false;
+    for (const entryBlock of page.blocks) {
+      if (!entryBlock || typeof entryBlock !== 'object') return false;
+      const block = entryBlock as Record<string, unknown>;
+      if (typeof block.title !== 'string' || !['grid', 'grouped', 'list', 'preview', 'tokenSections', 'empty'].includes(String(block.kind))) return false;
+      if (!(block.minWidth === null || isFiniteNumber(block.minWidth))) return false;
+      if (block.items !== undefined && (!Number.isInteger(block.items) || (block.items as number) < 0)) return false;
+      if (block.size !== undefined && typeof block.size !== 'string') return false;
+      if (block.full !== undefined && !isGeometry(block.full)) return false;
+      if (block.half !== undefined && !isGeometry(block.half)) return false;
+    }
+  }
+  return true;
+}
+
+/** `layout-diff <before.json> <after.json>`: what a version changed about every page's geometry. */
+export function runLayoutDiffCommand(
+  args: string[],
+  deps: { readFile?: (file: string) => string } = {},
+): { output: string; exitCode: number } {
+  const [beforePath, afterPath] = args.filter((a) => !a.startsWith('--'));
+  if (!beforePath || !afterPath) {
+    return { output: 'Usage: ds-viewer layout-diff <before.json> <after.json>\n\nBoth are written by `ds-viewer explain --all`.', exitCode: 1 };
+  }
+  const read = deps.readFile ?? ((file: string) => readFileSync(file, 'utf8'));
+  const load = (file: string): LayoutSnapshot | string => {
+    let raw: string;
+    try {
+      raw = read(file);
+    } catch {
+      return `Could not read ${file}.`;
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      // Refuse plausible-but-incomplete JSON before the diff touches it. Treating an absent block
+      // array as empty reports invented removals; dereferencing it reports a raw TypeError instead
+      // of telling the user they selected the wrong file.
+      if (!isLayoutSnapshot(parsed)) {
+        return `${file} is not a layout snapshot. Write one with \`ds-viewer explain --all\`.`;
+      }
+      return parsed;
+    } catch {
+      return `${file} is not valid JSON.`;
+    }
+  };
+  const before = load(beforePath);
+  if (typeof before === 'string') return { output: before, exitCode: 1 };
+  const after = load(afterPath);
+  if (typeof after === 'string') return { output: after, exitCode: 1 };
+
+  // Before diffing, not only before printing: the guard used to live in `formatLayoutDiff`, so
+  // `--json` — the path most likely to be automated in CI — returned a confident list of changes
+  // computed across incomparable widths.
+  if (!comparableWidths(before, after)) {
+    return {
+      output: `These snapshots were taken at different widths (${before.width}px and ${after.width}px), so their geometry is not comparable. The two viewer versions use different catalog content widths; compare releases whose snapshot widths match.`,
+      exitCode: 1,
+    };
+  }
+  const changes = diffLayouts(before, after);
+  if (args.includes('--json')) return { output: JSON.stringify(changes, null, 2), exitCode: 0 };
+  return { output: formatLayoutDiff(before, after, changes), exitCode: 0 };
 }
 
 async function main(): Promise<void> {
@@ -240,6 +346,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'layout-diff') {
+    const { output, exitCode } = runLayoutDiffCommand(rest);
+    console.log(output);
+    if (exitCode) process.exitCode = exitCode;
+    return;
+  }
   if (command === 'explain') {
     const [pageId, ...explainRest] = rest;
     const { output, exitCode } = runExplainCommand(projectRoot, pageId, explainRest);
