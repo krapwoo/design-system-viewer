@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.9.0
+
+- `update` no longer treats a `package.json`/`package-lock.json` as uncommitted when the only
+  difference from the last commit is a previously-finished bump to the version already installed —
+  it now offers the regular **Update now** instead of refusing.
+
 ## 0.8.0
 
 - `explain --all` now writes a deterministic JSON layout snapshot for every statically readable catalog page, and the new `layout-diff <before.json> <after.json>` command explains viewer-owned layout changes across package upgrades. This makes changes visible even though a consumer's `.catalog.tsx` files remain unchanged.
