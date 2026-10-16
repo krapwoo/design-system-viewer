@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.10.0
+
+- Viewer chrome text now follows a fixed set of typography roles instead of ad hoc sizes/weights: the heavier `800` font weight is now `700` everywhere it appeared, uppercase label letter-spacing is consistent across the sidebar, grids, lists and panels, and the italic empty-state notes are gone. A reference card's contents now sit vertically centred — the last Source/Accessibility/Composition row no longer adds a trailing divider and padding on top of the card's own. The sidebar footer's padding is now even top and bottom, so its label sits centred against the divider above it.
+
+  A few visible side effects of moving to fixed roles: the "OS component" badge is now shown in capitals, since the catalog's uppercase role is the closest match; the update page's section heading and version arrow are now bold; non-uppercase table, grid and list captions no longer carry the extra letter-spacing that uppercase text needs; and a couple of lines (the props table's description, a token tile's note) are a pixel or two taller or shorter to match their role's line-height.
+
 ## 0.9.1
 
 - The update page no longer shows a red "couldn't prepare the update" error when the viewer itself isn't running or was just restarted — it now shows a calm note ("The viewer isn’t running"), disables the unavailable action, and reconnects itself in place, with no reload, once the viewer is reachable again. Restarting `dev` now reuses the same local address across the restart, so this is the common case; if the address can't be reused, the page falls back to a "still isn’t answering" state with a manual **Reconnect** button.
