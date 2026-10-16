@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Platform, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TEXT } from './tokens';
 import { DEVICE_FRAME, DEVICE_SCALE_WARN_BELOW, deviceFrameScale } from './deviceFrame';
 import { resolveOverlayViewport } from './overlayViewport';
 import { useSpecimenAddress } from './SpecimenAddress';
@@ -149,5 +149,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  status: { position: 'absolute', fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  status: { position: 'absolute', ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
 });

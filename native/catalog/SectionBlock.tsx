@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
@@ -334,7 +334,7 @@ export function SectionBlock<TId extends string>({
 }
 
 const styles = StyleSheet.create({
-  breadcrumb: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  breadcrumb: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
   titlebar: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -355,9 +355,9 @@ const styles = StyleSheet.create({
     borderColor: CATALOG_COLOR.borderStrong,
     backgroundColor: CATALOG_COLOR.surface,
   },
-  osBadgeText: { fontSize: CATALOG_TYPE.xs, fontWeight: '700', letterSpacing: 0.4, color: CATALOG_COLOR.text },
-  title: { fontSize: CATALOG_TYPE.pageTitle, fontWeight: '700', color: CATALOG_COLOR.text, marginBottom: 5 },
-  desc: { fontSize: CATALOG_TYPE.md, lineHeight: 20, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
+  osBadgeText: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.text },
+  title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text, marginBottom: 5 },
+  desc: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   pager: { flexDirection: 'row', gap: 6, flexShrink: 0 },
   pagerButton: {
     width: CATALOG_LAYOUT.controlSize,
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
   pagerButtonActive: { backgroundColor: CATALOG_COLOR.surfacePressed },
   pagerButtonDisabled: { backgroundColor: CATALOG_COLOR.pageBackground },
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
-  pagerGlyph: { fontSize: CATALOG_TYPE.lg, color: CATALOG_COLOR.text },
+  pagerGlyph: { ...CATALOG_TEXT.icon, color: CATALOG_COLOR.text },
   pagerGlyphDisabled: { color: CATALOG_COLOR.textMuted },
   blocks: { gap: CATALOG_LAYOUT.blockGap, marginBottom: CATALOG_LAYOUT.blockGap },
   blocksSide: { flexDirection: 'row', alignItems: 'flex-start' },
@@ -381,17 +381,11 @@ const styles = StyleSheet.create({
   frames: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.xl, alignItems: 'flex-start', justifyContent: 'center' },
   frame: { maxWidth: '100%', gap: CATALOG_SPACE.sm },
   frameLabel: {
-    fontSize: CATALOG_TYPE.tableHeader,
-    fontWeight: '800',
-    letterSpacing: 0.44,
-    textTransform: 'uppercase',
+    ...CATALOG_TEXT.label,
     color: CATALOG_COLOR.textMuted,
   },
   blockLabel: {
-    fontSize: CATALOG_TYPE.sm,
-    fontWeight: '700',
-    letterSpacing: 0.72,
-    textTransform: 'uppercase',
+    ...CATALOG_TEXT.label,
     color: CATALOG_COLOR.text,
     marginBottom: CATALOG_LAYOUT.blockLabelGap,
   },
@@ -423,10 +417,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: CATALOG_COLOR.border,
   },
-  tableCaptionText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
+  tableCaptionText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
   // Same cell padding `ComparisonList` uses: the requested width instead reaches the live demo
   // untouched through `tableBodyViewport`, the inner width-qualified group nested inside this body.
   tableBody: { padding: MATRIX_LAYOUT.cellPadding, flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' },
   tableBodyViewport: { maxWidth: '100%' },
-  emptyText: { fontSize: CATALOG_TYPE.sm, fontStyle: 'italic', color: CATALOG_COLOR.textMuted },
+  emptyText: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
 });

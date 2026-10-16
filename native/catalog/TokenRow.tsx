@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
+import { CATALOG_TEXT, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
 
 type Lane = { width: number; report: (width: number) => void };
 
@@ -104,5 +104,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: CATALOG_COLOR.border,
   },
-  use: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  use: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
 });

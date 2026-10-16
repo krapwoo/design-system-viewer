@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, View, StyleSheet } from 'react-native';
-import { defineCatalogPage, Swatch, CATALOG_COLOR } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, Swatch, CATALOG_COLOR, CATALOG_FONT } from '@krapwoo/ds-viewer';
 
 const demo = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 },
@@ -19,7 +19,7 @@ function ColorsGallery() {
         ))}
       </View>
       <Text style={demo.tokenUse}>
-        code — {CATALOG_COLOR.code} (the monospace font for prop names/types/file-path chips).
+        CATALOG_FONT.code — {CATALOG_FONT.code} (the monospace font for prop names/types/file-path chips).
       </Text>
     </View>
   );

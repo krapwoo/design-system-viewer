@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TEXT } from './tokens';
 import { MATRIX_LAYOUT, listGeometry, type ListItem } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: CATALOG_COLOR.border,
   },
-  captionText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
+  captionText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
   specimen: {
     flexGrow: 1,
     minHeight: MATRIX_LAYOUT.rowMinHeight,

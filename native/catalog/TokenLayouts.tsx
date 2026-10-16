@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { sectionColumns, tileGeometry, TOKEN_LAYOUT_GAP, TOKEN_SECTION_MIN_WIDTH } from './tokenLayout';
 import type { TokenSection } from './types';
 
@@ -78,13 +78,10 @@ export function TokenTile({ name, value, note, children }: { name: string; value
 const styles = StyleSheet.create({
   sections: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKEN_LAYOUT_GAP, rowGap: CATALOG_LAYOUT.blockGap, alignItems: 'flex-start' },
   sectionLabel: {
-    fontSize: CATALOG_TYPE.sm,
-    fontWeight: '700',
-    letterSpacing: 0.72,
-    textTransform: 'uppercase',
+    ...CATALOG_TEXT.label,
     color: CATALOG_COLOR.text,
   },
-  sectionDesc: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, marginTop: CATALOG_SPACE.xs },
+  sectionDesc: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, marginTop: CATALOG_SPACE.xs },
   card: {
     marginTop: CATALOG_LAYOUT.blockLabelGap,
     backgroundColor: CATALOG_COLOR.surface,
@@ -97,7 +94,7 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKEN_LAYOUT_GAP },
   tile: { gap: CATALOG_SPACE.xs },
   tilePreview: { minHeight: 56, justifyContent: 'center', marginBottom: CATALOG_SPACE.xs },
-  tileName: { fontSize: CATALOG_TYPE.sm, fontWeight: '700', color: CATALOG_COLOR.text },
-  tileValue: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted },
-  tileNote: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted, lineHeight: 16 },
+  tileName: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
+  tileValue: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
+  tileNote: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
 });

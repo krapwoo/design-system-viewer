@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, type TextStyle } from 'react-native';
 import { TokenRow, TokenRowGroup } from './TokenRow';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
+import { CATALOG_TEXT, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
 
 /**
  * Renders a type scale as a stack of `TokenRow`s, each showing a step's name (rendered at its own
@@ -44,5 +44,5 @@ const styles = StyleSheet.create({
   // two read as one unit at a glance.
   row: { flexDirection: 'row', alignItems: 'baseline', gap: CATALOG_SPACE.sm },
   sample: { color: CATALOG_COLOR.text },
-  meta: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted },
+  meta: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
 });
