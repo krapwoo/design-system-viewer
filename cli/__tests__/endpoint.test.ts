@@ -148,6 +148,15 @@ test('two concurrent POST /update requests: only the first starts the update, th
   );
 });
 
+test('POST /update still refuses a plan with a genuinely dirty file the classification could not resolve', async () => {
+  await withServer({ buildPlan: async () => samplePlan({ dirtyFiles: ['package.json'] }) }, async (baseUrl, calls) => {
+    const res = await fetch(`${baseUrl}/update`, { method: 'POST', headers: { Origin: ALLOWED_ORIGIN, [DS_VIEWER_SECRET_HEADER]: SECRET } });
+    assert.equal(res.status, 409);
+    assert.deepEqual((await res.json()).dirtyFiles, ['package.json']);
+    assert.deepEqual(calls.startUpdate, []);
+  });
+});
+
 test('a rejected buildPlan answers 502 and does not leave later updates refused', async () => {
   let attempt = 0;
   await withServer(

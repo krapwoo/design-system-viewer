@@ -68,7 +68,8 @@ export function localInstallRefusal(spec: string, latest: string): string {
 /** Design §5 "`npx ds-viewer update`", steps 1-6. */
 export async function runUpdate(config: ResolvedConfig, options: UpdateRunOptions = {}): Promise<{ output: string; exitCode: number }> {
   const currentVersion = options.currentVersion ?? readOwnVersion(path.dirname(fileURLToPath(import.meta.url)));
-  const plan = await (options.buildPlan ?? buildUpdatePlan)(config, currentVersion);
+  const buildPlan = options.buildPlan ?? buildUpdatePlan;
+  let plan = await buildPlan(config, currentVersion);
   if ('error' in plan) return { output: plan.error, exitCode: isAlreadyUpToDate(plan.error) ? 0 : 1 };
 
   const planText = formatPlanHuman(plan);
@@ -96,6 +97,24 @@ export async function runUpdate(config: ResolvedConfig, options: UpdateRunOption
   if (!options.yes) {
     const proceed = await (options.confirm ?? defaultConfirm)(`${planText}\n\nUpdate to ${plan.latest}? [y/N] `);
     if (!proceed) return { output: 'Aborted: nothing was changed.', exitCode: 0 };
+
+    // The prompt can sit open for a while — a file could have changed, or a newer version could
+    // have appeared, in the meantime. Revalidate immediately before the one side effect (install)
+    // this function ever runs, rather than trusting the plan the user approved. `--yes` has no
+    // prompt to sit open behind, so it deliberately skips this and uses the plan already built
+    // above (frozen scope: "may use the initial immediately preceding plan").
+    const revalidated = await buildPlan(config, currentVersion);
+    if ('error' in revalidated) {
+      if (isAlreadyUpToDate(revalidated.error)) return { output: revalidated.error, exitCode: 0 };
+      return { output: "Couldn't re-check the plan before installing. Nothing was changed.", exitCode: 1 };
+    }
+    if (revalidated.latest !== plan.latest || (!options.force && revalidated.dirtyFiles.length > 0)) {
+      return {
+        output: 'The plan changed while confirming — a file changed, or a newer version appeared. Nothing was changed. Run update again to see the new plan.',
+        exitCode: 1,
+      };
+    }
+    plan = revalidated;
   }
 
   const execImpl: ExecImpl = options.execImpl ?? ((cmd, args, opts) => {
