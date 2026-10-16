@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TEXT } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, type ListGroup } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: CATALOG_COLOR.border,
   },
-  rowHeaderText: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
+  rowHeaderText: { ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.text },
   cells: { flex: 1, flexDirection: 'row' },
   cell: { flex: 1, borderRightWidth: 1, borderRightColor: CATALOG_COLOR.border },
   lastColumn: { borderRightWidth: 0 },
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: CATALOG_COLOR.border,
   },
-  captionText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
+  captionText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
   specimen: {
     flexGrow: 1,
     minHeight: MATRIX_LAYOUT.rowMinHeight,

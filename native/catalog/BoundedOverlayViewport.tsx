@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import { CATALOG_COLOR, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_TEXT } from './tokens';
 import { isFiniteOverlaySize, overlayStageDimensions, resolveOverlayViewport, type OverlaySlot } from './overlayViewport';
 
 function isWeb(): boolean {
@@ -108,5 +108,5 @@ const styles = StyleSheet.create({
     height: '100%',
     borderWidth: 0,
   },
-  status: { position: 'absolute', fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  status: { position: 'absolute', ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_TYPE, CATALOG_TYPE_USE } from '../tokens.ts';
+import { CATALOG_COLOR, CATALOG_FONT, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_TEXT, CATALOG_TEXT_USE, CATALOG_TYPE, CATALOG_TYPE_USE } from '../tokens.ts';
 
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
@@ -33,7 +33,7 @@ test('colors match the approved visual system', () => {
       accent: '#174dc6',
       accentSubtle: '#e9efff',
       focusRing: '#c9d7ff',
-      code: 'Menlo',
+      code: 'Menlo, monospace',
       warning: '#8a4b00',
       warningSubtle: '#fff4e0',
       warningBorder: '#f0cf97',
@@ -64,6 +64,15 @@ test('type, radius, and layout values match the approved references', () => {
   assert.deepEqual(Object.keys(CATALOG_TYPE_USE).sort(), Object.keys(CATALOG_TYPE).sort());
 });
 
+test('CATALOG_COLOR.code stays in sync with CATALOG_FONT.code (one source of truth)', () => {
+  assert.equal(CATALOG_COLOR.code, CATALOG_FONT.code);
+  assert.equal(CATALOG_FONT.code, 'Menlo, monospace');
+});
+
+test('every CATALOG_TEXT role has a use note', () => {
+  assert.deepEqual(Object.keys(CATALOG_TEXT_USE).sort(), Object.keys(CATALOG_TEXT).sort());
+});
+
 test('text colors meet WCAG AA on every catalog surface', () => {
   const surfaces = [CATALOG_COLOR.surface, CATALOG_COLOR.surfaceMuted, CATALOG_COLOR.pageBackground, CATALOG_COLOR.surfacePressed, CATALOG_COLOR.chip];
   for (const background of surfaces) {
@@ -88,4 +97,30 @@ test('the 0.4 warning/danger/success tokens match the approved update-panel mock
 
 test('updateContentMaxWidth matches the approved mockup\'s .pagewrap (512px)', () => {
   assert.equal(CATALOG_LAYOUT.updateContentMaxWidth, 512);
+});
+
+test('CATALOG_TEXT roles match the owner-approved table', () => {
+  assert.deepEqual(
+    { ...CATALOG_TEXT },
+    {
+      pageTitle: { fontSize: 28, fontWeight: '700', lineHeight: 34 },
+      heading1: { fontSize: 24, fontWeight: '700', lineHeight: 30 },
+      heading2: { fontSize: 18, fontWeight: '700', lineHeight: 24 },
+      heading3: { fontSize: 16, fontWeight: '700', lineHeight: 22 },
+      icon: { fontSize: 16, fontWeight: '400', lineHeight: 22 },
+      body: { fontSize: 14, fontWeight: '400', lineHeight: 20 },
+      bodyStrong: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
+      caption: { fontSize: 12, fontWeight: '400', lineHeight: 18 },
+      captionStrong: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
+      label: { fontSize: 12, fontWeight: '700', lineHeight: 18, letterSpacing: 0.72, textTransform: 'uppercase' },
+      micro: { fontSize: 10, fontWeight: '400', lineHeight: 14 },
+      microLabel: { fontSize: 10, fontWeight: '700', lineHeight: 14, letterSpacing: 0.6, textTransform: 'uppercase' },
+      code: { fontSize: 14, fontWeight: '400', lineHeight: 20, fontFamily: 'Menlo, monospace' },
+      codeSmall: { fontSize: 12, fontWeight: '400', lineHeight: 18, fontFamily: 'Menlo, monospace' },
+      codeSmallStrong: { fontSize: 12, fontWeight: '700', lineHeight: 18, fontFamily: 'Menlo, monospace' },
+      codeMicro: { fontSize: 10, fontWeight: '400', lineHeight: 14, fontFamily: 'Menlo, monospace' },
+    },
+  );
+  assert.equal(CATALOG_TEXT.label.letterSpacing, CATALOG_TEXT.label.fontSize * 0.06);
+  assert.equal(CATALOG_TEXT.microLabel.letterSpacing, CATALOG_TEXT.microLabel.fontSize * 0.06);
 });

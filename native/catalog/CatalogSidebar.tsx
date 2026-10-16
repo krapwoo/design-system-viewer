@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-native';
 import type { ImageSourcePropType, LayoutChangeEvent, NativeSyntheticEvent, ImageLoadEventData } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { logoLayout } from './logoLayout';
 import { filterGroups, hashForId, UPDATE_PAGE_ID } from './catalogNavigation';
 import type { NavGroup } from './types';
@@ -153,8 +153,8 @@ export function CatalogSidebar<TId extends string>({
   const onLogoError = () => setLogoFailed(true);
   // Wrap detection for the "mark" row: the name Text's own measured height, not `onTextLayout`
   // (react-native-web's `Text` doesn't implement it) and not a character-count heuristic (wraps at
-  // a different length per name). More than one line of `CATALOG_TYPE.brand` means it wrapped.
-  const NAME_LINE_HEIGHT = Math.round(CATALOG_TYPE.brand * 1.3);
+  // a different length per name). More than one line of `CATALOG_TEXT.heading2` means it wrapped.
+  const NAME_LINE_HEIGHT = CATALOG_TEXT.heading2.lineHeight;
   const onNameLayout = (e: LayoutChangeEvent) => {
     setNameWrapped(e.nativeEvent.layout.height > NAME_LINE_HEIGHT * 1.5);
   };
@@ -235,8 +235,8 @@ const styles = StyleSheet.create({
     paddingBottom: CATALOG_LAYOUT.sidebarPaddingTop,
   },
   header: { marginBottom: 20 },
-  logo: { fontSize: CATALOG_TYPE.brand, fontWeight: '800', color: CATALOG_COLOR.text },
-  subtitle: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, marginTop: 2 },
+  logo: { ...CATALOG_TEXT.heading2, color: CATALOG_COLOR.text },
+  subtitle: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, marginTop: 2 },
   subtitleAfterWordmark: { marginTop: CATALOG_LAYOUT.logoCaptionGap },
   mark: { width: CATALOG_LAYOUT.logoMark, height: CATALOG_LAYOUT.logoMark },
   wordmark: { height: CATALOG_LAYOUT.logoWordmarkHeight, alignSelf: 'flex-start' },
@@ -244,13 +244,12 @@ const styles = StyleSheet.create({
   inlineHeader: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md },
   inlineHeaderTop: { alignItems: 'flex-start' },
   inlineText: { flex: 1, minWidth: 0 },
-  empty: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX, paddingVertical: 8 },
+  empty: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX, paddingVertical: 8 },
   footerContainer: {
     borderTopWidth: 1,
     borderTopColor: CATALOG_COLOR.borderHairline,
     paddingHorizontal: CATALOG_LAYOUT.sidebarPaddingX,
-    paddingTop: 10,
-    paddingBottom: 14,
+    paddingVertical: CATALOG_SPACE.md,
   },
   footerLink: {
     flexDirection: 'row',
@@ -263,13 +262,10 @@ const styles = StyleSheet.create({
   footerLinkHover: { backgroundColor: CATALOG_COLOR.surfacePressed },
   footerLinkActive: { backgroundColor: CATALOG_COLOR.accentSubtle },
   footerDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: CATALOG_COLOR.accent, flexShrink: 0 },
-  footerLabel: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
-  footerLabelActive: { color: CATALOG_COLOR.accent, fontWeight: '700' },
+  footerLabel: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
+  footerLabelActive: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.accent },
   groupLabel: {
-    fontSize: CATALOG_TYPE.xs,
-    fontWeight: '800',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    ...CATALOG_TEXT.microLabel,
     color: CATALOG_COLOR.text,
     marginTop: 22,
     marginBottom: 7,
@@ -285,6 +281,6 @@ const styles = StyleSheet.create({
   itemHover: { backgroundColor: CATALOG_COLOR.surfacePressed },
   itemActive: { backgroundColor: CATALOG_COLOR.accentSubtle },
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
-  label: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted },
-  labelActive: { color: CATALOG_COLOR.accent, fontWeight: '700' },
+  label: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted },
+  labelActive: { ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.accent },
 });

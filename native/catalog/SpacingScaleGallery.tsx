@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { TokenRow, TokenRowGroup } from './TokenRow';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './tokens';
+import { CATALOG_TEXT, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './tokens';
 
 /**
  * Renders a spacing scale as a stack of `TokenRow`s, each showing a step's name, a bar sized to its
@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
   // Wider gap than a plain gap-only stack — one row's use-note shouldn't crowd the next row's label.
   tokenStack: { gap: CATALOG_SPACE.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md },
-  label: { width: 48, fontSize: CATALOG_TYPE.sm, fontWeight: '700', color: CATALOG_COLOR.text },
+  label: { width: 48, ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
   bar: { height: 12, borderRadius: CATALOG_RADIUS.sm, backgroundColor: CATALOG_COLOR.accent },
-  value: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted },
+  value: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
 });

@@ -1,6 +1,6 @@
 import React, { forwardRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, type View } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 
 /** The viewer's own button, for catalog chrome and demo triggers (not an app component): a rounded
  *  rectangle, primary in the accent blue, secondary outlined. `disabled` greys it and stops the
@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   disabled: { backgroundColor: CATALOG_COLOR.controlDisabled, borderColor: CATALOG_COLOR.controlDisabled },
   // Same ring as the sidebar's: an outline, so focusing never shifts the layout.
   focus: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing } as object,
-  label: { fontSize: CATALOG_TYPE.md, fontWeight: '700' },
+  label: { ...CATALOG_TEXT.bodyStrong },
   labelPrimary: { color: '#ffffff' },
   labelSecondary: { color: CATALOG_COLOR.text },
   labelBusy: { color: CATALOG_COLOR.textMuted },

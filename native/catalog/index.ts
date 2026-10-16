@@ -55,6 +55,9 @@ export type { ListGroup, ListItem } from './comparison';
 export {
   CATALOG_TYPE,
   CATALOG_TYPE_USE,
+  CATALOG_FONT,
+  CATALOG_TEXT,
+  CATALOG_TEXT_USE,
   CATALOG_SPACE,
   CATALOG_SPACE_USE,
   CATALOG_RADIUS,

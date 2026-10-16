@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent, type TextStyle } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { PropsTable } from './PropsTable';
 import { propsColumns, referenceColumns } from './comparison';
 import type { ComposedOfEntry, SectionDef } from './types';
@@ -8,9 +8,12 @@ import type { ComposedOfEntry, SectionDef } from './types';
 // react-native-web reads `aria-level`; React Native's prop types do not declare it.
 const HEADING_LEVEL_2 = { 'aria-level': 2 } as Record<string, unknown>;
 
-function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+/** `last` drops the trailing divider and its padding, the same convention `TokenRow`'s `last` and
+ *  `PropsTable`'s `rowLast` already use. Without it the final fact's bottom padding stacks on the
+ *  card's own `panelPadding`, so a card's contents sat ~10px lower than centred. */
+function Fact({ label, value, mono = false, last = false }: { label: string; value: string; mono?: boolean; last?: boolean }) {
   return (
-    <View style={styles.fact}>
+    <View style={[styles.fact, last && styles.factLast]}>
       <Text style={styles.factLabel}>{label}</Text>
       <Text style={[styles.factValue, mono && styles.mono]}>{value}</Text>
     </View>
@@ -47,11 +50,16 @@ function compositionLabel(entry: ComposedOfEntry): string {
   return entry.relationship === 'built-in' ? entry.component : `${entry.component} · ${entry.relationship}`;
 }
 
-function CompositionFacts({ composedOf }: { composedOf: ComposedOfEntry[] }) {
+function CompositionFacts({ composedOf, lastIsFlush = false }: { composedOf: ComposedOfEntry[]; lastIsFlush?: boolean }) {
   return (
     <>
       {composedOf.map((entry, i) => (
-        <Fact key={`${entry.component}-${entry.relationship}-${i}`} label={compositionLabel(entry)} value={entry.role} />
+        <Fact
+          key={`${entry.component}-${entry.relationship}-${i}`}
+          label={compositionLabel(entry)}
+          value={entry.role}
+          last={lastIsFlush && i === composedOf.length - 1}
+        />
       ))}
     </>
   );
@@ -91,11 +99,11 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
     return (
       <View style={styles.card}>
         <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-        {def.path && <Fact label="Source" value={def.path} mono />}
+        {def.path && <Fact label="Source" value={def.path} mono last={!(def.composedOf && def.composedOf.length > 0)} />}
         {def.composedOf && def.composedOf.length > 0 && (
           <>
             <Text style={styles.subheading}>Composition</Text>
-            <CompositionFacts composedOf={def.composedOf} />
+            <CompositionFacts composedOf={def.composedOf} lastIsFlush />
           </>
         )}
       </View>
@@ -117,19 +125,25 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
           </View>
           <View style={columnStyle}>
             <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-            {def.path && <Fact label="Source" value={def.path} mono />}
-            {!hide.accessibility && <Fact label="Accessibility" value={def.a11y ?? 'No accessibility notes documented.'} />}
+            {def.path && <Fact label="Source" value={def.path} mono last={hide.accessibility && !(!compositionIsOwnColumn && hasComposition)} />}
+            {!hide.accessibility && (
+              <Fact
+                label="Accessibility"
+                value={def.a11y ?? 'No accessibility notes documented.'}
+                last={!(!compositionIsOwnColumn && hasComposition)}
+              />
+            )}
             {!compositionIsOwnColumn && hasComposition && def.composedOf && (
               <>
                 <Text style={styles.subheading}>Composition</Text>
-                <CompositionFacts composedOf={def.composedOf} />
+                <CompositionFacts composedOf={def.composedOf} lastIsFlush />
               </>
             )}
           </View>
           {compositionIsOwnColumn && def.composedOf && (
             <View style={columnStyle}>
               <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Composition</Text>
-              <CompositionFacts composedOf={def.composedOf} />
+              <CompositionFacts composedOf={def.composedOf} lastIsFlush />
             </View>
           )}
         </View>
@@ -153,17 +167,13 @@ const styles = StyleSheet.create({
   column: { flex: 1, minWidth: 0 },
   columnStacked: { minWidth: 0 },
   heading: {
-    fontSize: CATALOG_TYPE.panelHeading,
-    fontWeight: '700',
-    letterSpacing: 0.52,
-    textTransform: 'uppercase',
+    ...CATALOG_TEXT.label,
     color: CATALOG_COLOR.text,
     marginBottom: 10,
   },
-  body: { fontSize: CATALOG_TYPE.md, lineHeight: 20, color: CATALOG_COLOR.textMuted },
+  body: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted },
   subheading: {
-    fontSize: CATALOG_TYPE.sm,
-    fontWeight: '700',
+    ...CATALOG_TEXT.captionStrong,
     color: CATALOG_COLOR.text,
     marginTop: CATALOG_SPACE.md,
     marginBottom: CATALOG_SPACE.xs,
@@ -175,14 +185,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: CATALOG_COLOR.borderSubtle,
   },
-  factLabel: { flexShrink: 1, minWidth: 0, fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
-  factValue: { minWidth: 0, fontSize: CATALOG_TYPE.md, lineHeight: 20, textAlign: 'left', color: CATALOG_COLOR.textMuted },
+  factLast: { paddingBottom: 0, borderBottomWidth: 0 },
+  factLabel: { flexShrink: 1, minWidth: 0, ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.text },
+  factValue: { minWidth: 0, ...CATALOG_TEXT.body, textAlign: 'left', color: CATALOG_COLOR.textMuted },
   // `wordBreak` isn't in the installed `TextStyle` type (RN's own, not RNW's — RNW's own
   // `Text/types.js` declares it; a browser applies any valid CSS property name it recognizes
   // regardless), so a bare literal here would report an unknown property under `--noEmit` even
   // though it genuinely works: a long unbroken token (a source path with no spaces, e.g.
   // `AnimatedChevron.tsx`) has no space for the browser's default line-breaking to use, so without
   // this it stays one unbroken run and overflows a narrow card instead of wrapping at its '/'s.
-  mono: { fontFamily: CATALOG_COLOR.code, wordBreak: 'break-word' } as TextStyle,
-  empty: { fontSize: CATALOG_TYPE.sm, fontStyle: 'italic', color: CATALOG_COLOR.textMuted },
+  mono: { ...CATALOG_TEXT.code, wordBreak: 'break-word' } as TextStyle,
+  empty: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
 });

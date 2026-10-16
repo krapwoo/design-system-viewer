@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Pressable, ScrollView, StyleSheet, Text, View, findNodeHandle } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
-import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
 import { UpdatePanel } from './UpdatePanel';
@@ -101,11 +101,11 @@ const bannerStyles = StyleSheet.create({
     paddingHorizontal: 14,
     marginBottom: 18,
   },
-  text: { flex: 1, fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.warning },
-  bold: { fontWeight: '700' },
-  link: { color: CATALOG_COLOR.warning, fontWeight: '700', textDecorationLine: 'underline' },
+  text: { flex: 1, ...CATALOG_TEXT.body, color: CATALOG_COLOR.warning },
+  bold: { ...CATALOG_TEXT.bodyStrong },
+  link: { ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.warning, textDecorationLine: 'underline' },
   close: { width: 32, height: 32, borderRadius: CATALOG_RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
-  closeGlyph: { fontSize: CATALOG_TYPE.xl, color: CATALOG_COLOR.warning },
+  closeGlyph: { ...CATALOG_TEXT.icon, color: CATALOG_COLOR.warning },
 });
 
 /**
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
   // A `BoundedOverlayViewport` child document's own root: no sidebar/chrome, just the one
   // addressed node — sized by whatever that node itself renders, not the catalog's own layout.
   overlayDocumentRoot: { flex: 1 },
-  overlayUnavailable: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted, padding: CATALOG_SPACE.lg },
+  overlayUnavailable: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, padding: CATALOG_SPACE.lg },
   main: { flex: 1 },
   mainContent: {
     width: '100%',
@@ -336,5 +336,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: CATALOG_LAYOUT.mainPaddingX,
     paddingBottom: CATALOG_SPACE['3xl'],
   },
-  empty: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted },
+  empty: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted },
 });

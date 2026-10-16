@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
+import { CATALOG_TEXT, CATALOG_COLOR, CATALOG_SPACE } from './tokens';
 import { PROPS_COLUMN_GAP } from './comparison';
 import type { PropDef } from './types';
 
@@ -86,14 +86,14 @@ const styles = StyleSheet.create({
   rowFirst: { paddingTop: 0 },
   rowLast: { borderBottomWidth: 0, paddingBottom: 0 },
   header: { width: 140, gap: 2 },
-  name: { fontSize: CATALOG_TYPE.sm, fontFamily: CATALOG_COLOR.code, fontWeight: '700', color: CATALOG_COLOR.text },
-  optionalMark: { fontWeight: '400', color: CATALOG_COLOR.textMuted },
-  type: { fontSize: CATALOG_TYPE.xs, fontFamily: CATALOG_COLOR.code, color: CATALOG_COLOR.accent },
+  name: { ...CATALOG_TEXT.codeSmallStrong, color: CATALOG_COLOR.text },
+  optionalMark: { ...CATALOG_TEXT.codeSmall, color: CATALOG_COLOR.textMuted },
+  type: { ...CATALOG_TEXT.codeMicro, color: CATALOG_COLOR.accent },
   // The second column — description + default — sized by the row's remaining width.
   body: { flex: 1, gap: 2 },
-  desc: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted, lineHeight: 17 },
-  default: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted },
-  defaultVal: { fontFamily: CATALOG_COLOR.code, color: CATALOG_COLOR.textMuted },
+  desc: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
+  default: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
+  defaultVal: { ...CATALOG_TEXT.codeMicro, color: CATALOG_COLOR.textMuted },
   gridRow: { flexDirection: 'row', gap: PROPS_COLUMN_GAP },
   cell: { flex: 1, minWidth: 0, paddingVertical: CATALOG_SPACE.md, gap: 4 },
   cellDivider: { borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },

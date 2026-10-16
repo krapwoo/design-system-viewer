@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS, CATALOG_LAYOUT } from './tokens';
+import { CATALOG_TEXT, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS, CATALOG_LAYOUT } from './tokens';
 
 /**
  * Plain search input for filtering the catalog's own sidebar nav. Deliberately built from bare
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     backgroundColor: CATALOG_COLOR.surfaceMuted,
   },
   boxFocused: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
-  input: { flex: 1, fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.text, padding: 0 },
+  input: { flex: 1, ...CATALOG_TEXT.body, color: CATALOG_COLOR.text, padding: 0 },
   // A full 44×44 target: react-native-web does not honor hitSlop for pointer or keyboard.
   clearButton: {
     width: CATALOG_LAYOUT.controlSize, height: CATALOG_LAYOUT.controlSize,
@@ -82,5 +82,5 @@ const styles = StyleSheet.create({
   },
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
   clearButtonActive: { backgroundColor: CATALOG_COLOR.surfacePressed },
-  clear: { fontSize: CATALOG_TYPE.lg, color: CATALOG_COLOR.textMuted, paddingHorizontal: 2 },
+  clear: { ...CATALOG_TEXT.icon, color: CATALOG_COLOR.textMuted, paddingHorizontal: 2 },
 });

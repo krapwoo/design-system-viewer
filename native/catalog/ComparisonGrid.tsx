@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_TEXT } from './tokens';
 import { COLUMN_MIN_WIDTH, MATRIX_LAYOUT, axisItems, cellKey, gridMinWidth, indexCells, validateComparison } from './comparison';
 import { SpecimenContent, SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
   headerCell: { backgroundColor: CATALOG_COLOR.surfaceMuted, justifyContent: 'center' },
   bodyRow: { minHeight: MATRIX_LAYOUT.rowMinHeight },
   specimenCell: { alignItems: 'center', justifyContent: 'center' },
-  headerText: { fontSize: CATALOG_TYPE.tableHeader, fontWeight: '800', letterSpacing: 0.44, color: CATALOG_COLOR.text },
-  rowHeaderText: { fontSize: CATALOG_TYPE.md, fontWeight: '700', color: CATALOG_COLOR.text },
-  unavailable: { fontSize: CATALOG_TYPE.sm, fontStyle: 'italic', textAlign: 'center', color: CATALOG_COLOR.textMuted },
+  headerText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
+  rowHeaderText: { ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.text },
+  unavailable: { ...CATALOG_TEXT.caption, textAlign: 'center', color: CATALOG_COLOR.textMuted },
 });

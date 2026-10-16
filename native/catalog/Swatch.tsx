@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { CATALOG_TYPE, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './tokens';
+import { CATALOG_TEXT, CATALOG_COLOR, CATALOG_SPACE, CATALOG_RADIUS } from './tokens';
 
 /** One token swatch: its rendered value (a colour chip) plus name/value as data — the shared shape
  *  behind every Colors gallery (this framework's own, and any host app's, e.g. the Native App DS
@@ -35,6 +35,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: CATALOG_COLOR.border,
   },
-  name: { fontSize: CATALOG_TYPE.sm, fontWeight: '700', color: CATALOG_COLOR.text },
-  value: { fontSize: CATALOG_TYPE.xs, color: CATALOG_COLOR.textMuted },
+  name: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
+  value: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
 });

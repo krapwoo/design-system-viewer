@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
-import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
+import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { motionReplayLabel, motionTranslatesDirectly, motionValueTarget, type MotionValueRange } from './motionValueDomain';
 
 /** `Animated.spring`'s physics fields — the same shape as a design system's own spring-config
@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
     backgroundColor: CATALOG_COLOR.accent,
   },
   footer: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md },
-  label: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
+  label: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
   labelSpacer: { flex: 1 },
   replayButton: {
     paddingHorizontal: CATALOG_SPACE.md,
@@ -148,5 +148,5 @@ const styles = StyleSheet.create({
     backgroundColor: CATALOG_COLOR.surface,
   },
   replayButtonPressed: { backgroundColor: CATALOG_COLOR.surfacePressed },
-  replayText: { fontSize: CATALOG_TYPE.sm, fontWeight: '700', color: CATALOG_COLOR.text },
+  replayText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
 });
