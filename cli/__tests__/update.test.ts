@@ -182,6 +182,105 @@ test('a local checkout is refused, and nothing is installed over it', async () =
   rmSync(dir, { recursive: true, force: true });
 });
 
+// Frozen scope, interactive CLI revalidation: a file changing while the confirmation prompt was
+// open (e.g. a concurrent edit, or another process finishing its own update) must never be
+// overwritten by an install that was approved against a now-stale plan.
+test('interactive confirmation revalidates immediately before install, and never calls install when the plan changed', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl, calls } = recordingExec({ 'npm install': '', 'node migrate': '', 'node doctor': '0 errors, 0 warnings' });
+  let buildPlanCalls = 0;
+  const buildPlan = async () => {
+    buildPlanCalls += 1;
+    // First call (before the prompt) sees a clean plan; the revalidation call right after
+    // confirmation (before install) sees a file that became dirty in the meantime.
+    return buildPlanCalls === 1 ? samplePlan() : samplePlan({ dirtyFiles: ['package.json'] });
+  };
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, confirm: () => true, currentVersion: '0.4.0' });
+  assert.equal(buildPlanCalls, 2);
+  assert.deepEqual(calls, [], 'install must never run against a superseded plan');
+  assert.match(result.output, /plan changed/i);
+  assert.equal(result.exitCode, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// Minor finding, consolidated correction pass: a plan `{ error }` during revalidation (e.g. a
+// transient registry failure) is not the same event as a genuinely changed plan, and must not
+// claim "a file changed, or a newer version appeared", which did not happen.
+test('interactive confirmation revalidating to a plan error reports it distinctly from a changed plan', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl, calls } = recordingExec({ 'npm install': '', 'node migrate': '', 'node doctor': '0 errors, 0 warnings' });
+  let buildPlanCalls = 0;
+  const buildPlan = async () => {
+    buildPlanCalls += 1;
+    return buildPlanCalls === 1 ? samplePlan() : { error: "Couldn't prepare the update." };
+  };
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, confirm: () => true, currentVersion: '0.4.0' });
+  assert.equal(buildPlanCalls, 2);
+  assert.deepEqual(calls, [], 'install must never run against a failed revalidation');
+  assert.match(result.output, /Couldn't re-check the plan/i);
+  assert.ok(!/plan changed/i.test(result.output), 'must not claim the plan changed when it merely failed to re-check');
+  assert.equal(result.exitCode, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// Minor finding, successor review: "Already on the latest version" shares the same `{ error }`
+// channel as a genuine revalidation failure, but it is not a failure — the pre-prompt path reports
+// it with exit 0, and the revalidation path must match, not fall into the generic error branch.
+test('interactive confirmation revalidating to already-up-to-date returns exit 0 with that message, and never calls install', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl, calls } = recordingExec({ 'npm install': '', 'node migrate': '', 'node doctor': '0 errors, 0 warnings' });
+  let buildPlanCalls = 0;
+  const buildPlan = async () => {
+    buildPlanCalls += 1;
+    return buildPlanCalls === 1 ? samplePlan() : { error: 'Already on the latest version (0.4.0).' };
+  };
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, confirm: () => true, currentVersion: '0.4.0' });
+  assert.equal(buildPlanCalls, 2);
+  assert.deepEqual(calls, [], 'install must never run once revalidation finds the version already up to date');
+  assert.equal(result.output, 'Already on the latest version (0.4.0).');
+  assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('interactive confirmation revalidates and stops when a newer version appeared in the meantime', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl, calls } = recordingExec({ 'npm install': '', 'node migrate': '', 'node doctor': '0 errors, 0 warnings' });
+  let buildPlanCalls = 0;
+  const buildPlan = async () => {
+    buildPlanCalls += 1;
+    return buildPlanCalls === 1 ? samplePlan({ latest: '0.5.0' }) : samplePlan({ latest: '0.6.0' });
+  };
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, confirm: () => true, currentVersion: '0.4.0' });
+  assert.deepEqual(calls, []);
+  assert.match(result.output, /plan changed/i);
+  assert.equal(result.exitCode, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('--yes never revalidates: it proceeds from the plan already built, calling buildPlan exactly once', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl, calls } = recordingExec({ 'npm install': '', 'node migrate': '', 'node doctor': '0 errors, 0 warnings' });
+  let buildPlanCalls = 0;
+  const buildPlan = async () => { buildPlanCalls += 1; return samplePlan(); };
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, yes: true, currentVersion: '0.4.0' });
+  assert.equal(buildPlanCalls, 1);
+  assert.deepEqual(calls, ['npm install', 'node migrate', 'node doctor']);
+  assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('interactive confirmation revalidating to an unchanged, still-clean plan proceeds normally', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-'));
+  const { execImpl, calls } = recordingExec({ 'npm install': '', 'node migrate': '', 'node doctor': '0 errors, 0 warnings' });
+  let buildPlanCalls = 0;
+  const buildPlan = async () => { buildPlanCalls += 1; return samplePlan(); };
+  const result = await runUpdate(baseConfig(dir), { buildPlan, execImpl, confirm: () => true, currentVersion: '0.4.0' });
+  assert.equal(buildPlanCalls, 2);
+  assert.deepEqual(calls, ['npm install', 'node migrate', 'node doctor']);
+  assert.equal(result.exitCode, 0);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('a registry dependency still updates, and stays in its own section', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'dsv-update-registry-'));
   // Declared under dependencies, not devDependencies: the install must not move it.

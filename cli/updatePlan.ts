@@ -1,10 +1,11 @@
 // cli/updatePlan.ts
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { detectPackageManager, platformCommand, type PackageManager } from './packageManager.ts';
+import { isSafeNpmLockfileBump, isSafePackageJsonBump } from './dependencyBumpProof.ts';
 import { listKitFileDiffs } from './kitDiff.ts';
 import { extractSummaryBullets, fetchWithTimeout } from './updateCheck.ts';
 import { compareVersions, isBreakingUpgrade, parseVersion } from './semver.ts';
@@ -52,6 +53,13 @@ export interface BuildPlanOptions {
    *  fake returns already-project-relative paths directly, exactly as every existing test here
    *  already does — `plannedPaths` only matters to the real implementation. */
   gitStatusImpl?: (projectRoot: string, plannedPaths: string[]) => string | undefined;
+  /** `git show HEAD:path`'s content for exactly one planned file, or `undefined` when it can't be
+   *  read (missing at `HEAD`, a real git failure, anything) — frozen scope's superseded-update
+   *  proof fails closed on `undefined`, so the real default below never needs to distinguish why. */
+  gitShowImpl?: (projectRoot: string, filePath: string) => string | undefined;
+  /** The working tree's own content for exactly one planned file, or `undefined` when it can't be
+   *  read (deleted, permissions, anything). */
+  readWorkingFileImpl?: (projectRoot: string, filePath: string) => string | undefined;
 }
 
 function tarballFileName(version: string): string {
@@ -69,17 +77,69 @@ function lockfileName(pm: PackageManager): string {
  *  this plan's own `files` list names), never the old one (Important finding, Fable correction
  *  pass: `R  old -> new` was previously read as the single literal path `"old -> new"`, which
  *  could never match a planned file). */
-function parseDirtyPaths(porcelain: string): Set<string> {
-  return new Set(
-    porcelain
-      .split('\n')
-      .filter((line) => line.length > 3)
-      .map((line) => {
-        const raw = line.slice(3).trim();
-        const arrow = raw.indexOf(' -> ');
-        return arrow === -1 ? raw : raw.slice(arrow + 4);
-      }),
-  );
+interface DirtyEntry {
+  path: string;
+  /** `git status --porcelain`'s own two-letter `XY` code — used by the superseded-update proof
+   *  below to refuse anything other than a plain modification (never an add, delete, rename, or
+   *  untracked file, which the proof's content comparison alone can't always rule out). */
+  code: string;
+}
+
+function parseDirtyEntries(porcelain: string): DirtyEntry[] {
+  return porcelain
+    .split('\n')
+    .filter((line) => line.length > 3)
+    .map((line) => {
+      const code = line.slice(0, 2);
+      const raw = line.slice(3).trim();
+      const arrow = raw.indexOf(' -> ');
+      return { path: arrow === -1 ? raw : raw.slice(arrow + 4), code };
+    });
+}
+
+/** Only a plain modification, staged or not (`" M"`, `"M "`, `"MM"`) — never an add, delete,
+ *  rename, or untracked file (`"A "`, `"D "`, `"R "`, `"??"`, …), which the content-only proof
+ *  below can't always distinguish from a genuine edit on its own. */
+function isPlainModification(code: string): boolean {
+  return code !== '  ' && /^[ M]{2}$/.test(code);
+}
+
+// Exported for the integration test only (verifies the real git/filesystem behavior for a
+// subdirectory project); every other caller goes through `BuildPlanOptions`.
+export function defaultGitShow(projectRoot: string, filePath: string): string | undefined {
+  try {
+    // `<rev>:<path>` is resolved relative to the *repository root* — only a `./`-prefixed path is
+    // resolved relative to `cwd` (`projectRoot`), which is what `filePath` (already stripped to be
+    // project-relative) needs for any project in a subdirectory.
+    return execFileSync('git', ['show', `HEAD:./${filePath}`], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  } catch {
+    return undefined;
+  }
+}
+
+export function defaultReadWorkingFile(projectRoot: string, filePath: string): string | undefined {
+  try {
+    return readFileSync(path.join(projectRoot, filePath), 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+/** Frozen scope's one safe case: a dirty `package.json`/npm `package-lock.json` that provably
+ *  differs from `HEAD` solely by a prior, already-finished bump to `currentVersion` (the viewer
+ *  version this very process is running). Every other package manager's lockfile stays
+ *  conservative — unproven, and so left dirty. */
+function isSafeSupersededDependencyFile(
+  filePath: string,
+  pm: PackageManager,
+  currentVersion: string,
+  headRaw: string | undefined,
+  workingRaw: string | undefined,
+): boolean {
+  if (headRaw === undefined || workingRaw === undefined) return false;
+  if (filePath === 'package.json') return isSafePackageJsonBump(headRaw, workingRaw, currentVersion);
+  if (pm === 'npm' && filePath === lockfileName(pm)) return isSafeNpmLockfileBump(headRaw, workingRaw, currentVersion);
+  return false;
 }
 
 /** Strips the repository-root prefix `git rev-parse --show-prefix` reports from every path in a
@@ -156,6 +216,8 @@ export async function buildUpdatePlan(
   const fetchImpl = options.fetchImpl ?? fetch;
   const tmpDirImpl = options.tmpDirImpl ?? (() => mkdtempSync(path.join(tmpdir(), 'ds-viewer-update-')));
   const gitStatusImpl = options.gitStatusImpl ?? defaultGitStatus;
+  const gitShowImpl = options.gitShowImpl ?? defaultGitShow;
+  const readWorkingFileImpl = options.readWorkingFileImpl ?? defaultReadWorkingFile;
 
   // Important finding, Fable correction pass: a real, unreachable registry otherwise hangs `npm
   // view`/`npm pack` for minutes (observed: "Checking…" sat for 140s, with `/update/status` not
@@ -234,8 +296,23 @@ export async function buildUpdatePlan(
     return { error: `Couldn't check for uncommitted changes (git): ${(error as Error).message}` };
   }
   const outsideGitRepo = porcelain === undefined;
-  const dirtyPaths = porcelain === undefined ? new Set<string>() : parseDirtyPaths(porcelain);
+  const dirtyEntries = porcelain === undefined ? [] : parseDirtyEntries(porcelain);
+  const dirtyPaths = new Set(dirtyEntries.map((entry) => entry.path));
   for (const file of files) file.dirty = dirtyPaths.has(file.path);
+
+  // Frozen scope: a dirty `package.json`/npm lockfile is resolved back to clean only when it
+  // provably differs from `HEAD` solely by a prior, already-finished bump to `currentVersion` —
+  // never for an add, delete, rename, or untracked file, which `isPlainModification` rules out
+  // before the content proof is even attempted.
+  const codeByPath = new Map(dirtyEntries.map((entry) => [entry.path, entry.code]));
+  for (const file of files) {
+    if (!file.dirty || (file.path !== 'package.json' && file.path !== lockfileName(pm))) continue;
+    const code = codeByPath.get(file.path);
+    if (!code || !isPlainModification(code)) continue;
+    const headRaw = gitShowImpl(config.projectRoot, file.path);
+    const workingRaw = readWorkingFileImpl(config.projectRoot, file.path);
+    if (isSafeSupersededDependencyFile(file.path, pm, currentVersion, headRaw, workingRaw)) file.dirty = false;
+  }
 
   let summary: string[] = [];
   let releasedAt: string | undefined;
