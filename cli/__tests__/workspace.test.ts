@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import * as ts from 'typescript';
-import { writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock, missingWorkspaceFiles, WORKSPACE_DEFINING_FILES } from '../workspace.ts';
+import {
+  writeWorkspace, workspacePath, clearDevLock, liveDevLock, writeDevLock, missingWorkspaceFiles, WORKSPACE_DEFINING_FILES,
+  readEndpointRecord, writeEndpointRecord,
+} from '../workspace.ts';
 import { repairWorkspaceIfMissing } from '../dev.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from '../types.ts';
 import type { ResolvedConfig } from '../types.ts';
@@ -374,6 +377,68 @@ test('an intact workspace is left alone and reports no repair', () => {
   });
   assert.deepEqual(result, { missing: [], repaired: false });
   assert.equal(logged, 0, 'an intact workspace says nothing');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readEndpointRecord returns undefined when nothing has been written yet', () => {
+  const projectRoot = copyFixture();
+  assert.equal(readEndpointRecord({ projectRoot }), undefined);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeEndpointRecord then readEndpointRecord round-trips the port and secret', () => {
+  const projectRoot = copyFixture();
+  writeEndpointRecord({ projectRoot }, { port: 54321, secret: 'a'.repeat(32) });
+  assert.deepEqual(readEndpointRecord({ projectRoot }), { port: 54321, secret: 'a'.repeat(32) });
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readEndpointRecord treats a corrupt record as absent rather than throwing', () => {
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR), { recursive: true });
+  writeFileSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR, 'endpoint.json'), '{ "port": ');
+  assert.equal(readEndpointRecord({ projectRoot }), undefined);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readEndpointRecord treats a record missing a field as absent', () => {
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR), { recursive: true });
+  writeFileSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR, 'endpoint.json'), JSON.stringify({ port: 54321 }));
+  assert.equal(readEndpointRecord({ projectRoot }), undefined);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('readEndpointRecord treats a secret shorter than 32 characters as absent', () => {
+  // Minor finding, correction pass 4: `bindEndpointServer` never writes a secret this short, but
+  // a hand-written record (e.g. `{"secret":""}`) would otherwise be reused verbatim and
+  // `secretMatches` compares two zero-length buffers as equal, authenticating every request.
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR), { recursive: true });
+  writeFileSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR, 'endpoint.json'), JSON.stringify({ port: 54321, secret: '' }));
+  assert.equal(readEndpointRecord({ projectRoot }), undefined);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeEndpointRecord writes the file with mode 0600', () => {
+  const projectRoot = copyFixture();
+  writeEndpointRecord({ projectRoot }, { port: 54321, secret: 'abc123' });
+  const mode = statSync(path.join(projectRoot, DEFAULT_WORKSPACE_DIR, 'endpoint.json')).mode & 0o777;
+  assert.equal(mode, 0o600);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('writeEndpointRecord tightens a pre-existing record left with looser permissions', () => {
+  // `writeFileSync`'s `mode` option applies only when the file is created, so a record written
+  // by an older version (or left loose by anything else) would keep those permissions across
+  // every later rewrite — the secret inside it would stay world-readable. Only the explicit
+  // `chmodSync` closes that, and the creation-path test above cannot see it.
+  const projectRoot = copyFixture();
+  writeEndpointRecord({ projectRoot }, { port: 54321, secret: 'abc123' });
+  const recordPath = path.join(projectRoot, DEFAULT_WORKSPACE_DIR, 'endpoint.json');
+  chmodSync(recordPath, 0o644);
+  writeEndpointRecord({ projectRoot }, { port: 54322, secret: 'def456' });
+  assert.equal(statSync(recordPath).mode & 0o777, 0o600);
   rmSync(projectRoot, { recursive: true, force: true });
 });
 

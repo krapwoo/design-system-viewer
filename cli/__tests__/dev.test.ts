@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { writePersonalAutoCheck } from '../updateCheck.ts';
-import { assertLocalInstall, isWatchedPath, LocalInstallMissingError, performUpdate, reloadWorkspace, refreshUpdateFile, watchTargetFolders } from '../dev.ts';
+import {
+  assertLocalInstall, bindEndpointServer, isWatchedPath, LocalInstallMissingError, performUpdate, reloadWorkspace, refreshUpdateFile, watchTargetFolders,
+} from '../dev.ts';
 import type { UpdatePlan } from '../updatePlan.ts';
 import type { UpdateStatus } from '../endpoint.ts';
 import type { ResolvedConfig } from '../types.ts';
@@ -336,4 +340,52 @@ test('performUpdate: a local checkout fails the install step instead of replacin
   assert.equal(last.step, 'install');
   assert.match(last.log ?? '', /installed from "workspace:\*"/);
   rmSync(dir, { recursive: true, force: true });
+});
+
+/** Binds a throwaway server to an OS-assigned port on 127.0.0.1, then closes it — stands in for
+ *  "a port nothing is currently using," the same tiny window every other free-port test in this
+ *  repo already accepts (e.g. `findFreePort`). */
+async function freePort(): Promise<number> {
+  const server = http.createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+test('bindEndpointServer reuses the stored port and secret when that port is free', async () => {
+  const port = await freePort();
+  const server = http.createServer();
+  const secretHolder = { secret: 'stored-secret' };
+  const binding = await bindEndpointServer(server, secretHolder, port);
+  assert.deepEqual(binding, { port, reused: true });
+  assert.equal(secretHolder.secret, 'stored-secret', 'the stored secret is kept, not replaced');
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+test('bindEndpointServer silently falls back to a fresh port and secret when the stored port is taken', async () => {
+  const taken = http.createServer();
+  const port = await freePort();
+  await new Promise<void>((resolve) => taken.listen(port, '127.0.0.1', resolve));
+  try {
+    const server = http.createServer();
+    const secretHolder = { secret: 'stored-secret' };
+    const binding = await bindEndpointServer(server, secretHolder, port);
+    assert.equal(binding.reused, false);
+    assert.notEqual(binding.port, port, 'a fresh port was allocated instead');
+    assert.notEqual(secretHolder.secret, 'stored-secret', 'a fresh secret replaces the stale one paired with the old port');
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  } finally {
+    await new Promise<void>((resolve) => taken.close(() => resolve()));
+  }
+});
+
+test('bindEndpointServer allocates a fresh port and secret when there is no stored record at all', async () => {
+  const server = http.createServer();
+  const secretHolder = { secret: '' };
+  const binding = await bindEndpointServer(server, secretHolder, undefined);
+  assert.equal(binding.reused, false);
+  assert.ok(binding.port > 0);
+  assert.notEqual(secretHolder.secret, '');
+  await new Promise<void>((resolve) => server.close(() => resolve()));
 });
