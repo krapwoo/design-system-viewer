@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { resolveConfig } from './config.ts';
 import { sync } from './sync.ts';
-import { clearDevLock, liveDevLock, missingWorkspaceFiles, workspacePath, writeDevLock, writeWorkspace } from './workspace.ts';
+import { clearDevLock, liveDevLock, missingWorkspaceFiles, readEndpointRecord, workspacePath, writeDevLock, writeEndpointRecord, writeWorkspace } from './workspace.ts';
 import { findFreePort } from './port.ts';
 import { globBaseFolder } from './glob.ts';
 import {
@@ -444,6 +444,49 @@ export function repairWorkspaceIfMissing(deps: WorkspaceRepairDeps): { missing: 
   return { missing, repaired: true };
 }
 
+function listenOnce(server: import('node:http').Server, port: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error) => {
+      server.removeListener('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      resolve((server.address() as AddressInfo).port);
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+/** Resolves the update endpoint's real port: the stored record's port when it's actually free, a
+ *  fresh OS-assigned one otherwise. Tries the real bind directly, once — a separate "is this free?"
+ *  probe followed by a real bind would leave a window for something else to take the port in
+ *  between, and could never tell "a foreign process holds it" from "nothing does" anyway, which
+ *  Part 1 says this must never try to resolve: a bind failure for any reason falls back the same
+ *  way, never killing, probing, or assuming ownership of whatever holds it. Mutates
+ *  `secretHolder.secret` to a fresh value only on that fallback path — reusing the stored *port*
+ *  without the *secret* minted for it would pair a stale secret with an address nobody recorded. */
+export async function bindEndpointServer(
+  server: import('node:http').Server,
+  secretHolder: { secret: string },
+  storedPort: number | undefined,
+): Promise<{ port: number; reused: boolean }> {
+  if (storedPort !== undefined) {
+    try {
+      const port = await listenOnce(server, storedPort);
+      return { port, reused: true };
+    } catch {
+      // Taken — by a foreign process, a second catalog, anything. Fall through to a fresh port and
+      // secret below; never retry the same port or investigate what's holding it.
+    }
+  }
+  secretHolder.secret = randomBytes(24).toString('hex');
+  const port = await listenOnce(server, 0);
+  return { port, reused: false };
+}
+
 export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPort?: number; noUpdateEndpoint?: boolean; workspaceDir?: string } = {}): Promise<void> {
   assertLocalInstall(initialConfig.projectRoot);
   const ownVersion = readOwnVersion(import.meta.dirname);
@@ -568,14 +611,19 @@ export async function dev(initialConfig: ResolvedConfig, devOptions: { pinnedPor
   let updateEndpoint: { baseUrl: string; secret: string } | undefined;
   let endpointServer: ReturnType<typeof createUpdateEndpoint> | undefined;
   if (!devOptions.noUpdateEndpoint) {
+    // Reused across restarts so an already-open page's baked-in endpoint keeps working: the
+    // stored record's secret is the candidate here, replaced by `bindEndpointServer` itself only
+    // if the stored port turns out to be taken.
+    const stored = readEndpointRecord(config);
+    endpointDeps.secret = stored?.secret ?? secret;
     endpointServer = createUpdateEndpoint(endpointDeps);
-    await new Promise<void>((resolve) => endpointServer!.listen(0, '127.0.0.1', resolve));
-    const endpointPort = (endpointServer.address() as AddressInfo).port;
+    const binding = await bindEndpointServer(endpointServer, endpointDeps, stored?.port);
+    if (!binding.reused) writeEndpointRecord(config, { port: binding.port, secret: endpointDeps.secret });
     // Printed for the same reason the Metro port above is printed: a developer (or Task 20's own
     // verification) checking the endpoint directly (e.g. with curl) needs its port — the secret
     // itself is never printed; the endpoint rejects anything that doesn't already have it.
-    console.log(`Update endpoint listening on 127.0.0.1:${endpointPort}`);
-    updateEndpoint = { baseUrl: `http://127.0.0.1:${endpointPort}`, secret };
+    console.log(`Update endpoint listening on 127.0.0.1:${binding.port}`);
+    updateEndpoint = { baseUrl: `http://127.0.0.1:${binding.port}`, secret: endpointDeps.secret };
   } else {
     console.log('Update endpoint disabled for this run (--no-update-endpoint).');
   }

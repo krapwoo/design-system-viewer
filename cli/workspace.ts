@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { globBaseFolder } from './glob.ts';
 import { DEFAULT_WORKSPACE_DIR, type ResolvedConfig } from './types.ts';
@@ -170,6 +170,49 @@ export function liveDevLock(
   if (typeof lock.pid !== 'number' || typeof lock.port !== 'number') return undefined;
   if (lock.pid === ownPid || !processAlive(lock.pid)) return undefined;
   return lock;
+}
+
+const ENDPOINT_RECORD_FILE = 'endpoint.json';
+
+/** The update endpoint's own port and secret, as last bound. */
+export interface EndpointRecord {
+  port: number;
+  secret: string;
+}
+
+/** `bindEndpointServer` never writes a secret shorter than this (`randomBytes(24).toString('hex')`
+ *  is 48 characters), so a shorter one can only come from a hand-written record — but a
+ *  hand-written `{"secret":""}` is reused verbatim and `secretMatches` in `cli/endpoint.ts`
+ *  compares two zero-length buffers as equal, authenticating every request. Minor finding,
+ *  correction pass 4: treated the same as any other invalid record field below. */
+const MIN_SECRET_LENGTH = 32;
+
+/** The endpoint address a previous `dev` run bound, so a restart can reuse it instead of minting a
+ *  fresh one — otherwise an already-open page's baked-in endpoint goes stale on every restart.
+ *  Missing, corrupt, or partially-written is all treated the same: absent, so the caller falls
+ *  back to generating a fresh pair exactly as if `dev` had never run before. */
+export function readEndpointRecord(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>): EndpointRecord | undefined {
+  const recordPath = workspacePath(config, ENDPOINT_RECORD_FILE);
+  if (!existsSync(recordPath)) return undefined;
+  try {
+    const record = JSON.parse(readFileSync(recordPath, 'utf8')) as Partial<EndpointRecord>;
+    if (typeof record.port !== 'number' || record.port <= 0 || typeof record.secret !== 'string' || record.secret.length < MIN_SECRET_LENGTH) return undefined;
+    return { port: record.port, secret: record.secret };
+  } catch {
+    return undefined; // A partial write from a process that crashed mid-write owns nothing.
+  }
+}
+
+/** Written with mode 0600 — not a new exposure (the same secret already lands in cleartext inside
+ *  the generated `entry.tsx`, see `writeWorkspace`), but it must not be any more exposed than
+ *  that. `chmodSync` runs in addition to `writeFileSync`'s own `mode` option: that option only
+ *  applies when the file is newly created, so a pre-existing record left with looser permissions
+ *  would otherwise keep them across every later rewrite. */
+export function writeEndpointRecord(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>, record: EndpointRecord): void {
+  mkdirSync(workspacePath(config), { recursive: true });
+  const recordPath = workspacePath(config, ENDPOINT_RECORD_FILE);
+  writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(recordPath, 0o600);
 }
 
 /** The files `writeWorkspace` always writes: the ones that define the workspace to Expo and Metro.

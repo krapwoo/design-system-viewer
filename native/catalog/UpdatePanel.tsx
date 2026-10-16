@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TYPE } from './tokens';
 import { CatalogButton } from './CatalogButton';
 import { DS_VIEWER_SECRET_HEADER } from './catalogNavigation';
 import {
-  autoCheckHelp, bumpLabel, checkedAgoLabel, resultNote, daysAgoLabel, isAlreadyUpToDateError, isRemoteOrigin, resolvePanelPhase, versionOverview, type UpdatePlanView, type UpdateStatusView,
+  acceptsDeliveredStatus, autoCheckHelp, backgroundPlanFetchOutcome, bumpLabel, checkedAgoLabel, resultNote, classifyRejectedFetch, daysAgoLabel, isAlreadyUpToDateError, isRemoteOrigin,
+  nextWaitingAttempt, PLAN_FETCH_ERROR, planShowsError, reachabilityNote, recoveredReachabilityState, remoteOriginLocalErrorMessage,
+  requestOrUnreachable, resolvePanelPhase, restartReachability, statusPollFailureOutcome, versionOverview,
+  type ReachabilityState, type UpdatePlanView, type UpdateStatusView,
 } from './updatePanelState';
 import type { UpdateNotice, VersionStatus } from './types';
 
@@ -18,6 +21,18 @@ function remoteOrigin(endpoint: Endpoint | undefined): boolean {
   if (!endpoint || !isWeb()) return false;
   return isRemoteOrigin(window.location.protocol, window.location.hostname);
 }
+
+/** Minor finding, Fable correction pass: bounds the `waiting` poller's own endpoint retry so a hung
+ *  request (a firewall `DROP`, not a clean refusal) still counts as a failure instead of blocking
+ *  it — and every later retry behind it — forever. */
+const PROBE_TIMEOUT_MS = 3000;
+
+/** Minor finding, correction pass 5: a single rejected `/update/status` while `updating` enters
+ *  `restarting` even when the server never actually went down (a one-off network hiccup, not a
+ *  real restart) — the Metro-origin probe below then never sees a failure, so it never reloads,
+ *  and `restarting` is otherwise terminal in-app. Bounds how long the page waits before offering a
+ *  manual way out, long enough for a real restart's own install-and-relaunch window. */
+const RESTART_RELOAD_TIMEOUT_MS = 15000;
 
 type Endpoint = { baseUrl: string; secret: string };
 
@@ -67,11 +82,42 @@ const NOTE_BOX_VARIANT = {
   ok: { box: { backgroundColor: CATALOG_COLOR.successSubtle }, text: { color: CATALOG_COLOR.success } },
 } as const;
 
-function NoteBox({ variant, children }: { variant: keyof typeof NOTE_BOX_VARIANT; children: React.ReactNode }) {
+/** `spinner` is the approved mockup's own `.row .spin` treatment (waiting only) — a leading
+ *  `ActivityIndicator`, the same primitive `CatalogButton`'s own `busy` state already uses, so
+ *  this isn't a new component or colour. */
+function NoteBox({
+  variant,
+  spinner,
+  live,
+  hint,
+  children,
+}: {
+  variant: keyof typeof NOTE_BOX_VARIANT;
+  spinner?: boolean;
+  /** Only the reachability notes (`waiting`/`recovered`/`stuck`) appear, change and disappear with
+   *  no user action — `ResultNoteBox` already establishes the `role="status"` pattern for its own
+   *  note at :209. Every other `NoteBox` stays silent to a screen reader, same as today. */
+  live?: boolean;
+  /** Minor finding, Fable correction pass #2: a recovery command (e.g. `npx ds-viewer dev`) used
+   *  to render outside this box, so a screen reader announced the problem via `live` but never
+   *  the fix sitting right next to it. Rendered inside the same `role="status"` container so both
+   *  are announced together. */
+  hint?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   const v = NOTE_BOX_VARIANT[variant];
+  const text = <Text style={[styles.noteBoxText, v.text]}>{children}</Text>;
   return (
-    <View style={[styles.noteBox, v.box]}>
-      <Text style={[styles.noteBoxText, v.text]}>{children}</Text>
+    <View style={[styles.noteBox, v.box]} {...(live ? { role: 'status' as const } : {})}>
+      {spinner ? (
+        <View style={styles.noteBoxRow}>
+          <ActivityIndicator size="small" color={CATALOG_COLOR.accent} />
+          {text}
+        </View>
+      ) : (
+        text
+      )}
+      {hint}
     </View>
   );
 }
@@ -133,6 +179,44 @@ function Code({ children }: { children: string }) {
   return <Text style={styles.code}>{children}</Text>;
 }
 
+/** Replaces this page's normal content for `waiting`/`stuck` (approved mockup states 1 and
+ *  "Edge"): the version line stays, but the action goes unavailable rather than offering a press
+ *  that cannot work (decision 3), except `stuck`'s own `Reconnect`. */
+function ReachabilityOverride({
+  reachability,
+  header,
+  actionLabel,
+  onReconnect,
+}: {
+  reachability: ReachabilityState;
+  header: React.ReactNode;
+  actionLabel: string;
+  onReconnect: () => void;
+}) {
+  const note = reachabilityNote(reachability.phase);
+  return (
+    <>
+      {header}
+      <NoteBox
+        variant={note.variant}
+        spinner={note.spinner}
+        live
+        hint={note.hint && <Text style={styles.muted}>{note.hint.prefix}<Code>{note.hint.command}</Code></Text>}
+      >
+        {note.bold ? <Text style={styles.noteBoxBold}>{note.bold}</Text> : null}
+        {note.text}
+      </NoteBox>
+      <View style={styles.actions}>
+        {reachability.phase === 'stuck' ? (
+          <CatalogButton label="Reconnect" variant="secondary" onPress={onReconnect} />
+        ) : (
+          <CatalogButton label={actionLabel} disabled />
+        )}
+      </View>
+    </>
+  );
+}
+
 
 
 /**
@@ -150,6 +234,11 @@ function ResultNoteBox({
   status: Extract<UpdateStatusView, { phase: 'success' | 'failure' }>;
   current: string;
   latest?: string;
+  /** Named for its one legitimate "already running" caller (`noteBusy`/`starting`), but also true
+   *  while the panel is reachability-unavailable (decision 3) — a press can't work for either
+   *  reason, so the button renders the same flat-grey/muted-text treatment
+   *  `CatalogButton.disabled` already uses for both (Minor finding, Fable correction pass #2),
+   *  rather than the full-colour fill at reduced opacity that used to read as merely pressed. */
   busy: boolean;
   onAction: (kind: 'dismiss' | 'retry' | 'resume') => void;
 }) {
@@ -178,9 +267,13 @@ function ResultNoteBox({
           disabled={busy}
           accessibilityRole="button"
           accessibilityState={{ disabled: busy }}
-          style={({ pressed }) => [styles.resultButton, { backgroundColor: tone }, (pressed || busy) && styles.resultButtonPressed]}
+          style={({ pressed }) => [
+            styles.resultButton,
+            busy ? styles.resultButtonDisabled : { backgroundColor: tone },
+            pressed && !busy && styles.resultButtonPressed,
+          ]}
         >
-          <Text style={styles.resultButtonText}>{note.action.label}</Text>
+          <Text style={[styles.resultButtonText, busy && styles.resultButtonTextDisabled]}>{note.action.label}</Text>
         </Pressable>
         {note.hasLog && status.phase === 'failure' && (
           <Pressable onPress={() => setShowLog((v) => !v)} accessibilityRole="button" accessibilityState={{ expanded: showLog }}>
@@ -204,12 +297,20 @@ function VersionDetails({
   endpoint,
   onStatus,
   onCheck,
+  onUnreachable,
+  onReachable,
 }: {
   status: VersionStatus;
   endpoint?: Endpoint;
   onStatus: (next: VersionStatus) => void;
   /** Called as Check now starts (clears an update result note). */
   onCheck?: () => void;
+  /** `authedFetch` itself rejected (the endpoint socket is gone) — the page-wide reachability flow
+   *  takes over; this component shows nothing further for the attempt that triggered it. */
+  onUnreachable?: () => void;
+  /** The endpoint answered, whatever it said — clears a reachability note left over from an
+   *  earlier unreachable attempt, same as every other endpoint call on this page. */
+  onReachable?: () => void;
 }) {
   const [checking, setChecking] = useState(false);
   const [justChecked, setJustChecked] = useState(false);
@@ -225,19 +326,37 @@ function VersionDetails({
     setChecking(true);
     setJustChecked(false);
     setLocalError(undefined);
+    // `requestOrUnreachable` separates a rejected fetch (the endpoint socket is gone) from an
+    // actual response (401/409/502 included) — only the former goes to the shared reachability
+    // flow below; a real HTTP response keeps this `try` block's existing handling untouched.
+    const outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/version/check', { method: 'POST' }));
+    if (outcome.kind === 'unreachable') {
+      // Critical finding, Fable correction pass (C4): a rejected `Origin` (no CORS headers at
+      // all) rejects `fetch` the same way a dead socket does — self-healing is meaningless for a
+      // page that can never use the endpoint, so this must keep the preserved remote-origin/
+      // tunnel message below instead of entering the page-wide reachability flow.
+      if (classifyRejectedFetch(remoteOrigin(endpoint)) === 'remote-origin') {
+        setLocalError(remoteOriginLocalErrorMessage());
+      } else {
+        onUnreachable?.();
+      }
+      setChecking(false);
+      return;
+    }
     try {
-      const res = await authedFetch(endpoint, '/version/check', { method: 'POST' });
+      const res = outcome.response;
       if (!res.ok) throw new Error(String(res.status));
       const next = (await res.json()) as VersionStatus;
       // A newer version moves the whole page into the update flow (the parent re-renders with it).
       setJustChecked(next.lastOutcome === 'ok' && !next.update);
       onStatus(next);
+      onReachable?.();
     } catch {
       setLocalError(remoteOrigin(endpoint)
         // The endpoint only answers its own origin, and it can install packages and restart the
         // server — so saying "restart the viewer" here would send the reader after a fault that
         // isn't there. The page itself is fine over a tunnel; only its actions are local.
-        ? 'This page is open from another address, and the viewer only takes actions from the machine it runs on. Open the catalog on that machine, or run npx ds-viewer update there.'
+        ? remoteOriginLocalErrorMessage()
         : 'Couldn’t reach the viewer’s local server. If this keeps happening, restart npx ds-viewer dev.');
     } finally {
       setChecking(false);
@@ -248,14 +367,25 @@ function VersionDetails({
     if (!endpoint || saving) return;
     setSaving(true);
     setLocalError(undefined);
+    const outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/version/auto-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }));
+    if (outcome.kind === 'unreachable') {
+      // Same reasoning as `checkNow` above.
+      if (classifyRejectedFetch(remoteOrigin(endpoint)) === 'remote-origin') {
+        setLocalError(remoteOriginLocalErrorMessage());
+      } else {
+        onUnreachable?.();
+      }
+      setSaving(false);
+      return;
+    }
     try {
-      const res = await authedFetch(endpoint, '/version/auto-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      onStatus((await res.json()) as VersionStatus);
+      if (!outcome.response.ok) throw new Error(String(outcome.response.status));
+      onStatus((await outcome.response.json()) as VersionStatus);
+      onReachable?.();
     } catch {
       setLocalError('Couldn’t save the setting. Try again.');
     } finally {
@@ -358,6 +488,13 @@ export function UpdatePanel({
   headingRef?: React.Ref<View>;
 }) {
   const [status, setStatus] = useState<UpdateStatusView>({ phase: 'idle' });
+  // Critical finding, Fable correction pass (C6): mirrors `status`, read instead of a value
+  // assigned inside a `setStatus` updater — updaters run during React's render phase, not at
+  // dispatch, so a read-after-write inside one can see stale or re-invoked state.
+  const statusRef = useRef<UpdateStatusView>(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
   const [planResult, setPlanResult] = useState<UpdatePlanView | { error: string } | undefined>(undefined);
   // Critical finding, Fable correction pass: while this is true, the endpoint's own `/update` POST
   // is in flight (re-planning before it can even start) — **Update now** must disable itself for
@@ -366,31 +503,175 @@ export function UpdatePanel({
   const [starting, setStarting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
+  // Important finding, Fable correction pass (I4): the catalog is a single-page app, so a probe
+  // started before the user navigates away can still resolve after this component unmounts — set
+  // once, on unmount, and checked after every `await` below before any state is dispatched or the
+  // page is reloaded out from under whatever's there now.
+  const cancelledRef = useRef(false);
+  useEffect(() => () => {
+    cancelledRef.current = true;
+  }, []);
+
+  // The page-wide reachability flow (approved `.hermes-task/approved-unreachable-states.html`):
+  // shared by every endpoint call below and by `VersionDetails`' own calls, since the two UI modes
+  // are never visible at once. `undefined` means "nothing wrong" — the same convention
+  // `UpdateStatusView`'s `idle` phase already uses for "nothing in flight".
+  const [reachability, setReachability] = useState<ReachabilityState | undefined>(undefined);
+  const reachabilityRef = useRef<ReachabilityState | undefined>(undefined);
+  useEffect(() => {
+    reachabilityRef.current = reachability;
+  }, [reachability]);
+
+  // Critical finding, Fable correction pass (C4): a page that can never use the endpoint at all
+  // (a tunnel, or a plain `127.0.0.1` the endpoint's own Origin check rejects) gets no
+  // self-healing — see `routeUnreachable` below. Kept apart from `reachability` because the two
+  // conditions are mutually exclusive and need entirely different, non-retrying treatment.
+  const [remoteOriginError, setRemoteOriginError] = useState(false);
+
+  // Called by `routeUnreachable` below for a rejected fetch this page can actually recover from.
+  // Final slice: a stable endpoint address means the `waiting` poller's own direct endpoint retry
+  // (below) is the whole recovery mechanism, so this just advances the bounded attempt counter —
+  // no origin probe, no reload, no marker.
+  const markUnreachable = useCallback(() => {
+    if (!isWeb()) return;
+    setReachability((prev) => nextWaitingAttempt(prev ?? { phase: 'waiting', attempts: 0 }));
+  }, []);
+
+  // Critical finding, Fable correction pass (C4): the one place every rejected-fetch call site on
+  // this page routes through. `cli/endpoint.ts` answers a rejected `Origin` with no CORS headers
+  // at all, so the browser blocks the response and `fetch` rejects exactly like a dead socket —
+  // without this check first, that rejection used to enter the reachability flow and reload, then
+  // sit there "still not answering" forever, for a page that was never going to be able to act
+  // regardless.
+  const routeUnreachable = useCallback(() => {
+    if (classifyRejectedFetch(remoteOrigin(endpoint)) === 'remote-origin') {
+      setRemoteOriginError(true);
+      return;
+    }
+    markUnreachable();
+  }, [endpoint, markUnreachable]);
+
+  // Important finding, Fable correction pass #2: a background poll (`fetchStatus`/`fetchPlan`,
+  // both run unprompted on mount and on a plain interval) must never latch `remoteOriginError` —
+  // that replaces the whole page with a red error for every non-`localhost` page (a tunnel, LAN
+  // address, reverse proxy, or plain `127.0.0.1`) the instant it loads, something the user never
+  // triggered. Only a user-initiated call (`startUpdate`, `dismissResult`, `resumeResult`, and
+  // `VersionDetails`' own handlers, which already own their local copy of the message) may show
+  // that error, via `routeUnreachable` above. A genuinely unreachable endpoint (not a
+  // remote-origin refusal) still enters the reachability flow either way.
+  // Correction pass 3: reports back whether it actually did anything (`true` once it has entered
+  // the reachability flow, `false` when it declined to for a remote-origin page) — a background
+  // caller that can't just swallow a refusal (`fetchPlan` below) needs to know so it can apply its
+  // own fallback instead of leaving required state unset.
+  const routeUnreachableInBackground = useCallback((): boolean => {
+    if (classifyRejectedFetch(remoteOrigin(endpoint)) === 'remote-origin') return false;
+    markUnreachable();
+    return true;
+  }, [endpoint, markUnreachable]);
+
+  // Called by any endpoint call on this page that got a real response — clears a reachability
+  // note left over from an earlier unreachable attempt (a no-op the vast majority of the time).
+  const markReachable = useCallback(() => {
+    if (!isWeb()) return;
+    // Important finding, Fable correction pass (I2): computed from the ref, not from inside the
+    // `setReachability` updater — a re-invoked updater could otherwise read the state it just set
+    // on a prior invocation and settle back on "nothing to recover," silently losing the approved
+    // "Reconnected." note.
+    const next = recoveredReachabilityState(reachabilityRef.current);
+    if (next) setReachability(next);
+  }, []);
+
+  // "Recovered: … auto-dismissing" (approved design) — a plain timeout, cleared on unmount or on
+  // leaving the state early (e.g. another unreachable attempt right after recovering).
+  useEffect(() => {
+    if (reachability?.phase !== 'recovered') return;
+    const timeout = setTimeout(() => setReachability(undefined), 3000);
+    return () => clearTimeout(timeout);
+  }, [reachability?.phase]);
+
+  // Part 3 (final slice): one explicit, user-initiated reload — the only reload left anywhere in
+  // this flow. Restarts the bounded cycle first so that if `window.location.reload()` turns out
+  // to be a no-op (some embedded webviews block it), the page falls back to retrying the endpoint
+  // in place instead of sitting on `stuck` with a press that silently did nothing.
+  const reconnect = useCallback(() => {
+    if (!isWeb()) return;
+    setReachability(restartReachability());
+    window.location.reload();
+  }, []);
+
   const fetchStatus = useCallback(async () => {
     if (!endpoint || !isWeb()) return;
-    try {
-      const res = await authedFetch(endpoint, '/update/status');
-      setStatus((await res.json()) as UpdateStatusView);
-    } catch {
-      // Errata 2a: the endpoint's own process exits mid-restart — a failed poll while an update
-      // was in flight or already restarting means "still restarting," not "idle again."
-      setStatus((prev) => (prev.phase === 'updating' || prev.phase === 'restarting' ? { phase: 'restarting' } : prev));
+    const outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/update/status'));
+    if (outcome.kind === 'unreachable') {
+      // Errata 2a: a failed poll while an update was in flight or already restarting means "still
+      // restarting," not unreachable — the dedicated restart-handoff effect below already owns
+      // that recovery, so this page-wide flow only takes over for every other phase.
+      const fallback = statusPollFailureOutcome(statusRef.current.phase);
+      if (fallback) {
+        setStatus(fallback);
+      } else {
+        routeUnreachableInBackground();
+      }
+      return;
     }
-  }, [endpoint]);
+    try {
+      // Critical finding, Fable correction pass (C1): a delivered-but-unusable response (a stale
+      // secret on a reused port answers 401 `text/plain`, with CORS headers, so it's delivered and
+      // `.json()` rejects) is not "unreachable" — the endpoint answered — so it must not enter the
+      // reachability flow; fall back the same way a failed poll mid-update already does.
+      if (!outcome.response.ok) throw new Error(String(outcome.response.status));
+      const next = (await outcome.response.json()) as UpdateStatusView;
+      // Correction pass 4 (Critical): once restarted, this poll reaches the server on the same
+      // reused address and succeeds before Metro has served the new bundle — only the Metro-origin
+      // reload poller below may move the page out of `restarting`.
+      if (acceptsDeliveredStatus(statusRef.current.phase, next.phase)) setStatus(next);
+      markReachable();
+    } catch {
+      const fallback = statusPollFailureOutcome(statusRef.current.phase);
+      if (fallback) setStatus(fallback);
+    }
+  }, [endpoint, routeUnreachableInBackground, markReachable]);
 
-  const fetchPlan = useCallback(async () => {
-    if (!endpoint || !isWeb()) return;
+  // Part 4 (final slice): returns whether the endpoint was actually reached, so a caller that's
+  // about to claim "Reconnected. Everything below is current." (the waiting poller's success
+  // branch, below) can gate that claim on this fetch having actually succeeded, instead of
+  // assuming it did just because an earlier call in the same tick did.
+  // Correction pass 5 (Important): also returns the plan it just stored, taken from the fetch
+  // itself rather than left for the caller to read back from a ref — a ref filled in by a passive
+  // effect only updates once React flushes effects after this render, which is always later than
+  // the very next line of an async caller, so that read would deterministically see the prior
+  // plan, never this one.
+  const fetchPlan = useCallback(async (): Promise<{ reached: boolean; result?: UpdatePlanView | { error: string } }> => {
+    if (!endpoint || !isWeb()) return { reached: true };
     // Important finding, Fable correction pass: an unhandled rejection here (the endpoint
     // unreachable, CORS-blocked, or mid-restart) previously left `planResult` `undefined` forever
     // — the panel sat on "Checking…" with no way out. The same error shape `buildUpdatePlan`
-    // itself returns on failure drives the existing `offline` phase.
-    try {
-      const res = await authedFetch(endpoint, '/plan', { method: 'POST' });
-      setPlanResult((await res.json()) as UpdatePlanView | { error: string });
-    } catch {
-      setPlanResult({ error: "Couldn't prepare the update. You may be offline, or npm didn't respond. Nothing was changed." });
+    // itself returns on failure drives the existing `offline` phase. A genuinely unreachable
+    // endpoint (the socket itself is gone) now goes through the shared reachability flow instead.
+    const outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/plan', { method: 'POST' }));
+    if (outcome.kind === 'unreachable') {
+      // Correction pass 3: a remote-origin page's refusal leaves `routeUnreachableInBackground`
+      // reporting `false` — apply the same offline plan-error outcome the `catch` below already
+      // shows for every other plan failure, rather than leaving `planResult` (and the panel) stuck
+      // on `undefined`/"Checking…" forever.
+      const fallback = backgroundPlanFetchOutcome(routeUnreachableInBackground());
+      if (fallback) setPlanResult(fallback);
+      return { reached: false };
     }
-  }, [endpoint]);
+    try {
+      // Critical finding, Fable correction pass (C1): see `fetchStatus` above — a delivered 401
+      // (stale secret) must fall back to the pre-existing offline plan-error note, with a working
+      // **Try again**, instead of hanging forever on a rejected `.json()`.
+      if (!outcome.response.ok) throw new Error(String(outcome.response.status));
+      const result = (await outcome.response.json()) as UpdatePlanView | { error: string };
+      setPlanResult(result);
+      markReachable();
+      return { reached: true, result };
+    } catch {
+      setPlanResult(PLAN_FETCH_ERROR);
+      return { reached: true, result: PLAN_FETCH_ERROR };
+    }
+  }, [endpoint, routeUnreachableInBackground, markReachable]);
 
   useEffect(() => {
     // Errata 1c: never call `fetchPlan` when there is no update to plan for.
@@ -399,6 +680,74 @@ export function UpdatePanel({
     });
   }, [fetchStatus, fetchPlan, update]);
 
+  // Final slice: with a stable endpoint address, this direct retry is the whole recovery
+  // mechanism — no origin probe, no reload. A restart lands on the same port and secret, so this
+  // keeps failing only while the viewer is actually down, and succeeds the moment it's back.
+  useEffect(() => {
+    if (!isWeb() || !endpoint || reachability?.phase !== 'waiting') return;
+    // Important finding, Fable correction pass (I4): stacked probes (if one tick's probe is still
+    // in flight when the next fires) are refused rather than piling up.
+    let inFlight = false;
+    const interval = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        // Minor finding, Fable correction pass #2: this retry sits behind the `inFlight` latch
+        // above with no timeout of its own — a hung request (a firewall `DROP` on the stale port,
+        // not a clean refusal) would otherwise pin `inFlight` forever, blocking every later probe
+        // and never reaching `stuck`.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+        let outcome: Awaited<ReturnType<typeof requestOrUnreachable>>;
+        try {
+          outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/update/status', { signal: controller.signal }));
+        } finally {
+          clearTimeout(timeout);
+        }
+        if (cancelledRef.current) return;
+        if (outcome.kind === 'ok' && outcome.response.ok) {
+          // Important finding, Fable correction pass #2: `markReachable` only flips the
+          // reachability phase to `recovered` — it never refreshes `status` or re-runs
+          // `fetchPlan`, so the note's "Everything below is current" was false by construction,
+          // and a page still waiting on its first plan (`planResult === undefined` at mount)
+          // was left stranded on "Checking…" with no way out. Feed the response through, and
+          // refresh the plan too, *before* calling `markReachable` — so the claim is true by
+          // the time it's shown.
+          try {
+            setStatus((await outcome.response.json()) as UpdateStatusView);
+          } catch {
+            // The regular poll (once `phase` leaves `waiting`) retries `/update/status` on its
+            // own; `markReachable` below still ends the reachability flow cleanly.
+          }
+          // Part 4: a delivered status does not, by itself, make "Everything below is current"
+          // true — the plan refresh it's paired with must also have actually reached the
+          // endpoint. Without this gate, a plan fetch that failed right after a successful status
+          // poll still showed the recovered note while the endpoint was gone, tore the poller
+          // down, and could strand the panel on "Checking…" with no button.
+          const planOutcome = update ? await fetchPlan() : { reached: true };
+          if (cancelledRef.current) return;
+          // Minor finding, correction pass 4: `/plan` answers 200 with an `{ error }` body for the
+          // offline case, so a reached-but-erroring plan still leaves this reached — showing
+          // "Reconnected. Everything below is current." directly above the red offline note it
+          // contradicts. Suppress the note instead of changing the gate above: leave the page on
+          // its `offline` state (with a working **Try again**) rather than reporting a reachability
+          // failure, which would distort the waiting poller's own bounded-attempt counter.
+          // Correction pass 5 (Important): `planShowsError` reads `planOutcome.result` — the value
+          // this very `fetchPlan()` call just stored — never a ref a passive effect fills in later.
+          if (planOutcome.reached) {
+            if (planShowsError(planOutcome.result)) setReachability(undefined);
+            else markReachable();
+          }
+          return;
+        }
+        setReachability((prev) => (prev && prev.phase === 'waiting' ? nextWaitingAttempt(prev) : prev));
+      } finally {
+        inFlight = false;
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [reachability?.phase, endpoint, markReachable, fetchPlan, update]);
+
   // A finished update (success or failure) shows as a note at the top; the page under it behaves
   // as if idle, so Check now, the switch and a newer update all keep working.
   const result = status.phase === 'success' || status.phase === 'failure' ? status : undefined;
@@ -406,13 +755,36 @@ export function UpdatePanel({
   const [noteBusy, setNoteBusy] = useState(false);
   const dismissResult = useCallback(async () => {
     if (!endpoint || !isWeb()) return;
+    // Important finding, Fable correction pass (I3): routed through the same reachability flow as
+    // every other endpoint call, instead of silently swallowing a rejected fetch with **Got it**
+    // left doing nothing visible.
+    const outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/update/dismiss', { method: 'POST' }));
+    if (outcome.kind === 'unreachable') {
+      routeUnreachable();
+      return;
+    }
     try {
-      const res = await authedFetch(endpoint, '/update/dismiss', { method: 'POST' });
-      if (res.ok) setStatus((await res.json()) as UpdateStatusView);
+      if (!outcome.response.ok) throw new Error(String(outcome.response.status));
+      setStatus((await outcome.response.json()) as UpdateStatusView);
+      markReachable();
     } catch {
       // The note stays; the next status poll or reload settles it.
     }
-  }, [endpoint]);
+  }, [endpoint, routeUnreachable, markReachable]);
+
+  // Important finding, Fable correction pass (I3): **Finish migration** / **Rerun doctor** had no
+  // guard at all — a rejected fetch here did nothing visible. Routed through the same reachability
+  // flow as every other endpoint call.
+  const resumeResult = useCallback(async () => {
+    if (!endpoint || !isWeb()) return;
+    const outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/update/resume', { method: 'POST' }));
+    if (outcome.kind === 'unreachable') {
+      routeUnreachable();
+      return;
+    }
+    markReachable();
+    await fetchStatus();
+  }, [endpoint, routeUnreachable, markReachable, fetchStatus]);
 
   // Polls `/update/status` at a plain interval while an update is in flight — design §5 never
   // asks for push/websocket progress, only "the panel shows progress."
@@ -421,6 +793,19 @@ export function UpdatePanel({
     if (phase === 'updating' || phase === 'restarting') pollRef.current = setInterval(fetchStatus, 700);
     return () => clearInterval(pollRef.current);
   }, [phase, fetchStatus]);
+
+  // Minor finding, correction pass 5: offers a manual way out of `restarting` once it's held for
+  // longer than a real restart should take — the one case the bounded Metro-origin probe below
+  // cannot resolve on its own (the server never actually went down, so it never sees a failure).
+  const [restartTimedOut, setRestartTimedOut] = useState(false);
+  useEffect(() => {
+    if (phase !== 'restarting') {
+      setRestartTimedOut(false);
+      return;
+    }
+    const timeout = setTimeout(() => setRestartTimedOut(true), RESTART_RELOAD_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [phase]);
 
   // Restart handoff step 4 (design §5): once the server reports "restarting", Metro itself (not
   // this endpoint — the endpoint's own process is about to exit) is polled on the *page's own
@@ -433,6 +818,9 @@ export function UpdatePanel({
     const interval = setInterval(() => {
       fetch(window.location.origin, { method: 'HEAD' })
         .then((res) => {
+          // Important finding, Fable correction pass (I4): the catalog is a single-page app — a
+          // probe started before the user navigated away can still resolve after unmount.
+          if (cancelledRef.current) return;
           if (res.ok && hadFailure) {
             clearInterval(interval);
             window.location.reload();
@@ -448,25 +836,31 @@ export function UpdatePanel({
   const startUpdate = useCallback(async () => {
     if (!endpoint) return;
     setStarting(true);
+    // Critical finding, Fable correction pass (C2): `try`/`finally` so a rejection from
+    // `fetchPlan()`/`fetchStatus()` below can never leave **Update now** disabled on "Starting…"
+    // until a manual reload.
     try {
-      const res = await authedFetch(endpoint, '/update', { method: 'POST' });
+      // Important finding, Fable correction pass: a failed `POST /update` must not leave the panel
+      // stuck mid-click with no way forward — a genuinely unreachable endpoint now goes through the
+      // shared reachability flow instead of the offline plan-error text.
+      const outcome = await requestOrUnreachable(() => authedFetch(endpoint, '/update', { method: 'POST' }));
+      if (outcome.kind === 'unreachable') {
+        routeUnreachable();
+        return;
+      }
       // A non-202 (409 dirty/already-running, or 502 "couldn't prepare") means a file was dirtied
       // — or the plan went stale — after this panel's own `ready` plan was fetched; re-fetching the
       // plan surfaces the `dirty`/`offline` phase instead of silently staying on `ready` forever
       // (Minor finding, Fable correction pass).
-      if (res.status !== 202) {
+      if (outcome.response.status !== 202) {
         await fetchPlan();
-        return;
+      } else {
+        await fetchStatus();
       }
-      await fetchStatus();
-    } catch {
-      // Important finding, Fable correction pass: same reasoning as `fetchPlan` above — a failed
-      // `POST /update` must not leave the panel stuck mid-click with no way forward.
-      setPlanResult({ error: "Couldn't prepare the update. You may be offline, or npm didn't respond. Nothing was changed." });
     } finally {
       setStarting(false);
     }
-  }, [endpoint, fetchPlan, fetchStatus]);
+  }, [endpoint, fetchPlan, fetchStatus, routeUnreachable]);
 
   const plan = planResult && !('error' in planResult) ? planResult : undefined;
 
@@ -477,11 +871,53 @@ export function UpdatePanel({
   // once the footer link existed). `content` is computed per phase below, then wrapped once.
   let content: React.ReactNode = null;
 
-  if (!update) {
+  // Takes priority over every other phase below — it replaces whichever of the two UI modes
+  // (an update pending, or just the installed version) was about to render, since neither can be
+  // trusted while the endpoint itself is unreachable. Never shown mid-restart: that recovery is
+  // already owned by the dedicated restart-handoff effect above (see `fetchStatus`).
+  const reachabilityOverride = reachability && reachability.phase !== 'recovered' && phase !== 'updating' && phase !== 'restarting';
+
+  if (remoteOriginError) {
+    // Critical finding, Fable correction pass (C4): a page that can never use the endpoint gets
+    // no self-healing at all — just the preserved remote-origin/tunnel message, with nothing to
+    // retry (there is nothing a reload or a probe could fix here).
+    content = (
+      <>
+        {update ? (
+          <VersionsHeader current={update.current} latest={update.latest} breaking={update.breaking} releasedAt={update.releasedAt} />
+        ) : versionStatus ? (
+          <View style={styles.versionsRow}><Text style={styles.versionsText}>{versionStatus.current}</Text></View>
+        ) : null}
+        <NoteBox variant="err">{remoteOriginLocalErrorMessage()}</NoteBox>
+      </>
+    );
+  } else if (reachabilityOverride && reachability) {
+    content = (
+      <ReachabilityOverride
+        reachability={reachability}
+        header={update ? (
+          <VersionsHeader current={update.current} latest={update.latest} breaking={update.breaking} releasedAt={update.releasedAt} />
+        ) : versionStatus ? (
+          // Minor finding, Fable correction pass: without `versionStatus` there's no version to
+          // show at all — fall back to the note-only layout instead of an empty 2xl row.
+          <View style={styles.versionsRow}><Text style={styles.versionsText}>{versionStatus.current}</Text></View>
+        ) : null}
+        actionLabel={update ? 'Update now' : 'Check now'}
+        onReconnect={reconnect}
+      />
+    );
+  } else if (!update) {
     // Errata 1c: no update known (disabled, offline, or genuinely up to date). `status` still
     // reflects a just-finished update read from the (surviving) endpoint across the reload.
     content = versionStatus ? (
-        <VersionDetails status={versionStatus} endpoint={endpoint} onStatus={onVersionStatus ?? (() => {})} onCheck={result ? dismissResult : undefined} />
+        <VersionDetails
+          status={versionStatus}
+          endpoint={endpoint}
+          onStatus={onVersionStatus ?? (() => {})}
+          onCheck={result ? dismissResult : undefined}
+          onUnreachable={markUnreachable}
+          onReachable={markReachable}
+        />
       ) : (
         <NoteBox variant="ok">You’re already up to date.</NoteBox>
       );
@@ -583,10 +1019,17 @@ export function UpdatePanel({
           {' This page reloads by itself.'}
         </NoteBox>
         <Text style={styles.muted}>If it doesn’t come back, run <Code>npx ds-viewer dev</Code> in your terminal.</Text>
+        {restartTimedOut && (
+          <View style={styles.actions}>
+            <CatalogButton label="Reload" variant="secondary" onPress={() => isWeb() && window.location.reload()} />
+          </View>
+        )}
       </>
     );
 
   }
+
+  const recoveredNote = reachability?.phase === 'recovered' ? reachabilityNote('recovered') : undefined;
 
   return (
     <View style={styles.wrap}>
@@ -601,22 +1044,31 @@ export function UpdatePanel({
           status={result}
           current={update?.current ?? versionStatus?.current ?? ''}
           latest={update?.latest}
-          busy={noteBusy || starting}
+          // Important finding, Fable correction pass (I3): disabled while unreachable (or on a
+          // page that can never be) — otherwise the calm reachability note and a live, enabled
+          // **Retry update** / **Finish migration** / **Rerun doctor** show together, for the
+          // panel's most consequential buttons, contradicting decision 3.
+          busy={noteBusy || starting || remoteOriginError || Boolean(reachability && reachability.phase !== 'recovered')}
           onAction={async (kind) => {
             if (!endpoint) return;
             setNoteBusy(true);
             try {
               if (kind === 'dismiss') await dismissResult();
               else if (kind === 'retry') await startUpdate();
-              else {
-                await authedFetch(endpoint, '/update/resume', { method: 'POST' });
-                await fetchStatus();
-              }
+              else await resumeResult();
             } finally {
               setNoteBusy(false);
             }
           }}
         />
+      )}
+      {recoveredNote && (
+        // Minor finding, Fable correction pass: reads `variant`/`spinner` from the same
+        // `reachabilityNote('recovered')` the copy comes from, instead of hardcoding `variant="ok"`
+        // separately, so the approved copy and its treatment have one source.
+        <NoteBox variant={recoveredNote.variant} spinner={recoveredNote.spinner} live>
+          {recoveredNote.text}
+        </NoteBox>
       )}
       {content}
     </View>
@@ -635,7 +1087,12 @@ const styles = StyleSheet.create({
   // The catalog's smallest control size (the major banner's close button), filled in the note's colour.
   resultButton: { height: 32, paddingHorizontal: 14, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   resultButtonPressed: { opacity: 0.8 },
+  // Minor finding, Fable correction pass #2: the same flat-grey treatment `CatalogButton.disabled`
+  // uses, so "unavailable" doesn't read as merely "pressed" (the note's own full-colour fill at
+  // reduced opacity).
+  resultButtonDisabled: { backgroundColor: CATALOG_COLOR.controlDisabled },
   resultButtonText: { color: '#ffffff', fontSize: CATALOG_TYPE.sm, fontWeight: '700' },
+  resultButtonTextDisabled: { color: CATALOG_COLOR.controlDisabledText },
   resultLink: { fontSize: CATALOG_TYPE.panelHeading, fontWeight: '700', textDecorationLine: 'underline' },
   crumb: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.textMuted },
   headingTarget: { marginTop: 4, marginBottom: 6 },
@@ -681,7 +1138,8 @@ const styles = StyleSheet.create({
   fileReasonDirty: { color: CATALOG_COLOR.warning, fontWeight: '700' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md, marginTop: 20 },
   noteBox: { borderRadius: CATALOG_RADIUS.md, padding: 12, marginTop: 18 },
-  noteBoxText: { fontSize: CATALOG_TYPE.md },
+  noteBoxRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
+  noteBoxText: { fontSize: CATALOG_TYPE.md, flexShrink: 1 },
   noteBoxBold: { fontWeight: '700' },
   steps: { marginTop: 12 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
