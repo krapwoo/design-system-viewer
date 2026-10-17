@@ -186,6 +186,10 @@ export const CATALOG_COLOR = {
   /** Family-page Part tree connector line (Slice D1/D2) — the approved reference's own line color
    *  has no match among the other tokens above. */
   treeLine: '#a9bdf0',
+  /** Family-page API code block: a dark surface and its text, the one place the catalog shows a
+   *  member's raw API signature. Dark on purpose so it reads as code, not as catalog chrome. */
+  codeSurface: '#1d1d1f',
+  codeOnSurface: '#e8e8e8',
   /** @deprecated kept for the public API; re-points at `CATALOG_FONT.code` so there is one source
    *  of truth. New code should reach for `CATALOG_FONT.code` (or a `CATALOG_TEXT` `code*` role)
    *  instead. */

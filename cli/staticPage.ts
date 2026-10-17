@@ -195,7 +195,7 @@ export interface StaticFamilySection {
 /** Plan V3: one family member's literal-checkable fields — `cli/doctor.ts` evaluates the same
  *  guidance/accessibility/examples advisories a normal page gets, per component-bound member,
  *  from just these five. `parent`/`aliases` are also carried so `doctor`'s `family-invalid` rule
- *  can call `validateFamily` (`native/catalog/familyModel.ts`) with the real member shape it
+ *  can call `validateFamily` (`native/catalog/pageApi.ts`) with the real member shape it
  *  expects, rather than a second, parallel validation implementation. */
 export interface StaticMember {
   id: string;

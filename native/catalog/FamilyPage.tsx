@@ -6,12 +6,10 @@ import { PropsTable } from './PropsTable';
 import { presentationBlocks } from './comparison';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { hashForId } from './catalogNavigation';
-// A plain relative import, not the `#familyModel` subpath (Errata 7): that mapping exists so a
-// *pure* module (like `pageApi.ts`) can satisfy both Node's test runner (which needs a real `.ts`
-// specifier) and a consumer's bundler-mode `tsc` (which rejects one) for the same import. This
-// file is a React component with no test of its own that imports it directly under Node, so it
-// only ever goes through the bundler — the same plain extensionless import every other `.tsx` file
-// here already uses for its own pure-module siblings (e.g. `CatalogShell.tsx` → `./catalogNavigation`).
+// A plain extensionless import — the same one every other `.tsx` file here already uses for its
+// own pure-module siblings (e.g. `CatalogShell.tsx` → `./catalogNavigation`): this file is a React
+// component with no test of its own that imports it directly under Node, so it only ever goes
+// through the bundler.
 import {
   anatomyColumns,
   anatomyPinFor,
@@ -388,8 +386,10 @@ function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths,
   );
 }
 
-/** One row of a folded `list` section (spec §5.2 "Folded row"): the whole row is itself the
- *  toggle — closed, it shows only the header and description; open, it adds the below-the-
+/** One row of a folded `list` section (spec §5.2 "Folded row"): the row's header — pin, name and
+ *  description — is the toggle, and the open body is a sibling *outside* that button, so a related
+ *  link or the PropsTable never sits inside a `role="button"` and never bubbles its own click back
+ *  into the toggle. Closed, it shows only the header and description; open, it adds the below-the-
  *  specimens line and the disclosure body directly (no nested second toggle). Folded rows never
  *  show specimens (spec's v8 reference keeps every folded-row example documentation-only). Slice
  *  D1: no gutter either way — a folded row's own pin (when it has a number) sits inline with its
@@ -399,21 +399,26 @@ function FoldedRow({ member, number, allMemberIds, resolvesAddress, open, onTogg
   const related = member.related ? linkifyRelated(member.related, allMemberIds) : undefined;
   const parts = disclosureContent(member, member.props);
   return (
-    <Pressable
-      ref={(node) => registerNode(member.id, node)}
-      onPress={onToggle}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: open }}
-      {...({ 'aria-expanded': open } as Record<string, unknown>)}
-      style={[styles.foldedRow, focused && styles.focusRing]}
-    >
-      <View style={styles.foldedRowHead}>
-        {number !== undefined && <Pin number={number} />}
-        <MemberNameRow name={member.id} fidelity={member.fidelity} osComponent={member.osComponent} heading={false} />
-      </View>
-      <Text style={styles.memberDesc}>{member.description}</Text>
+    <View style={styles.foldedRow}>
+      <Pressable
+        ref={(node) => registerNode(member.id, node)}
+        onPress={onToggle}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        {...({ 'aria-expanded': open } as Record<string, unknown>)}
+        style={[styles.foldedRowToggle, focused && styles.focusRing]}
+      >
+        <View style={styles.foldedRowHead}>
+          {number !== undefined && <Pin number={number} />}
+          <MemberNameRow name={member.id} fidelity={member.fidelity} osComponent={member.osComponent} heading={false} />
+        </View>
+        <Text style={styles.memberDesc}>{member.description}</Text>
+      </Pressable>
+      {/* Sibling of the toggle `Pressable`, same pattern `MemberDisclosureToggle` uses above — a
+          related link (or the PropsTable) here must never sit inside a `role="button"`, and on
+          web must never bubble its own click into this row's own press handler and close it. */}
       {open && (
         <View style={styles.foldedRowBody}>
           <BelowSpecimensLine related={related} showRelationship={false} relationship={member.relationship} source={member.source} />
@@ -422,7 +427,7 @@ function FoldedRow({ member, number, allMemberIds, resolvesAddress, open, onTogg
           )}
         </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
@@ -1060,7 +1065,9 @@ const styles = StyleSheet.create({
   anatomyLegend: { flex: 1, borderLeftWidth: 1, borderLeftColor: CATALOG_COLOR.border, paddingVertical: CATALOG_SPACE.sm },
   anatomyColumns: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: CATALOG_COLOR.border },
   anatomyColumn: { flex: 1, borderLeftWidth: 1, borderLeftColor: CATALOG_COLOR.border, paddingVertical: CATALOG_SPACE.sm },
-  legendGroupLabel: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_SPACE.lg, paddingTop: CATALOG_SPACE.md, paddingBottom: CATALOG_SPACE.xs },
+  // Host-authored text (`anatomy.groups[].label`) — never a transforming role like `microLabel`,
+  // so the author's own casing survives; see tokens.ts's role table.
+  legendGroupLabel: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_SPACE.lg, paddingTop: CATALOG_SPACE.md, paddingBottom: CATALOG_SPACE.xs },
   legendRow: { flexDirection: 'row', alignItems: 'flex-start', gap: CATALOG_SPACE.sm, paddingHorizontal: CATALOG_SPACE.lg, paddingVertical: CATALOG_SPACE.sm, borderTopWidth: 1, borderTopColor: CATALOG_COLOR.border },
   legendPinSlot: { width: 34, alignItems: 'center' },
   legendBody: { flex: 1, gap: 2 },
@@ -1161,8 +1168,8 @@ const styles = StyleSheet.create({
   note: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.text },
   disclosureText: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   disclosureLead: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
-  apiBlock: { backgroundColor: '#1d1d1f', borderRadius: CATALOG_RADIUS.md, padding: CATALOG_SPACE.md, marginTop: CATALOG_SPACE.xs },
-  apiText: { ...CATALOG_TEXT.codeSmall, color: '#e8e8e8' },
+  apiBlock: { backgroundColor: CATALOG_COLOR.codeSurface, borderRadius: CATALOG_RADIUS.md, padding: CATALOG_SPACE.md, marginTop: CATALOG_SPACE.xs },
+  apiText: { ...CATALOG_TEXT.codeSmall, color: CATALOG_COLOR.codeOnSurface },
 
   // Slice D1 item 4: "Parts"/"Related" are the only two section labels — 80px above each, 64px
   // between each authored section's own group within a bucket.
@@ -1174,7 +1181,8 @@ const styles = StyleSheet.create({
   foldedList: { backgroundColor: CATALOG_COLOR.surface, borderWidth: 1, borderColor: CATALOG_COLOR.borderStrong, borderRadius: CATALOG_RADIUS.card, overflow: 'hidden' },
   foldedListRow: { paddingHorizontal: CATALOG_SPACE.lg, paddingVertical: CATALOG_SPACE.md },
   foldedListRowDivider: { borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },
-  foldedRow: { gap: CATALOG_SPACE.xs, minHeight: CATALOG_LAYOUT.controlSize, justifyContent: 'center' },
+  foldedRow: { gap: CATALOG_SPACE.xs },
+  foldedRowToggle: { minHeight: CATALOG_LAYOUT.controlSize, justifyContent: 'center' },
   foldedRowHead: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.sm },
   foldedRowBody: { gap: CATALOG_SPACE.sm, paddingTop: CATALOG_SPACE.sm },
 });

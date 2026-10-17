@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatalogSections, defineCatalogPage, validateComposedOf } from '../pageApi.ts';
+import { buildCatalogSections, defineCatalogPage, numberFor, validateComposedOf, validateFamily } from '../pageApi.ts';
 
 const components = [
   {
@@ -514,4 +514,358 @@ test('buildCatalogSections carries a display title, a source override, and the O
   assert.equal(button.title, undefined);
   // A component's own file stays its Source; `source` only overrides it when the page sets one.
   assert.equal(button.path, components[0].file);
+});
+
+// Appendix fixtures — copied from `.hermes-task/family-registry-input.json`, keeping only `id`,
+// `parent`, section `label`, `kind` and `inWhole` (plan V1.1).
+
+const botAvatar = {
+  id: 'BotAvatarView',
+  whole: 'BotAvatarView',
+  sections: [
+    { label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['BotAnimatedFaceView', 'BotAvatarMarkView', 'BotAvatarBody'] },
+    { label: 'Related', kind: 'blocks' as const, inWhole: false, members: ['BotRoomMemberAvatar'] },
+  ],
+  members: [
+    { id: 'BotAvatarView' },
+    { id: 'BotAnimatedFaceView', parent: 'BotAvatarView' },
+    { id: 'BotAvatarMarkView', parent: 'BotAnimatedFaceView' },
+    { id: 'BotAvatarBody', parent: 'BotAvatarMarkView' },
+    { id: 'BotRoomMemberAvatar' },
+  ],
+};
+
+const responseSelection = {
+  id: 'ResponseTextSelection',
+  whole: 'ResponseTextSelection',
+  sections: [
+    {
+      label: 'UIKit implementation', kind: 'list' as const, inWhole: true,
+      members: ['ResponseSelectionController', 'ResponseSelectionInput', 'ResponseSelectionRect', 'ResponseTextRange', 'ResponseTextPosition'],
+    },
+    {
+      label: 'Added to response text', kind: 'list' as const, inWhole: false,
+      members: ['ResponseSelectionLeaf', 'RegisteredResponseSelectionLeaf', 'ResponseSelectionMarker', 'ResponseSelectionLeafView', 'ResponseSelectionRenderer', 'ResponseSelectionImageAttribute', 'ResponseTextSelectionPolicy'],
+    },
+  ],
+  members: [
+    { id: 'ResponseTextSelection' },
+    { id: 'ResponseSelectionController', parent: 'ResponseTextSelection' },
+    { id: 'ResponseSelectionInput', parent: 'ResponseSelectionController' },
+    { id: 'ResponseSelectionRect', parent: 'ResponseSelectionInput' },
+    { id: 'ResponseTextRange', parent: 'ResponseSelectionInput' },
+    { id: 'ResponseTextPosition', parent: 'ResponseTextRange' },
+    { id: 'ResponseSelectionLeaf' },
+    { id: 'RegisteredResponseSelectionLeaf', parent: 'ResponseSelectionLeaf' },
+    { id: 'ResponseSelectionMarker', parent: 'RegisteredResponseSelectionLeaf' },
+    { id: 'ResponseSelectionLeafView', parent: 'ResponseSelectionMarker' },
+    { id: 'ResponseSelectionRenderer', parent: 'RegisteredResponseSelectionLeaf' },
+    { id: 'ResponseSelectionImageAttribute', parent: 'ResponseSelectionRenderer' },
+    { id: 'ResponseTextSelectionPolicy' },
+  ],
+};
+
+const transcript = {
+  id: 'ChatTranscriptView',
+  whole: 'ChatTranscriptView',
+  sections: [
+    {
+      label: 'Rows and loading', kind: 'blocks' as const, inWhole: true,
+      members: ['ChatTranscriptMessageBlock', 'ChatTranscriptMessageRow', 'TranscriptTurnFoldRowView', 'ForkOriginRowView', 'ChatTranscriptLoadingSkeletonView', 'ChatTranscriptLoadingSkeletonRow'],
+    },
+    {
+      label: 'Scroll and state helpers', kind: 'list' as const, inWhole: true,
+      members: ['ChatScrollObserver', 'ObserverView', 'ChatVerticalScrollAxisGuard', 'ChatVerticalScrollAxisGuardView', 'StreamingFollowTrigger'],
+    },
+    {
+      label: 'Related', kind: 'blocks' as const, inWhole: false,
+      members: ['TranscriptTimeSeparator', 'ChatDisclosureToggledModifier'],
+    },
+  ],
+  members: [
+    { id: 'ChatTranscriptView' },
+    { id: 'ChatTranscriptMessageBlock', parent: 'ChatTranscriptView' },
+    { id: 'ChatTranscriptMessageRow', parent: 'ChatTranscriptMessageBlock' },
+    { id: 'TranscriptTurnFoldRowView', parent: 'ChatTranscriptMessageBlock' },
+    { id: 'ForkOriginRowView', parent: 'ChatTranscriptView' },
+    { id: 'ChatTranscriptLoadingSkeletonView', parent: 'ChatTranscriptView' },
+    { id: 'ChatTranscriptLoadingSkeletonRow', parent: 'ChatTranscriptLoadingSkeletonView' },
+    { id: 'ChatScrollObserver', parent: 'ChatTranscriptView' },
+    { id: 'ObserverView', parent: 'ChatScrollObserver' },
+    { id: 'ChatVerticalScrollAxisGuard', parent: 'ChatTranscriptView' },
+    { id: 'ChatVerticalScrollAxisGuardView', parent: 'ChatVerticalScrollAxisGuard' },
+    { id: 'StreamingFollowTrigger', parent: 'ChatTranscriptView' },
+    { id: 'TranscriptTimeSeparator' },
+    { id: 'ChatDisclosureToggledModifier' },
+  ],
+};
+
+test('validateFamily reports no issues for a valid family', () => {
+  assert.deepEqual(validateFamily(botAvatar, new Set(), new Set()), []);
+  assert.deepEqual(validateFamily(responseSelection, new Set(), new Set()), []);
+  assert.deepEqual(validateFamily(transcript, new Set(), new Set()), []);
+});
+
+test('validateFamily is a no-op for a page without members', () => {
+  assert.deepEqual(validateFamily({ id: 'Button' }, new Set(), new Set()), []);
+});
+
+test('validateFamily: members requires both whole and sections', () => {
+  const issues = validateFamily({ id: 'X', members: [{ id: 'X' }] }, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('requires both "whole" and "sections"')));
+});
+
+test('validateFamily: the whole must be one of the members', () => {
+  const page = { ...botAvatar, whole: 'NoSuchMember' };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('whole "NoSuchMember" is not one of its members')));
+});
+
+test('validateFamily: the whole\'s id must equal the page id', () => {
+  const page = { ...botAvatar, id: 'SomeOtherPageId' };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('must have the same id as the page')));
+});
+
+test('validateFamily: the whole must not appear in any section', () => {
+  const page = {
+    ...botAvatar,
+    sections: [{ ...botAvatar.sections[0], members: [...botAvatar.sections[0].members, 'BotAvatarView'] }, botAvatar.sections[1]],
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('the whole "BotAvatarView" must not appear in any section')));
+});
+
+test('validateFamily: every other member must be in exactly one section', () => {
+  const missing = { ...botAvatar, sections: [{ ...botAvatar.sections[0], members: ['BotAnimatedFaceView', 'BotAvatarMarkView'] }, botAvatar.sections[1]] };
+  const missingIssues = validateFamily(missing, new Set(), new Set());
+  assert.ok(missingIssues.some((issue) => issue.includes('member "BotAvatarBody" is not in any section')));
+
+  const duplicated = {
+    ...botAvatar,
+    sections: [botAvatar.sections[0], { ...botAvatar.sections[1], members: ['BotRoomMemberAvatar', 'BotAnimatedFaceView'] }],
+  };
+  const duplicatedIssues = validateFamily(duplicated, new Set(), new Set());
+  assert.ok(duplicatedIssues.some((issue) => issue.includes('member "BotAnimatedFaceView" is in more than one section')));
+});
+
+test('validateFamily: a parent must resolve within the page', () => {
+  const page = { ...botAvatar, members: botAvatar.members.map((m) => (m.id === 'BotAnimatedFaceView' ? { ...m, parent: 'Ghost' } : m)) };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('unknown parent "Ghost"')));
+});
+
+test('validateFamily: parent cycles are rejected', () => {
+  const page = {
+    ...botAvatar,
+    members: [
+      { id: 'BotAvatarView' },
+      { id: 'BotAnimatedFaceView', parent: 'BotAvatarMarkView' },
+      { id: 'BotAvatarMarkView', parent: 'BotAnimatedFaceView' },
+      { id: 'BotAvatarBody', parent: 'BotAvatarMarkView' },
+      { id: 'BotRoomMemberAvatar' },
+    ],
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('"BotAnimatedFaceView" has a parent cycle')));
+  assert.ok(issues.some((issue) => issue.includes('"BotAvatarMarkView" has a parent cycle')));
+});
+
+test('validateFamily: member and alias ids must not collide with another page id, except the whole', () => {
+  const issues = validateFamily(botAvatar, new Set(['BotAnimatedFaceView']), new Set());
+  assert.ok(issues.some((issue) => issue.includes('id "BotAnimatedFaceView" collides with another page\'s id')));
+  // The whole's own id equals the page id, by design, and is exempt.
+  const wholeOk = validateFamily(botAvatar, new Set(['BotAvatarView']), new Set());
+  assert.ok(!wholeOk.some((issue) => issue.includes('BotAvatarView')));
+});
+
+test('validateFamily: member and alias ids must be unique catalog-wide', () => {
+  const issues = validateFamily(botAvatar, new Set(), new Set(['BotAvatarMarkView']));
+  assert.ok(issues.some((issue) => issue.includes('id "BotAvatarMarkView" collides with another member or alias')));
+});
+
+test('validateFamily: an alias colliding with another page or member is reported the same way', () => {
+  const page = { ...botAvatar, members: botAvatar.members.map((m) => (m.id === 'BotRoomMemberAvatar' ? { ...m, aliases: ['OldBotAvatar'] } : m)) };
+  const issues = validateFamily(page, new Set(['OldBotAvatar']), new Set());
+  assert.ok(issues.some((issue) => issue.includes('id "OldBotAvatar" collides with another page\'s id')));
+});
+
+// V2c item 2: a section listing an id that is not one of the page's own members.
+test('validateFamily: a section listing an unknown id is reported', () => {
+  const page = { ...botAvatar, sections: [botAvatar.sections[0], { ...botAvatar.sections[1], members: ['Typo', 'BotRoomMemberAvatar'] }] };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('section "Related" lists "Typo", which is not a member of this page')));
+});
+
+test('validateFamily: duplicate ids within the same page are reported', () => {
+  const page = { ...botAvatar, members: [...botAvatar.members, { id: 'BotAvatarMarkView', parent: 'BotAvatarView' }] };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('id "BotAvatarMarkView" is used more than once on this page')));
+});
+
+// N6: a `list`-section member authored with a specimen — `FoldedRow` never renders one (it only
+// shows the header, description, below-the-specimens line and disclosure) — must be reported, not
+// silently dropped. `hasSpecimens` is computed by each caller (not a `CatalogMember` field).
+test('validateFamily: a member with specimens in a list section is reported', () => {
+  const page = {
+    ...responseSelection,
+    members: responseSelection.members.map((m) => (m.id === 'ResponseSelectionController' ? { ...m, hasSpecimens: true } : m)),
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) =>
+    issue.includes('"ResponseSelectionController" has specimens, but list sections show members as folded rows without specimens')));
+});
+
+test('validateFamily: a blocks-section member with specimens is not reported by the list-specimens rule', () => {
+  const page = {
+    ...botAvatar,
+    members: botAvatar.members.map((m) => (m.id === 'BotAnimatedFaceView' ? { ...m, hasSpecimens: true } : m)),
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(!issues.some((issue) => issue.includes('has specimens, but list sections')));
+});
+
+// Slice D1 item 2: `numberFor` replaces outline numbering with the anatomy-first rule — top-level
+// parts are inWhole members whose parent is the whole, or who have no parent at all, numbered
+// 1, 2, 3… in authored order; a child takes its parent's number plus `.1`, `.2`, …; members outside
+// an `inWhole` section (Related) get no number at all.
+const numberForFixture = {
+  id: 'W',
+  whole: 'W',
+  sections: [
+    { label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['P1', 'P2', 'C1', 'D1', 'E1', 'C2', 'P3', 'C3', 'P4'] },
+    { label: 'Related', kind: 'blocks' as const, inWhole: false, members: ['R1'] },
+  ],
+  members: [
+    { id: 'W' },
+    { id: 'P1', parent: 'W' },
+    { id: 'P2', parent: 'W' },
+    { id: 'C1', parent: 'P2' },
+    { id: 'D1', parent: 'C1' },
+    { id: 'E1', parent: 'D1' },
+    { id: 'C2', parent: 'P2' },
+    { id: 'P3', parent: 'W' },
+    { id: 'C3', parent: 'P3' },
+    { id: 'P4' },
+    { id: 'R1' },
+  ],
+};
+
+test('numberFor: top-level parts in authored order, children as parentNumber.k', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.get('P1')?.number, '1');
+  assert.equal(outline.get('P2')?.number, '2');
+  assert.equal(outline.get('C1')?.number, '2.1');
+  assert.equal(outline.get('C2')?.number, '2.2');
+  assert.equal(outline.get('P3')?.number, '3');
+  assert.equal(outline.get('C3')?.number, '3.1');
+});
+
+test('numberFor: a four-level chain', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.get('D1')?.number, '2.1.1');
+  assert.equal(outline.get('E1')?.number, '2.1.1.1');
+});
+
+test('numberFor: a parentless in-whole root is still a top-level part', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.get('P4')?.number, '4');
+});
+
+test('numberFor: the whole and Related members get no number', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.has('W'), false);
+  assert.equal(outline.has('R1'), false);
+});
+
+test('numberFor returns an empty map for a page without members', () => {
+  assert.deepEqual(numberFor({ id: 'Button' }), new Map());
+});
+
+// E1: a section listing an id that isn't a real member must never occupy authored order (or be
+// numbered), degrading to a missing part instead of shifting the real members' own numbers.
+test('numberFor ignores a section id that is not a member of the page', () => {
+  const page = {
+    ...numberForFixture,
+    sections: [
+      { ...numberForFixture.sections[0], members: ['Typo', ...numberForFixture.sections[0].members] },
+      numberForFixture.sections[1],
+    ],
+  };
+  const outline = numberFor(page);
+  assert.equal(outline.has('Typo'), false);
+  assert.equal(outline.get('P1')?.number, '1');
+});
+
+// E1: a parent cycle, isolated from the rest of the tree by construction (each member has exactly
+// one `parent`, so a cycle can never also be a child of a real top-level part) — must never throw,
+// and must leave the rest of the outline intact.
+test('numberFor: a parent cycle does not throw and leaves the rest of the outline intact', () => {
+  const page = {
+    id: 'W',
+    whole: 'W',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['P1', 'A', 'B'] }],
+    members: [
+      { id: 'W' },
+      { id: 'P1', parent: 'W' },
+      { id: 'A', parent: 'B' },
+      { id: 'B', parent: 'A' },
+    ],
+  };
+  const outline = numberFor(page);
+  assert.deepEqual(outline.get('P1'), { number: '1', level: 2 });
+  assert.equal(outline.has('A'), false);
+  assert.equal(outline.has('B'), false);
+});
+
+// Slice D1 item 3: anatomy validation.
+test('validateFamily: an anatomy member item that is not a member of the page is reported', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'Typo' }] }] } };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "Typo" is not a member of this page')));
+});
+
+test('validateFamily: an anatomy item naming the whole is reported', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'BotAvatarView' }] }] } };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "BotAvatarView" names the whole')));
+});
+
+test('validateFamily: a member listed in two anatomy items is reported', () => {
+  const page = {
+    ...botAvatar,
+    anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'BotAnimatedFaceView' }, { member: 'BotAnimatedFaceView' }] }] },
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy lists member "BotAnimatedFaceView" more than once')));
+});
+
+test('validateFamily: a valid anatomy is a no-op', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'BotAnimatedFaceView' }, { other: 'SomeOtherComponent' }] }] } };
+  assert.deepEqual(validateFamily(page, new Set(), new Set()), []);
+});
+
+// D2 item A2: an anatomy `member` item whose member has no number — outside every `inWhole`
+// section — must be reported, not silently render a blank pin slot.
+test('validateFamily: an anatomy member item outside every inWhole section is reported', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'X', items: [{ member: 'BotRoomMemberAvatar' }] }] } };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "BotRoomMemberAvatar" has no number')));
+});
+
+// D2 item A2: the same silent path for an `inWhole` member whose `parent` is a Related member —
+// valid data for the other rules, but `numberFor` gives it no number either.
+test('validateFamily: an anatomy member item under a parent that is not numbered is reported', () => {
+  const page = {
+    id: 'W',
+    whole: 'W',
+    sections: [
+      { label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['P1'] },
+      { label: 'Related', kind: 'blocks' as const, inWhole: false, members: ['R1'] },
+    ],
+    members: [{ id: 'W' }, { id: 'P1', parent: 'R1' }, { id: 'R1' }],
+    anatomy: { groups: [{ label: 'X', items: [{ member: 'P1' }] }] },
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "P1" has no number')));
 });

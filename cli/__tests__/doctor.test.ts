@@ -820,6 +820,28 @@ test('a family page is exempt from the page-level missing-guidance-or-a11y check
   assert.equal(issues.filter((i) => i.id === 'component-no-examples').length, 0);
 });
 
+// Important finding 1 (independent review): a documentation-only whole — the "whole" case this
+// feature exists for — sits in a component folder but its own file stem (`Toast`) never names a
+// component export; only its member `ToastBanner` does. Before the fix, `applyComponentDefaults`
+// assigned it a page-level `component: 'Toast'` anyway (the same default a single-component page
+// gets), which `checkComponentExportRemoved` then rejected as a removed export — exactly the
+// runtime exemption `pageApi.ts`'s `buildCatalogSections` already grants (`page.members &&
+// page.members.length > 0` skips the `page.component ?? page.id` fallback entirely).
+test('applyComponentDefaults never assigns a page-level "component" to a documentation-only family whole, so no component-keyed rule misfires', () => {
+  const familyInComponentFolder = familyPage({ file: '/components/Toast/Toast.catalog.tsx', component: undefined });
+  const defaulted = applyComponentDefaults([familyInComponentFolder], new Set(['/components/Toast']));
+  assert.equal(defaulted[0].component, undefined);
+  const banner = component({ name: 'Banner' });
+  const issues = collectIssues(defaulted, [banner]);
+  assert.equal(issues.filter((i) => i.id === 'component-export-removed' && i.message.includes('"Toast"')).length, 0);
+  assert.equal(issues.filter((i) => i.id === 'missing-composition-suggestion').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'preview-only-component-page').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'missing-guidance-or-a11y' && !i.message.includes('Member')).length, 0);
+  assert.equal(issues.filter((i) => i.id === 'component-no-examples' && !i.message.includes('Member')).length, 0);
+  assert.equal(checkOverlaysFramed(defaulted, [banner], '/').length, 0);
+});
+
 test('family-invalid reuses validateFamily: reports the whole missing from its own members', () => {
   const broken = familyPage({ whole: 'NoSuchMember' });
   const issues = collectIssues([broken], [component({ name: 'Banner' })]);

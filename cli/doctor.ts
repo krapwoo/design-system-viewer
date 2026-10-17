@@ -10,7 +10,7 @@ import { resolveGlob } from './glob.ts';
 import { sync } from './sync.ts';
 import { gridColumnLimit } from '../native/catalog/comparison.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
-import { validateFamily, type FamilyPageLike } from '../native/catalog/familyModel.ts';
+import { validateComposedOf, validateFamily, type FamilyPageLike } from '../native/catalog/pageApi.ts';
 
 export type DoctorSeverity = 'error' | 'warning';
 
@@ -41,10 +41,15 @@ function pageRef(page: StaticPage): { page: string; file: string } {
  *  own file (design §2; the viewer already applies this same default via `page.component ??
  *  page.id`, and the generated page index already defaults a missing `id` to the file stem). A
  *  page from a standalone `pages` glob is never touched — `componentFolders` only ever contains
- *  folders resolved from `config.components`, so a standalone page's own folder is never a member. */
+ *  folders resolved from `config.components`, so a standalone page's own folder is never a member.
+ *  A family page (non-empty `members`) is also never touched — same exemption the runtime applies
+ *  at `pageApi.ts`'s `buildCatalogSections` (`page.members && page.members.length > 0` skips the
+ *  `page.component ?? page.id` fallback entirely): a family's own guidance/examples always live on
+ *  its members, never on the page itself, so a documentation-only whole (its file stem naming no
+ *  real component export) must never be assigned one here either. */
 export function applyComponentDefaults(pages: StaticPage[], componentFolders: Set<string>): StaticPage[] {
   return pages.map((page) =>
-    page.component === undefined && componentFolders.has(path.dirname(page.file))
+    page.component === undefined && componentFolders.has(path.dirname(page.file)) && !(page.members && page.members.length > 0)
       ? { ...page, component: resolvePageId(page, page.file) }
       : page,
   );
@@ -176,7 +181,7 @@ function checkFamilyMembers(pages: StaticPage[], components: ComponentRecord[]):
   return issues;
 }
 
-/** Plan V3's `family-invalid`: reuses `native/catalog/familyModel.ts`'s own `validateFamily` —
+/** Plan V3's `family-invalid`: reuses `native/catalog/pageApi.ts`'s own `validateFamily` —
  *  the exact same rule `pageApi.ts`'s `buildCatalogSections` runs at runtime — against every
  *  checkable family page, with the same catalog-wide "every other page/member id" contract that
  *  function already takes. N3: `StaticPage.sections` already carries each section's real
@@ -221,29 +226,17 @@ function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
   return issues;
 }
 
-/** V2d item 5 / Deviation: the same one-line resolution `native/catalog/pageApi.ts`'s own
- *  `validateComposedOf` runs, inlined here rather than imported. `pageApi.ts` has a top-level
- *  runtime import of `#familyModel` (a subpath import resolved through `native/catalog/package.json`,
- *  by design — see that file's own comment), which only resolves correctly for a consumer loading
- *  it from source or through a bundler; `cli/doctor.ts` is eagerly imported by `cli/main.ts` and
- *  runs from the plain-Node-loaded `dist/cli/`, where `dist/native/catalog/` has no such adjacent
- *  package.json, so importing `pageApi.ts` from here crashes every CLI command
- *  (`ERR_PACKAGE_IMPORT_NOT_DEFINED`) — reproduced live via `kit-host`'s own `dev`. */
-function unknownComposedOfNames(composedOf: { component: string }[] | undefined, knownNames: ReadonlySet<string>): string[] {
-  if (!composedOf) return [];
-  return composedOf.filter((entry) => !knownNames.has(entry.component)).map((entry) => entry.component);
-}
-
 /** V2d item 5: resolves each family member's own `composedOf` the same way `buildCatalogSections`
- *  resolves it at runtime (`validateComposedOf`), against the same known-name universe
- *  `checkFamilyValidity` already builds for member ids — every real component name, every page id,
- *  and every member id across the whole catalog — so an unknown name is reported here too, not
- *  only ever silently warned in a browser console (`npm run check:catalog`). A member whose
- *  `composedOf` wasn't itself literally readable (`undefined`) has nothing to check — the same
- *  "never a partial read" leniency the page-level field already gets. Always a warning, the same
- *  severity the runtime's own console warning carries, never an error. N8: also accepts a member
- *  alias and a page-level alias — the same universe `FamilyPage`'s own link resolution
- *  (`aliasTargets`) already accepts. */
+ *  resolves it at runtime (`native/catalog/pageApi.ts`'s own `validateComposedOf`, imported
+ *  directly — the subpath-import boundary that once made importing that file from `dist/cli/`
+ *  unsafe is gone), against the same known-name universe `checkFamilyValidity` already builds for
+ *  member ids — every real component name, every page id, and every member id across the whole
+ *  catalog — so an unknown name is reported here too, not only ever silently warned in a browser
+ *  console (`npm run check:catalog`). A member whose `composedOf` wasn't itself literally readable
+ *  (`undefined`) has nothing to check — the same "never a partial read" leniency the page-level
+ *  field already gets. Always a warning, the same severity the runtime's own console warning
+ *  carries, never an error. N8: also accepts a member alias and a page-level alias — the same
+ *  universe `FamilyPage`'s own link resolution (`aliasTargets`) already accepts. */
 function checkMemberComposedOf(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
   const knownNames = new Set<string>(components.map((c) => c.name));
   for (const page of pages) knownNames.add(resolvePageId(page, page.file));
@@ -256,10 +249,10 @@ function checkMemberComposedOf(pages: StaticPage[], components: ComponentRecord[
     if (!page.members || page.members.length === 0 || !page.checkable) continue; // V2c item 6's own predicate.
     const ref = pageRef(page);
     for (const member of page.members) {
-      for (const name of unknownComposedOfNames(member.composedOf, knownNames)) {
+      for (const message of validateComposedOf(member.composedOf, knownNames)) {
         issues.push(issue({
           id: 'composed-of-unknown', severity: 'warning', ...ref,
-          message: `Member "${member.id}": composedOf references unknown component "${name}".`,
+          message: `Member "${member.id}": ${message}`,
           fix: 'Correct the name, or add { component: \'...\', role: \'...\', relationship: \'...\' } for a component/page/member that really does exist.',
         }));
       }

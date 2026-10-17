@@ -1,11 +1,5 @@
 import type React from 'react';
 import type { CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
-// A subpath import (`native/catalog/package.json`'s own `imports` map), not a relative one: a
-// relative `./familyModel.ts` resolves fine under Node's `--experimental-strip-types` (the test
-// runner) but is rejected by a consumer's bundler-mode `tsc` (TS5097, no `.ts` specifiers without
-// `allowImportingTsExtensions`); `./familyModel` (extensionless) is the reverse — fine for a
-// consumer's `tsc`, unresolvable by plain Node ESM. The subpath specifier satisfies both.
-import { numberFor, validateFamily } from '#familyModel';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
  *  generated props), plus the three fields design §1 "Page shape" adds. */
@@ -56,7 +50,7 @@ export interface CatalogPageInput<TId extends string = string> {
    *  component. When set, the page's own `component`/`whenToUse`/`a11y`/specimens are not used —
    *  those live on the members (the whole is a member too) — and the viewer renders a `FamilyPage`
    *  (`SectionDef.family`) rather than the normal single-component layout. Requires `whole` and
-   *  `sections`; validated by `familyModel.ts`'s `validateFamily`. */
+   *  `sections`; validated by this file's own `validateFamily`. */
   members?: CatalogMember[];
   /** The family's whole: a member id, required when `members` is set. Its own id must equal this
    *  page's `id`. */
@@ -134,12 +128,231 @@ function mergePropNotes(component: GeneratedComponent, propNotes: Record<string,
  *  declaration order: one line per entry whose `component` isn't in `knownNames` (every real
  *  component name, documented or not, plus every page id and family member id — the full catalog
  *  inventory `buildCatalogSections` already has on hand). Empty when every name resolves,
- *  including when `composedOf` itself is omitted. */
-export function validateComposedOf(composedOf: ComposedOfEntry[] | undefined, knownNames: ReadonlySet<string>): string[] {
+ *  including when `composedOf` itself is omitted. Takes only the `component` field (never the
+ *  narrower `ComposedOfEntry[]` type) so `cli/doctor.ts`'s own statically-read `{ component:
+ *  string }[]` shape — which never carries `role`/`relationship` — satisfies it too. */
+export function validateComposedOf(composedOf: { component: string }[] | undefined, knownNames: ReadonlySet<string>): string[] {
   if (!composedOf) return [];
   return composedOf
     .filter((entry) => !knownNames.has(entry.component))
     .map((entry) => `composedOf references unknown component "${entry.component}".`);
+}
+
+/** The subset of a family page's shape `validateFamily` and `numberFor` need. The real page
+ *  carries full `CatalogMember` records; these functions only ever read `id`/`parent`/`aliases`. */
+export interface FamilyOutlineInput {
+  whole?: string;
+  sections?: CatalogMemberSection[];
+  members?: Array<Pick<CatalogMember, 'id' | 'parent'>>;
+}
+
+export interface FamilyPageLike extends FamilyOutlineInput {
+  id: string;
+  /** N6: `hasSpecimens` is not a `CatalogMember` field — each caller computes it (a non-empty
+   *  `variants`/`states`/`comparison` at runtime, `StaticMember.hasExamples` in `doctor`) so
+   *  `validateFamily` can flag a `list`-section member authored with a specimen that `FoldedRow`
+   *  never renders. */
+  members?: Array<Pick<CatalogMember, 'id' | 'parent' | 'aliases'> & { hasSpecimens?: boolean }>;
+  aliases?: string[];
+  /** Slice D1 item 3: the minimal shape `validateFamily` needs from `CatalogPageInput.anatomy` —
+   *  decoupled from the full `CatalogAnatomy` type (which carries a `picture` React node this pure
+   *  module never touches). */
+  anatomy?: FamilyAnatomyLike;
+}
+
+/** Slice D1 item 3. */
+export interface FamilyAnatomyLike {
+  groups: ReadonlyArray<{ label: string; items: ReadonlyArray<{ member: string } | { other: string }> }>;
+}
+
+/** Validates a family page (spec §5.1): exactly one whole belonging to no section; every other
+ *  member in exactly one section; every parent resolving within the page with no cycles; member
+ *  and alias ids unique catalog-wide and never colliding with a page id, except the whole (whose
+ *  id equals its own page's id). Returns `[]` for a page without `members`. `allPageIds` and
+ *  `otherMemberIds` are the ids used by every *other* page/member in the catalog. */
+export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<string>, otherMemberIds: ReadonlySet<string>): string[] {
+  const { members } = page;
+  if (!members || members.length === 0) return [];
+  const issues: string[] = [];
+
+  if (!page.whole || !page.sections) {
+    issues.push(`Family "${page.id}": "members" requires both "whole" and "sections".`);
+    return issues;
+  }
+  const whole = page.whole;
+  const byId = new Map(members.map((m) => [m.id, m]));
+
+  if (!byId.has(whole)) {
+    issues.push(`Family "${page.id}": whole "${whole}" is not one of its members.`);
+  }
+  if (whole !== page.id) {
+    issues.push(`Family "${page.id}": whole "${whole}" must have the same id as the page.`);
+  }
+
+  // V2c item 2: a section listing an id that is not one of the page's own members — reported
+  // here, rather than left to crash the renderer or silently occupy authored order in `numberFor`.
+  // N6: a `list`-section member authored with a specimen — `FoldedRow` never renders one, so this
+  // degrades to a silently dropped specimen rather than a crash, same as the unknown-id case.
+  for (const section of page.sections) {
+    for (const id of section.members) {
+      const resolved = byId.get(id);
+      if (!resolved) {
+        issues.push(`Family "${page.id}": section "${section.label}" lists "${id}", which is not a member of this page.`);
+        continue;
+      }
+      if (section.kind === 'list' && resolved.hasSpecimens) {
+        issues.push(`Family "${page.id}": "${id}" has specimens, but list sections show members as folded rows without specimens.`);
+      }
+    }
+  }
+
+  const sectionCountById = new Map<string, number>();
+  for (const section of page.sections) {
+    for (const id of section.members) sectionCountById.set(id, (sectionCountById.get(id) ?? 0) + 1);
+  }
+  if (sectionCountById.has(whole)) {
+    issues.push(`Family "${page.id}": the whole "${whole}" must not appear in any section.`);
+  }
+  for (const m of members) {
+    if (m.id === whole) continue;
+    const count = sectionCountById.get(m.id) ?? 0;
+    if (count === 0) issues.push(`Family "${page.id}": member "${m.id}" is not in any section.`);
+    else if (count > 1) issues.push(`Family "${page.id}": member "${m.id}" is in more than one section.`);
+  }
+
+  for (const m of members) {
+    if (m.parent === undefined) continue;
+    if (!byId.has(m.parent)) {
+      issues.push(`Family "${page.id}": member "${m.id}" has an unknown parent "${m.parent}".`);
+      continue;
+    }
+    const seen = new Set([m.id]);
+    let current: string | undefined = m.parent;
+    let cycle = false;
+    while (current !== undefined) {
+      if (seen.has(current)) {
+        cycle = true;
+        break;
+      }
+      seen.add(current);
+      current = byId.get(current)?.parent;
+    }
+    if (cycle) issues.push(`Family "${page.id}": member "${m.id}" has a parent cycle.`);
+  }
+
+  const seenInPage = new Set<string>();
+  const checkId = (id: string, isWhole: boolean) => {
+    if (seenInPage.has(id)) issues.push(`Family "${page.id}": id "${id}" is used more than once on this page.`);
+    seenInPage.add(id);
+    if (isWhole) return;
+    if (allPageIds.has(id)) issues.push(`Family "${page.id}": id "${id}" collides with another page's id.`);
+    if (otherMemberIds.has(id)) issues.push(`Family "${page.id}": id "${id}" collides with another member or alias elsewhere in the catalog.`);
+  };
+  for (const m of members) {
+    checkId(m.id, m.id === whole);
+    for (const alias of m.aliases ?? []) checkId(alias, false);
+  }
+  for (const alias of page.aliases ?? []) checkId(alias, false);
+
+  // Slice D1 item 3: an anatomy `member` item must name a real, non-whole member of this page, and
+  // each member may be pinned to the picture's legend at most once.
+  // D2 item A2: a member item whose member has no number — outside every `inWhole` section, or
+  // under a parent that isn't itself numbered — must also be reported; left unchecked, it renders
+  // a blank 34px pin slot in the legend and nothing at all from `AnatomyPin` in the picture.
+  if (page.anatomy) {
+    const numbered = numberFor(page);
+    const seenAnatomyMembers = new Set<string>();
+    for (const group of page.anatomy.groups) {
+      for (const item of group.items) {
+        if (!('member' in item)) continue;
+        if (item.member === whole) {
+          issues.push(`Family "${page.id}": anatomy item "${item.member}" names the whole.`);
+          continue;
+        }
+        if (!byId.has(item.member)) {
+          issues.push(`Family "${page.id}": anatomy item "${item.member}" is not a member of this page.`);
+          continue;
+        }
+        if (seenAnatomyMembers.has(item.member)) {
+          issues.push(`Family "${page.id}": anatomy lists member "${item.member}" more than once.`);
+          continue;
+        }
+        seenAnatomyMembers.add(item.member);
+        if (!numbered.has(item.member)) {
+          issues.push(`Family "${page.id}": anatomy item "${item.member}" has no number.`);
+        }
+      }
+    }
+  }
+
+  return issues;
+}
+
+/** Slice D1 item 2: anatomy-first numbering — the only numbering rule for every family page (not
+ *  only one with `anatomy` set; it superseded the earlier whole-and-letters rule outright). The
+ *  whole gets no number. A **top-level part** is any member of an `inWhole` section whose `parent`
+ *  is the whole, or who has no `parent` at all (an in-whole root with no Swift parent edge is still
+ *  top-level) — numbered `1`, `2`, `3`… in authored order (the order a member first appears
+ *  scanning `inWhole` sections, in section order). A child takes its parent's number plus `.1`,
+ *  `.2`, … in authored order. Members outside any `inWhole` section (Related) get no number at
+ *  all. Returns an empty map for a page without members. */
+export function numberFor(page: FamilyOutlineInput): Map<string, { number: string; level: number }> {
+  const outline = new Map<string, { number: string; level: number }>();
+  const { whole, sections, members } = page;
+  if (!whole || !sections || !members) return outline;
+
+  const memberIds = new Set(members.map((m) => m.id));
+  // Only `inWhole` sections contribute to numbering — a Related section's members are never
+  // top-level parts, and never occupy authored order (so they can't be skipped-over roots either).
+  const authoredOrder: string[] = [];
+  const seen = new Set<string>();
+  for (const section of sections) {
+    if (!section.inWhole) continue;
+    for (const id of section.members) {
+      if (!seen.has(id) && memberIds.has(id)) {
+        seen.add(id);
+        authoredOrder.push(id);
+      }
+    }
+  }
+
+  const parentOf = new Map(members.map((m) => [m.id, m.parent]));
+  const childrenOf = new Map<string, string[]>();
+  for (const id of authoredOrder) {
+    const parent = parentOf.get(id);
+    if (parent === undefined) continue;
+    childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), id]);
+  }
+
+  // V2c item 14's cycle guard: bad data already reported by `validateFamily` must degrade to a
+  // partial outline, never an infinite recursion.
+  const assignChildren = (parentId: string, parentNumber: string, level: number, visited: Set<string>) => {
+    const kids = childrenOf.get(parentId) ?? [];
+    kids.forEach((childId, index) => {
+      if (visited.has(childId)) return;
+      visited.add(childId);
+      const number = `${parentNumber}.${index + 1}`;
+      outline.set(childId, { number, level: level + 1 });
+      assignChildren(childId, number, level + 1, visited);
+    });
+  };
+
+  const visited = new Set<string>([whole]);
+  const topLevel = authoredOrder.filter((id) => {
+    const parent = parentOf.get(id);
+    return parent === undefined || parent === whole;
+  });
+  let next = 0;
+  for (const id of topLevel) {
+    if (visited.has(id)) continue;
+    visited.add(id);
+    next += 1;
+    const number = String(next);
+    outline.set(id, { number, level: 2 });
+    assignChildren(id, number, 2, visited);
+  }
+
+  return outline;
 }
 
 function orderGroups<TId extends string>(groupIds: Map<string, TId[]>, groupOrder: string[] | undefined): NavGroup<TId>[] {
@@ -191,8 +404,8 @@ export function buildCatalogSections<TId extends string>(
   ]);
 
   // Every id/alias a family page's own `members` and `aliases` use, keyed by page id — gathered up
-  // front so `validateFamily` can check catalog-wide uniqueness against every *other* page's ids
-  // (familyModel.ts's `validateFamily` contract).
+  // front so `validateFamily` (above) can check catalog-wide uniqueness against every *other*
+  // page's ids.
   const allPageIds = new Set(pages.map((page) => page.id));
   const familyIdsByPage = new Map<TId, Set<string>>();
   for (const page of pages) {
