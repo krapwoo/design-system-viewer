@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { filterGroups, groupLabelFor, hashForId, idFromHash, neighbors, orderedIds, sortIds } from '../catalogNavigation.ts';
 import { DS_VIEWER_SECRET_HEADER, footerLabel, resolveActiveFromHash, shouldShowMajorBanner, UPDATE_PAGE_ID } from '../catalogNavigation.ts';
-import type { UpdateNotice } from '../types.ts';
+import { aliasTargets, resolveRoute, searchResults } from '../catalogNavigation.ts';
+import type { SectionDef, UpdateNotice } from '../types.ts';
 
 const groups = [
   { label: 'Actions', ids: ['Pill', 'Button'] },
@@ -105,4 +106,79 @@ test('filterGroups also matches a page\'s display title', () => {
   const labels = new Map([['Spacing', 'Spacing scale'], ['Colors', 'Colour roles']]);
   assert.deepEqual(filterGroups(groups, 'colour', labels), [{ label: 'Tokens', ids: ['Colors'] }]);
   assert.deepEqual(filterGroups(groups, 'scale', labels), [{ label: 'Tokens', ids: ['Spacing'] }]);
+});
+
+test('filterGroups also matches a page\'s member ids or aliases, via an optional member index', () => {
+  const memberIndex = new Map([['Button', ['PrimaryButtonView', 'OldButton']]]);
+  assert.deepEqual(filterGroups(groups, 'primarybutton', undefined, memberIndex), [{ label: 'Actions', ids: ['Button'] }]);
+  assert.deepEqual(filterGroups(groups, 'oldbutton', undefined, memberIndex), [{ label: 'Actions', ids: ['Button'] }]);
+  assert.deepEqual(filterGroups(groups, 'zzz', undefined, memberIndex), []);
+});
+
+function section(id: string, family?: SectionDef['family']): SectionDef {
+  return { id, description: 'd', path: 'p', family };
+}
+
+const botAvatarFamily: SectionDef['family'] = {
+  whole: 'BotAvatarView',
+  outline: new Map(),
+  sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['BotAnimatedFaceView'] }],
+  aliases: ['OldBotAvatar'],
+  members: [
+    { id: 'BotAvatarView', source: 'x:1', fidelity: 'approximated', relationship: 'Main component', description: 'd', path: 'x:1' },
+    {
+      id: 'BotAnimatedFaceView', source: 'y:1', fidelity: 'documentation-only', relationship: 'Anatomy',
+      parent: 'BotAvatarView', description: 'd', path: 'y:1', aliases: ['OldFaceView'],
+    },
+  ],
+};
+
+const sectionsFixture: SectionDef[] = [section('BotAvatarView', botAvatarFamily), section('Button')];
+
+test('aliasTargets maps every member id other than the whole, and every alias, to its family page', () => {
+  const targets = aliasTargets(sectionsFixture);
+  assert.deepEqual(targets.get('BotAnimatedFaceView'), { pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView' });
+  assert.deepEqual(targets.get('OldFaceView'), { pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView' });
+  assert.deepEqual(targets.get('OldBotAvatar'), { pageId: 'BotAvatarView' });
+  assert.equal(targets.has('BotAvatarView'), false); // the whole already has its own page address
+  assert.equal(targets.has('Button'), false); // not a family page
+});
+
+test('resolveRoute: the empty fragment', () => {
+  assert.deepEqual(resolveRoute('', ['BotAvatarView', 'Button'], new Map()), { kind: 'empty' });
+  assert.deepEqual(resolveRoute('#', ['BotAvatarView', 'Button'], new Map()), { kind: 'empty' });
+});
+
+test('resolveRoute: #ds-viewer-update', () => {
+  assert.deepEqual(resolveRoute('#ds-viewer-update', ['BotAvatarView', 'Button'], new Map()), { kind: 'update' });
+});
+
+test('resolveRoute: a known page', () => {
+  assert.deepEqual(resolveRoute('#Button', ['BotAvatarView', 'Button'], new Map()), { kind: 'page', id: 'Button' });
+});
+
+test('resolveRoute: a malformed fragment', () => {
+  assert.deepEqual(resolveRoute('#%E0%A4%A', ['BotAvatarView', 'Button'], new Map()), { kind: 'notFound', raw: '%E0%A4%A' });
+});
+
+test('resolveRoute: an unknown fragment', () => {
+  assert.deepEqual(resolveRoute('#Nope', ['BotAvatarView', 'Button'], new Map()), { kind: 'notFound', raw: 'Nope' });
+});
+
+test('resolveRoute: an alias to the whole, and an alias/member id to a member', () => {
+  const targets = aliasTargets(sectionsFixture);
+  assert.deepEqual(resolveRoute('#OldBotAvatar', ['BotAvatarView', 'Button'], targets), { kind: 'page', id: 'BotAvatarView' });
+  assert.deepEqual(resolveRoute('#BotAnimatedFaceView', ['BotAvatarView', 'Button'], targets), { kind: 'member', pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView' });
+  assert.deepEqual(resolveRoute('#OldFaceView', ['BotAvatarView', 'Button'], targets), { kind: 'member', pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView' });
+});
+
+test('searchResults returns member hits with the member id as its label and the owning family title', () => {
+  const entries = [
+    { pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView', aliases: ['OldFaceView'], familyTitle: 'Bot avatar' },
+    { pageId: 'BotAvatarView', memberId: 'BotAvatarBody', familyTitle: 'Bot avatar' },
+  ];
+  assert.deepEqual(searchResults(entries, 'face'), [{ pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView', label: 'BotAnimatedFaceView', familyTitle: 'Bot avatar' }]);
+  assert.deepEqual(searchResults(entries, 'oldface'), [{ pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView', label: 'BotAnimatedFaceView', familyTitle: 'Bot avatar' }]);
+  assert.deepEqual(searchResults(entries, 'zzz'), []);
+  assert.deepEqual(searchResults(entries, ''), []);
 });

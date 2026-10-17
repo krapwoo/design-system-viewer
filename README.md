@@ -445,6 +445,88 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   declared in another component's folder, such as a shared `IconName`, is that component's
   options, so a Banner page never needs one example per icon.
 
+### Family pages
+
+A page can document a family of related declarations — a view and its internal parts, or a
+pattern and the pieces it's built from — on one page instead of scattering them across separate
+catalog pages, each member getting its own address and search entry. Give it `members`, `whole`
+and `sections` instead of `component`/`whenToUse`/`a11y`/specimens, which live on the members (the
+whole is a member too):
+
+```tsx
+export default defineCatalogPage({
+  id: 'Toast', group: 'Patterns', description: 'How a Toast is assembled from a Banner.',
+  whole: 'Toast',
+  sections: [
+    { label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] },
+    { label: 'Related', kind: 'blocks', inWhole: false, members: ['ToastStandaloneBanner'] },
+  ],
+  members: [
+    { id: 'Toast', source: 'components/Toast/Toast.tsx:1', fidelity: 'documentation-only', relationship: 'Main pattern', description: '...' },
+    {
+      id: 'ToastBanner', component: 'Banner', parent: 'Toast',
+      source: 'components/Banner/Banner.tsx:28', fidelity: 'replicated', relationship: 'Anatomy', description: '...',
+      whenToUse: '...', a11y: '...', variants: { items: [/* ... */] },
+    },
+    {
+      id: 'ToastStandaloneBanner', source: 'components/Banner/Banner.tsx:28', fidelity: 'documentation-only', relationship: 'Related',
+      related: 'Wraps ToastBanner directly when a notice should stay until dismissed.', description: '...', aliases: ['BannerStandalone'],
+    },
+  ],
+});
+```
+
+- **`whole`** is a member id, and must equal the page's own `id`. It renders first, with no header
+  of its own (the page title already names it) and no number.
+- **`sections`** (`{ label, kind: 'blocks' | 'list', inWhole, members }`) group the rest: `blocks`
+  renders each member as its own full block (specimens and all); `list` renders one card of folded
+  rows, each a toggle that expands in place. `inWhole` sections render under the page's one
+  "Parts" label; the rest render under its one "Related" label — the only two section labels the
+  page ever shows; each section's own `label` stays in the data (for the anatomy legend and your
+  own reference) but is never rendered. Numbering follows each member's own `parent` (below), not
+  this ordering.
+- **`parent`** nests a member under another (e.g. a subview under its view). A top-level part (an
+  `inWhole` member whose `parent` is the whole, or who has no `parent` at all) is numbered `1`,
+  `2`, `3`… in the order it's first listed across `sections`; a child takes its parent's number
+  plus `.1`, `.2`, … the same way. A Related member (outside every `inWhole` section) gets no
+  number at all.
+- **`anatomy`** (page-level) is the first box after the page head, labeled “Anatomy” like the
+  specimen grids: `{ picture, groups }`, where each group is
+  `{ label, items: [{ member, description } | { other, description }] }`. A `member` item names one
+  of this page's own members (not the whole) and is numbered to match its Part; an `other` item
+  names a component documented elsewhere, shows an unnumbered ↗ pin, and links only when the name
+  resolves to a real catalog address. With six items or fewer the legend sits beside `picture`;
+  with more it goes below it in up to three columns, each group placed in the currently shortest
+  column so the columns end nearly level (a group never splits). Mark `picture` with
+  `<AnatomyPin member="ThatMemberId" />` (its number and style come from the page, so `picture`
+  never hardcodes one) or `<AnatomyPin other="ThatComponent" />`.
+- **`axis`** on a `variants` or `states` slot names the one property that grid varies (e.g.
+  `'Expression'`) and shows as the grid's label. Family pages hide the generic block labels, so
+  give each grid an `axis` there.
+- **`fidelity`** (`'replicated' | 'approximated' | 'documentation-only'`) shows as a small badge.
+  Use `'documentation-only'` for a member with no rendered specimen (no native counterpart to show,
+  or nothing meaningfully different to render).
+- **`related`** is a short sentence for a member outside the whole (e.g. "Wraps X directly …");
+  another member's name inside it becomes a link to that member's own address. **`aliases`** (on a
+  member, or on the page itself) resolve old/retired ids to the right address, for both routing and
+  search — on the page itself, this only takes effect when the page also has `members`; it's
+  accepted but unused on a normal (single-component) page.
+- **`composedOf`** on a member — same shape and meaning as the page-level field above — shows as
+  one "Uses …" line inside the member's own disclosure, after any notes. A name links when it
+  resolves to a real catalog address (a page, another member, or an alias — in this family or any
+  other), otherwise it shows in code; an unknown name logs a `[Catalog]` warning the same way the
+  page-level field's does.
+- **`notShown`** (page-level) is a short "Not shown in the browser: …" line under the page head,
+  for behavior a web catalog can't demonstrate (a timer, a native gesture). A member's own
+  `notShown` works the same way, under its specimens. Like `aliases`, the page-level field only
+  takes effect on a page with `members`.
+- **`apiLabel`** (default `'API'`) renames the disclosure's reference-excerpt part for a host app
+  that generates one (e.g. `'Swift API'`) — never hardcode a specific language's wording. Also
+  only takes effect on a page with `members`.
+- Every component-bound member (one with `component` set) wants a real `whenToUse`, a real `a11y`,
+  and at least one specimen, the same as a normal page's component — `doctor` checks each one.
+  See `viewer-host/viewer-pages/FamilyPage.catalog.tsx` in this repo for a complete, worked example.
+
 ### Token pages
 
 A token page shows each token at its real value with its role. Pick the layout by the token's

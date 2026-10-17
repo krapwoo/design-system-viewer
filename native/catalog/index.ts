@@ -15,7 +15,9 @@
 export { CatalogShell } from './CatalogShell';
 export { CatalogSidebar } from './CatalogSidebar';
 export { CatalogSearchInput } from './CatalogSearchInput';
-export { SectionBlock } from './SectionBlock';
+export { SectionBlock, PagerButton, SectionPagerRow } from './SectionBlock';
+export type { SectionPager } from './SectionBlock';
+export { FamilyPage, AnatomyPin } from './FamilyPage';
 export { ComparisonGrid } from './ComparisonGrid';
 export { grid, axisItems, axisProp } from './comparison';
 export { ComparisonGroups } from './ComparisonGroups';
@@ -46,7 +48,8 @@ export { defineCatalogPage, buildCatalogSections } from './pageApi';
 export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
 export type {
   PropDef, SectionDef, NavGroup, SpecimenSize, SpecimenSurfaceKind, ComparisonDef, ComparisonCell, ComparisonAxisItem, GridAxis,
-  PreviewWidths, TokenSection, ComposedOfEntry,
+  PreviewWidths, TokenSection, ComposedOfEntry, CatalogMember, CatalogMemberSection, FamilyDef,
+  CatalogAnatomy, CatalogAnatomyGroup, CatalogAnatomyItem,
 } from './types';
 export { UpdatePanel } from './UpdatePanel';
 export { UPDATE_PAGE_ID } from './catalogNavigation';

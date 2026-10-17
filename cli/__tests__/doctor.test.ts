@@ -725,3 +725,234 @@ test('overlay-without-device-frame ignores type-only Modal imports', () => {
   assert.equal(checkOverlaysFramed(pages, [component({ name: 'A', file: 'A.tsx' }), component({ name: 'B', file: 'B.tsx' })], dir).length, 0);
   rmSync(dir, { recursive: true, force: true });
 });
+
+// Plan V3: a family page's own `members` get the same advisories a page-level `component` gets,
+// per member — and a component documented only as a member counts as documented.
+
+function familyPage(overrides: Partial<StaticPage> = {}): StaticPage {
+  return page({
+    id: 'Toast', group: 'Patterns',
+    whole: 'Toast',
+    sections: [{ label: 'Parts', kind: 'blocks', members: ['ToastBanner'] }],
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+    ],
+    ...overrides,
+  });
+}
+
+test('a component documented only as a member counts as documented — component-no-examples does not fire for it', () => {
+  const issues = collectIssues([familyPage()], [component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'component-no-examples' && i.message.includes('"Banner"')).length, 0);
+});
+
+test('component-no-examples fires per component-bound member that itself has no examples, naming the member', () => {
+  const noExamples = familyPage({
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: false },
+    ],
+  });
+  const issues = collectIssues([noExamples], [component({ name: 'Banner' })]);
+  const member = issues.filter((i) => i.id === 'component-no-examples' && i.message.includes('"ToastBanner"'));
+  assert.equal(member.length, 1);
+});
+
+test('missing-guidance-or-a11y fires per component-bound member missing whenToUse or a11y, naming the member', () => {
+  const missing = familyPage({
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: true },
+    ],
+  });
+  const issues = collectIssues([missing], [component({ name: 'Banner' })]);
+  const forMember = issues.filter((i) => i.id === 'missing-guidance-or-a11y' && i.message.includes('"ToastBanner"'));
+  assert.equal(forMember.length, 2);
+});
+
+// V2c item 13: with an empty component list, `componentsByName.has(member.component)` would skip
+// `Toast` for the same reason regardless of the `if (!member.component) continue;` guard — passing
+// a real component record named after the documentation-only member's own id (never set as its
+// `component`) proves the exemption follows `member.component`, not `member.id`.
+test('documentation-only members (no component) are exempt from every per-member advisory', () => {
+  const issues = collectIssues([familyPage()], [component({ name: 'Toast' }), component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.message.includes('Member "Toast"')).length, 0);
+});
+
+// V2c item 6: doctor must use the same `members.length > 0` predicate the runtime uses
+// (`pageApi.ts`'s `buildCatalogSections`) — an empty `members` array is not a family page, and its
+// usual page-level checks must still run.
+test('a page with members: [] is not treated as a family — page-level checks still run, and no family-invalid fires', () => {
+  const emptyMembers = page({ component: 'Widget', members: [], whole: 'Widget', hasWhenToUse: false, hasA11y: false });
+  const issues = collectIssues([emptyMembers], [component({ name: 'Widget' })]);
+  assert.ok(issues.some((i) => i.id === 'missing-guidance-or-a11y'));
+  assert.equal(issues.filter((i) => i.id === 'family-invalid').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'component-no-examples' && i.message.includes('Member')).length, 0);
+});
+
+// V2c item 9: a member whose `component` names an export that doesn't exist must be reported —
+// never silently ignored (its props would also silently vanish from the disclosure at runtime).
+test('component-export-removed fires for a member naming a component that no longer exists', () => {
+  const broken = familyPage({
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+      { id: 'ToastBanner', component: 'NoSuchComponent', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+    ],
+  });
+  const issues = collectIssues([broken], [component({ name: 'Banner' })]);
+  assert.ok(issues.some((i) => i.id === 'component-export-removed' && i.severity === 'error' && i.message.includes('"ToastBanner"') && i.message.includes('"NoSuchComponent"')));
+});
+
+test('a family page is exempt from the page-level missing-guidance-or-a11y check, even after applyComponentDefaults assigns it a "component"', () => {
+  // Simulates what `applyComponentDefaults` can do to a family page living in a component's own
+  // folder: it gains a page-level `component` matching a real export, even though the page's own
+  // guidance always lives on its members, never on the page itself.
+  const withPageComponent = familyPage({
+    component: 'Toast',
+    members: [
+      { id: 'Toast', component: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+    ],
+  });
+  const issues = collectIssues([withPageComponent], [component({ name: 'Toast' }), component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'missing-guidance-or-a11y').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'component-no-examples').length, 0);
+});
+
+// Important finding 1 (independent review): a documentation-only whole — the "whole" case this
+// feature exists for — sits in a component folder but its own file stem (`Toast`) never names a
+// component export; only its member `ToastBanner` does. Before the fix, `applyComponentDefaults`
+// assigned it a page-level `component: 'Toast'` anyway (the same default a single-component page
+// gets), which `checkComponentExportRemoved` then rejected as a removed export — exactly the
+// runtime exemption `pageApi.ts`'s `buildCatalogSections` already grants (`page.members &&
+// page.members.length > 0` skips the `page.component ?? page.id` fallback entirely).
+test('applyComponentDefaults never assigns a page-level "component" to a documentation-only family whole, so no component-keyed rule misfires', () => {
+  const familyInComponentFolder = familyPage({ file: '/components/Toast/Toast.catalog.tsx', component: undefined });
+  const defaulted = applyComponentDefaults([familyInComponentFolder], new Set(['/components/Toast']));
+  assert.equal(defaulted[0].component, undefined);
+  const banner = component({ name: 'Banner' });
+  const issues = collectIssues(defaulted, [banner]);
+  assert.equal(issues.filter((i) => i.id === 'component-export-removed' && i.message.includes('"Toast"')).length, 0);
+  assert.equal(issues.filter((i) => i.id === 'missing-composition-suggestion').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'missing-working-preview').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'preview-only-component-page').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'missing-guidance-or-a11y' && !i.message.includes('Member')).length, 0);
+  assert.equal(issues.filter((i) => i.id === 'component-no-examples' && !i.message.includes('Member')).length, 0);
+  assert.equal(checkOverlaysFramed(defaulted, [banner], '/').length, 0);
+});
+
+test('family-invalid reuses validateFamily: reports the whole missing from its own members', () => {
+  const broken = familyPage({ whole: 'NoSuchMember' });
+  const issues = collectIssues([broken], [component({ name: 'Banner' })]);
+  assert.ok(issues.some((i) => i.id === 'family-invalid' && i.severity === 'error' && i.message.includes('is not one of its members')));
+});
+
+test('family-invalid reports a member in more than one section', () => {
+  const dup = familyPage({ sections: [{ label: 'Parts', kind: 'blocks', members: ['ToastBanner', 'ToastBanner'] }] });
+  const issues = collectIssues([dup], [component({ name: 'Banner' })]);
+  assert.ok(issues.some((i) => i.id === 'family-invalid' && i.message.includes('is in more than one section')));
+});
+
+// N3: the doctor-side `family-invalid` rule must name the real section — not an empty label, which
+// its old flattened `sectionMemberIds` had no way to carry.
+test('family-invalid names the real section label for an unknown member id, not an empty string', () => {
+  const broken = familyPage({ sections: [{ label: 'Parts', kind: 'blocks', members: ['Typo'] }] });
+  const issues = collectIssues([broken], [component({ name: 'Banner' })]);
+  const found = issues.find((i) => i.id === 'family-invalid' && i.message.includes('is not a member of this page'));
+  assert.ok(found, 'expected a family-invalid issue for the unknown member id');
+  assert.ok(found!.message.includes('section "Parts" lists "Typo"'), found!.message);
+});
+
+// N6: doctor's own `family-invalid` rule also catches a component-bound member with real specimens
+// placed in a `list` section — `FoldedRow` would silently drop them at runtime.
+test('family-invalid reports a list-section member that has specimens', () => {
+  const withSpecimen = familyPage({ sections: [{ label: 'Helpers', kind: 'list', members: ['ToastBanner'] }] });
+  const issues = collectIssues([withSpecimen], [component({ name: 'Banner' })]);
+  assert.ok(issues.some((i) => i.id === 'family-invalid' && i.message.includes('"ToastBanner" has specimens, but list sections')));
+});
+
+// A member in a list section renders as a folded row without specimens, so doctor must not also
+// ask it for examples (that would contradict the list-section rule above).
+test('component-no-examples never fires for a component-bound member in a list section', () => {
+  const listed = familyPage({
+    sections: [{ label: 'Helpers', kind: 'list', members: ['ToastBanner'] }],
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+      { id: 'ToastBanner', component: 'Banner', hasWhenToUse: true, hasA11y: true, hasExamples: false },
+    ],
+  });
+  const issues = collectIssues([listed], [component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'component-no-examples').length, 0);
+  assert.equal(issues.filter((i) => i.id === 'family-invalid').length, 0);
+});
+
+test('family-invalid never runs against a not-checkable page — never a partial read', () => {
+  const broken = familyPage({ checkable: false, whole: 'NoSuchMember' });
+  const issues = collectIssues([broken], []);
+  assert.equal(issues.filter((i) => i.id === 'family-invalid').length, 0);
+});
+
+test('a page with no members at all never triggers family-invalid', () => {
+  const issues = collectIssues([page({ component: 'Widget' })], [component({ name: 'Widget', props: [] })]);
+  assert.equal(issues.filter((i) => i.id === 'family-invalid').length, 0);
+});
+
+// V2d item 5: `doctor` resolves a member's own `composedOf` the same way `buildCatalogSections`
+// resolves it at runtime (`validateComposedOf`) — against every known component name, every page
+// id, and every member id across the whole catalog — so an unknown name is reported here too.
+test('composed-of-unknown fires for a member\'s composedOf naming an unknown component, not a known one', () => {
+  const withComposedOf = familyPage({
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false, composedOf: [{ component: 'ToastBanner' }, { component: 'NoSuchThing' }] },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+    ],
+  });
+  const issues = collectIssues([withComposedOf], [component({ name: 'Banner' })]);
+  const unknown = issues.filter((i) => i.id === 'composed-of-unknown');
+  assert.equal(unknown.length, 1);
+  assert.equal(unknown[0].severity, 'warning');
+  assert.ok(unknown[0].message.includes('Member "Toast"') && unknown[0].message.includes('"NoSuchThing"'));
+});
+
+// N8: doctor's own known-name universe must accept a member alias and a page-level alias too —
+// the same universe FamilyPage's own link resolution already accepts (aliasTargets).
+test('composed-of-unknown never fires for a member\'s composedOf naming a sibling member\'s alias', () => {
+  const withComposedOf = familyPage({
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false, composedOf: [{ component: 'ToastBannerAlias' }] },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['ToastBannerAlias'], hasWhenToUse: true, hasA11y: true, hasExamples: true },
+    ],
+  });
+  const issues = collectIssues([withComposedOf], [component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'composed-of-unknown').length, 0);
+});
+
+test('composed-of-unknown never fires for a member\'s composedOf naming another page\'s own alias', () => {
+  const withComposedOf = familyPage({
+    aliases: ['OldToast'],
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false, composedOf: [{ component: 'OldToast' }] },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+    ],
+  });
+  const issues = collectIssues([withComposedOf], [component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'composed-of-unknown').length, 0);
+});
+
+test('composed-of-unknown never fires for a member\'s composedOf naming a sibling member id', () => {
+  const withComposedOf = familyPage({
+    members: [
+      { id: 'Toast', hasWhenToUse: false, hasA11y: false, hasExamples: false, composedOf: [{ component: 'ToastBanner' }] },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+    ],
+  });
+  const issues = collectIssues([withComposedOf], [component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'composed-of-unknown').length, 0);
+});
+
+test('composed-of-unknown never runs against a not-checkable page, or a member with no composedOf', () => {
+  const notCheckable = familyPage({ checkable: false });
+  assert.equal(collectIssues([notCheckable], [component({ name: 'Banner' })]).filter((i) => i.id === 'composed-of-unknown').length, 0);
+  assert.equal(collectIssues([familyPage()], [component({ name: 'Banner' })]).filter((i) => i.id === 'composed-of-unknown').length, 0);
+});
