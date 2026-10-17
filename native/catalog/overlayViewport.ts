@@ -6,7 +6,7 @@
  * render) resolves an address back to the `node` it names.
  */
 import type React from 'react';
-import type { SectionDef } from './types.ts';
+import type { ComparisonDef, SectionDef, VariantSlot } from './types.ts';
 
 /** Which block on a page an addressed specimen's `node` lives in — see `findOverlayNode`. */
 export type OverlaySlot = 'variants' | 'states' | 'comparison' | 'preview';
@@ -109,19 +109,39 @@ export function resolveOverlayViewport(args: {
   return { mode: 'frame', href: `${args.pathname}${overlayViewportHrefSuffix(args.address)}` };
 }
 
-/** The authored `node` an `OverlayAddress` points at, or `undefined` for a stale/unknown address
- *  (a removed example, a renamed key, a typo) — `CatalogShell`'s chromeless selected-document
- *  render shows an honest "unavailable" recovery rather than rendering nothing silently. */
-export function findOverlayNode(sections: readonly SectionDef<string>[], address: OverlayAddress): React.ReactNode | undefined {
-  const def = sections.find((section) => section.id === address.pageId);
-  if (!def) return undefined;
-  if (address.slot === 'variants') return def.variants?.items.find((item) => item.key === address.itemKey)?.node;
-  if (address.slot === 'states') return def.states?.items.find((item) => item.key === address.itemKey)?.node;
+/** The slots `findOverlayNode` reads — shared by a top-level `SectionDef` and a family member
+ *  (`CatalogMember`), which carry the exact same `variants`/`states`/`comparison`/`render` shape. */
+interface SpecimenSource {
+  variants?: VariantSlot;
+  states?: VariantSlot;
+  comparison?: ComparisonDef;
+  render?: () => React.ReactNode;
+}
+
+function readSpecimenSlot(source: SpecimenSource, address: OverlayAddress): React.ReactNode | undefined {
+  if (address.slot === 'variants') return source.variants?.items.find((item) => item.key === address.itemKey)?.node;
+  if (address.slot === 'states') return source.states?.items.find((item) => item.key === address.itemKey)?.node;
   // A `render()` page's preview (one per page; `itemKey` is always 'preview').
-  if (address.slot === 'preview') return def.render?.();
+  if (address.slot === 'preview') return source.render?.();
   // Matched by recomputing each cell's own canonical key, never by splitting `address.itemKey` —
   // a row/column key may itself contain any delimiter this module could pick.
-  return def.comparison?.cells.find((cell) => comparisonCellItemKey(cell.rowKey, cell.columnKey) === address.itemKey)?.node;
+  return source.comparison?.cells.find((cell) => comparisonCellItemKey(cell.rowKey, cell.columnKey) === address.itemKey)?.node;
+}
+
+/** The authored `node` an `OverlayAddress` points at, or `undefined` for a stale/unknown address
+ *  (a removed example, a renamed key, a typo) — `CatalogShell`'s chromeless selected-document
+ *  render shows an honest "unavailable" recovery rather than rendering nothing silently.
+ *  V2c item 3: a specimen built inside a family member (`SectionBlock.tsx`'s `memberAsSectionDef`)
+ *  addresses itself with the member's own id as `pageId` — that never matches a top-level
+ *  `SectionDef.id`, so this also searches every family page's own `family.members` for it. */
+export function findOverlayNode(sections: readonly SectionDef<string>[], address: OverlayAddress): React.ReactNode | undefined {
+  const def = sections.find((section) => section.id === address.pageId);
+  if (def) return readSpecimenSlot(def, address);
+  for (const section of sections) {
+    const member = section.family?.members.find((m) => m.id === address.pageId);
+    if (member) return readSpecimenSlot(member, address);
+  }
+  return undefined;
 }
 
 /** The canonical, unambiguous `itemKey` for one comparison cell's row+column — this module's own

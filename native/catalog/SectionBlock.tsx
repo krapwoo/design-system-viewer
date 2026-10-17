@@ -53,7 +53,7 @@ export interface SectionPager<TId extends string> {
   labelOf?: (id: TId) => string;
 }
 
-function PagerButton<TId extends string>({
+export function PagerButton<TId extends string>({
   direction,
   targetId,
   onNavigate,
@@ -209,7 +209,40 @@ function placementBlock(block: PresentationBlock, height: number): PlacementBloc
  * are never recorded while side by side, so the decision never feeds on its own result; a width
  * change returns to stacked and decides again.
  */
-function Blocks<TId extends string>({ blocks, def, surface }: { blocks: PresentationBlock[]; def: SectionDef<TId>; surface: SpecimenSurfaceKind }) {
+/** The previous/next pager buttons, in their row — shared by `SectionBlock` and `FamilyPage` so a
+ *  family page's own page head gets the same pager chrome as every other page. */
+export function SectionPagerRow<TId extends string>({ pager }: { pager: SectionPager<TId> }) {
+  return (
+    <View style={styles.pager}>
+      <PagerButton direction="previous" targetId={pager.previousId} onNavigate={pager.onNavigate} labelOf={pager.labelOf} />
+      <PagerButton direction="next" targetId={pager.nextId} onNavigate={pager.onNavigate} labelOf={pager.labelOf} />
+    </View>
+  );
+}
+
+/** The page's specimen blocks (grid, grouped rows, list, or preview), stacked or side by side —
+ *  exported so `FamilyPage` can render a member's own specimens through the exact same placement
+ *  logic a normal page's blocks use, rather than a second copy of it. */
+export function Blocks<TId extends string>({
+  blocks,
+  def,
+  surface,
+  showLabels = true,
+  trimOuterMargin = false,
+}: {
+  blocks: PresentationBlock[];
+  def: SectionDef<TId>;
+  surface: SpecimenSurfaceKind;
+  /** V2b item 4: a family member's own specimens render with no uppercase "Variants" / "States /
+   *  configurations" block label — v8 has none inside a member block. A page's own `SectionBlock`
+   *  keeps its labels (the default, unchanged). */
+  showLabels?: boolean;
+  /** V2b item 5: drops this component's own page-level `marginBottom` — `FamilyPage`'s own
+   *  wrapper (`memberSpecimens`) supplies the exact spacing a member block needs instead, so the
+   *  two never double-stack. A page's own `SectionBlock` keeps the margin (the default,
+   *  unchanged). */
+  trimOuterMargin?: boolean;
+}) {
   const [available, setAvailable] = useState(0);
   const [heights, setHeights] = useState<number[]>([]);
   const [placement, setPlacement] = useState<'side' | 'stacked'>('stacked');
@@ -248,7 +281,7 @@ function Blocks<TId extends string>({ blocks, def, surface }: { blocks: Presenta
 
   const side = placement === 'side';
   return (
-    <View onLayout={onContainerLayout} style={[styles.blocks, side && styles.blocksSide]}>
+    <View onLayout={onContainerLayout} style={[styles.blocks, side && styles.blocksSide, trimOuterMargin && styles.blocksNoMargin]}>
       {blocks.map((block, i) => (
         <View
           key={block.title || block.kind}
@@ -256,7 +289,7 @@ function Blocks<TId extends string>({ blocks, def, surface }: { blocks: Presenta
           // Side by side, each block fills its own half: a card always fills the column it is given.
           style={side ? styles.blockFill : undefined}
         >
-          {block.title ? <Text style={styles.blockLabel}>{block.title}</Text> : null}
+          {showLabels && block.title ? <Text style={styles.blockLabel}>{block.title}</Text> : null}
           <BlockContent block={block} def={def} surface={surface} />
         </View>
       ))}
@@ -318,12 +351,7 @@ export function SectionBlock<TId extends string>({
           )}
           <Text style={styles.desc}>{def.description}</Text>
         </View>
-        {pager && (
-          <View style={styles.pager}>
-            <PagerButton direction="previous" targetId={pager.previousId} onNavigate={pager.onNavigate} labelOf={pager.labelOf} />
-            <PagerButton direction="next" targetId={pager.nextId} onNavigate={pager.onNavigate} labelOf={pager.labelOf} />
-          </View>
-        )}
+        {pager && <SectionPagerRow pager={pager} />}
       </View>
 
       {blocks.length > 0 && <Blocks blocks={blocks} def={def} surface={surface} />}
@@ -375,6 +403,7 @@ const styles = StyleSheet.create({
   pagerGlyph: { ...CATALOG_TEXT.icon, color: CATALOG_COLOR.text },
   pagerGlyphDisabled: { color: CATALOG_COLOR.textMuted },
   blocks: { gap: CATALOG_LAYOUT.blockGap, marginBottom: CATALOG_LAYOUT.blockGap },
+  blocksNoMargin: { marginBottom: 0 },
   blocksSide: { flexDirection: 'row', alignItems: 'flex-start' },
   blockFill: { flex: 1, minWidth: 0 },
   // Centred in the card, like every other example (a single phone-width frame used to sit left).

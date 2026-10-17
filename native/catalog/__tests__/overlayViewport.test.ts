@@ -145,6 +145,36 @@ test('findOverlayNode returns undefined when the addressed slot has no items at 
   assert.equal(findOverlayNode([noVariants], { pageId: 'Empty', slot: 'variants', itemKey: 'anything' }), undefined);
 });
 
+// V2c item 3: a specimen built inside a family member addresses itself with the member's own id
+// as `pageId` (SectionBlock.tsx's `memberAsSectionDef`) — `findOverlayNode` must resolve that
+// through `section.family.members`, reading the member's own slot, not the page's.
+const familyDef: SectionDef<string> = {
+  id: 'BotAvatarView',
+  description: 'd',
+  path: 'p.tsx',
+  family: {
+    whole: 'BotAvatarView',
+    sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['BotAnimatedFaceView'] }],
+    outline: new Map(),
+    members: [
+      { id: 'BotAvatarView', source: 'x:1', fidelity: 'approximated', relationship: 'Main component', description: 'd', path: 'x:1' },
+      {
+        id: 'BotAnimatedFaceView', source: 'y:1', fidelity: 'replicated', relationship: 'Anatomy', parent: 'BotAvatarView',
+        description: 'd', path: 'y:1',
+        variants: { items: [{ key: 'default', name: 'Default', node: 'face-node' as unknown as never }] },
+      },
+    ],
+  },
+};
+
+test('findOverlayNode resolves an address whose pageId is a family member id, reading that member\'s own slot', () => {
+  assert.equal(findOverlayNode([familyDef], { pageId: 'BotAnimatedFaceView', slot: 'variants', itemKey: 'default' }), 'face-node');
+});
+
+test('findOverlayNode returns undefined for an unknown member id inside a family page', () => {
+  assert.equal(findOverlayNode([familyDef], { pageId: 'NoSuchMember', slot: 'variants', itemKey: 'default' }), undefined);
+});
+
 test('findOverlayNode resolves a comparison cell by the canonical comparisonCellItemKey, not an ambiguous colon split, when a row/column key itself contains a colon', () => {
   // Naive `itemKey.split(':')` is ambiguous here: both ('r:1', 'c') and ('r', '1:c') would split
   // out of "r:1:c". The canonical `comparisonCellItemKey` join (a null-byte separator) never has

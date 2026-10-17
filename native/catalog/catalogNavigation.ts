@@ -3,7 +3,7 @@
  * runner. CatalogShell, CatalogSidebar, and SectionBlock all derive page order from here, so the
  * sidebar order, previous/next order, and fragment fallback can never drift apart.
  */
-import type { NavGroup, UpdateNotice, VersionStatus } from './types.ts';
+import type { NavGroup, SectionDef, UpdateNotice, VersionStatus } from './types.ts';
 
 /** THE canonical within-group ordering of section ids. */
 export function sortIds<TId extends string>(ids: readonly TId[]): TId[] {
@@ -47,18 +47,25 @@ export function neighbors<TId extends string>(
   };
 }
 
-/** Sidebar filter: case-insensitive substring match, sorted ids, empty groups removed. */
+/** Sidebar filter: case-insensitive substring match, sorted ids, empty groups removed. A page
+ *  matches on its id, its title, or (spec §5.3) any of its family's member ids or aliases. */
 export function filterGroups<TId extends string>(
   groups: readonly NavGroup<TId>[],
   query: string,
   /** Display titles by id; a page matches on its id or its title. */
   labels?: ReadonlyMap<string, string>,
+  /** Every member id/alias a family page's members use, by page id. */
+  memberIds?: ReadonlyMap<string, readonly string[]>,
 ): NavGroup<TId>[] {
   const q = query.trim().toLowerCase();
   return groups
     .map((group) => ({
       label: group.label,
-      ids: sortIds(q ? group.ids.filter((id) => id.toLowerCase().includes(q) || (labels?.get(id)?.toLowerCase().includes(q) ?? false)) : group.ids),
+      ids: sortIds(q ? group.ids.filter((id) =>
+        id.toLowerCase().includes(q)
+        || (labels?.get(id)?.toLowerCase().includes(q) ?? false)
+        || (memberIds?.get(id)?.some((memberId) => memberId.toLowerCase().includes(q)) ?? false),
+      ) : group.ids),
     }))
     .filter((group) => group.ids.length > 0);
 }
@@ -129,6 +136,85 @@ export function resolveActiveFromHash<TId extends string>(
   }
   if (decoded === UPDATE_PAGE_ID) return UPDATE_PAGE_ID;
   return idFromHash(hash, order);
+}
+
+/** Where an alias or member id resolves: the family page `pageId`, and — unless it names the
+ *  whole itself — the specific `memberId` within it. Built by `aliasTargets`. */
+export interface AliasTarget {
+  pageId: string;
+  memberId?: string;
+}
+
+/** Every member id other than the whole, every member alias, and every family page's own
+ *  (page-level) alias, mapped to where it resolves (spec §5.3 "Old addresses"). Pages without a
+ *  `family` contribute nothing. */
+export function aliasTargets<TId extends string>(sections: readonly SectionDef<TId>[]): Map<string, AliasTarget> {
+  const targets = new Map<string, AliasTarget>();
+  for (const section of sections) {
+    const family = section.family;
+    if (!family) continue;
+    for (const member of family.members) {
+      if (member.id === family.whole) continue;
+      targets.set(member.id, { pageId: section.id, memberId: member.id });
+      for (const alias of member.aliases ?? []) targets.set(alias, { pageId: section.id, memberId: member.id });
+    }
+    for (const alias of family.aliases ?? []) targets.set(alias, { pageId: section.id });
+  }
+  return targets;
+}
+
+/** Where a URL fragment should take the viewer (spec §5.3). Unlike `resolveActiveFromHash`
+ *  (kept, unchanged, for existing callers), this never silently falls back to the first page: an
+ *  unknown or malformed fragment is reported as `notFound` instead. */
+export type Route<TId extends string> =
+  | { kind: 'page'; id: TId }
+  | { kind: 'member'; pageId: TId; memberId: string }
+  | { kind: 'update' }
+  | { kind: 'notFound'; raw: string }
+  | { kind: 'empty' };
+
+export function resolveRoute<TId extends string>(
+  hash: string,
+  order: readonly TId[],
+  aliases: ReadonlyMap<string, AliasTarget>,
+): Route<TId> {
+  const raw = hash.startsWith('#') ? hash.slice(1) : hash;
+  if (raw === '') return { kind: 'empty' };
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return { kind: 'notFound', raw };
+  }
+  if (decoded === UPDATE_PAGE_ID) return { kind: 'update' };
+  if ((order as readonly string[]).includes(decoded)) return { kind: 'page', id: decoded as TId };
+  const target = aliases.get(decoded);
+  if (target) {
+    if (target.memberId !== undefined) return { kind: 'member', pageId: target.pageId as TId, memberId: target.memberId };
+    return { kind: 'page', id: target.pageId as TId };
+  }
+  return { kind: 'notFound', raw: decoded };
+}
+
+/** One member search candidate: a family page's member, with its owning page and family title. */
+export interface MemberSearchEntry<TId extends string> {
+  pageId: TId;
+  memberId: string;
+  aliases?: readonly string[];
+  familyTitle: string;
+}
+
+/** Member search hits (spec §5.3 "Search"): every entry whose member id or alias contains the
+ *  query, case-insensitively. The label is always the member id — the Swift declaration name. */
+export function searchResults<TId extends string>(
+  entries: readonly MemberSearchEntry<TId>[],
+  query: string,
+): Array<{ pageId: TId; memberId: string; label: string; familyTitle: string }> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return entries
+    .filter((entry) => entry.memberId.toLowerCase().includes(q) || (entry.aliases ?? []).some((alias) => alias.toLowerCase().includes(q)))
+    .map((entry) => ({ pageId: entry.pageId, memberId: entry.memberId, label: entry.memberId, familyTitle: entry.familyTitle }));
 }
 
 /** Design §5: "Major: ... dismissible per version; the footer line remains." `dismissedVersion`

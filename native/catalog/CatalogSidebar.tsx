@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-nati
 import type { ImageSourcePropType, LayoutChangeEvent, NativeSyntheticEvent, ImageLoadEventData } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { logoLayout } from './logoLayout';
-import { filterGroups, hashForId, UPDATE_PAGE_ID } from './catalogNavigation';
+import { filterGroups, hashForId, searchResults, UPDATE_PAGE_ID, type MemberSearchEntry } from './catalogNavigation';
 import type { NavGroup } from './types';
 import { CatalogSearchInput } from './CatalogSearchInput';
 
@@ -52,6 +52,29 @@ function NavItem<TId extends string>({ id, label, active, onPress, keepDocumentU
   );
 }
 
+/** One member search hit (spec §5.3 "Search"): `<memberId> — in <familyTitle>`, opening that
+ *  member's address. Shares the plain nav-row visual `NavItem` uses ("Use the existing row
+ *  styles"); `href` is the member's own address so Enter activates it the same way every other
+ *  link in the sidebar does. */
+function MemberResultItem({ label, familyTitle, href, onPress, keepDocumentUrl = false }: { label: string; familyTitle: string; href: string; onPress: () => void; keepDocumentUrl?: boolean }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      onPress={pressHandler(onPress, keepDocumentUrl)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="link"
+      {...({ href } as Record<string, unknown>)}
+      style={({ pressed }) => [styles.item, (pressed || hovered) && styles.itemHover, focused && styles.focusRing]}
+    >
+      <Text style={styles.label}>{`${label} — in ${familyTitle}`}</Text>
+    </Pressable>
+  );
+}
+
 function FooterLink({ label, kind, active, onPress, keepDocumentUrl = false }: { label: string; kind: 'update' | 'version'; active: boolean; onPress: () => void; keepDocumentUrl?: boolean }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -90,8 +113,11 @@ export function CatalogSidebar<TId extends string>({
   caption,
   groups,
   labels,
+  memberIndex,
+  memberSearchEntries,
   active,
   onPress,
+  onSelectMember,
   footer,
   keepDocumentUrl = false,
 }: {
@@ -107,8 +133,17 @@ export function CatalogSidebar<TId extends string>({
   groups: NavGroup<TId>[];
   /** Display titles by page id (`SectionDef.title`); pages without one show their id. */
   labels?: ReadonlyMap<string, string>;
+  /** Every family page's own member ids/aliases, by page id (spec §5.3 "Search") — a page also
+   *  matches the filter on any of these, not just its own id/title. */
+  memberIndex?: ReadonlyMap<string, readonly string[]>;
+  /** Every family member search candidate across the catalog (spec §5.3 "Search") — shown as its
+   *  own "Members" group of hits, below the filtered pages, while the query is non-empty. */
+  memberSearchEntries?: readonly MemberSearchEntry<TId>[];
   active: string | undefined;
   onPress: (id: TId) => void;
+  /** Opens a member hit's address: activates its family page, then scrolls/opens/focuses the
+   *  member itself (`CatalogShell`). */
+  onSelectMember?: (pageId: TId, memberId: string) => void;
   /** The link below the nav list that opens the update page: the installed version (`'version'`),
    *  or the update notice with a dot (`'update'`, design §5's footer line). `active` is true while
    *  the update page itself is open — it gets the same active styling a selected nav item would. */
@@ -128,7 +163,8 @@ export function CatalogSidebar<TId extends string>({
   const [loadedAspect, setLoadedAspect] = useState<number | undefined>(undefined);
   const [logoFailed, setLogoFailed] = useState(false);
   const [nameWrapped, setNameWrapped] = useState(false);
-  const filtered = filterGroups(groups, query, labels);
+  const filtered = filterGroups(groups, query, labels, memberIndex);
+  const memberHits = memberSearchEntries ? searchResults(memberSearchEntries, query) : [];
 
   const logoAspect = staticAspect ?? loadedAspect;
   const attemptingLogo = Boolean(logoImageSource) && !logoFailed;
@@ -202,7 +238,10 @@ export function CatalogSidebar<TId extends string>({
 
         <CatalogSearchInput value={query} onChangeText={setQuery} placeholder="Filter components…" />
 
-        {filtered.length === 0 && <Text style={styles.empty}>No matches</Text>}
+        {filtered.length === 0 && memberHits.length === 0 && <Text style={styles.empty}>No matches</Text>}
+        {/* V2c item 10: pages first, member hits below them — matching `memberSearchEntries`'s own
+            doc comment ("below the filtered pages") and the spec's "the sidebar lists family pages
+            only, never members" emphasis. */}
         {filtered.map((group) => (
           <View key={group.label}>
             <Text style={styles.groupLabel}>{group.label}</Text>
@@ -211,6 +250,21 @@ export function CatalogSidebar<TId extends string>({
             ))}
           </View>
         ))}
+        {memberHits.length > 0 && (
+          <View>
+            <Text style={styles.groupLabel}>Members</Text>
+            {memberHits.map((hit) => (
+              <MemberResultItem
+                key={`${hit.pageId}:${hit.memberId}`}
+                label={hit.label}
+                familyTitle={hit.familyTitle}
+                href={hashForId(hit.memberId)}
+                onPress={() => onSelectMember?.(hit.pageId, hit.memberId)}
+                keepDocumentUrl={keepDocumentUrl}
+              />
+            ))}
+          </View>
+        )}
       </ScrollView>
       {footer && (
         <View style={styles.footerContainer}>

@@ -638,3 +638,249 @@ test("previewLayout is read when literal, and a non-literal one makes the page n
   assert.equal(opaque.previewLayout, undefined);
   rmSync(path.dirname(computed), { recursive: true, force: true });
 });
+
+// Plan V3: `members`/`whole`/`sections`/`aliases`, read with the same literal-resolution helpers
+// as everything else — a non-literal value makes the page not checkable, as today.
+test('reads members/whole/sections/aliases literally, flattening every section\'s own member ids', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Toast', group: 'Patterns', description: 'A toast.',
+      whole: 'Toast',
+      aliases: ['OldToast'],
+      sections: [
+        { label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] },
+        { label: 'Related', kind: 'blocks', inWhole: false, members: ['ToastStandalone'] },
+      ],
+      members: [
+        { id: 'Toast', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' },
+        {
+          id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'],
+          source: 'x.tsx:2', fidelity: 'replicated', relationship: 'Part', description: 'd',
+          whenToUse: 'Use it.', a11y: 'Announces.', variants: { items: [] },
+        },
+        { id: 'ToastStandalone', source: 'x.tsx:3', fidelity: 'documentation-only', relationship: 'Related', description: 'd' },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.whole, 'Toast');
+  assert.deepEqual(page.aliases, ['OldToast']);
+  assert.deepEqual(page.sections, [
+    { label: 'Parts', kind: 'blocks', members: ['ToastBanner'] },
+    { label: 'Related', kind: 'blocks', members: ['ToastStandalone'] },
+  ]);
+  assert.deepEqual(page.members, [
+    { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false },
+    // V2c item 5: `variants: { items: [] }` has no real specimen — `hasExamples` must be false,
+    // not just "the variants key is present".
+    { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasWhenToUse: true, hasA11y: true, hasExamples: false },
+    { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false },
+  ]);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// V2d item 5: a family member's own `composedOf` is read the same literal-checkable way the
+// page-level one already is (component names only — role/relationship are prose `doctor` never
+// needs for the unknown-name comparison below).
+test('reads a family member\'s own composedOf, the same literal-checkable way as the page-level one', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Toast', group: 'Patterns', description: 'A toast.',
+      whole: 'Toast',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] }],
+      members: [
+        {
+          id: 'Toast', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd',
+          composedOf: [{ component: 'ToastBanner', role: 'Anatomy', relationship: 'built-in' }],
+        },
+        { id: 'ToastBanner', component: 'Banner', parent: 'Toast', source: 'x.tsx:2', fidelity: 'replicated', relationship: 'Part', description: 'd' },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.deepEqual(page.members?.find((m) => m.id === 'Toast')?.composedOf, [{ component: 'ToastBanner' }]);
+  assert.equal(page.members?.find((m) => m.id === 'ToastBanner')?.composedOf, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// V2c item 5: a member's `hasExamples` requires a non-empty specimen list — presence of the
+// `variants`/`states`/`comparison` key alone must never be enough (it mirrors the page-level rule,
+// `pageHasExamples` in cli/doctor.ts, which counts items).
+test('a member\'s hasExamples requires a non-empty specimen list; an empty variants.items is not an example', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Toast', group: 'Patterns', description: 'A toast.',
+      whole: 'Toast',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] }],
+      members: [
+        { id: 'Toast', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' },
+        {
+          id: 'ToastBanner', component: 'Banner', parent: 'Toast',
+          source: 'x.tsx:2', fidelity: 'replicated', relationship: 'Part', description: 'd',
+          variants: { items: [] },
+        },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.members?.find((m) => m.id === 'ToastBanner')?.hasExamples, false);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a member\'s hasExamples is true with a real variants item, a states item, or a comparison', () => {
+  const file = writePage(`
+    import React from 'react';
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Toast', group: 'Patterns', description: 'A toast.',
+      whole: 'Toast',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] }],
+      members: [
+        { id: 'Toast', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' },
+        {
+          id: 'ToastBanner', component: 'Banner', parent: 'Toast',
+          source: 'x.tsx:2', fidelity: 'replicated', relationship: 'Part', description: 'd',
+          variants: { items: [{ key: 'a', name: 'A', node: <Banner /> }] },
+        },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.members?.find((m) => m.id === 'ToastBanner')?.hasExamples, true);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// N1: a member's `variants`/`states` slot must follow the same "never a partial read" contract the
+// page level already does — a non-literal slot (e.g. an imported const) must make the whole page
+// not checkable, never silently read as "no examples" (which would wrongly fire doctor's
+// component-no-examples instead of page-not-checkable).
+test('N1: a member whose variants.items is not a literal (e.g. an imported const) makes the whole page not checkable', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { SHARED_ITEMS } from './sharedItems';
+    export default defineCatalogPage({
+      id: 'Toast', group: 'Patterns', description: 'A toast.',
+      whole: 'Toast',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] }],
+      members: [
+        { id: 'Toast', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' },
+        {
+          id: 'ToastBanner', component: 'Banner', parent: 'Toast',
+          source: 'x.tsx:2', fidelity: 'replicated', relationship: 'Part', description: 'd',
+          variants: { items: SHARED_ITEMS },
+        },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, false);
+  assert.equal(page.members, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('N1: a member whose comparison can\'t be read (not an object literal or grid() call) makes the whole page not checkable', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    function buildComparison() { return { rowLabel: 'R', columnLabel: 'C', rows: [], columns: [], cells: [] }; }
+    export default defineCatalogPage({
+      id: 'Toast', group: 'Patterns', description: 'A toast.',
+      whole: 'Toast',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] }],
+      members: [
+        { id: 'Toast', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' },
+        {
+          id: 'ToastBanner', component: 'Banner', parent: 'Toast',
+          source: 'x.tsx:2', fidelity: 'replicated', relationship: 'Part', description: 'd',
+          comparison: buildComparison(),
+        },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, false);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a page with no members at all leaves members/whole/sections/aliases unset, and stays checkable', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x' });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.members, undefined);
+  assert.equal(page.whole, undefined);
+  assert.equal(page.sections, undefined);
+  assert.equal(page.aliases, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a non-literal members array makes the page not checkable', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const buildMembers = () => [{ id: 'X', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' }];
+    export default defineCatalogPage({
+      id: 'X', group: 'Patterns', description: 'x', whole: 'X',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: [] }],
+      members: buildMembers(),
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, false);
+  assert.equal(page.members, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a non-literal sections array makes the page not checkable, even though members/whole are literal', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const buildSections = () => [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['X'] }];
+    export default defineCatalogPage({
+      id: 'X', group: 'Patterns', description: 'x', whole: 'X',
+      sections: buildSections(),
+      members: [{ id: 'X', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' }],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, false);
+  assert.equal(page.sections, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a non-literal whole makes the page not checkable, even though members/sections are literal', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const pickWhole = () => 'X';
+    export default defineCatalogPage({
+      id: 'X', group: 'Patterns', description: 'x', whole: pickWhole(),
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['X'] }],
+      members: [{ id: 'X', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' }],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, false);
+  assert.equal(page.whole, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a non-literal aliases array makes the page not checkable', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const buildAliases = () => ['OldX'];
+    export default defineCatalogPage({
+      id: 'X', group: 'Patterns', description: 'x', whole: 'X', aliases: buildAliases(),
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['X'] }],
+      members: [{ id: 'X', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' }],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, false);
+  assert.equal(page.aliases, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});

@@ -4,8 +4,21 @@ import type { ImageSourcePropType } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
+import { FamilyPage } from './FamilyPage';
 import { UpdatePanel } from './UpdatePanel';
-import { DS_VIEWER_SECRET_HEADER, footerLink, groupLabelFor, hashForId, neighbors, orderedIds, resolveActiveFromHash, shouldShowMajorBanner, UPDATE_PAGE_ID } from './catalogNavigation';
+import {
+  aliasTargets,
+  DS_VIEWER_SECRET_HEADER,
+  footerLink,
+  groupLabelFor,
+  hashForId,
+  neighbors,
+  orderedIds,
+  resolveRoute,
+  shouldShowMajorBanner,
+  UPDATE_PAGE_ID,
+  type MemberSearchEntry,
+} from './catalogNavigation';
 import { findOverlayNode, overlayAddressFromSearch } from './overlayViewport';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice, VersionStatus } from './types';
@@ -87,6 +100,41 @@ function MajorBanner({ update, onReviewUpdate, onDismiss, keepDocumentUrl = fals
     </View>
   );
 }
+
+/** Spec §5.3 "Unknown or malformed address": shown instead of silently falling back to the first
+ *  page, for every page (not only family pages). Focuses its own title on mount — unlike a normal
+ *  page change, this can be the very first thing a fresh load shows, so it can't wait for the
+ *  shared "focus only when the user navigated" logic the rest of the shell uses. */
+function NotFoundPage({ raw, firstHref, onOpenFirst }: { raw: string; firstHref?: string; onOpenFirst: () => void }) {
+  const ref = useRef<View>(null);
+  useEffect(() => {
+    focusElement(ref.current);
+  }, []);
+  return (
+    <View>
+      <View ref={ref} tabIndex={-1} role="heading" {...({ 'aria-level': 1 } as Record<string, unknown>)} style={notFoundStyles.headingTarget}>
+        <Text style={notFoundStyles.title}>Page not found</Text>
+      </View>
+      <Text style={notFoundStyles.body}>{`There's no catalog page at #${raw}.`}</Text>
+      <Pressable
+        onPress={onOpenFirst}
+        accessibilityRole="link"
+        {...(firstHref ? ({ href: firstHref } as Record<string, unknown>) : null)}
+        style={notFoundStyles.link}
+      >
+        <Text style={notFoundStyles.linkText}>Open the first page</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const notFoundStyles = StyleSheet.create({
+  headingTarget: { alignSelf: 'flex-start', marginBottom: 6 },
+  title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text },
+  body: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, marginBottom: CATALOG_SPACE.lg },
+  link: { alignSelf: 'flex-start', minHeight: CATALOG_LAYOUT.controlSize, justifyContent: 'center' },
+  linkText: { ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.accent },
+});
 
 const bannerStyles = StyleSheet.create({
   banner: {
@@ -174,9 +222,64 @@ export function CatalogShell<TId extends string>({
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
   const labels = useMemo(() => new Map(sections.filter((def) => def.title).map((def) => [def.id as string, def.title as string])), [sections]);
   const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
-  const [active, setActive] = useState<ShellPageId<TId> | undefined>(() =>
-    embedded ? initialPage ?? order[0] : isWeb() ? resolveActiveFromHash(window.location.hash, order) : order[0],
-  );
+  // Spec §5.3: every family page's own member ids/aliases, resolved to their page (and member, for
+  // anything other than the whole) — used both for an old/alias/member address (`resolveRoute`)
+  // and for the sidebar's member search (`memberSearchEntries` below).
+  const aliasMap = useMemo(() => aliasTargets(sections), [sections]);
+  // V2d item 3: every real catalog address a family member's `composedOf` could resolve to,
+  // outside its own family — every other page's own id, plus every member id/alias `aliasMap`
+  // already resolves (`FamilyPage` itself always adds its own family's member ids on top of this).
+  const knownAddressIds = useMemo(() => new Set<string>([...sectionsById.keys(), ...aliasMap.keys()]), [sectionsById, aliasMap]);
+  const memberIndex = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const section of sections) {
+      if (!section.family) continue;
+      const ids: string[] = [];
+      for (const member of section.family.members) {
+        ids.push(member.id, ...(member.aliases ?? []));
+      }
+      map.set(section.id, ids);
+    }
+    return map;
+  }, [sections]);
+  const memberSearchEntries = useMemo(() => {
+    const entries: MemberSearchEntry<TId>[] = [];
+    for (const section of sections) {
+      if (!section.family) continue;
+      for (const member of section.family.members) {
+        if (member.id === section.family.whole) continue;
+        entries.push({ pageId: section.id, memberId: member.id, aliases: member.aliases, familyTitle: section.title ?? section.id });
+      }
+    }
+    return entries;
+  }, [sections]);
+
+  const routeFromHash = useCallback((hash: string) => resolveRoute(hash, order, aliasMap), [order, aliasMap]);
+
+  const [active, setActive] = useState<ShellPageId<TId> | undefined>(() => {
+    if (embedded) return initialPage ?? order[0];
+    if (!isWeb()) return order[0];
+    const route = routeFromHash(window.location.hash);
+    if (route.kind === 'empty') return order[0];
+    if (route.kind === 'update') return UPDATE_PAGE_ID;
+    if (route.kind === 'page') return route.id;
+    if (route.kind === 'member') return route.pageId;
+    return undefined; // notFound
+  });
+  const [pendingMemberId, setPendingMemberId] = useState<string | undefined>(() => {
+    if (embedded || !isWeb()) return undefined;
+    const route = routeFromHash(window.location.hash);
+    return route.kind === 'member' ? route.memberId : undefined;
+  });
+  // V2c item 11: bumped on every member activation, even a repeat one, so `FamilyPage`'s own
+  // one-shot jump (`shouldRunMemberJump`) counts a re-selected member address as fresh — a plain
+  // `pendingMemberId` state update bails out (no re-render) when the string value is unchanged.
+  const [pendingMemberNonce, setPendingMemberNonce] = useState(0);
+  const [notFoundRaw, setNotFoundRaw] = useState<string | undefined>(() => {
+    if (embedded || !isWeb()) return undefined;
+    const route = routeFromHash(window.location.hash);
+    return route.kind === 'notFound' ? route.raw : undefined;
+  });
 
   const scrollRef = useRef<ScrollView>(null);
   const headingRef = useRef<View>(null);
@@ -185,36 +288,78 @@ export function CatalogShell<TId extends string>({
   const pushHistoryNext = useRef(false);
   const focusHeadingNext = useRef(false);
 
-  const select = useCallback((id: ShellPageId<TId>) => {
+  const select = useCallback((id: ShellPageId<TId>, memberId?: string) => {
+    setNotFoundRaw(undefined);
     if (id === activeRef.current) {
-      focusElement(headingRef.current);
+      if (memberId) {
+        pushHistoryNext.current = true;
+        setPendingMemberId(memberId);
+        setPendingMemberNonce((n) => n + 1);
+      } else {
+        setPendingMemberId(undefined);
+        focusElement(headingRef.current);
+      }
       return;
     }
     pushHistoryNext.current = true;
-    focusHeadingNext.current = true;
+    focusHeadingNext.current = !memberId;
+    setPendingMemberId(memberId);
+    if (memberId) setPendingMemberNonce((n) => n + 1);
     setActive(id);
   }, []);
 
-  // Back/forward and manual fragment edits.
+  // Back/forward, manual fragment edits, and our own hash assignments below (which also fire
+  // `hashchange`) all funnel through here.
   useEffect(() => {
     if (!routesByUrl) return;
     const onHashChange = () => {
-      const id = resolveActiveFromHash(window.location.hash, order);
-      if (id === undefined) return;
-      if (id !== activeRef.current) {
-        focusHeadingNext.current = true;
-        setActive(id);
-      } else if (window.location.hash !== hashForId(id)) {
-        // An unknown fragment that falls back to the page already open: just correct the URL.
-        window.history.replaceState(null, '', hashForId(id));
+      const route = routeFromHash(window.location.hash);
+      if (route.kind === 'notFound') {
+        setNotFoundRaw(route.raw);
+        setPendingMemberId(undefined);
+        return;
+      }
+      setNotFoundRaw(undefined);
+      if (route.kind === 'empty') {
+        setPendingMemberId(undefined);
+        if (order[0] !== undefined && order[0] !== activeRef.current) {
+          focusHeadingNext.current = true;
+          setActive(order[0]);
+        }
+        return;
+      }
+      if (route.kind === 'update') {
+        setPendingMemberId(undefined);
+        if (UPDATE_PAGE_ID !== activeRef.current) {
+          focusHeadingNext.current = true;
+          setActive(UPDATE_PAGE_ID);
+        }
+        return;
+      }
+      if (route.kind === 'page') {
+        setPendingMemberId(undefined);
+        if (route.id !== activeRef.current) {
+          focusHeadingNext.current = true;
+          setActive(route.id);
+        }
+        return;
+      }
+      // member: scroll/open/focus is the member itself (FamilyPage's own effect), never the page
+      // heading — even when this also switches the active page.
+      setPendingMemberId(route.memberId);
+      setPendingMemberNonce((n) => n + 1);
+      if (route.pageId !== activeRef.current) {
+        focusHeadingNext.current = false;
+        setActive(route.pageId);
       }
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [order, routesByUrl]);
+  }, [order, routesByUrl, routeFromHash]);
 
-  // After every page change: sync the fragment, return to the top, and move focus when the user
-  // navigated (never on first load).
+  // After every page or member change: sync the fragment, return to the top (unless a member is
+  // addressed — FamilyPage scrolls to that instead), and move focus when the user navigated to a
+  // new page (never on first load, and never for a member address, which focuses the member).
   useEffect(() => {
     if (active === undefined) return;
     const push = pushHistoryNext.current;
@@ -222,15 +367,17 @@ export function CatalogShell<TId extends string>({
     pushHistoryNext.current = false;
     focusHeadingNext.current = false;
     if (routesByUrl) {
-      const expected = hashForId(active);
+      const expected = hashForId(pendingMemberId ?? active);
       if (window.location.hash !== expected) {
         if (push) window.location.hash = expected;
         else window.history.replaceState(null, '', expected);
       }
     }
-    resetMainScroll(scrollRef.current);
-    if (focus) focusElement(headingRef.current);
-  }, [active, routesByUrl]);
+    if (!pendingMemberId) {
+      resetMainScroll(scrollRef.current);
+      if (focus) focusElement(headingRef.current);
+    }
+  }, [active, pendingMemberId, routesByUrl]);
 
   const activeDef = active !== undefined && active !== UPDATE_PAGE_ID ? sectionsById.get(active) : undefined;
 
@@ -284,9 +431,24 @@ export function CatalogShell<TId extends string>({
 
   return (
     <View style={styles.root}>
-      <CatalogSidebar logo={appName} logoImageSource={logoImageSource} caption={title} groups={groups} labels={labels} active={active} onPress={select} footer={footer} keepDocumentUrl={embedded} />
+      <CatalogSidebar
+        logo={appName}
+        logoImageSource={logoImageSource}
+        caption={title}
+        groups={groups}
+        labels={labels}
+        memberIndex={memberIndex}
+        memberSearchEntries={memberSearchEntries}
+        active={active}
+        onPress={select}
+        onSelectMember={(pageId, memberId) => select(pageId, memberId)}
+        footer={footer}
+        keepDocumentUrl={embedded}
+      />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
-        {active === UPDATE_PAGE_ID ? (
+        {notFoundRaw !== undefined ? (
+          <NotFoundPage raw={notFoundRaw} firstHref={order[0] !== undefined ? hashForId(order[0]) : undefined} onOpenFirst={() => order[0] !== undefined && select(order[0])} />
+        ) : active === UPDATE_PAGE_ID ? (
           <UpdatePanel
             update={effectiveUpdate}
             versionStatus={liveStatus}
@@ -294,6 +456,25 @@ export function CatalogShell<TId extends string>({
             endpoint={updateEndpoint}
             appName={appName}
             headingRef={headingRef}
+          />
+        ) : activeDef?.family ? (
+          <FamilyPage
+            key={activeDef.id}
+            def={activeDef}
+            groupLabel={groupLabelFor(groups, activeDef.id)}
+            breadcrumbRoot={appName}
+            banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} keepDocumentUrl={embedded} /> : undefined}
+            pager={{
+              previousId: neighbors(order, activeDef.id).previous,
+              nextId: neighbors(order, activeDef.id).next,
+              onNavigate: select,
+              labelOf: (id) => labels.get(id) ?? id,
+            }}
+            headingRef={headingRef}
+            defaultPreviewWidths={defaultPreviewWidths}
+            focusMemberId={pendingMemberId}
+            focusNonce={pendingMemberNonce}
+            knownAddressIds={knownAddressIds}
           />
         ) : activeDef ? (
           <SectionBlock

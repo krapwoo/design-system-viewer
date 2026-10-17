@@ -164,6 +164,61 @@ export interface StaticPage {
    *  never chooses, exempt from `option-not-covered`. A non-literal reason is not read, the same
    *  way `intentionalStaticPreviewReason` is literal-only. */
   internalProps?: string[];
+  /** Plan V3: a family page's own `members`, read with the same literal-resolution helpers as
+   *  everything else above. Undefined for a page with no `members` at all — never a `checkable:
+   *  false` penalty just for being a normal, non-family page. A `members` array that isn't itself
+   *  literal (or whose own `whole`/`sections`/`aliases` aren't) makes the whole page not checkable,
+   *  the same way `previewLayout`/`propNotes` already do for a value `doctor` can't afford to
+   *  guess at. */
+  members?: StaticMember[];
+  /** `CatalogPageInput.whole`, literal only. */
+  whole?: string;
+  /** N3: `CatalogPageInput.sections`, read down to the fields `cli/doctor.ts`'s `family-invalid`
+   *  rule needs to reuse `validateFamily` (`label`/`kind` so its messages and the N6 list-section
+   *  rule both work against the page's own real section data, not an unnamed, kind-less stand-in).
+   *  Each section's own `members` keeps duplicates, never deduplicated — `validateFamily`'s "every
+   *  other member is in exactly one section" check counts each id's total occurrences. */
+  sections?: StaticFamilySection[];
+  /** `CatalogPageInput.aliases`, literal only. */
+  aliases?: string[];
+}
+
+/** One section of a family page, read down to just what `cli/doctor.ts`'s `family-invalid` rule
+ *  needs to reuse `validateFamily` (`native/catalog/types.ts`'s `CatalogMemberSection` minus
+ *  `inWhole`, which `validateFamily` never reads). */
+export interface StaticFamilySection {
+  label: string;
+  kind: 'blocks' | 'list';
+  members: string[];
+}
+
+/** Plan V3: one family member's literal-checkable fields — `cli/doctor.ts` evaluates the same
+ *  guidance/accessibility/examples advisories a normal page gets, per component-bound member,
+ *  from just these five. `parent`/`aliases` are also carried so `doctor`'s `family-invalid` rule
+ *  can call `validateFamily` (`native/catalog/familyModel.ts`) with the real member shape it
+ *  expects, rather than a second, parallel validation implementation. */
+export interface StaticMember {
+  id: string;
+  /** A detected component export this member documents — undefined for a documentation-only
+   *  member, which `doctor` exempts from every per-member advisory below. */
+  component?: string;
+  parent?: string;
+  aliases?: string[];
+  /** V2d item 5: this member's own `composedOf`, read the same literal-checkable way as
+   *  `StaticPage.composedOf` (component names only — see that field's own doc comment). Absent
+   *  both when the member has none at all, and when it authored one non-literally — `doctor`'s own
+   *  unknown-name check (mirroring `buildCatalogSections`'s `validateComposedOf`) simply has
+   *  nothing to check in either case, the same "never a partial read" leniency the page-level field
+   *  already gets. */
+  composedOf?: { component: string }[];
+  /** Presence-only checks, exactly like the page-level `hasWhenToUse`/`hasA11y` above — `doctor`
+   *  never needs either value, only whether the member authored one at all. */
+  hasWhenToUse: boolean;
+  hasA11y: boolean;
+  /** Whether this member has a non-empty specimen list — a real `variants` item, `states` item,
+   *  or `comparison` (item count, not mere presence of the key; see `readFamilyMembers`) —
+   *  `doctor`'s per-member `component-no-examples` fires on `false`. */
+  hasExamples: boolean;
 }
 
 const TRANSPILE_OPTIONS: ts.TranspileOptions = {
@@ -356,7 +411,125 @@ function readStaticPage(file: string): StaticPage {
     }
   }
 
+  const membersProp = findProp(pageObject, 'members');
+  if (membersProp) {
+    const members = readFamilyMembers(membersProp.initializer, consts, gridNames, sourceFile);
+    if (!members) page.checkable = false;
+    else page.members = members;
+  }
+  const wholeProp = findProp(pageObject, 'whole');
+  if (wholeProp) {
+    const whole = stringLiteral(resolve(wholeProp.initializer, consts, new Set()));
+    if (whole === undefined) page.checkable = false;
+    else page.whole = whole;
+  }
+  const sectionsProp = findProp(pageObject, 'sections');
+  if (sectionsProp) {
+    const sectionsRead = readSections(sectionsProp.initializer, consts);
+    if (!sectionsRead) page.checkable = false;
+    else page.sections = sectionsRead;
+  }
+  const aliasesProp = findProp(pageObject, 'aliases');
+  if (aliasesProp) {
+    const aliases = readStringLiteralArray(aliasesProp.initializer, consts);
+    if (!aliases) page.checkable = false;
+    else page.aliases = aliases;
+  }
+
   return page;
+}
+
+/** A literal array of string literals (or same-file `const` references to one) — undefined for
+ *  anything else, including an array containing even one non-literal element. */
+function readStringLiteralArray(node: ts.Expression, consts: Map<string, ts.Expression>): string[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isArrayLiteralExpression(resolved)) return undefined;
+  const items: string[] = [];
+  for (const element of resolved.elements) {
+    const value = stringLiteral(resolve(element, consts, new Set()));
+    if (value === undefined) return undefined;
+    items.push(value);
+  }
+  return items;
+}
+
+/** Plan V3 / V2c item 5: a literal array of `CatalogMember`-shaped object literals, down to just
+ *  the five fields `cli/doctor.ts` needs (`StaticMember`). Undefined for anything that isn't
+ *  itself a literal array, or whose element isn't an object literal with a literal `id` — the
+ *  same "never a partial read" contract every other array reader here already follows.
+ *  `hasExamples` reuses the same item-reading helpers (`readSlotItems`/`readComparison`) the
+ *  page level uses, rather than a presence-only check — a member authored with `variants: {
+ *  items: [] }` has no real specimen to show, the same way a page-level empty list doesn't.
+ *  N1: a member's own `variants`/`states`/`comparison` follows the exact same "never a partial
+ *  read" contract the page level already does (`readStaticPage`'s own `page.checkable = false`
+ *  for the same three fields) — a non-literal slot or an unreadable comparison makes the whole
+ *  members array (and so the whole page) not checkable, rather than silently reading as "no
+ *  specimen" and firing a confidently false `component-no-examples`. */
+function readFamilyMembers(
+  node: ts.Expression,
+  consts: Map<string, ts.Expression>,
+  gridNames: Set<string>,
+  sourceFile: ts.SourceFile,
+): StaticMember[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isArrayLiteralExpression(resolved)) return undefined;
+  const members: StaticMember[] = [];
+  for (const element of resolved.elements) {
+    const resolvedElement = resolve(element, consts, new Set());
+    if (!ts.isObjectLiteralExpression(resolvedElement)) return undefined;
+    const id = propertyStringLiteral(resolvedElement, 'id', consts);
+    if (id === undefined) return undefined;
+    const component = propertyStringLiteral(resolvedElement, 'component', consts);
+    const parent = propertyStringLiteral(resolvedElement, 'parent', consts);
+    const aliasesProp = findProp(resolvedElement, 'aliases');
+    const aliases = aliasesProp ? readStringLiteralArray(aliasesProp.initializer, consts) : undefined;
+    const composedOfProp = findProp(resolvedElement, 'composedOf');
+    const composedOf = composedOfProp ? readComposedOf(composedOfProp.initializer, consts) : undefined;
+    const variants = readSlotItems(findProp(resolvedElement, 'variants'), consts, component, sourceFile);
+    if (!variants.checkable) return undefined;
+    const states = readSlotItems(findProp(resolvedElement, 'states'), consts, component, sourceFile);
+    if (!states.checkable) return undefined;
+    const comparisonProp = findProp(resolvedElement, 'comparison');
+    let comparison: StaticComparison | undefined;
+    if (comparisonProp) {
+      comparison = readComparison(comparisonProp.initializer, consts, gridNames);
+      if (!comparison) return undefined;
+    }
+    members.push({
+      id,
+      component,
+      parent,
+      aliases,
+      composedOf,
+      hasWhenToUse: findProp(resolvedElement, 'whenToUse') !== undefined,
+      hasA11y: findProp(resolvedElement, 'a11y') !== undefined,
+      hasExamples: Boolean(variants.items?.length) || Boolean(states.items?.length) || Boolean(comparison),
+    });
+  }
+  return members;
+}
+
+/** Plan V3 / N3: `CatalogPageInput.sections`, read down to `label`/`kind`/`members` — undefined
+ *  (not checkable) for anything that isn't itself a literal array, or whose element isn't an
+ *  object literal with a literal `label`, a literal `kind` of `'blocks'`/`'list'`, and a literal
+ *  `members` array. */
+function readSections(node: ts.Expression, consts: Map<string, ts.Expression>): StaticFamilySection[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isArrayLiteralExpression(resolved)) return undefined;
+  const sections: StaticFamilySection[] = [];
+  for (const element of resolved.elements) {
+    const resolvedElement = resolve(element, consts, new Set());
+    if (!ts.isObjectLiteralExpression(resolvedElement)) return undefined;
+    const label = propertyStringLiteral(resolvedElement, 'label', consts);
+    const kindProp = findProp(resolvedElement, 'kind');
+    const kind = kindProp ? stringLiteral(resolve(kindProp.initializer, consts, new Set())) : undefined;
+    const membersProp = findProp(resolvedElement, 'members');
+    if (label === undefined || (kind !== 'blocks' && kind !== 'list') || !membersProp) return undefined;
+    const members = readStringLiteralArray(membersProp.initializer, consts);
+    if (!members) return undefined;
+    sections.push({ label, kind, members });
+  }
+  return sections;
 }
 
 /** A literal array of `ComposedOfEntry`-shaped object literals, read down to just `component`

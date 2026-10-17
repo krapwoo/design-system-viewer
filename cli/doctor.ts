@@ -10,6 +10,7 @@ import { resolveGlob } from './glob.ts';
 import { sync } from './sync.ts';
 import { gridColumnLimit } from '../native/catalog/comparison.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
+import { validateFamily, type FamilyPageLike } from '../native/catalog/familyModel.ts';
 
 export type DoctorSeverity = 'error' | 'warning';
 
@@ -88,11 +89,18 @@ function pageHasExamples(page: StaticPage): boolean {
 
 function checkComponentNoExamples(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
   const byComponent = new Map<string, StaticPage[]>();
+  // Plan V3: "a component documented only as a member counts as documented" — any family member
+  // naming a component (regardless of which page, or whether that specific member has its own
+  // examples — a member with none gets its own `component-no-examples` from `checkFamilyMembers`
+  // instead) is enough to clear the component-wide "no catalog page at all" half of this rule.
+  const documentedByMember = new Set<string>();
   for (const page of pages) {
     if (page.component) byComponent.set(page.component, [...(byComponent.get(page.component) ?? []), page]);
+    for (const member of page.members ?? []) if (member.component) documentedByMember.add(member.component);
   }
   return components
     .filter((c) => {
+      if (documentedByMember.has(c.name)) return false;
       const componentPages = byComponent.get(c.name) ?? [];
       // A not-statically-checkable page is given the benefit of the doubt here — it might have
       // real examples this reader simply couldn't read (Global Constraint: never a partial read;
@@ -110,6 +118,154 @@ function checkComponentNoExamples(pages: StaticPage[], components: ComponentReco
         fix: hasPage ? `Add variants/states/comparison, or render, to ${c.name}'s catalog page.` : `Add ${c.name}.catalog.tsx beside ${c.name}'s own file.`,
       });
     });
+}
+
+/** Plan V3: the same two advisories `checkComponentPages` gives a page-level `component` —
+ *  missing guidance/accessibility, and no examples — evaluated per component-bound member of a
+ *  family page instead, with the member id in the message. A documentation-only member (no
+ *  `component`) is exempt from all three. V2c item 9: a member whose `component` no longer
+ *  resolves to a real export gets its own `component-export-removed` error here (below), naming
+ *  the member, instead of being silently exempted. */
+function checkFamilyMembers(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
+  const componentsByName = new Map(components.map((c) => [c.name, c]));
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    // V2c item 6: the same "is this really a family page" predicate the runtime uses
+    // (`pageApi.ts`'s `page.members && page.members.length > 0`) — an empty `members` array is a
+    // normal, single-component page, never a family.
+    if (!page.members || page.members.length === 0 || !page.checkable) continue; // never a partial read — see checkGridAxisKeys's own note.
+    const ref = pageRef(page);
+    // Members in a `list` section render as folded rows without specimens, so asking them for
+    // examples would contradict `family-invalid`'s list-section rule.
+    const listMemberIds = new Set((page.sections ?? []).filter((s) => s.kind === 'list').flatMap((s) => s.members));
+    for (const member of page.members) {
+      if (!member.component) continue; // documentation-only — exempt.
+      // V2c item 9: a member naming a component that no longer exists — reported here rather than
+      // silently exempted from every advisory (its props would also silently vanish at runtime).
+      if (!componentsByName.has(member.component)) {
+        issues.push(issue({
+          id: 'component-export-removed', severity: 'error', ...ref,
+          message: `Member "${member.id}" documents "${member.component}", which no longer exists as a component export.`,
+          fix: `Delete this member, or update its "component" to the export's new name.`,
+        }));
+        continue;
+      }
+      if (!member.hasWhenToUse) {
+        issues.push(issue({
+          id: 'missing-guidance-or-a11y', severity: 'warning', ...ref,
+          message: `Member "${member.id}": no "whenToUse" guidance documented.`,
+          fix: `Add a one-sentence whenToUse note for "${member.id}", or omit it only when there genuinely is none.`,
+        }));
+      }
+      if (!member.hasA11y) {
+        issues.push(issue({
+          id: 'missing-guidance-or-a11y', severity: 'warning', ...ref,
+          message: `Member "${member.id}": no "a11y" notes documented.`,
+          fix: `Add a one-sentence a11y note for "${member.id}", grounded in its real behavior.`,
+        }));
+      }
+      if (!member.hasExamples && !listMemberIds.has(member.id)) {
+        issues.push(issue({
+          id: 'component-no-examples', severity: 'warning', ...ref,
+          message: `Member "${member.id}" ("${member.component}") has no variants, states, or comparison — it will show no specimen.`,
+          fix: `Add variants/states/comparison to the "${member.id}" member.`,
+        }));
+      }
+    }
+  }
+  return issues;
+}
+
+/** Plan V3's `family-invalid`: reuses `native/catalog/familyModel.ts`'s own `validateFamily` —
+ *  the exact same rule `pageApi.ts`'s `buildCatalogSections` runs at runtime — against every
+ *  checkable family page, with the same catalog-wide "every other page/member id" contract that
+ *  function already takes. N3: `StaticPage.sections` already carries each section's real
+ *  `label`/`kind`, so `validateFamily`'s messages name the real section (never an empty label),
+ *  and its N6 list-section rule can tell a `list` section from a `blocks` one. */
+function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
+  // V2c item 6: `members.length > 0`, the same predicate the runtime uses — an empty array is not
+  // a family page.
+  const familyPages = pages.filter((p) => p.members && p.members.length > 0 && p.checkable);
+  const allPageIds = new Set(pages.map((p) => resolvePageId(p, p.file)));
+  const familyIdsByPageId = new Map<string, Set<string>>();
+  for (const page of familyPages) {
+    const id = resolvePageId(page, page.file);
+    const ids = new Set<string>();
+    for (const member of page.members ?? []) {
+      ids.add(member.id);
+      for (const alias of member.aliases ?? []) ids.add(alias);
+    }
+    for (const alias of page.aliases ?? []) ids.add(alias);
+    familyIdsByPageId.set(id, ids);
+  }
+
+  const issues: DoctorIssue[] = [];
+  for (const page of familyPages) {
+    const id = resolvePageId(page, page.file);
+    const otherPageIds = new Set([...allPageIds].filter((pageId) => pageId !== id));
+    const otherMemberIds = new Set<string>();
+    for (const [pageId, ids] of familyIdsByPageId) if (pageId !== id) for (const memberId of ids) otherMemberIds.add(memberId);
+
+    const pageLike: FamilyPageLike = {
+      id,
+      whole: page.whole,
+      // `inWhole` is never read by `validateFamily` — only `label`/`kind`/`members` matter here.
+      sections: page.sections?.map((s) => ({ ...s, inWhole: true })),
+      members: (page.members ?? []).map((m) => ({ id: m.id, parent: m.parent, aliases: m.aliases, hasSpecimens: m.hasExamples })),
+      aliases: page.aliases,
+    };
+    for (const message of validateFamily(pageLike, otherPageIds, otherMemberIds)) {
+      issues.push(issue({ id: 'family-invalid', severity: 'error', ...pageRef(page), message, fix: 'Fix the family\'s members/whole/sections to satisfy the rule above.' }));
+    }
+  }
+  return issues;
+}
+
+/** V2d item 5 / Deviation: the same one-line resolution `native/catalog/pageApi.ts`'s own
+ *  `validateComposedOf` runs, inlined here rather than imported. `pageApi.ts` has a top-level
+ *  runtime import of `#familyModel` (a subpath import resolved through `native/catalog/package.json`,
+ *  by design — see that file's own comment), which only resolves correctly for a consumer loading
+ *  it from source or through a bundler; `cli/doctor.ts` is eagerly imported by `cli/main.ts` and
+ *  runs from the plain-Node-loaded `dist/cli/`, where `dist/native/catalog/` has no such adjacent
+ *  package.json, so importing `pageApi.ts` from here crashes every CLI command
+ *  (`ERR_PACKAGE_IMPORT_NOT_DEFINED`) — reproduced live via `kit-host`'s own `dev`. */
+function unknownComposedOfNames(composedOf: { component: string }[] | undefined, knownNames: ReadonlySet<string>): string[] {
+  if (!composedOf) return [];
+  return composedOf.filter((entry) => !knownNames.has(entry.component)).map((entry) => entry.component);
+}
+
+/** V2d item 5: resolves each family member's own `composedOf` the same way `buildCatalogSections`
+ *  resolves it at runtime (`validateComposedOf`), against the same known-name universe
+ *  `checkFamilyValidity` already builds for member ids — every real component name, every page id,
+ *  and every member id across the whole catalog — so an unknown name is reported here too, not
+ *  only ever silently warned in a browser console (`npm run check:catalog`). A member whose
+ *  `composedOf` wasn't itself literally readable (`undefined`) has nothing to check — the same
+ *  "never a partial read" leniency the page-level field already gets. Always a warning, the same
+ *  severity the runtime's own console warning carries, never an error. N8: also accepts a member
+ *  alias and a page-level alias — the same universe `FamilyPage`'s own link resolution
+ *  (`aliasTargets`) already accepts. */
+function checkMemberComposedOf(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
+  const knownNames = new Set<string>(components.map((c) => c.name));
+  for (const page of pages) knownNames.add(resolvePageId(page, page.file));
+  for (const page of pages) for (const member of page.members ?? []) knownNames.add(member.id);
+  for (const page of pages) for (const member of page.members ?? []) for (const alias of member.aliases ?? []) knownNames.add(alias);
+  for (const page of pages) for (const alias of page.aliases ?? []) knownNames.add(alias);
+
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.members || page.members.length === 0 || !page.checkable) continue; // V2c item 6's own predicate.
+    const ref = pageRef(page);
+    for (const member of page.members) {
+      for (const name of unknownComposedOfNames(member.composedOf, knownNames)) {
+        issues.push(issue({
+          id: 'composed-of-unknown', severity: 'warning', ...ref,
+          message: `Member "${member.id}": composedOf references unknown component "${name}".`,
+          fix: 'Correct the name, or add { component: \'...\', role: \'...\', relationship: \'...\' } for a component/page/member that really does exist.',
+        }));
+      }
+    }
+  }
+  return issues;
 }
 
 function checkDuplicatePageId(pages: StaticPage[]): DoctorIssue[] {
@@ -251,7 +407,14 @@ function importsModal(file: string): boolean {
 
 /** `overlay-without-device-frame`: a page whose component opens a React Native `Modal` (which
  *  portals to the document body on the web, covering the whole catalog) but whose page imports no
- *  device frame. A page whose imports couldn't be read is skipped, never assumed unframed. */
+ *  device frame. A page whose imports couldn't be read is skipped, never assumed unframed.
+ *  V2c item 3 (CLI side): deliberately exempts a family member's own `component` — this check
+ *  keys off `page.component`/`page.viewerImports` (the page file's own top-level imports), neither
+ *  of which a family page sets; a member naming a Modal-opening component would need its OWN
+ *  device-frame-import evidence, which `cli/staticPage.ts`'s member reader doesn't currently carry.
+ *  Left as a gap rather than guessed at — a family member wrapping a Modal in a device frame is
+ *  rare enough (and the resulting miss only an advisory, never an error) that this is the smallest
+ *  honest fix here. */
 export function checkOverlaysFramed(pages: StaticPage[], components: ComponentRecord[], projectRoot: string): DoctorIssue[] {
   const byName = new Map(components.map((c) => [c.name, c]));
   const issues: DoctorIssue[] = [];
@@ -363,6 +526,12 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
 
   for (const page of pages) {
     if (!page.component) continue;
+    // Plan V3: a family page's own guidance always lives on its members, never on the page
+    // itself — even if `applyComponentDefaults` (or, in principle, the author) ends up giving it
+    // a page-level `component` matching a real export, this page-level advisory must still defer
+    // entirely to `checkFamilyMembers`'s own per-member one. V2c item 6: `members.length > 0`,
+    // the same predicate the runtime uses — an empty array is not a family page.
+    if (page.members && page.members.length > 0) continue;
     if (!page.checkable) continue; // never a partial read — see checkGridAxisKeys's own note.
     const component = componentsByName.get(page.component);
     if (!component) continue; // already reported by checkComponentExportRemoved
@@ -537,6 +706,9 @@ export function collectIssues(pages: StaticPage[], components: ComponentRecord[]
     ...checkMissingComposition(pages, components),
     ...checkMissingWorkingPreview(pages, components),
     ...checkPreviewOnlyPages(pages),
+    ...checkFamilyMembers(pages, components),
+    ...checkFamilyValidity(pages),
+    ...checkMemberComposedOf(pages, components),
   ];
 }
 

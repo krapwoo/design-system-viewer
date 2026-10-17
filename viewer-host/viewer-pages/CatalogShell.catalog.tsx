@@ -35,7 +35,8 @@ export default defineCatalogPage({
   specimenSize: 'page',
   composedOf: [
     { component: 'CatalogSidebar', role: 'The navigation column.', relationship: 'built-in' },
-    { component: 'SectionBlock', role: 'Each catalog page.', relationship: 'built-in' },
+    { component: 'SectionBlock', role: 'Each catalog page without members.', relationship: 'built-in' },
+    { component: 'FamilyPage', role: 'Each catalog page with members.', relationship: 'built-in' },
     { component: 'UpdatePanel', role: 'The update page, opened from the sidebar footer.', relationship: 'built-in' },
     { component: 'SpecimenAddressProvider', role: "Wraps the selected page so a PhoneFrame in it knows which example it is.", relationship: 'built-in' },
   ],
