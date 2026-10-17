@@ -1,20 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  anatomyColumns,
+  anatomyPinFor,
   ariaLevelFor,
+  buildPartTree,
   disclosureContent,
   disclosureLabel,
-  headerRoleFor,
   linkifyRelated,
-  orderedSections,
-  outlineFor,
-  relationshipVisible,
+  numberFor,
   resolveWhole,
   sectionFor,
   shouldRunMemberJump,
   validateFamily,
 } from '../familyModel.ts';
-import type { CatalogMember, CatalogMemberSection, PropDef } from '../types.ts';
+import type { CatalogMember, PropDef } from '../types.ts';
 
 // Appendix fixtures — copied from `.hermes-task/family-registry-input.json`, keeping only `id`,
 // `parent`, section `label`, `kind` and `inWhole` (plan V1.1).
@@ -100,100 +100,11 @@ const transcript = {
   ],
 };
 
-function outlineOf(fixture: typeof botAvatar, id: string) {
-  return outlineFor(fixture).get(id);
-}
-
-test('outlineFor: Bot avatar golden numbering', () => {
-  assert.deepEqual(outlineOf(botAvatar, 'BotAvatarView'), { number: '1', level: 1 });
-  assert.deepEqual(outlineOf(botAvatar, 'BotAnimatedFaceView'), { number: '1.1', level: 2 });
-  assert.deepEqual(outlineOf(botAvatar, 'BotAvatarMarkView'), { number: '1.1.1', level: 3 });
-  assert.deepEqual(outlineOf(botAvatar, 'BotAvatarBody'), { number: '1.1.1.1', level: 4 });
-  assert.deepEqual(outlineOf(botAvatar, 'BotRoomMemberAvatar'), { number: 'A', level: 2 });
-});
-
-test('outlineFor: Native response selection golden numbering', () => {
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionController'), { number: '1.1', level: 2 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionInput'), { number: '1.1.1', level: 3 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionRect'), { number: '1.1.1.1', level: 4 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseTextRange'), { number: '1.1.1.2', level: 4 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseTextPosition'), { number: '1.1.1.2.1', level: 5 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionLeaf'), { number: 'A', level: 2 });
-  assert.deepEqual(outlineOf(responseSelection, 'RegisteredResponseSelectionLeaf'), { number: 'A.1', level: 3 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionMarker'), { number: 'A.1.1', level: 4 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionLeafView'), { number: 'A.1.1.1', level: 5 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionRenderer'), { number: 'A.1.2', level: 4 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseSelectionImageAttribute'), { number: 'A.1.2.1', level: 5 });
-  assert.deepEqual(outlineOf(responseSelection, 'ResponseTextSelectionPolicy'), { number: 'B', level: 2 });
-});
-
-test('outlineFor: Conversation transcript golden numbering', () => {
-  assert.deepEqual(outlineOf(transcript, 'ChatTranscriptMessageBlock'), { number: '1.1', level: 2 });
-  assert.deepEqual(outlineOf(transcript, 'ChatTranscriptMessageRow'), { number: '1.1.1', level: 3 });
-  assert.deepEqual(outlineOf(transcript, 'TranscriptTurnFoldRowView'), { number: '1.1.2', level: 3 });
-  assert.deepEqual(outlineOf(transcript, 'ForkOriginRowView'), { number: '1.2', level: 2 });
-  assert.deepEqual(outlineOf(transcript, 'ChatTranscriptLoadingSkeletonView'), { number: '1.3', level: 2 });
-  assert.deepEqual(outlineOf(transcript, 'ChatTranscriptLoadingSkeletonRow'), { number: '1.3.1', level: 3 });
-  assert.deepEqual(outlineOf(transcript, 'ChatScrollObserver'), { number: '1.4', level: 2 });
-  assert.deepEqual(outlineOf(transcript, 'ObserverView'), { number: '1.4.1', level: 3 });
-  assert.deepEqual(outlineOf(transcript, 'ChatVerticalScrollAxisGuard'), { number: '1.5', level: 2 });
-  assert.deepEqual(outlineOf(transcript, 'ChatVerticalScrollAxisGuardView'), { number: '1.5.1', level: 3 });
-  assert.deepEqual(outlineOf(transcript, 'StreamingFollowTrigger'), { number: '1.6', level: 2 });
-  assert.deepEqual(outlineOf(transcript, 'TranscriptTimeSeparator'), { number: 'A', level: 2 });
-  assert.deepEqual(outlineOf(transcript, 'ChatDisclosureToggledModifier'), { number: 'B', level: 2 });
-});
-
-test('outlineFor returns an empty map for a page without members', () => {
-  assert.deepEqual(outlineFor({ id: 'Button' }), new Map());
-});
-
-// V2c item 2: a section listing an id that isn't a real member must never be assigned a letter
-// (which would renumber the real related members) or otherwise appear in the outline.
-test('outlineFor ignores a section id that is not a member of the page', () => {
-  const page = {
-    ...botAvatar,
-    sections: [
-      botAvatar.sections[0],
-      { ...botAvatar.sections[1], members: ['Typo', 'BotRoomMemberAvatar'] },
-    ],
-  };
-  const outline = outlineFor(page);
-  assert.equal(outline.has('Typo'), false);
-  assert.deepEqual(outline.get('BotRoomMemberAvatar'), { number: 'A', level: 2 });
-});
-
-// V2c item 14: an invalid parent graph — here, the whole itself ends up with a parent, forming a
-// cycle reachable from the whole's own traversal (X → A → X → …) — must degrade to a partial
-// outline, never an infinite recursion / stack overflow.
-test('outlineFor: a parent cycle reachable from the whole produces a partial outline without throwing', () => {
-  const page = {
-    id: 'X',
-    whole: 'X',
-    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['A'] }],
-    members: [
-      { id: 'X', parent: 'A' },
-      { id: 'A', parent: 'X' },
-    ],
-  };
-  const outline = outlineFor(page);
-  assert.deepEqual(outline.get('X'), { number: '1', level: 1 });
-  assert.deepEqual(outline.get('A'), { number: '1.1', level: 2 });
-});
-
 test('shouldRunMemberJump: true only for the current activation, while passes remain', () => {
   assert.equal(shouldRunMemberJump(undefined, 'X'), false);
   assert.equal(shouldRunMemberJump({ memberId: 'X', passesLeft: 1 }, 'X'), true);
   assert.equal(shouldRunMemberJump({ memberId: 'X', passesLeft: 0 }, 'X'), false);
   assert.equal(shouldRunMemberJump({ memberId: 'Y', passesLeft: 2 }, 'X'), false);
-});
-
-test('headerRoleFor maps outline level to a header role', () => {
-  assert.equal(headerRoleFor(1), 'heading1');
-  assert.equal(headerRoleFor(2), 'heading2');
-  assert.equal(headerRoleFor(3), 'heading3');
-  assert.equal(headerRoleFor(4), 'bodyStrong');
-  assert.equal(headerRoleFor(5), 'body');
-  assert.equal(headerRoleFor(6), 'body');
 });
 
 test('ariaLevelFor adds one to the outline level, capped at 6', () => {
@@ -205,23 +116,9 @@ test('ariaLevelFor adds one to the outline level, capped at 6', () => {
   assert.equal(ariaLevelFor(6), 6);
 });
 
-const section: CatalogMemberSection = { label: 'Parts', kind: 'blocks', inWhole: true, members: ['BotAnimatedFaceView'] };
-
 function member(overrides: Partial<CatalogMember> = {}): CatalogMember {
   return { id: 'BotAnimatedFaceView', source: 'x.swift:1', fidelity: 'documentation-only', relationship: 'Anatomy', description: 'd', ...overrides };
 }
-
-test('relationshipVisible hides on the whole and in folded rows', () => {
-  assert.equal(relationshipVisible(member(), section, true, false), false);
-  assert.equal(relationshipVisible(member(), section, false, true), false);
-  assert.equal(relationshipVisible(member(), section, true, true), false);
-});
-
-test('relationshipVisible shows otherwise, unless it repeats the section label (case-insensitive)', () => {
-  assert.equal(relationshipVisible(member(), section, false, false), true);
-  assert.equal(relationshipVisible(member({ relationship: 'Parts' }), section, false, false), false);
-  assert.equal(relationshipVisible(member({ relationship: 'PARTS' }), section, false, false), false);
-});
 
 // V2b item 9: "Swift API" is Hermex wording, not a generic viewer default. `disclosureLabel`
 // takes the page's own `apiLabel` (default 'API') and whether the member has resolved props.
@@ -294,15 +191,6 @@ test('Errata 6: disclosureContent omits "props" when the member has no resolved 
   assert.deepEqual(disclosureContent(withNotesOnly, SOME_PROPS), ['notes', 'props']);
   // hide.props still wins even when real props exist.
   assert.deepEqual(disclosureContent({ ...withNotesOnly, hide: { props: true } }, SOME_PROPS), ['notes']);
-});
-
-test('orderedSections: inWhole sections first, in authored order, then the rest', () => {
-  const a: CatalogMemberSection = { label: 'A', kind: 'blocks', inWhole: false, members: [] };
-  const b: CatalogMemberSection = { label: 'B', kind: 'blocks', inWhole: true, members: [] };
-  const c: CatalogMemberSection = { label: 'C', kind: 'list', inWhole: true, members: [] };
-  const d: CatalogMemberSection = { label: 'D', kind: 'blocks', inWhole: false, members: [] };
-  assert.deepEqual(orderedSections([a, b, c, d]), [b, c, a, d]);
-  assert.deepEqual(orderedSections([]), []);
 });
 
 test('sectionFor: the section containing a member id, or undefined', () => {
@@ -473,4 +361,225 @@ test('resolveWhole: the whole member when it resolves, undefined for bad data', 
   const members = new Map([['BotAvatarView', { id: 'BotAvatarView' }]]);
   assert.deepEqual(resolveWhole(members, 'BotAvatarView'), { id: 'BotAvatarView' });
   assert.equal(resolveWhole(members, 'NoSuchMember'), undefined);
+});
+
+// Slice D1 item 2: `numberFor` replaces outline numbering with the anatomy-first rule — top-level
+// parts are inWhole members whose parent is the whole, or who have no parent at all, numbered
+// 1, 2, 3… in authored order; a child takes its parent's number plus `.1`, `.2`, …; members outside
+// an `inWhole` section (Related) get no number at all.
+const numberForFixture = {
+  id: 'W',
+  whole: 'W',
+  sections: [
+    { label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['P1', 'P2', 'C1', 'D1', 'E1', 'C2', 'P3', 'C3', 'P4'] },
+    { label: 'Related', kind: 'blocks' as const, inWhole: false, members: ['R1'] },
+  ],
+  members: [
+    { id: 'W' },
+    { id: 'P1', parent: 'W' },
+    { id: 'P2', parent: 'W' },
+    { id: 'C1', parent: 'P2' },
+    { id: 'D1', parent: 'C1' },
+    { id: 'E1', parent: 'D1' },
+    { id: 'C2', parent: 'P2' },
+    { id: 'P3', parent: 'W' },
+    { id: 'C3', parent: 'P3' },
+    { id: 'P4' },
+    { id: 'R1' },
+  ],
+};
+
+test('numberFor: top-level parts in authored order, children as parentNumber.k', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.get('P1')?.number, '1');
+  assert.equal(outline.get('P2')?.number, '2');
+  assert.equal(outline.get('C1')?.number, '2.1');
+  assert.equal(outline.get('C2')?.number, '2.2');
+  assert.equal(outline.get('P3')?.number, '3');
+  assert.equal(outline.get('C3')?.number, '3.1');
+});
+
+test('numberFor: a four-level chain', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.get('D1')?.number, '2.1.1');
+  assert.equal(outline.get('E1')?.number, '2.1.1.1');
+});
+
+test('numberFor: a parentless in-whole root is still a top-level part', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.get('P4')?.number, '4');
+});
+
+test('numberFor: the whole and Related members get no number', () => {
+  const outline = numberFor(numberForFixture);
+  assert.equal(outline.has('W'), false);
+  assert.equal(outline.has('R1'), false);
+});
+
+test('numberFor returns an empty map for a page without members', () => {
+  assert.deepEqual(numberFor({ id: 'Button' }), new Map());
+});
+
+// E1: a section listing an id that isn't a real member must never occupy authored order (or be
+// numbered), degrading to a missing part instead of shifting the real members' own numbers.
+test('numberFor ignores a section id that is not a member of the page', () => {
+  const page = {
+    ...numberForFixture,
+    sections: [
+      { ...numberForFixture.sections[0], members: ['Typo', ...numberForFixture.sections[0].members] },
+      numberForFixture.sections[1],
+    ],
+  };
+  const outline = numberFor(page);
+  assert.equal(outline.has('Typo'), false);
+  assert.equal(outline.get('P1')?.number, '1');
+});
+
+// E1: a parent cycle, isolated from the rest of the tree by construction (each member has exactly
+// one `parent`, so a cycle can never also be a child of a real top-level part) — must never throw,
+// and must leave the rest of the outline intact.
+test('numberFor: a parent cycle does not throw and leaves the rest of the outline intact', () => {
+  const page = {
+    id: 'W',
+    whole: 'W',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['P1', 'A', 'B'] }],
+    members: [
+      { id: 'W' },
+      { id: 'P1', parent: 'W' },
+      { id: 'A', parent: 'B' },
+      { id: 'B', parent: 'A' },
+    ],
+  };
+  const outline = numberFor(page);
+  assert.deepEqual(outline.get('P1'), { number: '1', level: 2 });
+  assert.equal(outline.has('A'), false);
+  assert.equal(outline.has('B'), false);
+});
+
+// E1: `buildPartTree` — moved here from `FamilyPage.tsx` so it runs under Node's test runner.
+// Reconstructs each `blocks` section's own parent/child nesting from `numberFor`'s own outline
+// (a child's number is its parent's number plus one more `.` segment), scoped to the member ids
+// given — so a parent living in a different section never nests a child under it.
+test('buildPartTree: nests children under their parent, in outline order', () => {
+  const outline = numberFor(numberForFixture);
+  const tree = buildPartTree(['P1', 'P2', 'C1', 'C2', 'P3', 'C3'], outline);
+  assert.deepEqual(tree.map((n) => n.id), ['P1', 'P2', 'P3']);
+  const p2 = tree.find((n) => n.id === 'P2')!;
+  assert.deepEqual(p2.children.map((n) => n.id), ['C1', 'C2']);
+  const p3 = tree.find((n) => n.id === 'P3')!;
+  assert.deepEqual(p3.children.map((n) => n.id), ['C3']);
+});
+
+test('buildPartTree: a child listed before its parent still nests correctly', () => {
+  const outline = numberFor(numberForFixture);
+  const tree = buildPartTree(['C1', 'C2', 'P2'], outline);
+  assert.deepEqual(tree.map((n) => n.id), ['P2']);
+  assert.deepEqual(tree[0].children.map((n) => n.id), ['C1', 'C2']);
+});
+
+// E1: a parent that belongs to a different section (so it's outside the member ids given to this
+// call) never has its child nested under it — the child becomes a root of its own section's tree.
+test('buildPartTree: a parent in another section leaves its child as a root here', () => {
+  const outline = numberFor(numberForFixture);
+  const tree = buildPartTree(['C1'], outline);
+  assert.deepEqual(tree.map((n) => n.id), ['C1']);
+  assert.deepEqual(tree[0].children, []);
+});
+
+// Slice D1 item 3: anatomy validation.
+test('validateFamily: an anatomy member item that is not a member of the page is reported', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'Typo' }] }] } };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "Typo" is not a member of this page')));
+});
+
+test('validateFamily: an anatomy item naming the whole is reported', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'BotAvatarView' }] }] } };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "BotAvatarView" names the whole')));
+});
+
+test('validateFamily: a member listed in two anatomy items is reported', () => {
+  const page = {
+    ...botAvatar,
+    anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'BotAnimatedFaceView' }, { member: 'BotAnimatedFaceView' }] }] },
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy lists member "BotAnimatedFaceView" more than once')));
+});
+
+test('validateFamily: a valid anatomy is a no-op', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'BotAnimatedFaceView' }, { other: 'SomeOtherComponent' }] }] } };
+  assert.deepEqual(validateFamily(page, new Set(), new Set()), []);
+});
+
+// D2 item A2: an anatomy `member` item whose member has no number — outside every `inWhole`
+// section — must be reported, not silently render a blank pin slot.
+test('validateFamily: an anatomy member item outside every inWhole section is reported', () => {
+  const page = { ...botAvatar, anatomy: { groups: [{ label: 'X', items: [{ member: 'BotRoomMemberAvatar' }] }] } };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "BotRoomMemberAvatar" has no number')));
+});
+
+// D2 item A2: the same silent path for an `inWhole` member whose `parent` is a Related member —
+// valid data for the other rules, but `numberFor` gives it no number either.
+test('validateFamily: an anatomy member item under a parent that is not numbered is reported', () => {
+  const page = {
+    id: 'W',
+    whole: 'W',
+    sections: [
+      { label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['P1'] },
+      { label: 'Related', kind: 'blocks' as const, inWhole: false, members: ['R1'] },
+    ],
+    members: [{ id: 'W' }, { id: 'P1', parent: 'R1' }, { id: 'R1' }],
+    anatomy: { groups: [{ label: 'X', items: [{ member: 'P1' }] }] },
+  };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('anatomy item "P1" has no number')));
+});
+
+// Slice D1 item 5: `AnatomyPin` looks up its number and dashed style through this pure helper.
+test('anatomyPinFor: resolves a member\'s number, dashed for documentation-only', () => {
+  const members = new Map([
+    ['BotAvatarView', { fidelity: 'replicated' as const }],
+    ['BotAnimatedFaceView', { fidelity: 'documentation-only' as const }],
+  ]);
+  const outline = new Map([
+    ['BotAvatarView', { number: '1' }],
+    ['BotAnimatedFaceView', { number: '1.1' }],
+  ]);
+  assert.deepEqual(anatomyPinFor('BotAvatarView', members, outline), { number: '1', dashed: false });
+  assert.deepEqual(anatomyPinFor('BotAnimatedFaceView', members, outline), { number: '1.1', dashed: true });
+});
+
+test('anatomyPinFor: undefined for an unknown member, or one with no number', () => {
+  const members = new Map([['BotAvatarView', { fidelity: 'replicated' as const }]]);
+  const outline = new Map([['BotAvatarView', { number: '1' }]]);
+  assert.equal(anatomyPinFor('NoSuchMember', members, outline), undefined);
+  const noNumber = new Map([['BotRoomMemberAvatar', { fidelity: 'replicated' as const }]]);
+  assert.equal(anatomyPinFor('BotRoomMemberAvatar', noNumber, new Map()), undefined);
+});
+
+// Slice D1 item 5: the legend goes below the picture in up to three columns, balancing item
+// counts, without ever splitting a group across columns.
+test('anatomyColumns: balances whole groups across up to three columns', () => {
+  const groups = [{ items: [1, 2, 3] }, { items: [1] }, { items: [1, 2] }, { items: [1, 2, 3, 4] }];
+  const columns = anatomyColumns(groups, 3);
+  assert.equal(columns.length, 3);
+  assert.equal(columns.flat().length, 4);
+  // Every original group appears whole, in exactly one column.
+  assert.equal(new Set(columns.flat()).size, groups.length);
+  for (const g of groups) assert.ok(columns.flat().includes(g));
+});
+
+test('anatomyColumns: each group goes into the shortest column, so the columns end nearly level', () => {
+  // The transcript legend: groups of 4, 2, 5 and 3 items (5, 3, 6 and 4 rows with labels).
+  const a = { items: [1, 2, 3, 4] }, b = { items: [1, 2] }, c = { items: [1, 2, 3, 4, 5] }, d = { items: [1, 2, 3] };
+  assert.deepEqual(anatomyColumns([a, b, c, d], 3), [[a], [b, d], [c]]);
+});
+
+test('anatomyColumns: never produces more columns than groups', () => {
+  const groups = [{ items: [1, 2] }, { items: [1] }];
+  assert.equal(anatomyColumns(groups, 3).length, 2);
+  assert.deepEqual(anatomyColumns([], 3), []);
 });

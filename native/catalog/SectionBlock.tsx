@@ -284,12 +284,19 @@ export function Blocks<TId extends string>({
     <View onLayout={onContainerLayout} style={[styles.blocks, side && styles.blocksSide, trimOuterMargin && styles.blocksNoMargin]}>
       {blocks.map((block, i) => (
         <View
-          key={block.title || block.kind}
+          // A4: keyed by index, not `block.title || block.kind` — a member that sets the same
+          // `axis` on both `variants` and `states` now produces two blocks with identical titles,
+          // which would otherwise collide as React keys (as the family-section list already keys
+          // by index for the same reason — FamilyPage.tsx).
+          key={`${block.kind}-${i}`}
           onLayout={onBlockLayout(i)}
           // Side by side, each block fills its own half: a card always fills the column it is given.
           style={side ? styles.blockFill : undefined}
         >
-          {showLabels && block.title ? <Text style={styles.blockLabel}>{block.title}</Text> : null}
+          {/* A3: `axis` now reaches grid/grouped blocks too (not only list), so any block kind
+              carrying one shows its (already informative) title on a family page, which otherwise
+              hides every generic block label via `showLabels={false}`. */}
+          {(showLabels && block.title) || ('axis' in block && block.axis) ? <Text style={styles.blockLabel}>{('axis' in block && block.axis) || block.title}</Text> : null}
           <BlockContent block={block} def={def} surface={surface} />
         </View>
       ))}

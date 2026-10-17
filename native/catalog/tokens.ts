@@ -183,6 +183,9 @@ export const CATALOG_COLOR = {
   accentSubtle: '#e9efff',
   /** 3px keyboard focus ring on every catalog control. */
   focusRing: '#c9d7ff',
+  /** Family-page Part tree connector line (Slice D1/D2) — the approved reference's own line color
+   *  has no match among the other tokens above. */
+  treeLine: '#a9bdf0',
   /** @deprecated kept for the public API; re-points at `CATALOG_FONT.code` so there is one source
    *  of truth. New code should reach for `CATALOG_FONT.code` (or a `CATALOG_TEXT` `code*` role)
    *  instead. */

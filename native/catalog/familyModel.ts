@@ -5,7 +5,7 @@
  */
 import type { CatalogMember, CatalogMemberSection, PropDef } from './types.ts';
 
-/** The subset of a family page's shape `validateFamily` and `outlineFor` need. The real page
+/** The subset of a family page's shape `validateFamily` and `numberFor` need. The real page
  *  carries full `CatalogMember` records; these functions only ever read `id`/`parent`/`aliases`. */
 export interface FamilyOutlineInput {
   whole?: string;
@@ -21,6 +21,15 @@ export interface FamilyPageLike extends FamilyOutlineInput {
    *  never renders. */
   members?: Array<Pick<CatalogMember, 'id' | 'parent' | 'aliases'> & { hasSpecimens?: boolean }>;
   aliases?: string[];
+  /** Slice D1 item 3: the minimal shape `validateFamily` needs from `CatalogPageInput.anatomy` —
+   *  decoupled from the full `CatalogAnatomy` type (which carries a `picture` React node this pure
+   *  module never touches). */
+  anatomy?: FamilyAnatomyLike;
+}
+
+/** Slice D1 item 3. */
+export interface FamilyAnatomyLike {
+  groups: ReadonlyArray<{ label: string; items: ReadonlyArray<{ member: string } | { other: string }> }>;
 }
 
 /** Validates a family page (spec §5.1): exactly one whole belonging to no section; every other
@@ -48,7 +57,7 @@ export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<str
   }
 
   // V2c item 2: a section listing an id that is not one of the page's own members — reported
-  // here, rather than left to crash the renderer or silently take a letter in `outlineFor`.
+  // here, rather than left to crash the renderer or silently occupy authored order in `numberFor`.
   // N6: a `list`-section member authored with a specimen — `FoldedRow` never renders one, so this
   // degrades to a silently dropped specimen rather than a crash, same as the unknown-id case.
   for (const section of page.sections) {
@@ -112,27 +121,60 @@ export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<str
   }
   for (const alias of page.aliases ?? []) checkId(alias, false);
 
+  // Slice D1 item 3: an anatomy `member` item must name a real, non-whole member of this page, and
+  // each member may be pinned to the picture's legend at most once.
+  // D2 item A2: a member item whose member has no number — outside every `inWhole` section, or
+  // under a parent that isn't itself numbered — must also be reported; left unchecked, it renders
+  // a blank 34px pin slot in the legend and nothing at all from `AnatomyPin` in the picture.
+  if (page.anatomy) {
+    const numbered = numberFor(page);
+    const seenAnatomyMembers = new Set<string>();
+    for (const group of page.anatomy.groups) {
+      for (const item of group.items) {
+        if (!('member' in item)) continue;
+        if (item.member === whole) {
+          issues.push(`Family "${page.id}": anatomy item "${item.member}" names the whole.`);
+          continue;
+        }
+        if (!byId.has(item.member)) {
+          issues.push(`Family "${page.id}": anatomy item "${item.member}" is not a member of this page.`);
+          continue;
+        }
+        if (seenAnatomyMembers.has(item.member)) {
+          issues.push(`Family "${page.id}": anatomy lists member "${item.member}" more than once.`);
+          continue;
+        }
+        seenAnatomyMembers.add(item.member);
+        if (!numbered.has(item.member)) {
+          issues.push(`Family "${page.id}": anatomy item "${item.member}" has no number.`);
+        }
+      }
+    }
+  }
+
   return issues;
 }
 
-/** Outline numbers for every member of a family page (spec §5.2): the whole is `1` at level 1.
- *  Parts (members with a parent, transitively under the whole) are numbered `parentNumber.k` in
- *  authored order, `k` level below their parent. Roots without a parent, other than the whole, are
- *  lettered `A`, `B`, … at level 2, with their own descendants nested the same way. "Authored
- *  order" is the order a member first appears scanning `sections` in order. Returns an empty map
- *  for a page without members. */
-export function outlineFor(page: FamilyOutlineInput): Map<string, { number: string; level: number }> {
+/** Slice D1 item 2: anatomy-first numbering — the only numbering rule for every family page (not
+ *  only one with `anatomy` set; it superseded the earlier whole-and-letters rule outright). The
+ *  whole gets no number. A **top-level part** is any member of an `inWhole` section whose `parent`
+ *  is the whole, or who has no `parent` at all (an in-whole root with no Swift parent edge is still
+ *  top-level) — numbered `1`, `2`, `3`… in authored order (the order a member first appears
+ *  scanning `inWhole` sections, in section order). A child takes its parent's number plus `.1`,
+ *  `.2`, … in authored order. Members outside any `inWhole` section (Related) get no number at
+ *  all. Returns an empty map for a page without members. */
+export function numberFor(page: FamilyOutlineInput): Map<string, { number: string; level: number }> {
   const outline = new Map<string, { number: string; level: number }>();
   const { whole, sections, members } = page;
   if (!whole || !sections || !members) return outline;
 
-  // V2c item 2: a section may list an id that isn't a real member (bad data, already reported by
-  // `validateFamily`) — never let it occupy authored order (and so never a root letter), degrading
-  // to a missing block instead of renumbering the real members around it.
   const memberIds = new Set(members.map((m) => m.id));
+  // Only `inWhole` sections contribute to numbering — a Related section's members are never
+  // top-level parts, and never occupy authored order (so they can't be skipped-over roots either).
   const authoredOrder: string[] = [];
   const seen = new Set<string>();
   for (const section of sections) {
+    if (!section.inWhole) continue;
     for (const id of section.members) {
       if (!seen.has(id) && memberIds.has(id)) {
         seen.add(id);
@@ -149,46 +191,106 @@ export function outlineFor(page: FamilyOutlineInput): Map<string, { number: stri
     childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), id]);
   }
 
-  // V2c item 14: a bad parent graph (already reported by `validateFamily`) can loop back to an
-  // ancestor already being numbered — `visited` makes that degrade to a partial outline instead of
-  // an infinite recursion.
-  const assignChildren = (parentId: string, parentNumber: string, parentLevel: number, visited: Set<string>) => {
+  // V2c item 14's cycle guard: bad data already reported by `validateFamily` must degrade to a
+  // partial outline, never an infinite recursion.
+  const assignChildren = (parentId: string, parentNumber: string, level: number, visited: Set<string>) => {
     const kids = childrenOf.get(parentId) ?? [];
     kids.forEach((childId, index) => {
       if (visited.has(childId)) return;
       visited.add(childId);
       const number = `${parentNumber}.${index + 1}`;
-      const level = parentLevel + 1;
-      outline.set(childId, { number, level });
-      assignChildren(childId, number, level, visited);
+      outline.set(childId, { number, level: level + 1 });
+      assignChildren(childId, number, level + 1, visited);
     });
   };
 
   const visited = new Set<string>([whole]);
-  outline.set(whole, { number: '1', level: 1 });
-  assignChildren(whole, '1', 1, visited);
-
-  const roots = authoredOrder.filter((id) => parentOf.get(id) === undefined && !visited.has(id));
-  let letterIndex = 0;
-  for (const id of roots) {
+  const topLevel = authoredOrder.filter((id) => {
+    const parent = parentOf.get(id);
+    return parent === undefined || parent === whole;
+  });
+  let next = 0;
+  for (const id of topLevel) {
     if (visited.has(id)) continue;
     visited.add(id);
-    const letter = String.fromCharCode(65 + letterIndex);
-    letterIndex += 1;
-    outline.set(id, { number: letter, level: 2 });
-    assignChildren(id, letter, 2, visited);
+    next += 1;
+    const number = String(next);
+    outline.set(id, { number, level: 2 });
+    assignChildren(id, number, 2, visited);
   }
 
   return outline;
 }
 
-/** The header text role for a member at a given outline level (spec §5.2 "Header by level"). */
-export function headerRoleFor(level: number): 'heading1' | 'heading2' | 'heading3' | 'bodyStrong' | 'body' {
-  if (level <= 1) return 'heading1';
-  if (level === 2) return 'heading2';
-  if (level === 3) return 'heading3';
-  if (level === 4) return 'bodyStrong';
-  return 'body';
+/** One node of a `blocks` section's own Part tree (Slice D1 item 7 "Tree line"). */
+export interface PartTreeEntry {
+  id: string;
+  children: PartTreeEntry[];
+}
+
+/** E1: moved from `FamilyPage.tsx` so it runs under Node's test runner — pure logic that alone
+ *  decides how a `blocks` section's own members nest and in what order its Parts render.
+ *  Reconstructs parentage mechanically from the already-computed `numberFor` outline (a child's
+ *  number is its parent's number plus one more `.` segment), scoped to the member ids given, not a
+ *  second copy of `numberFor`'s own nesting decision. Scoping to one section's own ids (rather than
+ *  every member of the page) is how family data is authored — a section's `members` already lists
+ *  a full parent/children subtree together — so a parent belonging to a *different* section is
+ *  simply absent from `memberIds`, and the would-be child becomes a root of this tree instead of
+ *  nesting under a part this call never sees. */
+export function buildPartTree(memberIds: readonly string[], outline: ReadonlyMap<string, { number: string; level: number }>): PartTreeEntry[] {
+  const idByNumber = new Map<string, string>();
+  for (const id of memberIds) {
+    const number = outline.get(id)?.number;
+    if (number) idByNumber.set(number, id);
+  }
+  const childrenOf = new Map<string, string[]>();
+  const roots: string[] = [];
+  for (const id of memberIds) {
+    const number = outline.get(id)?.number;
+    const parentNumber = number?.includes('.') ? number.slice(0, number.lastIndexOf('.')) : undefined;
+    const parentId = parentNumber ? idByNumber.get(parentNumber) : undefined;
+    if (parentId) childrenOf.set(parentId, [...(childrenOf.get(parentId) ?? []), id]);
+    else roots.push(id);
+  }
+  const build = (id: string): PartTreeEntry => ({ id, children: (childrenOf.get(id) ?? []).map(build) });
+  return roots.map(build);
+}
+
+/** Slice D1 item 5: an anatomy pin's number and style, looked up by member id — the pure lookup
+ *  behind `AnatomyPin` (which reads this through React context so a page's `anatomy.picture` never
+ *  hardcodes a number). `undefined` for an unknown member, or one with no number (outside any
+ *  `inWhole` section, or under an unnumbered parent — `numberFor` never assigns those one;
+ *  `validateFamily`'s D2 item A2 now reports any anatomy item naming such a member, but this stays
+ *  defensive for a caller outside the anatomy legend/picture, which that rule doesn't cover). A
+ *  dashed pin marks a `documentation-only` member — spec: "no area of their own". */
+export function anatomyPinFor(
+  memberId: string,
+  members: ReadonlyMap<string, Pick<CatalogMember, 'fidelity'>>,
+  outline: ReadonlyMap<string, { number: string }>,
+): { number: string; dashed: boolean } | undefined {
+  const member = members.get(memberId);
+  if (!member) return undefined;
+  const entry = outline.get(memberId);
+  if (!entry) return undefined;
+  return { number: entry.number, dashed: member.fidelity === 'documentation-only' };
+}
+
+/** Distributes a legend's groups into up to `maxColumns` columns so the columns end as close to
+ *  level as possible: each group, in authored order, goes into the column that is currently
+ *  shortest (the leftmost on a tie). A group's height is its items plus one row for its label. A
+ *  group never splits across columns, and the groups in each column keep their authored order. */
+export function anatomyColumns<T extends { items: ReadonlyArray<unknown> }>(groups: readonly T[], maxColumns = 3): T[][] {
+  if (groups.length === 0) return [];
+  const columnCount = Math.min(maxColumns, groups.length);
+  const columns: T[][] = Array.from({ length: columnCount }, () => []);
+  const heights = new Array<number>(columnCount).fill(0);
+  for (const group of groups) {
+    let shortest = 0;
+    for (let i = 1; i < columnCount; i += 1) if (heights[i] < heights[shortest]) shortest = i;
+    columns[shortest].push(group);
+    heights[shortest] += group.items.length + 1;
+  }
+  return columns;
 }
 
 /** `aria-level` for a member at a given outline level: the page title is 1, so every outline
@@ -196,14 +298,6 @@ export function headerRoleFor(level: number): 'heading1' | 'heading2' | 'heading
  *  level 1) and section labels both land on 2 this way too. */
 export function ariaLevelFor(level: number): number {
   return Math.min(level + 1, 6);
-}
-
-/** Whether a member's `relationship` should be shown below its specimens (spec §5.1, §5.2): never
- *  on the whole, never in a folded row, and never when it just repeats its section's label
- *  (case-insensitive). */
-export function relationshipVisible(member: CatalogMember, section: CatalogMemberSection, isWhole: boolean, isFolded: boolean): boolean {
-  if (isWhole || isFolded) return false;
-  return member.relationship.toLowerCase() !== section.label.toLowerCase();
 }
 
 /** The disclosure's closed-state summary label (spec §5.2). V2b item 9: "Swift API" is Hermex
@@ -242,16 +336,9 @@ export function disclosureContent(member: CatalogMember, resolvedProps?: readonl
   return parts;
 }
 
-/** Family sections in page order (spec §5.2): `inWhole` sections first, in authored order, then
- *  the rest, also in authored order. Ordering only — numbering and lettering follow each member's
- *  `parent` (`outlineFor`), not this order. */
-export function orderedSections(sections: readonly CatalogMemberSection[]): CatalogMemberSection[] {
-  return [...sections.filter((section) => section.inWhole), ...sections.filter((section) => !section.inWhole)];
-}
-
 /** The section a member id belongs to, or `undefined` for the whole (which is in no section) or an
- *  unknown id. Used both for `relationshipVisible`'s `section` argument and to decide whether
- *  addressing a member should open a folded row (its section's `kind` is `'list'`). */
+ *  unknown id. Used to decide whether addressing a member should open a folded row (its section's
+ *  `kind` is `'list'`). */
 export function sectionFor(sections: readonly CatalogMemberSection[], memberId: string): CatalogMemberSection | undefined {
   return sections.find((section) => section.members.includes(memberId));
 }

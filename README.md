@@ -476,14 +476,33 @@ export default defineCatalogPage({
 });
 ```
 
-- **`whole`** is a member id, and must equal the page's own `id`. It renders first, numbered `1`.
+- **`whole`** is a member id, and must equal the page's own `id`. It renders first, with no header
+  of its own (the page title already names it) and no number.
 - **`sections`** (`{ label, kind: 'blocks' | 'list', inWhole, members }`) group the rest: `blocks`
   renders each member as its own full block (specimens and all); `list` renders one card of folded
-  rows, each a toggle that expands in place. `inWhole` sections come right after the whole; the
-  others come after them. Numbering follows each member's own `parent` (below), not this ordering.
-- **`parent`** nests a member under another (e.g. a subview under its view), numbered
-  `parentNumber.1`, `.2`, … in the order it's first listed across `sections`. A member with no
-  parent other than the whole gets a letter (`A`, `B`, …) instead.
+  rows, each a toggle that expands in place. `inWhole` sections render under the page's one
+  "Parts" label; the rest render under its one "Related" label — the only two section labels the
+  page ever shows; each section's own `label` stays in the data (for the anatomy legend and your
+  own reference) but is never rendered. Numbering follows each member's own `parent` (below), not
+  this ordering.
+- **`parent`** nests a member under another (e.g. a subview under its view). A top-level part (an
+  `inWhole` member whose `parent` is the whole, or who has no `parent` at all) is numbered `1`,
+  `2`, `3`… in the order it's first listed across `sections`; a child takes its parent's number
+  plus `.1`, `.2`, … the same way. A Related member (outside every `inWhole` section) gets no
+  number at all.
+- **`anatomy`** (page-level) is the first box after the page head, labeled “Anatomy” like the
+  specimen grids: `{ picture, groups }`, where each group is
+  `{ label, items: [{ member, description } | { other, description }] }`. A `member` item names one
+  of this page's own members (not the whole) and is numbered to match its Part; an `other` item
+  names a component documented elsewhere, shows an unnumbered ↗ pin, and links only when the name
+  resolves to a real catalog address. With six items or fewer the legend sits beside `picture`;
+  with more it goes below it in up to three columns, each group placed in the currently shortest
+  column so the columns end nearly level (a group never splits). Mark `picture` with
+  `<AnatomyPin member="ThatMemberId" />` (its number and style come from the page, so `picture`
+  never hardcodes one) or `<AnatomyPin other="ThatComponent" />`.
+- **`axis`** on a `variants` or `states` slot names the one property that grid varies (e.g.
+  `'Expression'`) and shows as the grid's label. Family pages hide the generic block labels, so
+  give each grid an `axis` there.
 - **`fidelity`** (`'replicated' | 'approximated' | 'documentation-only'`) shows as a small badge.
   Use `'documentation-only'` for a member with no rendered specimen (no native counterpart to show,
   or nothing meaningfully different to render).

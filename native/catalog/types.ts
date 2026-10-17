@@ -72,6 +72,9 @@ export interface VariantSlot {
    *  it only ever lowers the natural, width-based column count, never raises it. Omit to let the
    *  slot's specimen size and available width decide alone (today's behavior, unchanged). */
   maxColumns?: 1 | 2 | 3 | 4 | 5;
+  /** Names the one property this grid varies (e.g. "Expression", "Shape"). Shown as the grid's
+   *  label, including on family pages, which otherwise hide block labels. */
+  axis?: string;
   items: VariantExample[];
 }
 
@@ -326,8 +329,9 @@ export interface CatalogMember {
   /** The native source shown in the line below the specimens, `path:line`. */
   source: string;
   fidelity: 'replicated' | 'approximated' | 'documentation-only';
-  /** For example "Anatomy", "Native integration", "Helper". Hidden when it repeats the section
-   *  label; always hidden on the whole and in folded rows (`relationshipVisible`). */
+  /** For example "Anatomy", "Native integration", "Helper". Slice D1 removed the below-specimens
+   *  line's own relationship/section-label display entirely (the anatomy box replaced it); kept as
+   *  authored data for your own reference, but not read by the renderer. */
   relationship: string;
   /** The member that contains or uses this one. Omitted on the whole and on related roots. */
   parent?: string;
@@ -366,12 +370,35 @@ export interface CatalogMember {
 
 /** One section of a family page (spec §5.1): `kind` alone decides full blocks versus the folded
  *  list card. `inWhole` sections come right after the whole; the others come after them — ordering
- *  only, numbering and lettering follow `parent` (see `outlineFor`). */
+ *  only, numbering follows each member's own `parent` (see `numberFor`); a Related (non-`inWhole`)
+ *  member is never numbered. */
 export interface CatalogMemberSection {
   label: string;
   kind: 'blocks' | 'list';
   inWhole: boolean;
   members: string[];
+}
+
+/** Slice D1: one row of a family page's anatomy legend — either a `member` of this page (numbered,
+ *  linked to that member's address) or a component `other`wise documented elsewhere (never
+ *  numbered; linked only when the name resolves to a real catalog address). `description` is this
+ *  legend row's own text, independent of the member's own `description`. */
+export type CatalogAnatomyItem = ({ member: string } | { other: string }) & { description: string };
+
+/** One labeled group of anatomy legend rows (e.g. "In this picture", "No area of their own",
+ *  "From other pages") — a group never splits across legend columns (`AnatomyPin`/`FamilyPage`). */
+export interface CatalogAnatomyGroup {
+  label: string;
+  items: CatalogAnatomyItem[];
+}
+
+/** Slice D1 item 1: the anatomy box at the top of a family page — a picture of the whole with
+ *  numbered pins (via `AnatomyPin`, looked up through context so the picture never hardcodes a
+ *  number), and a legend beside it (six items or fewer) or below it in up to three balanced
+ *  columns. Omit for a family page with no anatomy picture. */
+export interface CatalogAnatomy {
+  picture?: React.ReactNode;
+  groups: CatalogAnatomyGroup[];
 }
 
 /** A family page's members with resolved props and paths, the whole, sections, and the computed
@@ -388,6 +415,8 @@ export interface FamilyDef {
   /** Label for the disclosure's API part (`disclosureLabel`). See `CatalogPageInput.apiLabel`.
    *  Defaults to `'API'` when absent. */
   apiLabel?: string;
+  /** Slice D1 item 1. See `CatalogPageInput.anatomy`. */
+  anatomy?: CatalogAnatomy;
 }
 
 /** One titled card on a token page (`SectionDef.tokenSections`). */

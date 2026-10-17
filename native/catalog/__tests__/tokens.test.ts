@@ -33,6 +33,7 @@ test('colors match the approved visual system', () => {
       accent: '#174dc6',
       accentSubtle: '#e9efff',
       focusRing: '#c9d7ff',
+      treeLine: '#a9bdf0',
       code: 'Menlo, monospace',
       warning: '#8a4b00',
       warningSubtle: '#fff4e0',

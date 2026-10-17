@@ -407,11 +407,13 @@ test('buildCatalogSections does not warn about a composedOf name that is another
   }
 });
 
+// Slice D1 item 2: `numberFor` numbers an in-whole top-level part `1`, `2`, … (not `1.1`, `1.2`,
+// … — that was `outlineFor`'s superseded rule); `BotAnimatedFaceView`'s `parent` is the whole.
 test('buildCatalogSections: the section\'s family carries the outline and the authored sections/whole', () => {
   const { sections } = buildCatalogSections([familyPage()], familyComponents);
   const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
   assert.equal(family?.whole, 'BotAvatarView');
-  assert.deepEqual(family?.outline.get('BotAnimatedFaceView'), { number: '1.1', level: 2 });
+  assert.deepEqual(family?.outline.get('BotAnimatedFaceView'), { number: '1', level: 2 });
   assert.deepEqual(family?.sections, [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['BotAnimatedFaceView'] }]);
 });
 
@@ -447,6 +449,32 @@ test('buildCatalogSections: a page without members gives a byte-identical sectio
     intentionalStaticPreview: undefined,
     family: undefined,
   });
+});
+
+// Slice D1 item 1: `anatomy` passes through to `FamilyDef.anatomy` unchanged.
+test('buildCatalogSections: the section\'s family carries the authored anatomy', () => {
+  const anatomy = { groups: [{ label: 'In this picture', items: [{ member: 'BotAnimatedFaceView', description: 'The face.' }] }] };
+  const page = { ...familyPage(), anatomy };
+  const { sections } = buildCatalogSections([page], familyComponents);
+  const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+  assert.deepEqual(family?.anatomy, anatomy);
+});
+
+// Slice D1 item 3: a bad anatomy item is a validation issue, reaching console.error like any other.
+test('buildCatalogSections: an invalid anatomy reaches console.error in development', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const page = { ...familyPage(), anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'Typo', description: 'x' }] }] } };
+    buildCatalogSections([page], familyComponents);
+    assert.ok(errors.some((e) => e.includes('anatomy item "Typo" is not a member of this page')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
 });
 
 test('buildCatalogSections: family validation issues reach console.error in development', () => {

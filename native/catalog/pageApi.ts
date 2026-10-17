@@ -1,11 +1,11 @@
 import type React from 'react';
-import type { CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
+import type { CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
 // A subpath import (`native/catalog/package.json`'s own `imports` map), not a relative one: a
 // relative `./familyModel.ts` resolves fine under Node's `--experimental-strip-types` (the test
 // runner) but is rejected by a consumer's bundler-mode `tsc` (TS5097, no `.ts` specifiers without
 // `allowImportingTsExtensions`); `./familyModel` (extensionless) is the reverse — fine for a
 // consumer's `tsc`, unresolvable by plain Node ESM. The subpath specifier satisfies both.
-import { outlineFor, validateFamily } from '#familyModel';
+import { numberFor, validateFamily } from '#familyModel';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
  *  generated props), plus the three fields design §1 "Page shape" adds. */
@@ -62,7 +62,8 @@ export interface CatalogPageInput<TId extends string = string> {
    *  page's `id`. */
   whole?: string;
   /** How the family's non-whole members are grouped and rendered, required when `members` is set.
-   *  Ordering only — numbering and lettering follow each member's `parent` (`outlineFor`). */
+   *  Ordering only — numbering follows each member's own `parent` (`numberFor`); a Related member
+   *  (outside every `inWhole` section) is never numbered. */
   sections?: CatalogMemberSection[];
   /** Extra names for the page itself (its whole) — e.g. retired page ids that are not member ids.
    *  Included in uniqueness validation, routing and search alongside `members[].aliases`. V2c item
@@ -76,6 +77,10 @@ export interface CatalogPageInput<TId extends string = string> {
    *  `'API'` when absent — a generic viewer must never hardcode a host app's own wording. V2c
    *  item 15: only takes effect on a page with `members` — unused on a normal page. */
   apiLabel?: string;
+  /** Slice D1 item 1: the anatomy box `FamilyPage` renders first, right after the page head —
+   *  a picture of the whole with numbered pins and a legend. Only takes effect on a page with
+   *  `members`. */
+  anatomy?: CatalogAnatomy;
 }
 
 export interface CatalogPage<TId extends string = string> extends CatalogPageInput<TId> {
@@ -241,17 +246,18 @@ export function buildCatalogSections<TId extends string>(
         ...member,
         hasSpecimens: Boolean(member.variants?.items?.length || member.states?.items?.length || member.comparison),
       }));
-      const issues = validateFamily({ ...page, members }, otherPageIds, otherMemberIds);
+      const issues = validateFamily({ ...page, members, anatomy: page.anatomy }, otherPageIds, otherMemberIds);
       if ((globalThis as { __DEV__?: boolean }).__DEV__) {
         for (const issue of issues) console.error(`[Catalog] ${issue}`);
       }
       family = {
         whole: page.whole!,
         sections: page.sections!,
-        outline: outlineFor(page),
+        outline: numberFor(page),
         notShown: page.notShown,
         aliases: page.aliases,
         apiLabel: page.apiLabel,
+        anatomy: page.anatomy,
         members: page.members!.map((member) => {
           const memberComponent = member.component ? componentByName.get(member.component) : undefined;
           return {

@@ -250,9 +250,9 @@ export interface ListGroup {
 }
 
 export type PresentationBlock =
-  | { kind: 'grid'; title: string; size: SpecimenSize; comparison: ComparisonDef }
-  | { kind: 'grouped'; title: string; size: SpecimenSize; groups: ListGroup[] }
-  | { kind: 'list'; title: string; size: SpecimenSize; items: ListItem[]; maxColumns?: 1 | 2 | 3 | 4 | 5 }
+  | { kind: 'grid'; title: string; size: SpecimenSize; comparison: ComparisonDef; axis?: string }
+  | { kind: 'grouped'; title: string; size: SpecimenSize; groups: ListGroup[]; axis?: string }
+  | { kind: 'list'; title: string; size: SpecimenSize; items: ListItem[]; maxColumns?: 1 | 2 | 3 | 4 | 5; axis?: string }
   | { kind: 'preview'; title: string; widths: PreviewWidths; layout?: 'frames' | 'table' }
   | { kind: 'tokenSections'; title: string; sections: TokenSection[]; columns: 1 | 2 | 3 }
   | { kind: 'empty'; title: string; message: string };
@@ -340,16 +340,26 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
         title: `${def.comparison.rowLabel} × ${def.comparison.columnLabel}`,
         size: def.comparison.size ?? def.specimenSize ?? 'regular',
         comparison: def.comparison,
+        // A3: `comparison` replaces the Variants list, but `def.variants.axis` (if still set) is
+        // the only axis label a grid has to carry onto a family page, which hides generic titles.
+        ...(def.variants?.axis ? { axis: def.variants.axis } : {}),
       });
     } else if (grouped && def.variants) {
       // Grouped rows place several cells beside a row header, so full-width (itemsFill) slots do
       // not force 402px cells here; a cell's own `fill` still stretches its specimen.
-      blocks.push({ kind: 'grouped', title: 'Variant × configuration', size: def.specimenSize ?? 'regular', groups: grouped.groups });
+      blocks.push({
+        kind: 'grouped',
+        title: 'Variant × configuration',
+        size: def.specimenSize ?? 'regular',
+        groups: grouped.groups,
+        ...(def.variants.axis ? { axis: def.variants.axis } : {}),
+      });
       states = grouped.leftovers;
     } else if (def.variants) {
       blocks.push({
         kind: 'list',
-        title: 'Variants',
+        title: def.variants.axis ?? 'Variants',
+        ...(def.variants.axis ? { axis: def.variants.axis } : {}),
         size: slotSize(def, def.variants),
         items: slotItems(def.variants, 'variants', def.specimenSize === 'page'),
         ...slotColumnCap(def.variants),
@@ -363,7 +373,8 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
     const secondary = blocks.length > 0 && blocks[0].kind !== 'list';
     blocks.push({
       kind: 'list',
-      title: secondary ? 'Other configurations' : 'States / configurations',
+      title: states.axis ?? (secondary ? 'Other configurations' : 'States / configurations'),
+      ...(states.axis ? { axis: states.axis } : {}),
       size: slotSize(def, states),
       items: slotItems(states, 'states', def.specimenSize === 'page'),
       ...slotColumnCap(states),

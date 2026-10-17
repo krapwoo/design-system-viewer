@@ -298,6 +298,32 @@ test('states that name their variant become grouped rows', () => {
   assert.deepEqual(presentationBlocks({ ...base, variants, states, hide: { states: true } }).map((b) => b.kind), ['list']);
 });
 
+// A3: `axis` previously only reached a `list` block, so a member whose variants got grouped with
+// its states (`grouped`), or that authored a `comparison` (`grid`), silently lost its label on a
+// family page even when `axis` was set. `axis` must now carry onto those block kinds too.
+test('presentationBlocks carries variants.axis onto a grouped block, not only list', () => {
+  const base = { id: 'Loading', path: 'p', description: 'd' };
+  const variants = { axis: 'Expression', itemsFill: true, items: [{ key: 'circle', name: 'Circle', node: 'c' }, { key: 'linear', name: 'Linear', node: 'l' }] };
+  const states = { itemsFill: true, items: [{ key: 'small', name: 'Small', node: 's', group: 'circle' }] };
+  const [grouped] = presentationBlocks({ ...base, variants, states });
+  assert.equal(grouped.kind, 'grouped');
+  assert.equal(grouped.axis, 'Expression');
+
+  const plain = presentationBlocks({ ...base, variants: { ...variants, axis: undefined }, states })[0];
+  assert.equal('axis' in plain, false, 'no axis key at all when unset');
+});
+
+test('presentationBlocks carries variants.axis onto a grid block, not only list', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = { axis: 'Shape', items: [{ key: 'a', name: 'A', node: 'a' }] };
+  const [grid] = presentationBlocks({ ...base, variants, comparison: valid });
+  assert.equal(grid.kind, 'grid');
+  assert.equal(grid.axis, 'Shape');
+
+  const plain = presentationBlocks({ ...base, comparison: valid })[0];
+  assert.equal('axis' in plain, false, 'no axis key at all when unset');
+});
+
 test('choosePlacement splits the row in two and keeps the shorter arrangement', () => {
   // Each block fills half a row (952 - 28 gap = 462 each), so both must keep their minimum there.
   // Dropdown at 1280: ONE variant, 600px tall in a 462px column. A single specimen longer than its
