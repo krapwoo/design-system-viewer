@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.11.0
+
+- Catalog pages can now document a family of components on one page with `members`, `whole`, `sections` and an `anatomy` box of numbered parts, with an address and search entry for each member. An address that matches no page now shows a "Page not found" notice instead of silently opening the first page.
+
 ## 0.10.0
 
 - Viewer chrome text now follows a fixed set of typography roles instead of ad hoc sizes/weights: the heavier `800` font weight is now `700` everywhere it appeared, uppercase label letter-spacing is consistent across the sidebar, grids, lists and panels, and the italic empty-state notes are gone. A reference card's contents now sit vertically centred — the last Source/Accessibility/Composition row no longer adds a trailing divider and padding on top of the card's own. The sidebar footer's padding is now even top and bottom, so its label sits centred against the divider above it.
