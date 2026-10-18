@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.12.1
+
+- When `dev` repairs a workspace whose files were deleted underneath it, it now restores `.ds-viewer/endpoint.json` too, so the next restart still reuses the same local address instead of coming back on a new port that an already-open catalog page can't reach.
+
 ## 0.12.0
 
 - A page title with no spaces (an unbroken component identifier) now wraps inside its own column instead of painting over the previous/next buttons, and `doctor --render` reports a new `page-head-overlap` error when anything covers a page's heading — the one check measured at 800x600, where that overlap appears and the other checks, all running at 1280, never looked.
