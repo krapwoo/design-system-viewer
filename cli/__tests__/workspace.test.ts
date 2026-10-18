@@ -463,3 +463,73 @@ test('a repair re-asserts this server\'s ownership of the directory', () => {
   assert.ok(liveDevLock(config, process.pid + 1), 'a second dev must still be refused after a repair');
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('a repair restores the endpoint record, so a restart keeps reusing this address', () => {
+  // Found by fabricating issue #41's observed state against a live server: the repair brought the
+  // catalog back to 200 but left `endpoint.json` deleted. Nothing breaks while that server runs —
+  // it holds the endpoint in memory — so the loss is invisible until the next `dev`, which finds
+  // no record, picks a fresh port and secret, and leaves an already-open page calling an address
+  // nobody answers. That is exactly the defect 0.9.1's stored record fixed.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  const endpoint = { baseUrl: 'http://127.0.0.1:54321', secret: 'a-sufficiently-long-test-secret-value' };
+  writeWorkspace(config, endpoint);
+  writeEndpointRecord(config, { port: 54321, secret: endpoint.secret });
+
+  // #41's shape: everything the failure takes, the endpoint record included.
+  for (const name of WORKSPACE_DEFINING_FILES) rmSync(workspacePath(config, name), { force: true });
+  rmSync(workspacePath(config, 'endpoint.json'), { force: true });
+
+  const result = repairWorkspaceIfMissing({
+    config, updateEndpoint: endpoint, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {},
+  });
+
+  assert.equal(result.repaired, true);
+  assert.deepEqual(
+    readEndpointRecord(config),
+    { port: 54321, secret: endpoint.secret },
+    'the repair must restore the port and secret the server is actually serving, so a restart reuses them',
+  );
+  assert.equal(statSync(workspacePath(config, 'endpoint.json')).mode & 0o777, 0o600, 'a restored record must be as private as the original');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair leaves an existing endpoint record alone, even one that disagrees with it', () => {
+  // The repair fills a gap; it does not assert ownership of a record that is already there. The
+  // deliberately different port is what makes this a test: writing the live endpoint back over an
+  // identical record is byte-identical and proves nothing, so the stored record here names a
+  // different port than the endpoint passed in. A record that disagrees belongs to something else
+  // — a second `dev` that took this directory — and `reclaimLock` already refuses to take a
+  // directory another pid owns, so stamping this server's address over its record would undo that
+  // protection one file across.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  const endpoint = { baseUrl: 'http://127.0.0.1:54321', secret: 'a-sufficiently-long-test-secret-value' };
+  writeWorkspace(config, endpoint);
+  const other = { port: 61999, secret: 'a-different-and-equally-long-secret!!' };
+  writeEndpointRecord(config, other);
+
+  for (const name of WORKSPACE_DEFINING_FILES) rmSync(workspacePath(config, name), { force: true });
+  repairWorkspaceIfMissing({
+    config, updateEndpoint: endpoint, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {},
+  });
+
+  assert.deepEqual(readEndpointRecord(config), other, 'an existing record must survive a repair untouched, even when it names a different address');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('a repair without an endpoint writes no record at all', () => {
+  // A render check runs `--no-update-endpoint`: there is no address to remember, and inventing one
+  // would hand the next run a port nothing listens on.
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeWorkspace(config);
+  for (const name of WORKSPACE_DEFINING_FILES) rmSync(workspacePath(config, name), { force: true });
+
+  repairWorkspaceIfMissing({
+    config, updateEndpoint: undefined, versionStatus: () => VERSION_STATUS, sync: () => {}, reclaimLock: () => {}, log: () => {},
+  });
+
+  assert.equal(existsSync(workspacePath(config, 'endpoint.json')), false, 'no endpoint means no record to restore');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
