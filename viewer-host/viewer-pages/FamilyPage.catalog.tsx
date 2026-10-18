@@ -123,8 +123,8 @@ export default defineCatalogPage({
   description: "Documents a family of related declarations — a whole and its members — on one page, with an anatomy box, a disclosure per member, and an address and search entry for each one. Used by this very page: you're reading a live FamilyPage right now.",
   source: '../native/catalog/FamilyPage.tsx',
   whole: 'FamilyPage',
-  // Slice D1 item 11: more than six items (4 members here plus 3 "from other pages" entries)
-  // so this page's own anatomy box shows the below-the-picture, multi-column legend.
+  // Slice D1 item 11: more than six items (8 now, across the three groups below) so this page's
+  // own anatomy box shows the below-the-picture, multi-column legend.
   anatomy: {
     picture: pagePicture,
     groups: [
@@ -135,6 +135,17 @@ export default defineCatalogPage({
           { member: 'PagerButton', description: "One button of SectionPagerRow's own pair." },
           { member: 'AnatomyPin', description: "A pin inside a picture, looked up by member id." },
           { member: 'Blocks', description: "The shared placement logic behind a member's own specimen card." },
+        ],
+      },
+      {
+        label: 'No number of their own',
+        items: [
+          // `relatedPages` defect fix: `FamilyPageDisclosure` sits in a non-`inWhole` section, so
+          // `numberFor` gives it no number and this legend row renders with no pin. It is here so
+          // the "no pin, no gutter" case (APPROVED.md "Related members have no number and no
+          // gutter") is exercised on a real page, not only in a unit test — this page's other two
+          // groups are all numbered or ↗ rows, which keep their gutter because they do show a mark.
+          { member: 'FamilyPageDisclosure', description: "The collapsed panel under each member's specimens — documented here, numbered nowhere." },
         ],
       },
       {
@@ -152,7 +163,15 @@ export default defineCatalogPage({
     // N6: Blocks has a real specimen (the stacked-blocks demo below) — a `list` section only ever
     // renders folded rows, which never show specimens, so Blocks belongs in a `blocks` section.
     { label: 'Specimen layout', kind: 'blocks', inWhole: true, members: ['Blocks'] },
+    // Deprecated, kept to exercise `doctor`'s own `deprecated-related-section` warning on this
+    // very page — `relatedPages` below is the field a real page should use instead.
     { label: 'Related', kind: 'list', inWhole: false, members: ['FamilyPageDisclosure'] },
+  ],
+  // `relatedPages` field spec item 6: one entry that resolves (a real page id, with a note) and
+  // one with no note, exercised on the viewer's own sample page as acceptance requires.
+  relatedPages: [
+    { page: 'ComparisonList', note: 'A different side-by-side layout for two-axis specimens.' },
+    { page: 'PropsTable' },
   ],
   members: [
     {

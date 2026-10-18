@@ -845,12 +845,13 @@ test('validateFamily: a valid anatomy is a no-op', () => {
   assert.deepEqual(validateFamily(page, new Set(), new Set()), []);
 });
 
-// D2 item A2: an anatomy `member` item whose member has no number — outside every `inWhole`
-// section — must be reported, not silently render a blank pin slot.
-test('validateFamily: an anatomy member item outside every inWhole section is reported', () => {
+// C1 (independent review), narrowing D2 item A2: a member outside every `inWhole` section is
+// legitimately unnumbered by design (APPROVED.md: related members have no number), so it must
+// NOT be reported — only an in-whole member that's unnumbered because its own parent isn't
+// numbered (the next test) is a real defect.
+test('validateFamily: an anatomy member item outside every inWhole section is not reported', () => {
   const page = { ...botAvatar, anatomy: { groups: [{ label: 'X', items: [{ member: 'BotRoomMemberAvatar' }] }] } };
-  const issues = validateFamily(page, new Set(), new Set());
-  assert.ok(issues.some((issue) => issue.includes('anatomy item "BotRoomMemberAvatar" has no number')));
+  assert.deepEqual(validateFamily(page, new Set(), new Set()), []);
 });
 
 // D2 item A2: the same silent path for an `inWhole` member whose `parent` is a Related member —
@@ -868,4 +869,97 @@ test('validateFamily: an anatomy member item under a parent that is not numbered
   };
   const issues = validateFamily(page, new Set(), new Set());
   assert.ok(issues.some((issue) => issue.includes('anatomy item "P1" has no number')));
+});
+
+test('validateFamily: a relatedPages entry naming an unknown page is reported', () => {
+  const page = { ...botAvatar, relatedPages: [{ page: 'NoSuchPage' }] };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('relatedPages entry "NoSuchPage" is not a catalog page')));
+});
+
+test('validateFamily: a relatedPages entry naming a known page is not reported', () => {
+  const page = { ...botAvatar, relatedPages: [{ page: 'SettingsCard', note: 'A parallel card.' }] };
+  const issues = validateFamily(page, new Set(['SettingsCard']), new Set());
+  assert.ok(!issues.some((issue) => issue.includes('relatedPages')));
+});
+
+// I3 (independent review), matching N8: `otherMemberIds` carries another family's member ids and
+// aliases plus another page's own alias — the same universe `FamilyPage`'s own `resolvesAddress`
+// already treats as working links, so a relatedPages entry naming one must not be a false error.
+test('validateFamily: a relatedPages entry naming a page alias or another family\'s member is not reported', () => {
+  const page = { ...botAvatar, relatedPages: [{ page: 'SettingsCardAlias' }] };
+  const issues = validateFamily(page, new Set(), new Set(['SettingsCardAlias']));
+  assert.ok(!issues.some((issue) => issue.includes('relatedPages')));
+});
+
+test('validateFamily: a relatedPages entry naming the page itself is reported, and not also as unknown', () => {
+  const page = { ...botAvatar, relatedPages: [{ page: 'BotAvatarView' }] };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('relatedPages entry "BotAvatarView" names this page itself')));
+  assert.ok(!issues.some((issue) => issue.includes('is not a catalog page')));
+});
+
+// Minor 6 (independent review, confirmation pass): an entry naming one of this page's own members
+// resolves as a live link at runtime (`FamilyPage.tsx`'s `resolvesAddress` unions `allMemberIds`),
+// so reporting it as "is not a catalog page" would send the author looking for a typo that isn't
+// there. The dedicated message instead points at the real mistake.
+test('validateFamily: a relatedPages entry naming one of this page\'s own members is reported with a dedicated message', () => {
+  const page = { ...botAvatar, relatedPages: [{ page: 'BotRoomMemberAvatar' }] };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('relatedPages entry "BotRoomMemberAvatar" is a member of this page, not another page')));
+  assert.ok(!issues.some((issue) => issue.includes('is not a catalog page')));
+});
+
+test('validateFamily: duplicate relatedPages entries are reported', () => {
+  const page = { ...botAvatar, relatedPages: [{ page: 'SettingsCard' }, { page: 'SettingsCard' }] };
+  const issues = validateFamily(page, new Set(['SettingsCard']), new Set());
+  assert.ok(issues.some((issue) => issue.includes('relatedPages lists "SettingsCard" more than once')));
+});
+
+// Minor 3 (independent review), matching the anatomy dedupe's own `continue`: a duplicated AND
+// unresolvable entry must report the duplicate once per repeat occurrence, never also "is not a
+// catalog page" piled on top for that same occurrence.
+test('validateFamily: a duplicated and unresolvable relatedPages entry reports only the duplicate message for the repeat', () => {
+  const page = { ...botAvatar, relatedPages: [{ page: 'NoSuchPage' }, { page: 'NoSuchPage' }] };
+  const issues = validateFamily(page, new Set(), new Set());
+  assert.equal(issues.filter((issue) => issue.includes('relatedPages lists "NoSuchPage" more than once')).length, 1);
+  assert.equal(issues.filter((issue) => issue.includes('relatedPages entry "NoSuchPage" is not a catalog page')).length, 1);
+});
+
+test('validateFamily: an empty relatedPages array is a no-op', () => {
+  const page = { ...botAvatar, relatedPages: [] };
+  assert.deepEqual(validateFamily(page, new Set(), new Set()), []);
+});
+
+test('buildCatalogSections: the section\'s family carries the authored relatedPages', () => {
+  const relatedPages = [{ page: 'OtherPage', note: 'Why you would go there.' }];
+  const otherPage = defineCatalogPage({ id: 'OtherPage', group: 'Components', description: 'x' });
+  const page = { ...familyPage(), relatedPages };
+  const { sections } = buildCatalogSections([page, otherPage], familyComponents);
+  const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+  assert.deepEqual(family?.relatedPages, relatedPages);
+});
+
+// A page's `relatedPages` is optional and additive — omitting it must leave `family.relatedPages`
+// undefined, so a page authored before this field existed renders exactly as it did before.
+test('buildCatalogSections: a family page without relatedPages leaves it undefined', () => {
+  const { sections } = buildCatalogSections([familyPage()], familyComponents);
+  const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+  assert.equal(family?.relatedPages, undefined);
+});
+
+test('buildCatalogSections: an unresolvable relatedPages entry reaches console.error in development', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const page = { ...familyPage(), relatedPages: [{ page: 'NoSuchPage' }] };
+    buildCatalogSections([page], familyComponents);
+    assert.ok(errors.some((e) => e.includes('relatedPages entry "NoSuchPage" is not a catalog page')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
 });

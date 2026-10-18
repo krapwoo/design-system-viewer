@@ -459,6 +459,7 @@ export default defineCatalogPage({
   whole: 'Toast',
   sections: [
     { label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] },
+    // deprecated shape — don't copy this; name a related component in `relatedPages` instead (below).
     { label: 'Related', kind: 'blocks', inWhole: false, members: ['ToastStandaloneBanner'] },
   ],
   members: [
@@ -484,7 +485,18 @@ export default defineCatalogPage({
   "Parts" label; the rest render under its one "Related" label — the only two section labels the
   page ever shows; each section's own `label` stays in the data (for the anatomy legend and your
   own reference) but is never rendered. Numbering follows each member's own `parent` (below), not
-  this ordering.
+  this ordering. A non-`inWhole` section is **deprecated**: it still works, but `doctor`'s
+  `deprecated-related-section` now warns about it — give the member its own catalog page and name
+  it in `relatedPages` instead of documenting it inline here. Under `doctor.strict`, this warning
+  becomes an error, so a consumer with existing non-`inWhole` sections sees red CI on upgrade until
+  they migrate.
+- **`relatedPages`** (`{ page, note? }[]`) names other catalog pages at the bottom of this page,
+  under the same "Related" heading, after any deprecated sections. Each row is the named page's own
+  id, linked when it resolves to a real catalog address — a page id, another family's member id, or
+  a family page's own alias or one of its members' aliases — and shown as plain text, never a dead link, when it doesn't
+  (`doctor` reports an unresolvable or self-naming entry either way), then its `note`, when
+  authored — no specimens, disclosure, source line, number, or pin. A page with neither
+  `relatedPages` nor a non-`inWhole` section renders no "Related" heading at all.
 - **`parent`** nests a member under another (e.g. a subview under its view). A top-level part (an
   `inWhole` member whose `parent` is the whole, or who has no `parent` at all) is numbered `1`,
   `2`, `3`… in the order it's first listed across `sections`; a child takes its parent's number
@@ -493,8 +505,10 @@ export default defineCatalogPage({
 - **`anatomy`** (page-level) is the first box after the page head, labeled “Anatomy” like the
   specimen grids: `{ picture, groups }`, where each group is
   `{ label, items: [{ member, description } | { other, description }] }`. A `member` item names one
-  of this page's own members (not the whole) and is numbered to match its Part; an `other` item
-  names a component documented elsewhere, shows an unnumbered ↗ pin, and links only when the name
+  of this page's own members (not the whole); it shows that member's Part number, or no pin at all
+  when the member sits outside every `inWhole` section — such a row reserves no gutter for the pin
+  it doesn't have, its name starting flush at the row's own left edge; an `other` item names a
+  component documented elsewhere, shows an unnumbered ↗ pin, and links only when the name
   resolves to a real catalog address. With six items or fewer the legend sits beside `picture`;
   with more it goes below it in up to three columns, each group placed in the currently shortest
   column so the columns end nearly level (a group never splits). Mark `picture` with
@@ -642,6 +656,10 @@ Button
     gallery or a whole-page layout.
   - `internal-prop-unknown` — `internalProps` names something that is not a prop of the component,
     so the exemption it was written for is not in effect. Correct the spelling or delete the entry.
+  - `deprecated-related-section` — a family page still documents one or more members inline in a
+    non-`inWhole` section, naming every one of them so you can act without opening the file. Give
+    each its own catalog page and name it in the family's `relatedPages` list instead; the section
+    keeps working until you do.
 
   The catalog also warns at render time when a page under-declares the width its examples need.
   A `PhoneFrame` given a cell narrower than the 375px device scales the whole phone down, and its

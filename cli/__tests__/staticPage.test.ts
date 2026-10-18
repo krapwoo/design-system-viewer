@@ -668,8 +668,8 @@ test('reads members/whole/sections/aliases literally, flattening every section\'
   assert.equal(page.whole, 'Toast');
   assert.deepEqual(page.aliases, ['OldToast']);
   assert.deepEqual(page.sections, [
-    { label: 'Parts', kind: 'blocks', members: ['ToastBanner'] },
-    { label: 'Related', kind: 'blocks', members: ['ToastStandalone'] },
+    { label: 'Parts', kind: 'blocks', members: ['ToastBanner'], inWhole: true },
+    { label: 'Related', kind: 'blocks', members: ['ToastStandalone'], inWhole: false },
   ]);
   assert.deepEqual(page.members, [
     { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false },
@@ -853,6 +853,27 @@ test('a non-literal sections array makes the page not checkable, even though mem
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
 
+// Deprecation (`relatedPages`): a section's own `inWhole` is read literally, the same way
+// `label`/`kind` already are. I1 (independent review): unlike `label`/`kind`/`members`, a
+// non-literal `inWhole` is an advisory-only field (same leniency as `composedOf`) — it must
+// never cost the page its other error-level family checks for one warning rule's sake, so the
+// page stays checkable and only that section's own `inWhole` is left unset.
+test('a non-literal inWhole on a section does not cost the page its checkability', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const pick = () => true;
+    export default defineCatalogPage({
+      id: 'X', group: 'Patterns', description: 'x', whole: 'X',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: pick(), members: ['X'] }],
+      members: [{ id: 'X', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' }],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.sections?.[0].inWhole, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
 test('a non-literal whole makes the page not checkable, even though members/sections are literal', () => {
   const file = writePage(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
@@ -882,5 +903,41 @@ test('a non-literal aliases array makes the page not checkable', () => {
   const [page] = readStaticPages([file]);
   assert.equal(page.checkable, false);
   assert.equal(page.aliases, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// I2 (independent review): `relatedPages` must be read down to `page`, the same literal-checkable
+// way as `composedOf` (mirroring `readComposedOf`), so `doctor`'s `family-invalid` reuse of
+// `validateFamily` can catch an unresolvable or self-naming entry — not only ever the browser path.
+test('reads a literal relatedPages array\'s page names', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'X', group: 'Patterns', description: 'x', whole: 'X',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['X'] }],
+      members: [{ id: 'X', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' }],
+      relatedPages: [{ page: 'OtherPage', note: 'A note.' }, { page: 'NoSuchPage' }],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.deepEqual(page.relatedPages, [{ page: 'OtherPage' }, { page: 'NoSuchPage' }]);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('relatedPages is undefined with no "not checkable" penalty when it is authored non-literally', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const RELATED = ['OtherPage'];
+    export default defineCatalogPage({
+      id: 'X', group: 'Patterns', description: 'x', whole: 'X',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['X'] }],
+      members: [{ id: 'X', source: 'x.tsx:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' }],
+      relatedPages: RELATED.map((page) => ({ page })),
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.relatedPages, undefined);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
