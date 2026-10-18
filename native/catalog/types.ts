@@ -401,6 +401,14 @@ export interface CatalogAnatomy {
   groups: CatalogAnatomyGroup[];
 }
 
+/** One other catalog page worth naming at the bottom of a family page: a component merely
+ *  related to the whole owns its own page, and the family page links to it rather than
+ *  documenting it inside. `note` is one short sentence saying why a reader would go there. */
+export interface RelatedPage {
+  page: string;
+  note?: string;
+}
+
 /** A family page's members with resolved props and paths, the whole, sections, and the computed
  *  outline — set on `SectionDef.family` by `buildCatalogSections` when a page has `members`. */
 export interface FamilyDef {
@@ -417,6 +425,9 @@ export interface FamilyDef {
   apiLabel?: string;
   /** Slice D1 item 1. See `CatalogPageInput.anatomy`. */
   anatomy?: CatalogAnatomy;
+  /** Other catalog pages named at the bottom of this page, under the "Related" heading, after any
+   *  deprecated non-`inWhole` sections. See `CatalogPageInput.relatedPages`. */
+  relatedPages?: RelatedPage[];
 }
 
 /** One titled card on a token page (`SectionDef.tokenSections`). */

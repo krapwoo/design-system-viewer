@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
+import type { CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, RelatedPage, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
  *  generated props), plus the three fields design §1 "Page shape" adds. */
@@ -75,6 +75,13 @@ export interface CatalogPageInput<TId extends string = string> {
    *  a picture of the whole with numbered pins and a legend. Only takes effect on a page with
    *  `members`. */
   anatomy?: CatalogAnatomy;
+  /** Other catalog pages worth naming at the bottom of this page, under the "Related" heading,
+   *  rendered after any deprecated non-`inWhole` sections — a component merely related to the
+   *  whole owns its own page rather than being documented inline here. Each entry's `page` must
+   *  resolve to a real catalog page, never this page's own id; `validateFamily` reports both as
+   *  issues, and an entry that still fails to resolve at runtime renders its name as plain text
+   *  instead of a dead link. Only takes effect on a page with `members`. */
+  relatedPages?: RelatedPage[];
 }
 
 export interface CatalogPage<TId extends string = string> extends CatalogPageInput<TId> {
@@ -158,6 +165,8 @@ export interface FamilyPageLike extends FamilyOutlineInput {
    *  decoupled from the full `CatalogAnatomy` type (which carries a `picture` React node this pure
    *  module never touches). */
   anatomy?: FamilyAnatomyLike;
+  /** See `CatalogPageInput.relatedPages`. */
+  relatedPages?: RelatedPage[];
 }
 
 /** Slice D1 item 3. */
@@ -256,11 +265,18 @@ export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<str
 
   // Slice D1 item 3: an anatomy `member` item must name a real, non-whole member of this page, and
   // each member may be pinned to the picture's legend at most once.
-  // D2 item A2: a member item whose member has no number — outside every `inWhole` section, or
-  // under a parent that isn't itself numbered — must also be reported; left unchecked, it renders
-  // a blank 34px pin slot in the legend and nothing at all from `AnatomyPin` in the picture.
+  // D2 item A2, narrowed per review C1: a member item is reported only when it sits inside an
+  // `inWhole` section but still has no number — i.e. its parent isn't itself numbered. Left
+  // unchecked, such a part renders indistinguishably from a Related row and its `AnatomyPin`
+  // renders nothing at all. A member outside every `inWhole` section (Related) is legitimately
+  // unnumbered by design (APPROVED.md: related members have no number) and must not be reported
+  // here.
   if (page.anatomy) {
     const numbered = numberFor(page);
+    const inWholeMemberIds = new Set<string>();
+    for (const section of page.sections ?? []) {
+      if (section.inWhole) for (const id of section.members) inWholeMemberIds.add(id);
+    }
     const seenAnatomyMembers = new Set<string>();
     for (const group of page.anatomy.groups) {
       for (const item of group.items) {
@@ -278,9 +294,37 @@ export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<str
           continue;
         }
         seenAnatomyMembers.add(item.member);
-        if (!numbered.has(item.member)) {
+        if (inWholeMemberIds.has(item.member) && !numbered.has(item.member)) {
           issues.push(`Family "${page.id}": anatomy item "${item.member}" has no number.`);
         }
+      }
+    }
+  }
+
+  // `relatedPages`: each entry must name a real catalog page, other than this one, and the list
+  // must not repeat a page. An unresolvable or self-naming entry still renders (plain text, never
+  // a dead link), but is always reported here so `doctor` fails in CI. N8: `allPageIds` ∪
+  // `otherMemberIds` is the same universe `FamilyPage`'s own `resolvesAddress` accepts as a
+  // working link — page ids, member ids, and both page-level and member aliases — so an entry
+  // naming another page's alias or another family's member address is accepted too.
+  if (page.relatedPages) {
+    const seenRelatedPages = new Set<string>();
+    for (const entry of page.relatedPages) {
+      if (seenRelatedPages.has(entry.page)) {
+        issues.push(`Family "${page.id}": relatedPages lists "${entry.page}" more than once.`);
+        continue;
+      }
+      seenRelatedPages.add(entry.page);
+      if (entry.page === page.id) {
+        issues.push(`Family "${page.id}": relatedPages entry "${entry.page}" names this page itself.`);
+        continue;
+      }
+      if (byId.has(entry.page)) {
+        issues.push(`Family "${page.id}": relatedPages entry "${entry.page}" is a member of this page, not another page.`);
+        continue;
+      }
+      if (!allPageIds.has(entry.page) && !otherMemberIds.has(entry.page)) {
+        issues.push(`Family "${page.id}": relatedPages entry "${entry.page}" is not a catalog page.`);
       }
     }
   }
@@ -459,7 +503,7 @@ export function buildCatalogSections<TId extends string>(
         ...member,
         hasSpecimens: Boolean(member.variants?.items?.length || member.states?.items?.length || member.comparison),
       }));
-      const issues = validateFamily({ ...page, members, anatomy: page.anatomy }, otherPageIds, otherMemberIds);
+      const issues = validateFamily({ ...page, members, anatomy: page.anatomy, relatedPages: page.relatedPages }, otherPageIds, otherMemberIds);
       if ((globalThis as { __DEV__?: boolean }).__DEV__) {
         for (const issue of issues) console.error(`[Catalog] ${issue}`);
       }
@@ -471,6 +515,7 @@ export function buildCatalogSections<TId extends string>(
         aliases: page.aliases,
         apiLabel: page.apiLabel,
         anatomy: page.anatomy,
+        relatedPages: page.relatedPages,
         members: page.members!.map((member) => {
           const memberComponent = member.component ? componentByName.get(member.component) : undefined;
           return {

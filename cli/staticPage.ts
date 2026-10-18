@@ -181,15 +181,26 @@ export interface StaticPage {
   sections?: StaticFamilySection[];
   /** `CatalogPageInput.aliases`, literal only. */
   aliases?: string[];
+  /** `CatalogPageInput.relatedPages`, read down to just `page` (design parity with `composedOf`:
+   *  `note` is authored prose `doctor`'s own `family-invalid` reuse of `validateFamily` never
+   *  needs). Absent both when the page has none at all, and when it authored one non-literally —
+   *  the same "never a partial read" leniency `composedOf` already gets, so a non-literal
+   *  `relatedPages` never costs the page its other family checks (see `readSections`'s own
+   *  `inWhole` leniency, I1). */
+  relatedPages?: { page: string }[];
 }
 
-/** One section of a family page, read down to just what `cli/doctor.ts`'s `family-invalid` rule
- *  needs to reuse `validateFamily` (`native/catalog/types.ts`'s `CatalogMemberSection` minus
- *  `inWhole`, which `validateFamily` never reads). */
+/** One section of a family page, read down to just what `cli/doctor.ts` needs: `label`/`kind`/
+ *  `members` for the `family-invalid` rule's own reuse of `validateFamily` (which now also reads
+ *  `inWhole`, `pageApi.ts:277`, C1's narrowing), and `inWhole` itself for the
+ *  `deprecated-related-section` warning, which always has. `inWhole` is optional because a
+ *  non-literal `inWhole` is left unset (see `readSections`'s own leniency, I1) — the same reason
+ *  hand-built test fixtures don't all need one. */
 export interface StaticFamilySection {
   label: string;
   kind: 'blocks' | 'list';
   members: string[];
+  inWhole?: boolean;
 }
 
 /** Plan V3: one family member's literal-checkable fields — `cli/doctor.ts` evaluates the same
@@ -435,6 +446,8 @@ function readStaticPage(file: string): StaticPage {
     if (!aliases) page.checkable = false;
     else page.aliases = aliases;
   }
+  const relatedPagesProp = findProp(pageObject, 'relatedPages');
+  if (relatedPagesProp) page.relatedPages = readRelatedPages(relatedPagesProp.initializer, consts);
 
   return page;
 }
@@ -512,7 +525,10 @@ function readFamilyMembers(
 /** Plan V3 / N3: `CatalogPageInput.sections`, read down to `label`/`kind`/`members` — undefined
  *  (not checkable) for anything that isn't itself a literal array, or whose element isn't an
  *  object literal with a literal `label`, a literal `kind` of `'blocks'`/`'list'`, and a literal
- *  `members` array. */
+ *  `members` array. I1: `inWhole` is read too, but — like `composedOf` — a non-literal `inWhole`
+ *  never costs the section's `label`/`kind`/`members`, so the page stays checkable; it only means
+ *  `checkDeprecatedRelatedSections` has nothing to check for that section (`StaticFamilySection`'s
+ *  own `inWhole?` already reflects this: present only when it was itself a literal). */
 function readSections(node: ts.Expression, consts: Map<string, ts.Expression>): StaticFamilySection[] | undefined {
   const resolved = resolve(node, consts, new Set());
   if (!ts.isArrayLiteralExpression(resolved)) return undefined;
@@ -524,10 +540,12 @@ function readSections(node: ts.Expression, consts: Map<string, ts.Expression>): 
     const kindProp = findProp(resolvedElement, 'kind');
     const kind = kindProp ? stringLiteral(resolve(kindProp.initializer, consts, new Set())) : undefined;
     const membersProp = findProp(resolvedElement, 'members');
+    const inWholeProp = findProp(resolvedElement, 'inWhole');
+    const inWhole = inWholeProp ? literalBooleanOrUnknown(inWholeProp.initializer, consts) : undefined;
     if (label === undefined || (kind !== 'blocks' && kind !== 'list') || !membersProp) return undefined;
     const members = readStringLiteralArray(membersProp.initializer, consts);
     if (!members) return undefined;
-    sections.push({ label, kind, members });
+    sections.push({ label, kind, members, inWhole });
   }
   return sections;
 }
@@ -547,6 +565,25 @@ function readComposedOf(node: ts.Expression, consts: Map<string, ts.Expression>)
     const component = propertyStringLiteral(resolvedElement, 'component', consts);
     if (component === undefined) return undefined;
     entries.push({ component });
+  }
+  return entries;
+}
+
+/** A literal array of `RelatedPage`-shaped object literals, read down to just `page` (design
+ *  parity with `readComposedOf`: `note` is authored prose `doctor` never needs). Undefined — not
+ *  an empty array — for anything that isn't itself a literal array, or whose element isn't an
+ *  object literal with a literal `page`: `doctor` must never mistake "couldn't read this" for
+ *  "author declared no related pages here". */
+function readRelatedPages(node: ts.Expression, consts: Map<string, ts.Expression>): { page: string }[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isArrayLiteralExpression(resolved)) return undefined;
+  const entries: { page: string }[] = [];
+  for (const element of resolved.elements) {
+    const resolvedElement = resolve(element, consts, new Set());
+    if (!ts.isObjectLiteralExpression(resolvedElement)) return undefined;
+    const page = propertyStringLiteral(resolvedElement, 'page', consts);
+    if (page === undefined) return undefined;
+    entries.push({ page });
   }
   return entries;
 }

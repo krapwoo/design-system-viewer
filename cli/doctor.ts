@@ -193,7 +193,12 @@ function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
   const familyPages = pages.filter((p) => p.members && p.members.length > 0 && p.checkable);
   const allPageIds = new Set(pages.map((p) => resolvePageId(p, p.file)));
   const familyIdsByPageId = new Map<string, Set<string>>();
-  for (const page of familyPages) {
+  // I-B (independent review, confirmation pass): built from every page with members, not only
+  // checkable ones — the same precedent `checkMemberComposedOf` above already follows for
+  // `knownNames` (no `checkable` filter). A non-checkable family page still contributes a working
+  // link at runtime (`pageApi.ts`'s `otherMemberIds` has no `checkable` concept either), so
+  // excluding it here turned a valid `relatedPages` entry into a false CI-failing error.
+  for (const page of pages.filter((p) => p.members && p.members.length > 0)) {
     const id = resolvePageId(page, page.file);
     const ids = new Set<string>();
     for (const member of page.members ?? []) {
@@ -214,14 +219,47 @@ function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
     const pageLike: FamilyPageLike = {
       id,
       whole: page.whole,
-      // `inWhole` is never read by `validateFamily` — only `label`/`kind`/`members` matter here.
-      sections: page.sections?.map((s) => ({ ...s, inWhole: true })),
+      // `validateFamily` does read `inWhole` now (`pageApi.ts:277`, C1's narrowing).
+      // `StaticFamilySection.inWhole` is optional (unlike the real `CatalogMemberSection`) only so
+      // hand-built test fixtures don't all need one, so this defaults a missing one to `false` —
+      // the lenient direction (an unreadable `inWhole` must never manufacture a false "has no
+      // number" the day `anatomy` joins the static read) rather than passing `undefined` where
+      // `validateFamily`'s own type expects a boolean.
+      sections: page.sections?.map((s) => ({ ...s, inWhole: s.inWhole ?? false })),
       members: (page.members ?? []).map((m) => ({ id: m.id, parent: m.parent, aliases: m.aliases, hasSpecimens: m.hasExamples })),
       aliases: page.aliases,
+      // I2: passed through so an unresolvable or self-naming `relatedPages` entry is reported here
+      // too, the same precedent `checkMemberComposedOf` below already follows for `composedOf` —
+      // not only ever silently warned in a browser console (`npm run check:catalog`).
+      relatedPages: page.relatedPages,
     };
     for (const message of validateFamily(pageLike, otherPageIds, otherMemberIds)) {
       issues.push(issue({ id: 'family-invalid', severity: 'error', ...pageRef(page), message, fix: 'Fix the family\'s members/whole/sections to satisfy the rule above.' }));
     }
+  }
+  return issues;
+}
+
+/** Deprecation (`relatedPages`): a family page still using one or more non-`inWhole` sections to
+ *  document a merely-related component inline, instead of giving it its own page and naming it in
+ *  the page's `relatedPages` list. One finding per page (never per section), naming every member
+ *  still parked in a deprecated section so the author can act without opening the file. Always a
+ *  warning — `inWhole: false` keeps working. */
+function checkDeprecatedRelatedSections(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.members || page.members.length === 0 || !page.checkable) continue; // V2c item 6's own predicate.
+    // Strictly `false`, never `!s.inWhole` — a test fixture (or any other caller) that omits
+    // `inWhole` entirely means "not testing this", not "deprecated".
+    const deprecated = (page.sections ?? []).filter((s) => s.inWhole === false);
+    if (deprecated.length === 0) continue;
+    const memberIds = deprecated.flatMap((s) => s.members);
+    const id = resolvePageId(page, page.file);
+    issues.push(issue({
+      id: 'deprecated-related-section', severity: 'warning', ...pageRef(page),
+      message: `Family "${id}" documents ${memberIds.length} member${memberIds.length === 1 ? '' : 's'} (${memberIds.join(', ')}) in a deprecated non-"inWhole" section.`,
+      fix: `Give each of these members its own catalog page, drop the non-"inWhole" section, and name its new page in "${id}"'s relatedPages instead.`,
+    }));
   }
   return issues;
 }
@@ -702,6 +740,7 @@ export function collectIssues(pages: StaticPage[], components: ComponentRecord[]
     ...checkFamilyMembers(pages, components),
     ...checkFamilyValidity(pages),
     ...checkMemberComposedOf(pages, components),
+    ...checkDeprecatedRelatedSections(pages),
   ];
 }
 

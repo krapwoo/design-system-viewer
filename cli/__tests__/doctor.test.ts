@@ -956,3 +956,63 @@ test('composed-of-unknown never runs against a not-checkable page, or a member w
   assert.equal(collectIssues([notCheckable], [component({ name: 'Banner' })]).filter((i) => i.id === 'composed-of-unknown').length, 0);
   assert.equal(collectIssues([familyPage()], [component({ name: 'Banner' })]).filter((i) => i.id === 'composed-of-unknown').length, 0);
 });
+
+// Deprecation (`relatedPages`): a family page still using one or more non-`inWhole` sections gets
+// exactly one warning, naming every member still parked there, rather than one per section.
+test('deprecated-related-section fires once per page, naming every member in every non-inWhole section', () => {
+  const withRelatedSections = familyPage({
+    sections: [
+      { label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] },
+      { label: 'Related', kind: 'list', inWhole: false, members: ['ToastStandalone', 'ToastEcho'] },
+    ],
+    members: [
+      { id: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: false },
+      { id: 'ToastBanner', component: 'Banner', parent: 'Toast', hasWhenToUse: true, hasA11y: true, hasExamples: true },
+      { id: 'ToastStandalone', hasWhenToUse: true, hasA11y: true, hasExamples: false },
+      { id: 'ToastEcho', hasWhenToUse: true, hasA11y: true, hasExamples: false },
+    ],
+  });
+  const issues = collectIssues([withRelatedSections], [component({ name: 'Banner' })]).filter((i) => i.id === 'deprecated-related-section');
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].severity, 'warning');
+  assert.ok(issues[0].message.includes('ToastStandalone') && issues[0].message.includes('ToastEcho'));
+});
+
+test('deprecated-related-section does not fire when every section is inWhole', () => {
+  // `familyPage()`'s own default fixture section omits `inWhole` entirely, which would pass
+  // through the `=== false` strictness vacuously; this test needs a literal `inWhole: true`.
+  const allInWhole = familyPage({ sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['ToastBanner'] }] });
+  const issues = collectIssues([allInWhole], [component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'deprecated-related-section').length, 0);
+});
+
+test('deprecated-related-section never runs against a not-checkable page, or a page with no members at all', () => {
+  const notCheckable = familyPage({ checkable: false, sections: [{ label: 'Related', kind: 'list', inWhole: false, members: ['ToastBanner'] }] });
+  assert.equal(collectIssues([notCheckable], [component({ name: 'Banner' })]).filter((i) => i.id === 'deprecated-related-section').length, 0);
+  const normalPage = page({ component: 'Widget', sections: [{ label: 'Related', kind: 'list', inWhole: false, members: ['X'] }] });
+  assert.equal(collectIssues([normalPage], [component({ name: 'Widget' })]).filter((i) => i.id === 'deprecated-related-section').length, 0);
+});
+
+// I2 (independent review): `relatedPages` was never read by `cli/staticPage.ts`, so a typo'd page
+// name went unreported by `doctor` — only the browser path (`validateFamily` via `pageApi.ts`) saw
+// it. `family-invalid` now reuses `validateFamily` against the page-level `relatedPages` too.
+test('family-invalid reports a relatedPages entry naming an unknown page', () => {
+  const withTypo = familyPage({ relatedPages: [{ page: 'NoSuchPage' }] });
+  const issues = collectIssues([withTypo], [component({ name: 'Banner' })]);
+  assert.ok(issues.some((i) => i.id === 'family-invalid' && i.severity === 'error' && i.message.includes('relatedPages entry "NoSuchPage" is not a catalog page')));
+});
+
+// I-B (independent review, confirmation pass): a non-checkable family page still contributes a
+// working link at runtime (`pageApi.ts`'s own `otherMemberIds` has no `checkable` concept), so a
+// relatedPages entry naming one of its members must not be reported as "is not a catalog page" —
+// that would fail CI on data the viewer renders correctly.
+test('family-invalid does not report a relatedPages entry naming a member of a non-checkable family page', () => {
+  const otherFamily = familyPage({
+    file: '/other.catalog.tsx', id: 'Other', whole: 'Other', checkable: false,
+    sections: [{ label: 'Parts', kind: 'blocks', members: ['OtherMember'] }],
+    members: [{ id: 'Other' }, { id: 'OtherMember', parent: 'Other' }],
+  });
+  const withRelated = familyPage({ relatedPages: [{ page: 'OtherMember' }] });
+  const issues = collectIssues([withRelated, otherFamily], [component({ name: 'Banner' })]);
+  assert.equal(issues.filter((i) => i.id === 'family-invalid' && i.message.includes('relatedPages')).length, 0);
+});

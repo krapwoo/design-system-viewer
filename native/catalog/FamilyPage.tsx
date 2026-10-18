@@ -26,7 +26,7 @@ import {
   type PartTreeEntry,
   type RelatedSegment,
 } from './familyModel';
-import type { CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, CatalogMemberSection, ComposedOfEntry, FamilyDef, PreviewWidths, PropDef, SectionDef } from './types';
+import type { CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, CatalogMemberSection, ComposedOfEntry, FamilyDef, PreviewWidths, PropDef, RelatedPage, SectionDef } from './types';
 
 /** `SectionDef`'s parts `presentationBlocks`/`Blocks` actually read, built from one family member
  *  so its own specimens render through the exact same renderers (`VariantGroup`, `ComparisonGrid`,
@@ -654,12 +654,46 @@ function FamilySectionGroup({
   );
 }
 
+/** One row of the bottom-of-page `relatedPages` list (field spec, item 3 "Rendering"): the named
+ *  page's own id as a link when it resolves to a real catalog address, plain text when not — never
+ *  a dead link — then its note, when authored. No specimens, no disclosure, no source line, no
+ *  number, no pin. */
+function RelatedPageRow({ entry, resolvesAddress }: { entry: RelatedPage; resolvesAddress: (name: string) => boolean }) {
+  const resolved = resolvesAddress(entry.page);
+  return (
+    <Text style={styles.belowLine}>
+      {resolved ? (
+        <Text role="link" style={styles.relatedPageName} {...({ href: hashForId(entry.page) } as Record<string, unknown>)}>
+          {entry.page}
+        </Text>
+      ) : (
+        <Text style={[styles.relatedPageName, styles.relatedPageNameUnresolved]}>{entry.page}</Text>
+      )}
+      {entry.note ? ` — ${entry.note}` : null}
+    </Text>
+  );
+}
+
+function RelatedPagesList({ items, resolvesAddress }: { items: readonly RelatedPage[]; resolvesAddress: (name: string) => boolean }) {
+  return (
+    <View style={styles.relatedPagesList}>
+      {items.map((entry, i) => (
+        <RelatedPageRow key={i} entry={entry} resolvesAddress={resolvesAddress} />
+      ))}
+    </View>
+  );
+}
+
 /** Slice D1 item 4: the two umbrella labels — "Parts" groups every `inWhole` section, "Related"
- *  every other one. A divider sits above each, and nothing else renders between the authored
- *  sections it covers (item 10: authored `section.label`s stay in the data, never on screen). */
+ *  every other one (plus, on "Related" only, the page's own `relatedPages` list, rendered after
+ *  every deprecated section — field spec item 3: "render the deprecated sections first and the
+ *  links after, under the single Related heading"). A divider sits above each, and nothing else
+ *  renders between the authored sections it covers (item 10: authored `section.label`s stay in the
+ *  data, never on screen). */
 function FamilyLabeledGroup({
   label,
   sections,
+  relatedPages,
   outline,
   byId,
   allMemberIds,
@@ -672,6 +706,8 @@ function FamilyLabeledGroup({
 }: {
   label: 'Parts' | 'Related';
   sections: CatalogMemberSection[];
+  /** Only ever set for the "Related" group — "Parts" has no equivalent. */
+  relatedPages?: RelatedPage[];
   outline: FamilyDef['outline'];
   byId: ReadonlyMap<string, FamilyMember>;
   allMemberIds: readonly string[];
@@ -682,7 +718,9 @@ function FamilyLabeledGroup({
   onToggleRow: (id: string) => void;
   registerNode: (id: string, node: View | null) => void;
 }) {
-  if (sections.length === 0) return null;
+  // Field spec item 3: "a page with no relatedPages and no Related sections renders exactly as it
+  // does today — no heading, no divider, nothing."
+  if (sections.length === 0 && (!relatedPages || relatedPages.length === 0)) return null;
   return (
     <View style={styles.labeledGroup}>
       {/* Spec §5.2 "Heading semantics": "Parts"/"Related" are aria-level 2 headings — one level
@@ -711,6 +749,7 @@ function FamilyLabeledGroup({
             registerNode={registerNode}
           />
         ))}
+        {relatedPages && relatedPages.length > 0 && <RelatedPagesList items={relatedPages} resolvesAddress={resolvesAddress} />}
       </View>
     </View>
   );
@@ -723,8 +762,10 @@ const FamilyAnatomyContext = createContext<{ byId: ReadonlyMap<string, FamilyMem
 
 /** Slice D1 item 5: a pin for use inside `anatomy.picture`. `member` names one of this page's
  *  members and shows its number (dashed when it has no area of its own), looked up through
- *  `FamilyAnatomyContext` — renders nothing for an unknown member, one with no number (D2 item A2:
- *  already a `validateFamily` issue), or outside a family page's own anatomy box (no context).
+ *  `FamilyAnatomyContext` — renders nothing for an unknown member, one outside a family page's own
+ *  anatomy box (no context), or one with no number — the last is a `validateFamily` issue only
+ *  when the member sits inside an `inWhole` section (D2 item A2, narrowed per review C1); for a
+ *  member outside every `inWhole` section it's legal, deliberately silent, and reported by nobody.
  *  `other` marks a component documented on another page with the unnumbered ↗ pin the legend
  *  uses, and always renders it — it needs no context, with or without a family page in scope. */
 export function AnatomyPin({ member, other }: { member?: string; other?: string }) {
@@ -742,12 +783,20 @@ export function AnatomyPin({ member, other }: { member?: string; other?: string 
 }
 
 /** Slice D1 item 5: one legend row naming a member of this page — a pin (looked up the same way
- *  `AnatomyPin` does), its name linked to the member's address, and the row's own description. */
+ *  `AnatomyPin` does), its name linked to the member's address, and the row's own description.
+ *  Defect fix (APPROVED.md "the legend is not indented"): the pin's 34px gutter is only reserved
+ *  when there's a pin to show — a member with no number (outside every `inWhole` section) gets no
+ *  gutter either, so its name starts flush at the row's own left edge instead of under blank
+ *  space. */
 function AnatomyMemberRow({ memberId, description, byId, outline }: { memberId: string; description: string; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline'] }) {
   const pin = anatomyPinFor(memberId, byId, outline);
   return (
     <View style={styles.legendRow}>
-      <View style={styles.legendPinSlot}>{pin && <Pin number={pin.number} dashed={pin.dashed} />}</View>
+      {pin && (
+        <View style={styles.legendPinSlot}>
+          <Pin number={pin.number} dashed={pin.dashed} />
+        </View>
+      )}
       <View style={styles.legendBody}>
         <Text role="link" style={styles.legendName} {...({ href: hashForId(memberId) } as Record<string, unknown>)}>
           {memberId}
@@ -759,7 +808,11 @@ function AnatomyMemberRow({ memberId, description, byId, outline }: { memberId: 
 }
 
 /** Slice D1 item 5: one legend row naming a component documented elsewhere — never numbered; its
- *  own name links only when it resolves to a real catalog address. */
+ *  own name links only when it resolves to a real catalog address. The ↗ marker keeps its own
+ *  gutter: the defect this slice fixes is a gutter reserved for a pin that *isn't there*, and an
+ *  "other page" row always shows its ↗, so the slot is never blank. Keeping it also keeps
+ *  APPROVED.md's "the description ... starts at the name's left edge" — pulling the marker inline
+ *  instead left each description hanging 26px to the left of its own name. */
 function AnatomyOtherRow({ name, description, resolvesAddress }: { name: string; description: string; resolvesAddress: (name: string) => boolean }) {
   const resolved = resolvesAddress(name);
   return (
@@ -1025,6 +1078,7 @@ export function FamilyPage<TId extends string>({
       <FamilyLabeledGroup
         label="Related"
         sections={relatedSections}
+        relatedPages={family.relatedPages}
         outline={family.outline}
         byId={byId}
         allMemberIds={allMemberIds}
@@ -1114,6 +1168,10 @@ const styles = StyleSheet.create({
   memberSpecimens: { marginTop: CATALOG_SPACE.sm, marginBottom: CATALOG_SPACE.lg - CATALOG_SPACE.sm },
   belowLine: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   relatedLink: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.accent },
+  // relatedPages (field spec item 3 "Rendering"): one row per entry, under the Related heading.
+  relatedPagesList: { gap: CATALOG_SPACE.sm },
+  relatedPageName: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.accent },
+  relatedPageNameUnresolved: { color: CATALOG_COLOR.text },
   wholeBelowRow: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.xs, marginTop: CATALOG_SPACE.sm, flexWrap: 'wrap' },
   wholeName: { ...CATALOG_TEXT.codeSmallStrong, color: CATALOG_COLOR.text },
   // V2d item 3: v8's own `.uses` line, inside the disclosure.
