@@ -1,0 +1,1 @@
+When `dev` repairs a workspace whose files were deleted underneath it, it now restores `.ds-viewer/endpoint.json` too, so the next restart still reuses the same local address instead of coming back on a new port that an already-open catalog page can't reach.

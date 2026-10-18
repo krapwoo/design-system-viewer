@@ -439,6 +439,19 @@ export function repairWorkspaceIfMissing(deps: WorkspaceRepairDeps): { missing: 
     writeUpdateFile(config.projectRoot, update, config.workspaceDir);
   }
   if (!existsSync(workspacePath(config, 'version.json'))) writeVersionFile(config.projectRoot, status, config.workspaceDir);
+  // `endpoint.json` is not a defining file — Metro never reads it, so its absence does not break
+  // the catalog that is serving right now. It is what lets a *restarted* `dev` reuse this address
+  // instead of picking a new port and secret (0.9.1), and the observed failure removes it with
+  // everything else. Repairing without it leaves a working catalog that has quietly lost its
+  // restart stability: the next `dev` comes back on a different port, and an open page keeps
+  // calling the old one — the exact defect 0.9.1 fixed. Restored from the live endpoint this
+  // server is already serving, never rebuilt from Metro's port, for the same reason the endpoint
+  // is passed through rather than derived. `readEndpointRecord` returning undefined also covers a
+  // record left corrupt or truncated, which is equally unusable to the next run.
+  if (updateEndpoint && !readEndpointRecord(config)) {
+    const port = Number(new URL(updateEndpoint.baseUrl).port);
+    if (Number.isInteger(port) && port > 0) writeEndpointRecord(config, { port, secret: updateEndpoint.secret });
+  }
   reclaimLock();
   sync(config);
   return { missing, repaired: true };
