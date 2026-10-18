@@ -695,10 +695,22 @@ and adds what only a real render shows:
   cells are not visited at all. Usually fixed with a wider `specimenSize`, by stacking the blocks so
   the example gets the full row, or by dropping `itemsFill` from a small instance that should sit
   centered.
+- `page-head-overlap` (error): something is painting on top of a page's own heading. This is the
+  one check measured at **800x600** — Puppeteer's default viewport, and so the size a smoke check
+  judges your catalog at — because the overlap it catches does not appear at 1280 at all: a page
+  title that is a single unbroken identifier (a long Swift type name, say) has no break
+  opportunity for the browser to use, so it keeps its full intrinsic width and paints past its own
+  column into the previous/next buttons. It measures every leaf element carrying text, clips each
+  rect to any ancestor that scrolls or clips (so something scrolled out of view is not reported as
+  covering anything), and reports a pair only when it overlaps the heading by more than 1px in
+  both directions, so a shared edge between neighbours is not a finding. Only the heading is
+  checked: specimens legitimately stack text, and reporting those would bury the one overlap that
+  is always a defect.
 - `render-unavailable` / `render-failed` (errors): no browser, or the catalog didn't start.
 
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't
-install a browser. It takes about two minutes for 50 pages and works with `--json` (progress
+install a browser. It takes about two minutes for 50 pages — plus a moment per page for the
+narrow-viewport heading pass — and works with `--json` (progress
 goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci`.
 
 It starts its own catalog on the first free port from 5181. `--port <n>` pins it instead, which

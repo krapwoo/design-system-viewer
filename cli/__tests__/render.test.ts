@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { clippedSpecimenIssues, identicalVariantIssues, issuesFromPage, loadProjectPuppeteer, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
+import { clippedSpecimenIssues, headOverlapIssues, HEAD_OVERLAP_SCRIPT, identicalVariantIssues, issuesFromPage, loadProjectPuppeteer, NARROW_VIEWPORT, renderCheck, RENDER_UNAVAILABLE, stopDev } from '../render.ts';
 
 test('console errors and a missing heading are errors; overflow warnings are render-layout; other [Catalog] warnings are render-catalog-warning; noise is ignored', () => {
   const seen = new Set<string>();
@@ -233,4 +234,90 @@ test('renderCheck turns a clipped specimen into an issue, and a throwing clip sc
   assert.match(clip!.message, /34px past the left/);
 
   assert.deepEqual((await run(new Error('Execution context was destroyed'))).filter((i) => i.id === 'specimen-clipped'), []);
+});
+
+// Issue #51: a page title that is one unbroken identifier kept its full intrinsic width at an
+// 800px window and painted through its own column into the pager, covering the `←` button by
+// 14x22. Every one of a consumer's 61 failures paired the page heading with `←` or `→`, and none
+// appeared at 1280 — the width every other render check runs at, which is why nothing caught it.
+test('headOverlapIssues names what covers the heading, by how much, and the width it was seen at', () => {
+  const issues = headOverlapIssues(
+    { id: 'TranscriptMediaUnavailableChip', file: 'components/Chip/Chip.catalog.tsx' },
+    [{ other: '\u2190', w: 14, h: 22 }],
+  );
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].id, 'page-head-overlap');
+  assert.equal(issues[0].severity, 'error');
+  assert.equal(issues[0].page, 'TranscriptMediaUnavailableChip');
+  assert.equal(issues[0].file, 'components/Chip/Chip.catalog.tsx');
+  assert.match(issues[0].message, /heading is covered by "\u2190" over 14x22px/);
+  assert.match(issues[0].message, new RegExp(`At ${NARROW_VIEWPORT.width}px`));
+});
+
+test('headOverlapIssues reports nothing when the heading is clear', () => {
+  assert.deepEqual(headOverlapIssues({ id: 'X' }, []), []);
+});
+
+test("the narrow viewport is Puppeteer's own default, the width a consumer smoke check judges a catalog at", () => {
+  assert.deepEqual({ ...NARROW_VIEWPORT }, { width: 800, height: 600 });
+});
+
+// The script runs in a browser, so it is exercised here against a minimal fake DOM: enough of
+// querySelector/getBoundingClientRect/getComputedStyle for the measurement rule itself, which is
+// the part that decides whether a real overlap is reported or missed. `contains` is wired against
+// the mapped nodes, not the literals, so the heading-descendant guard is genuinely exercised —
+// wiring it against the literals silently makes `contains` always false and leaves that guard
+// untested while every assertion still passes.
+function runHeadOverlapScript(nodes: Array<Record<string, any>>) {
+  const mapped = nodes.map((n) => ({
+    isHeading: Boolean(n.isHeading),
+    children: [] as unknown[],
+    parentElement: null,
+    textContent: n.text ?? '',
+    getBoundingClientRect: () => n.rect,
+    contains(this: any, o: unknown) { return o === this || (this.__kids ?? []).includes(o); },
+    __kids: [] as unknown[],
+  }));
+  nodes.forEach((n, i) => {
+    if (typeof n.childOf === 'number') mapped[n.childOf].__kids.push(mapped[i]);
+  });
+  const heading = mapped.find((n) => n.isHeading);
+  const document = {
+    querySelector: (s: string) => (s === '[role="heading"]' ? heading : null),
+    querySelectorAll: () => mapped,
+  };
+  const getComputedStyle = () => ({ overflowX: 'visible', overflowY: 'visible' });
+  return Function('document', 'getComputedStyle', `return ${HEAD_OVERLAP_SCRIPT};`)(document, getComputedStyle);
+}
+
+test("a 1px seam between the heading and its neighbour is not an overlap, but the issue's own 14x22 is", () => {
+  const heading = { isHeading: true, text: 'TranscriptMediaUnavailableChip', rect: { left: 0, top: 50, right: 300, bottom: 84, width: 300, height: 34 } };
+  const seam = [heading, { text: '\u2190', rect: { left: 299.5, top: 50, right: 331, bottom: 82, width: 31, height: 32 } }];
+  assert.deepEqual(runHeadOverlapScript(seam), [], 'a sub-pixel seam between neighbours must not be reported');
+  const real = [heading, { text: '\u2190', rect: { left: 286, top: 62, right: 318, bottom: 94, width: 32, height: 32 } }];
+  const [hit] = runHeadOverlapScript(real);
+  assert.equal(hit.other, '\u2190');
+  assert.equal(hit.w, 14);
+  assert.equal(hit.h, 22);
+});
+
+test("the heading's own text child is never reported as covering the heading", () => {
+  const heading = { isHeading: true, text: 'TranscriptMediaUnavailableChip', rect: { left: 0, top: 50, right: 300, bottom: 84, width: 300, height: 34 } };
+  // The heading View and the Text inside it share almost the same box by construction.
+  const child = { text: 'TranscriptMediaUnavailableChip', childOf: 0, rect: { left: 0, top: 50, right: 300, bottom: 84, width: 300, height: 34 } };
+  assert.deepEqual(runHeadOverlapScript([heading, child]), [], "a heading's own descendant must never be reported as painting over it");
+});
+
+// Mutation-checked gap: the resize itself runs only under a real browser, so deleting it leaves
+// every unit test passing while `check:catalog` silently returns to measuring at 1280 only — the
+// width issue #51 never reproduced at. Same source-assertion pattern comparison.test.ts and
+// sectionHeader.test.ts already use for wiring a unit test cannot reach.
+test('renderCheck resizes to the narrow viewport before it measures the heading', () => {
+  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../render.ts');
+  const source = readFileSync(sourcePath, 'utf8');
+  const resize = source.indexOf('setViewport({ width: NARROW_VIEWPORT.width');
+  const measure = source.indexOf('evaluate(HEAD_OVERLAP_SCRIPT)');
+  assert.ok(resize > 0, 'renderCheck must set NARROW_VIEWPORT before measuring the page head');
+  assert.ok(measure > 0, 'renderCheck must evaluate HEAD_OVERLAP_SCRIPT');
+  assert.ok(resize < measure, 'the narrow viewport must be applied before the heading is measured, or the check runs at the width the bug never appears at');
 });
