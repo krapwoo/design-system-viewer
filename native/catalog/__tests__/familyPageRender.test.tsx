@@ -63,3 +63,33 @@ test('a legend row with no pin reserves no pin slot, while a numbered row does',
 
   cleanup();
 });
+
+test('relatedPages renders a resolvable entry as a link and an unresolvable one as plain text', () => {
+  const def = familyWithPinlessLegendRow();
+  def.family.relatedPages = [
+    { page: 'RealPage', note: 'Why you would go there.' },
+    { page: 'GonePage' },
+  ];
+  // `resolvesAddress` is computed inside `FamilyPage` from `knownAddressIds` plus the family's own
+  // member ids (see `FamilyPage`'s body) — there is no `resolvesAddress` prop to pass directly.
+  const { container, cleanup } = renderCatalog(
+    React.createElement(FamilyPage as never, { def, knownAddressIds: new Set(['RealPage']) } as never),
+  );
+
+  const links = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  assert.ok(links.includes('#RealPage'), 'a resolvable entry must render as a real link');
+  assert.ok(!links.includes('#GonePage'), 'an unresolvable entry must never render as a link');
+  assert.ok((container.textContent || '').includes('GonePage'), 'but its name must still be readable as plain text');
+  assert.ok((container.textContent || '').includes('Why you would go there.'), 'a note must render when present');
+
+  cleanup();
+});
+
+test('a family with no relatedPages and no Related sections renders no Related heading at all', () => {
+  const def = familyWithPinlessLegendRow();
+  def.family.sections = [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['Part'] }];
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def } as never));
+  const headings = [...container.querySelectorAll('h2')].map((h) => (h.textContent || '').trim());
+  assert.ok(!headings.includes('Related'), 'an empty Related group must render nothing, not an empty heading');
+  cleanup();
+});
