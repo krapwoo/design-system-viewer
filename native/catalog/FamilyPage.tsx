@@ -793,7 +793,10 @@ function AnatomyMemberRow({ memberId, description, byId, outline }: { memberId: 
   return (
     <View style={styles.legendRow}>
       {pin && (
-        <View style={styles.legendPinSlot}>
+        // `testID` exists only so a renderer test can assert the slot's presence without
+        // depending on class names — react-native-web renders it to the DOM as `data-testid`;
+        // native ignores it.
+        <View style={styles.legendPinSlot} testID="legend-pin-slot">
           <Pin number={pin.number} dashed={pin.dashed} />
         </View>
       )}
@@ -817,7 +820,7 @@ function AnatomyOtherRow({ name, description, resolvesAddress }: { name: string;
   const resolved = resolvesAddress(name);
   return (
     <View style={styles.legendRow}>
-      <View style={styles.legendPinSlot} {...ARIA_HIDDEN}>
+      <View style={styles.legendPinSlot} {...ARIA_HIDDEN} testID="legend-pin-slot">
         <View style={styles.extPin}>
           <Text style={styles.extPinText}>↗</Text>
         </View>
