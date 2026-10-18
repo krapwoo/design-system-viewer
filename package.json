@@ -55,14 +55,18 @@
     "typescript": "^6.0.0"
   },
   "devDependencies": {
+    "@types/jsdom": "^21.1.7",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
+    "esbuild": "^0.25.12",
+    "jsdom": "^26.1.0",
     "puppeteer": "^25.12.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
     "test": "node --experimental-strip-types --test 'cli/**/*.test.ts' 'config/**/*.test.ts' 'native/catalog/__tests__/*.test.ts'",
+    "test:render": "node --import ./test/register.mjs --test 'test/__tests__/*.test.ts' 'native/catalog/__tests__/*.test.tsx'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "kit:dev": "npm run build && cd kit-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js dev",
     "viewer:dev": "npm run build && cd viewer-host && node node_modules/@krapwoo/ds-viewer/dist/cli/main.js dev",

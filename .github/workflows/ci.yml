@@ -26,6 +26,11 @@ jobs:
       - run: npm ci --prefix kit-host
       - run: npm ci --prefix viewer-host
       - run: npm test
+      # Renders catalog components into jsdom through react-native-web. This catches wiring
+      # defects (which element wraps what) that `npm test`'s source-text assertions cannot see.
+      # It proves no geometry — jsdom has no layout engine — so `check:catalog`'s real browser
+      # pass remains the only check for position and size.
+      - run: npm run test:render
       - run: npm run typecheck
       - run: npm run build
       - run: npm run check:types

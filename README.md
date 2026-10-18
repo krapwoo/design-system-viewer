@@ -167,6 +167,13 @@ npm run viewer:dev       # opens viewer-host/, the DS Viewer internals catalog (
 
 `check:catalog`, `check:doctor` and `check:types` cover both catalogs.
 
+Three checks cover three different things, and none substitutes for another: `npm test` covers
+pure logic and source assertions; `npm run test:render` renders catalog components into jsdom
+through react-native-web and covers component structure (which element wraps what); `npm run
+check:catalog` is the only one that sees geometry, because jsdom has no layout engine —
+`getBoundingClientRect()` returns zeros there. A layout or alignment claim must be verified in a
+browser, with `check:catalog`, never in a renderer test.
+
 ## Contributing
 
 Found a bug or an improvement while using ds-viewer in your app? Open an issue or a pull request:
