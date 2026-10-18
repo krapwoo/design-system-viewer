@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.12.0
+
+- A page title with no spaces (an unbroken component identifier) now wraps inside its own column instead of painting over the previous/next buttons, and `doctor --render` reports a new `page-head-overlap` error when anything covers a page's heading — the one check measured at 800x600, where that overlap appears and the other checks, all running at 1280, never looked.
+
 ## 0.11.0
 
 - Catalog pages can now document a family of components on one page with `members`, `whole`, `sections` and an `anatomy` box of numbered parts, with an address and search entry for each member. An address that matches no page now shows a "Page not found" notice instead of silently opening the first page.
