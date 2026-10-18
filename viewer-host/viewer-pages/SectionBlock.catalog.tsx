@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, StyleSheet } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import { defineCatalogPage, SectionBlock, type SectionDef } from '@krapwoo/ds-viewer';
 import { DS_SEMANTIC, DS_TYPOGRAPHY } from '../../starter-kit/tokens';
 
@@ -48,6 +48,25 @@ const gridDef: SectionDef<'Example'> = { ...mockSectionDef, states: undefined, v
 const previewDef: SectionDef<'Example'> = { ...mockSectionDef, comparison: undefined, variants: undefined, states: undefined, previewWidths: 'full', render: () => <Text style={demo.mockText}>A free-form render() preview</Text> };
 const block = (def: SectionDef<'Example'>) => <SectionBlock def={def} headingLevel={2} />;
 
+// A 320px header keeps the unbroken-title regression visible even on wide displays.
+// Both arrows stay enabled; the full identifier must wrap without obscuring either control.
+const LONG_UNBROKEN_TITLE = 'TranscriptVideoPreviewPlayerView';
+const longTitleDef: SectionDef<'Example'> = { ...mockSectionDef, title: LONG_UNBROKEN_TITLE, comparison: undefined };
+const longTitleBlock = (
+  <View style={{ width: 320, maxWidth: '100%' }}>
+    <SectionBlock
+      def={longTitleDef}
+      headingLevel={2}
+      pager={{
+        previousId: 'Example',
+        nextId: 'Example',
+        onNavigate: () => {},
+        labelOf: () => LONG_UNBROKEN_TITLE,
+      }}
+    />
+  </View>
+);
+
 export default defineCatalogPage({
   component: 'SectionBlock',
   group: 'Components',
@@ -71,6 +90,7 @@ export default defineCatalogPage({
       { key: 'list', name: 'List (variants and states)', node: block(listDef) },
       { key: 'grid', name: 'Grid (comparison, one unsupported cell)', node: block(gridDef) },
       { key: 'preview', name: 'Free-form preview', node: block(previewDef) },
+      { key: 'long-title-pager', name: 'Long unbroken title with pager (heading/pager overlap regression)', node: longTitleBlock },
     ],
   },
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent, type TextStyle } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
@@ -391,7 +391,15 @@ const styles = StyleSheet.create({
     backgroundColor: CATALOG_COLOR.surface,
   },
   osBadgeText: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.text },
-  title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text, marginBottom: 5 },
+  // `wordBreak` isn't declared on React Native's own `TextStyle` (react-native-web's own
+  // `Text/types.js` declares it; a browser applies any valid CSS property name it recognizes
+  // regardless — same caveat ReferenceDetails.tsx's own `mono` style documents), so this is cast
+  // the same way. Without it, an unbroken page title (a component identifier with no spaces,
+  // e.g. `TranscriptVideoPreviewPlayerView`) has no space for the browser's default line-breaking
+  // to use: it stays one unbroken run at its full intrinsic width — wide enough to push past
+  // `titleText`'s own column and into the pager — instead of wrapping inside the column like any
+  // title with spaces already does.
+  title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text, marginBottom: 5, wordBreak: 'break-word' } as TextStyle,
   desc: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   pager: { flexDirection: 'row', gap: 6, flexShrink: 0 },
   pagerButton: {
