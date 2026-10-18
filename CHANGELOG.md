@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.13.1
+
+- Catalog components can now be rendered in tests, so defects in component structure are caught by `npm run test:render` instead of only in a browser.
+
 ## 0.13.0
 
 - Family pages can now link to other catalog pages via a `relatedPages` list instead of documenting a merely-related component inline, which deprecates non-`inWhole` sections (`doctor`'s new `deprecated-related-section` warning — an error under `doctor.strict` — names every page still using one) and fixes the anatomy legend to stop reserving blank pin-column space for unnumbered rows.
