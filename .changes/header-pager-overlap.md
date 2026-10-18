@@ -1,1 +1,1 @@
-A page title with no spaces (an unbroken component identifier) now wraps inside its own column instead of overlapping the previous/next pager buttons.
+A page title with no spaces (an unbroken component identifier) now wraps inside its own column instead of painting over the previous/next buttons, and `doctor --render` reports a new `page-head-overlap` error when anything covers a page's heading — the one check measured at 800x600, where that overlap appears and the other checks, all running at 1280, never looked.

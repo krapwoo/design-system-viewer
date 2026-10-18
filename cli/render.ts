@@ -142,6 +142,94 @@ export function identicalVariantIssues(page: { id: string; file?: string }, pair
   }));
 }
 
+/**
+ * The width the heading check measures at. 800x600 is Puppeteer's own default viewport, which is
+ * what a consumer's smoke check uses unless it says otherwise, so it is the width their catalog is
+ * judged at. Every other check here runs at 1280x800, where this class of overlap does not appear
+ * at all — which is exactly why issue #51 reached a release.
+ */
+export const NARROW_VIEWPORT = { width: 800, height: 600 } as const;
+
+export interface HeadOverlap {
+  /** The text painted over the heading, so the message names what the reader sees on top of it. */
+  other: string;
+  /** How much of the heading the other text covers, in px. Both are over 1px by construction. */
+  w: number;
+  h: number;
+}
+
+/**
+ * Runs in the browser: finds anything painting on top of the page's own heading.
+ *
+ * The page head puts the title in a `flex: 1` column beside a non-shrinking pager row. A title
+ * that is one unbroken identifier — a Swift type name, say — has no space for the browser's
+ * default line breaking to use, so without an explicit break opportunity it keeps its full
+ * intrinsic width and paints straight through the column into the pager (issue #51:
+ * `TranscriptMediaUnavailableChip` covered the `←` button by 14x22 at an 800px window). The
+ * reader sees the title and the control drawn over each other, and the title is the page's own
+ * heading, so it is the one thing on the page that must stay readable.
+ *
+ * Measured the way a consumer's own smoke check measures it: every leaf element that carries
+ * text, its rect clipped to each ancestor that handles its own overflow (so a scrolled-away rect
+ * is not reported as covering anything), and a pair counted only when it overlaps by more than
+ * 1px in BOTH directions — a shared edge or a single-pixel seam between neighbours is not an
+ * overlap.
+ *
+ * Only the heading is checked, not every pair on the page. Host specimens legitimately stack text
+ * — a badge over a thumbnail, a caption over a surface — and reporting those would bury the one
+ * overlap that is always a defect. The heading's own descendants are skipped for the same reason:
+ * a heading's `<Text>` child sits inside its `<View>` by construction.
+ */
+export const HEAD_OVERLAP_SCRIPT = `(() => {
+  const doc = document;
+  const CONTAINS = /^(auto|scroll|hidden|clip)$/;
+  const heading = doc.querySelector('[role="heading"]');
+  if (!heading) return [];
+  const clip = (el) => {
+    const r = el.getBoundingClientRect();
+    let x1 = r.left, y1 = r.top, x2 = r.right, y2 = r.bottom;
+    for (let n = el.parentElement; n; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (CONTAINS.test(cs.overflowX) || CONTAINS.test(cs.overflowY)) {
+        const b = n.getBoundingClientRect();
+        if (b.left > x1) x1 = b.left;
+        if (b.top > y1) y1 = b.top;
+        if (b.right < x2) x2 = b.right;
+        if (b.bottom < y2) y2 = b.bottom;
+      }
+    }
+    return { x1: x1, y1: y1, x2: x2, y2: y2 };
+  };
+  const head = clip(heading);
+  if (head.x2 - head.x1 <= 0 || head.y2 - head.y1 <= 0) return [];
+  const out = [];
+  for (const el of doc.querySelectorAll('*')) {
+    if (el.children.length) continue;
+    if (el === heading || heading.contains(el)) continue;
+    const text = (el.textContent || '').trim();
+    if (!text) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    const b = clip(el);
+    if (b.x2 - b.x1 <= 0 || b.y2 - b.y1 <= 0) continue;
+    const w = Math.min(head.x2, b.x2) - Math.max(head.x1, b.x1);
+    const h = Math.min(head.y2, b.y2) - Math.max(head.y1, b.y1);
+    if (w > 1 && h > 1) out.push({ other: text.slice(0, 40), w: Math.round(w), h: Math.round(h) });
+  }
+  return out;
+})()`;
+
+export function headOverlapIssues(ref: { id: string; file?: string }, overlaps: HeadOverlap[]): DoctorIssue[] {
+  return overlaps.map((o) => ({
+    id: 'page-head-overlap',
+    severity: 'error' as const,
+    page: ref.id,
+    ...(ref.file ? { file: ref.file } : {}),
+    message: `At ${NARROW_VIEWPORT.width}px the page heading is covered by "${o.other}" over ${o.w}x${o.h}px.`,
+    fix: 'Let the heading wrap or truncate inside its own column, or move or clip whatever paints over it.',
+  }));
+}
+
 export interface ClippedSpecimen {
   /** The cell's own caption, so the message names the example the reader is looking at. */
   name: string;
@@ -245,6 +333,8 @@ const DEV_START_TIMEOUT_MS = 120_000;
 const FIRST_LOAD_TIMEOUT_MS = 300_000;
 const PAGE_TIMEOUT_MS = 120_000;
 const SETTLE_MS = 900;
+/** After a viewport change, long enough for react-native-web to reflow before anything is measured. */
+const RESIZE_SETTLE_MS = 250;
 
 /** Stops `dev` and everything it started (Expo/Metro): the whole process tree on Windows, the
  *  whole process group elsewhere (Expo stops through dev's own signal handler). Releases the pipes
@@ -485,6 +575,18 @@ export async function renderCheck(
           clipped = undefined;
         }
         if (Array.isArray(clipped)) issues.push(...clippedSpecimenIssues({ id, file: options.files?.get(id) }, clipped));
+        // Last, because it is the only check that changes the viewport: the overlap it guards
+        // appears only at a narrow width, and every check above is calibrated at 1280. Advisory
+        // like the two passes above — a failing script must not cost this page its other findings.
+        let headOverlaps: HeadOverlap[] | undefined;
+        try {
+          await page!.setViewport({ width: NARROW_VIEWPORT.width, height: NARROW_VIEWPORT.height });
+          await new Promise((r) => setTimeout(r, RESIZE_SETTLE_MS));
+          headOverlaps = (await page!.evaluate(HEAD_OVERLAP_SCRIPT)) as HeadOverlap[] | undefined;
+        } catch {
+          headOverlaps = undefined;
+        }
+        if (Array.isArray(headOverlaps)) issues.push(...headOverlapIssues({ id, file: options.files?.get(id) }, headOverlaps));
         await page!.close();
       } catch (error) {
         // A stuck page's tab is closed, so it doesn't keep loading next to the remaining pages.
