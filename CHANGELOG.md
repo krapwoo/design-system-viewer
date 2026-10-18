@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.13.0
+
+- Family pages can now link to other catalog pages via a `relatedPages` list instead of documenting a merely-related component inline, which deprecates non-`inWhole` sections (`doctor`'s new `deprecated-related-section` warning — an error under `doctor.strict` — names every page still using one) and fixes the anatomy legend to stop reserving blank pin-column space for unnumbered rows.
+
 ## 0.12.1
 
 - When `dev` repairs a workspace whose files were deleted underneath it, it now restores `.ds-viewer/endpoint.json` too, so the next restart still reuses the same local address instead of coming back on a new port that an already-open catalog page can't reach.
