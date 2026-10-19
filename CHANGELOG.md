@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.14.0
+
+- Family pages now show an "Also used by …" line on each member and on the whole, naming other catalog pages that declare they use it. It is derived from the `composedOf` declarations already in your catalog, so nothing new is authored: if a page declares `composedOf: [{ component: 'X', relationship: 'built-in' }]`, then X's own page says it is also used by that page. The member's own parent, its whole, itself and its same-page siblings are excluded, `'slot'` and `'related'` entries derive nothing, and a member nothing else uses shows no line at all. One user shows its role; two or three are listed plainly; more than three show the first three and a plain-text "+N more". `FamilyDef` members carry the result as an optional `alsoUsedBy` array, with the `AlsoUsedByEntry` type exported alongside it.
+
 ## 0.13.1
 
 - Catalog components can now be rendered in tests, so defects in component structure are caught by `npm run test:render` instead of only in a browser.
