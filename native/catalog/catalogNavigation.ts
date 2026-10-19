@@ -139,7 +139,7 @@ export function resolveActiveFromHash<TId extends string>(
 }
 
 /** Where an alias or member id resolves: the family page `pageId`, and — unless it names the
- *  whole itself — the specific `memberId` within it. Computed by `aliasTargets`. */
+ *  whole itself — the specific `memberId` within it. Built by `aliasTargets`. */
 export interface AliasTarget {
   pageId: string;
   memberId?: string;

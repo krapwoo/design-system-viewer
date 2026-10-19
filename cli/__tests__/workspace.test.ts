@@ -137,7 +137,7 @@ test('writeWorkspace makes a validated logo available to the generated entry', (
 
 test('writeWorkspace emits a syntactically valid require() for a logo file name containing a single quote', () => {
   // The user's own file name, not guaranteed quote-free text (Minor finding, Fable's
-  // implementation review, cli/workspace.ts:65): a single-quoted literal assembled by string
+  // implementation review, cli/workspace.ts:65): a single-quoted literal built by string
   // interpolation breaks the generated entry's syntax the moment the logo file name itself
   // contains a `'`.
   const projectRoot = copyFixture();

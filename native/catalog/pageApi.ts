@@ -447,6 +447,21 @@ export function buildCatalogSections<TId extends string>(
     ...pages.flatMap((page) => page.aliases ?? []),
   ]);
 
+  // A member only ever looks itself up (below) by its own canonical `id`, but `knownComposedOfNames`
+  // (N8, above) deliberately lets a `composedOf` entry's own `component` name a member's *alias*, or
+  // the member's `component` field instead of its `id` — both resolve as working links through
+  // `FamilyPage`'s own `resolvesAddress`. Without resolving through the same map here, an
+  // alias-named or component-named entry would link fine going forward but derive nothing going
+  // back: a missing "Also used by" line looks identical to "nothing uses this".
+  const canonicalMemberIdByAlias = new Map<string, string>();
+  for (const page of pages) {
+    for (const member of page.members ?? []) {
+      for (const alias of member.aliases ?? []) canonicalMemberIdByAlias.set(alias, member.id);
+      if (member.component && member.component !== member.id) canonicalMemberIdByAlias.set(member.component, member.id);
+    }
+  }
+  const canonicalUsedByTarget = (name: string) => canonicalMemberIdByAlias.get(name) ?? name;
+
   // "Also used by" (derived, never authored): the inverse of every `composedOf` entry in the
   // catalog whose `relationship` is `'built-in'` — the forward direction renders as "Uses X"
   // (`UsesLine`); this is that same relationship read from the other end, keyed by the entry's own
@@ -461,11 +476,11 @@ export function buildCatalogSections<TId extends string>(
   };
   for (const page of pages) {
     for (const entry of page.composedOf ?? []) {
-      if (entry.relationship === 'built-in') addUsedBy(entry.component, page.id, entry.role);
+      if (entry.relationship === 'built-in') addUsedBy(canonicalUsedByTarget(entry.component), page.id, entry.role);
     }
     for (const member of page.members ?? []) {
       for (const entry of member.composedOf ?? []) {
-        if (entry.relationship === 'built-in') addUsedBy(entry.component, member.id, entry.role);
+        if (entry.relationship === 'built-in') addUsedBy(canonicalUsedByTarget(entry.component), member.id, entry.role);
       }
     }
   }
@@ -545,9 +560,19 @@ export function buildCatalogSections<TId extends string>(
         relatedPages: page.relatedPages,
         members: page.members!.map((member) => {
           const memberComponent = member.component ? componentByName.get(member.component) : undefined;
-          const alsoUsedBy: AlsoUsedByEntry[] = (usedByTarget.get(member.id) ?? [])
-            .filter((entry) => !pageMemberIds.has(entry.component))
-            .map((entry) => ({ component: entry.component, role: entry.role || undefined }));
+          // Dedupe by `component`, keeping the first role: page-level and whole-member `composedOf`
+          // attribute to the same string for a family's whole (`validateFamily` forces
+          // `whole === page.id`), and `validateComposedOf` has no duplicate check of its own, so the
+          // same user declared twice would otherwise render "Also used by P and P".
+          const dedupedUsers = new Map<string, { component: string; role: string }>();
+          for (const entry of usedByTarget.get(member.id) ?? []) {
+            if (pageMemberIds.has(entry.component)) continue;
+            if (!dedupedUsers.has(entry.component)) dedupedUsers.set(entry.component, entry);
+          }
+          const alsoUsedBy: AlsoUsedByEntry[] = [...dedupedUsers.values()].map((entry) => ({
+            component: entry.component,
+            role: entry.role || undefined,
+          }));
           return {
             ...member,
             props: memberComponent ? mergePropNotes(memberComponent, undefined) : undefined,

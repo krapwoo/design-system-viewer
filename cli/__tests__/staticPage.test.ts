@@ -93,7 +93,7 @@ test('reads a comparison written directly as an object literal, with no grid() c
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
 
-test('a row axis computed by .map() is not literal: checkable is false and comparison is absent', () => {
+test('a row axis built by .map() is not literal: checkable is false and comparison is absent', () => {
   const file = writePage(`
     import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
     const TONES = [{ key: 'primary', label: 'Primary' }];
@@ -200,7 +200,7 @@ test('a non-literal fill expression stays unset, not misread as false; literal t
 // Static grid cells (design's required omitted contract): a directly-authored object-literal
 // `comparison.cells` array has its per-cell literal `surface`/`align`/`fill` preserved — a grid
 // built through the starter kit's `grid()` helper (whose `cell` argument is a callback, never
-// evaluated) must stay unrepresented, never guessed at or computed by a second evaluator.
+// evaluated) must stay unrepresented, never guessed at or built by a second evaluator.
 test('reads a direct object-literal comparison\'s per-cell surface/align/fill overrides; a grid() call\'s cells stay unrepresented', () => {
   const literalFile = writePage(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
@@ -234,7 +234,7 @@ test('reads a direct object-literal comparison\'s per-cell surface/align/fill ov
   `);
   const [gridPage] = readStaticPages([gridCallFile]);
   assert.equal(gridPage.checkable, true);
-  assert.equal(gridPage.comparison?.cells, undefined, 'a grid() call\'s cells come from an unevaluated cell() callback and must stay unrepresented, not computed by a second evaluator');
+  assert.equal(gridPage.comparison?.cells, undefined, 'a grid() call\'s cells come from an unevaluated cell() callback and must stay unrepresented, not built by a second evaluator');
   rmSync(path.dirname(gridCallFile), { recursive: true, force: true });
 });
 

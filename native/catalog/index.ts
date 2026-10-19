@@ -48,7 +48,7 @@ export { defineCatalogPage, buildCatalogSections } from './pageApi';
 export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRecord } from './pageApi';
 export type {
   PropDef, SectionDef, NavGroup, SpecimenSize, SpecimenSurfaceKind, ComparisonDef, ComparisonCell, ComparisonAxisItem, GridAxis,
-  PreviewWidths, TokenSection, ComposedOfEntry, CatalogMember, CatalogMemberSection, FamilyDef,
+  PreviewWidths, TokenSection, ComposedOfEntry, AlsoUsedByEntry, CatalogMember, CatalogMemberSection, FamilyDef,
   CatalogAnatomy, CatalogAnatomyGroup, CatalogAnatomyItem, RelatedPage,
 } from './types';
 export { UpdatePanel } from './UpdatePanel';

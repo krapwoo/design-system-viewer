@@ -334,6 +334,17 @@ test('buildCatalogSections: alsoUsedBy derives a single outside user with its ro
   const { sections } = buildCatalogSections([familyPage(), dock], familyComponents);
   const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
   assert.deepEqual(family?.members.find((m) => m.id === 'BotAnimatedFaceView')?.alsoUsedBy, [{ component: 'Dock', role: 'Header icon' }]);
+
+  // Minor 3: types.ts:120 documents that an empty role is omitted, not carried through as ''. No
+  // other test authors `role: ''`, so `role: entry.role || undefined` could silently regress to
+  // `role: entry.role` without anything noticing.
+  const silentDock = defineCatalogPage({
+    id: 'SilentDock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'BotAnimatedFaceView', role: '', relationship: 'built-in' as const }],
+  });
+  const { sections: silentSections } = buildCatalogSections([familyPage(), silentDock], familyComponents);
+  const silentFamily = silentSections.find((s) => s.id === 'BotAvatarView')?.family;
+  assert.deepEqual(silentFamily?.members.find((m) => m.id === 'BotAnimatedFaceView')?.alsoUsedBy, [{ component: 'SilentDock', role: undefined }]);
 });
 
 // Breaks if a second user ever overwrites, rather than accumulates alongside, the first.
@@ -445,6 +456,86 @@ test('buildCatalogSections: alsoUsedBy excludes a same-page sibling', () => {
   const { sections } = buildCatalogSections([page], familyComponents);
   const family = sections.find((s) => s.id === 'W')?.family;
   assert.deepEqual(family?.members.find((m) => m.id === 'Leaf')?.alsoUsedBy, []);
+});
+
+// Important finding 2: `knownComposedOfNames` (N8) deliberately accepts a member's own *alias* as a
+// valid `composedOf` target — `resolvesAddress` links it fine going forward — so the inverse index
+// must resolve an alias-named entry back to that member's canonical id, or it silently derives
+// nothing. Breaks if the index goes back to keying on the raw, unresolved `entry.component`.
+test('buildCatalogSections: alsoUsedBy resolves a composedOf entry that names a member\'s alias, not its canonical id', () => {
+  const base = familyPage();
+  const page = {
+    ...base,
+    members: base.members!.map((m) => (m.id === 'BotAnimatedFaceView' ? { ...m, aliases: ['FaceAlias'] } : m)),
+  };
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'FaceAlias', role: 'Header icon', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([page, dock], familyComponents);
+  const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+  assert.deepEqual(family?.members.find((m) => m.id === 'BotAnimatedFaceView')?.alsoUsedBy, [{ component: 'Dock', role: 'Header icon' }]);
+});
+
+// Important finding 2, the other half: a member whose `component` differs from its own `id` is the
+// same hole — an entry naming the `component` must resolve to the member's id just as an alias does.
+test('buildCatalogSections: alsoUsedBy resolves a composedOf entry that names a member\'s component, not its id', () => {
+  const page = defineCatalogPage({
+    id: 'W', group: 'Components', description: 'd',
+    whole: 'W',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['Face'] }],
+    members: [
+      { id: 'W', source: 'w.tsx:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' },
+      {
+        id: 'Face', component: 'FaceComponent', source: 'f.tsx:1', fidelity: 'documentation-only' as const,
+        relationship: 'Part', parent: 'W', description: 'd',
+      },
+    ],
+  });
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'FaceComponent', role: 'Header icon', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([page, dock], familyComponents);
+  const family = sections.find((s) => s.id === 'W')?.family;
+  assert.deepEqual(family?.members.find((m) => m.id === 'Face')?.alsoUsedBy, [{ component: 'Dock', role: 'Header icon' }]);
+});
+
+// Important finding 3: page-level entries attribute to `page.id`, whole-member entries to
+// `member.id` — the same string for a family's whole (`validateFamily` forces `whole === page.id`)
+// — so a page declaring the same user at both levels must collapse to one entry, not render "Also
+// used by P and P". Breaks if the dedupe is removed.
+test('buildCatalogSections: alsoUsedBy dedupes a user declared at both the page level and on its own whole member', () => {
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    whole: 'Dock',
+    sections: [],
+    members: [
+      {
+        id: 'Dock', source: 'dock.tsx:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd',
+        composedOf: [{ component: 'BotAnimatedFaceView', role: 'Whole-member role', relationship: 'built-in' as const }],
+      },
+    ],
+    composedOf: [{ component: 'BotAnimatedFaceView', role: 'Page-level role', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([familyPage(), dock], familyComponents);
+  const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+  assert.deepEqual(family?.members.find((m) => m.id === 'BotAnimatedFaceView')?.alsoUsedBy, [{ component: 'Dock', role: 'Page-level role' }]);
+});
+
+// Important finding 3, the other half: plain duplicate entries inside one `composedOf` list —
+// `validateComposedOf` has no duplicate check of its own, so these reach the derivation unchanged.
+test('buildCatalogSections: alsoUsedBy dedupes plain duplicate entries within one composedOf list', () => {
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [
+      { component: 'BotAnimatedFaceView', role: 'Header icon', relationship: 'built-in' as const },
+      { component: 'BotAnimatedFaceView', role: 'Header icon', relationship: 'built-in' as const },
+    ],
+  });
+  const { sections } = buildCatalogSections([familyPage(), dock], familyComponents);
+  const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+  assert.deepEqual(family?.members.find((m) => m.id === 'BotAnimatedFaceView')?.alsoUsedBy, [{ component: 'Dock', role: 'Header icon' }]);
 });
 
 // V2d item 4: `buildCatalogSections` runs `validateComposedOf` on each member's own `composedOf`
