@@ -201,12 +201,23 @@ test('alsoUsedBySegments: two or three users join with commas and "and", never s
   ]);
 });
 
-// Breaks if the "+N more" cap stops appearing past three users, or shows as a link instead of
-// plain text.
+// Breaks if the "+N more" cap stops appearing past three users, if it shows as a link instead of
+// plain text, or if more than three names are listed. Asserting the whole segment list matters:
+// an earlier version only checked the last segment, which still passed when the slice was widened
+// to show every name, because "+N more" is appended by a separate expression.
 test('alsoUsedBySegments: more than three users shows the first three plus a plain-text "+N more"', () => {
   const segments = alsoUsedBySegments([{ component: 'Dock' }, { component: 'Toolbar' }, { component: 'Sidebar' }, { component: 'Modal' }, { component: 'Drawer' }]);
-  assert.deepEqual(segments.at(-1), { text: ' +2 more' });
-  assert.equal(segments.at(-1)?.component, undefined);
+  assert.deepEqual(segments, [
+    { text: 'Also used by ' },
+    { text: 'Dock', component: 'Dock' },
+    { text: ', ' },
+    { text: 'Toolbar', component: 'Toolbar' },
+    { text: ' and ' },
+    { text: 'Sidebar', component: 'Sidebar' },
+    { text: ' +2 more' },
+  ]);
+  assert.equal(segments.at(-1)?.component, undefined, '"+N more" has no page to link to');
+  assert.equal(segments.filter((s) => s.component).length, 3, 'never more than three names, however many users there are');
 });
 
 // N7: `resolveWhole` is the pure decision `FamilyPage` uses to skip rendering the whole block when
