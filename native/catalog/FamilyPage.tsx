@@ -11,6 +11,7 @@ import { hashForId } from './catalogNavigation';
 // component with no test of its own that imports it directly under Node, so it only ever goes
 // through the bundler.
 import {
+  alsoUsedBySegments,
   anatomyColumns,
   anatomyPinFor,
   ariaLevelFor,
@@ -26,7 +27,7 @@ import {
   type PartTreeEntry,
   type RelatedSegment,
 } from './familyModel';
-import type { CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, CatalogMemberSection, ComposedOfEntry, FamilyDef, PreviewWidths, PropDef, RelatedPage, SectionDef } from './types';
+import type { AlsoUsedByEntry, CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, CatalogMemberSection, ComposedOfEntry, FamilyDef, PreviewWidths, PropDef, RelatedPage, SectionDef } from './types';
 
 /** `SectionDef`'s parts `presentationBlocks`/`Blocks` actually read, built from one family member
  *  so its own specimens render through the exact same renderers (`VariantGroup`, `ComparisonGrid`,
@@ -125,21 +126,28 @@ function MemberNameRow({
   );
 }
 
-/** `[related ·] [relationship ·] source path:line` (spec §5.2 "Below the specimens"). A member
- *  name inside `related` is a link to that member's address — a real `href`, like every other
+/** `[related ·] [relationship ·] source [· Also used by …]` (spec §5.2 "Below the specimens",
+ *  derived "also used by" slice). A member name inside `related`, and a resolvable component in
+ *  the derived "Also used by" segment, both link to that address — a real `href`, like every other
  *  in-app link, so clicking it goes through the same `hashchange` routing as typing the address or
- *  using search (`CatalogShell`). */
+ *  using search (`CatalogShell`). An unresolvable user (a declared user with no catalog page of its
+ *  own) renders as plain text instead, the same way `UsesLine` treats an unresolvable name. */
 function BelowSpecimensLine({
   related,
   showRelationship,
   relationship,
   source,
+  alsoUsedBy,
+  resolvesAddress,
 }: {
   related?: RelatedSegment[];
   showRelationship: boolean;
   relationship: string;
   source: string;
+  alsoUsedBy: AlsoUsedByEntry[];
+  resolvesAddress: (name: string) => boolean;
 }) {
+  const usedBy = alsoUsedBySegments(alsoUsedBy);
   return (
     <Text style={styles.belowLine}>
       {related &&
@@ -155,13 +163,37 @@ function BelowSpecimensLine({
       {related && ' · '}
       {showRelationship && `${relationship} · `}
       {source}
+      {usedBy.length > 0 && ' · '}
+      {usedBy.map((segment, i) =>
+        segment.component && resolvesAddress(segment.component) ? (
+          <Text key={i} role="link" style={styles.relatedLink} {...({ href: hashForId(segment.component) } as Record<string, unknown>)}>
+            {segment.text}
+          </Text>
+        ) : (
+          <Text key={i}>{segment.text}</Text>
+        ),
+      )}
     </Text>
   );
 }
 
-/** Slice D1 item 6: the whole's own one-line summary — `<name> · <fidelity badge> · <source>` — in
- *  place of the below-specimens line (the whole has no `relationship`/`related` to show). */
-function WholeBelowLine({ name, fidelity, source }: { name: string; fidelity: CatalogMember['fidelity']; source: string }) {
+/** Slice D1 item 6: the whole's own one-line summary — `<name> · <fidelity badge> · <source>
+ *  [· Also used by …]` — in place of the below-specimens line (the whole has no
+ *  `relationship`/`related` to show, but it is still a member, so it still derives users). */
+function WholeBelowLine({
+  name,
+  fidelity,
+  source,
+  alsoUsedBy,
+  resolvesAddress,
+}: {
+  name: string;
+  fidelity: CatalogMember['fidelity'];
+  source: string;
+  alsoUsedBy: AlsoUsedByEntry[];
+  resolvesAddress: (name: string) => boolean;
+}) {
+  const usedBy = alsoUsedBySegments(alsoUsedBy);
   return (
     <View style={styles.wholeBelowRow}>
       <Text style={styles.wholeName}>{name}</Text>
@@ -169,6 +201,18 @@ function WholeBelowLine({ name, fidelity, source }: { name: string; fidelity: Ca
       <FidelityBadge fidelity={fidelity} />
       <Text style={styles.belowLine}> · </Text>
       <Text style={styles.belowLine}>{source}</Text>
+      {usedBy.length > 0 && <Text style={styles.belowLine}> · </Text>}
+      {usedBy.map((segment, i) =>
+        segment.component && resolvesAddress(segment.component) ? (
+          <Text key={i} role="link" style={styles.relatedLink} {...({ href: hashForId(segment.component) } as Record<string, unknown>)}>
+            {segment.text}
+          </Text>
+        ) : (
+          <Text key={i} style={styles.belowLine}>
+            {segment.text}
+          </Text>
+        ),
+      )}
     </View>
   );
 }
@@ -294,7 +338,7 @@ function MemberDisclosureToggle({
   );
 }
 
-type FamilyMember = CatalogMember & { props?: PropDef[]; path: string };
+type FamilyMember = CatalogMember & { props?: PropDef[]; path: string; alsoUsedBy?: AlsoUsedByEntry[] };
 
 interface MemberRenderProps {
   member: FamilyMember;
@@ -377,6 +421,8 @@ function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths,
           showRelationship={false}
           relationship={member.relationship}
           source={member.source}
+          alsoUsedBy={member.alsoUsedBy ?? []}
+          resolvesAddress={resolvesAddress}
         />
         <View style={styles.disclosureSpacer}>
           <MemberDisclosureToggle member={member} apiLabel={apiLabel} resolvesAddress={resolvesAddress} />
@@ -421,7 +467,14 @@ function FoldedRow({ member, number, allMemberIds, resolvesAddress, open, onTogg
           web must never bubble its own click into this row's own press handler and close it. */}
       {open && (
         <View style={styles.foldedRowBody}>
-          <BelowSpecimensLine related={related} showRelationship={false} relationship={member.relationship} source={member.source} />
+          <BelowSpecimensLine
+            related={related}
+            showRelationship={false}
+            relationship={member.relationship}
+            source={member.source}
+            alsoUsedBy={member.alsoUsedBy ?? []}
+            resolvesAddress={resolvesAddress}
+          />
           {parts.length > 0 && (
             <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} />
           )}
@@ -1055,7 +1108,13 @@ export function FamilyPage<TId extends string>({
                   </View>
                 )}
                 {wholeMember.notShown && <Text style={styles.belowLine}>{wholeMember.notShown}</Text>}
-                <WholeBelowLine name={wholeMember.id} fidelity={wholeMember.fidelity} source={wholeMember.source} />
+                <WholeBelowLine
+                  name={wholeMember.id}
+                  fidelity={wholeMember.fidelity}
+                  source={wholeMember.source}
+                  alsoUsedBy={wholeMember.alsoUsedBy ?? []}
+                  resolvesAddress={resolvesAddress}
+                />
                 <View style={styles.disclosureSpacer}>
                   <MemberDisclosureToggle member={wholeMember} apiLabel={apiLabel} resolvesAddress={resolvesAddress} />
                 </View>

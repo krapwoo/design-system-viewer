@@ -4,7 +4,7 @@
  * building, disclosure content, and link/pin lookups. Outline numbering (`numberFor`) and family
  * validation (`validateFamily`) live in `pageApi.ts` instead — see that file's own comments.
  */
-import type { CatalogMember, CatalogMemberSection, PropDef } from './types.ts';
+import type { AlsoUsedByEntry, CatalogMember, CatalogMemberSection, PropDef } from './types.ts';
 
 /** One node of a `blocks` section's own Part tree (Slice D1 item 7 "Tree line"). */
 export interface PartTreeEntry {
@@ -161,6 +161,37 @@ export function shouldRunMemberJump(state: MemberJumpState | undefined, memberId
 export interface RelatedSegment {
   text: string;
   memberId?: string;
+}
+
+/** One segment of an "Also used by" line: plain text, or another component's own id, rendered as a
+ *  link when it resolves to a real catalog address and plain text otherwise (`FamilyPage`'s own
+ *  `resolvesAddress`, the same test `UsesLine` already uses). */
+export interface UsedBySegment {
+  text: string;
+  component?: string;
+}
+
+/** Builds the "Also used by …" segments (field spec "Rendering") from a member's derived
+ *  `alsoUsedBy` list: `[]` for none (the caller renders nothing), one user with its own role in
+ *  parentheses when non-empty, two or three joined with commas and "and" (no roles — they bloat the
+ *  line), or the first three plus a plain-text "+N more" beyond that. */
+export function alsoUsedBySegments(entries: readonly AlsoUsedByEntry[]): UsedBySegment[] {
+  if (entries.length === 0) return [];
+  const segments: UsedBySegment[] = [{ text: 'Also used by ' }];
+  if (entries.length === 1) {
+    const [entry] = entries;
+    segments.push({ text: entry.component, component: entry.component });
+    if (entry.role) segments.push({ text: ` (${entry.role})` });
+    return segments;
+  }
+  const shown = entries.slice(0, 3);
+  shown.forEach((entry, i) => {
+    segments.push({ text: entry.component, component: entry.component });
+    if (i < shown.length - 2) segments.push({ text: ', ' });
+    else if (i === shown.length - 2) segments.push({ text: ' and ' });
+  });
+  if (entries.length > 3) segments.push({ text: ` +${entries.length - 3} more` });
+  return segments;
 }
 
 /** Escapes a string for literal use inside a `RegExp` (the characters the regex engine would

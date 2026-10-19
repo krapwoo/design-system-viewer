@@ -78,6 +78,12 @@ export default defineCatalogPage({
     { component: 'ComparisonGroups', role: "Grouped rows of examples.", relationship: 'built-in' },
     { component: 'TokenSections', role: "A token page's titled cards.", relationship: 'built-in' },
     { component: 'ReferenceDetails', role: "The reference cards below the examples.", relationship: 'built-in' },
+    // True and previously undeclared: `SectionBlock.tsx:361` renders `<SectionPagerRow />`, while
+    // `SectionPagerRow` is documented as a member of the FamilyPage family. Declaring it here is
+    // what makes that page's member show its derived "Also used by SectionBlock" line — the only
+    // place in this catalog where a family's non-whole member is used by a page outside its own
+    // family (the family's whole has an older one: `CatalogShell` uses `FamilyPage`).
+    { component: 'SectionPagerRow', role: 'The previous/next row at the page head.', relationship: 'built-in' },
   ],
   specimenSize: 'page',
   hide: { props: true },
