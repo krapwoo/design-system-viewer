@@ -537,6 +537,20 @@ export default defineCatalogPage({
   resolves to a real catalog address (a page, another member, or an alias — in this family or any
   other), otherwise it shows in code; an unknown name logs a `[Catalog]` warning the same way the
   page-level field's does.
+- **"Also used by …"** is derived, never authored — there is no field for it anywhere. It's the
+  inverse of the "Uses …" line above: if some other page or member's own `composedOf` names this
+  one with `relationship: 'built-in'`, that's already a declaration that the other one uses it;
+  `buildCatalogSections` inverts every such declaration across the whole catalog and shows the
+  result as a short line below the member's specimens (joining the same line as its source path),
+  so the same relationship never has to be authored a second time from this end. Only `'built-in'`
+  counts — `'slot'` and `'related'` never produce a line. A user that is this member's own parent,
+  the page's own whole, the member itself, or any other member of the same family page is excluded:
+  that edge is the family tree already, not a second user. One user shows as `Also used by X
+  (role)` (role omitted when empty); two or three as `Also used by X, Y and Z`, with no roles —
+  they bloat the line; more than three as `Also used by X, Y and Z +N more`, with `+N more` as
+  plain text. A user that resolves to a real catalog address links the same way a
+  `related`/`composedOf` name does; otherwise it shows as plain text. Nothing renders when nothing
+  else uses the member — the overwhelming majority of them.
 - **`notShown`** (page-level) is a short "Not shown in the browser: …" line under the page head,
   for behavior a web catalog can't demonstrate (a timer, a native gesture). A member's own
   `notShown` works the same way, under its specimens. Like `aliases`, the page-level field only

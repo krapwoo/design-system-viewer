@@ -107,6 +107,19 @@ export interface ComposedOfEntry {
   relationship: 'built-in' | 'slot' | 'related';
 }
 
+/** Derived (never authored) — the inverse of every other page's or member's own `composedOf`
+ *  entry whose `relationship` is `'built-in'`: if something else's `composedOf` names this member,
+ *  that something is "also used by" it. The forward direction (that other `composedOf`) renders as
+ *  "Uses X" (`UsesLine`); this is the same relationship read from the other end. Computed once, by
+ *  `buildCatalogSections`, from data every author already declared from the other end — there is
+ *  no field on `CatalogMember` or `CatalogPageInput` for this; a page can never author it directly. */
+export interface AlsoUsedByEntry {
+  /** The other page's or member's own id — its catalog address. */
+  component: string;
+  /** That `ComposedOfEntry`'s own `role`, omitted when it's empty. */
+  role?: string;
+}
+
 /** One row or column heading in a grid. */
 export interface ComparisonAxisItem {
   key: string;
@@ -413,7 +426,11 @@ export interface RelatedPage {
  *  outline — set on `SectionDef.family` by `buildCatalogSections` when a page has `members`. */
 export interface FamilyDef {
   whole: string;
-  members: Array<CatalogMember & { props?: PropDef[]; path: string }>;
+  /** `alsoUsedBy` is derived — `buildCatalogSections` always populates it (`[]` when nothing else
+   *  uses this member) — see `AlsoUsedByEntry`. Optional only so a hand-built `FamilyDef` (a demo,
+   *  a fixture) that predates this field still type-checks; a reader treats an absent value the
+   *  same as `[]`. */
+  members: Array<CatalogMember & { props?: PropDef[]; path: string; alsoUsedBy?: AlsoUsedByEntry[] }>;
   sections: CatalogMemberSection[];
   outline: Map<string, { number: string; level: number }>;
   notShown?: string;

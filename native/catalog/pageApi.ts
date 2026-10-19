@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, RelatedPage, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
+import type { AlsoUsedByEntry, CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, RelatedPage, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
  *  generated props), plus the three fields design §1 "Page shape" adds. */
@@ -447,6 +447,29 @@ export function buildCatalogSections<TId extends string>(
     ...pages.flatMap((page) => page.aliases ?? []),
   ]);
 
+  // "Also used by" (derived, never authored): the inverse of every `composedOf` entry in the
+  // catalog whose `relationship` is `'built-in'` — the forward direction renders as "Uses X"
+  // (`UsesLine`); this is that same relationship read from the other end, keyed by the entry's own
+  // `component` (the used thing) — gathered once, up front, so a family member just looks up its
+  // own id below. A page's own `composedOf` attributes to that page's id (its address, e.g. a
+  // family's whole); a family member's own `composedOf` attributes to that member's own id.
+  const usedByTarget = new Map<string, Array<{ component: string; role: string }>>();
+  const addUsedBy = (target: string, component: string, role: string) => {
+    const list = usedByTarget.get(target);
+    if (list) list.push({ component, role });
+    else usedByTarget.set(target, [{ component, role }]);
+  };
+  for (const page of pages) {
+    for (const entry of page.composedOf ?? []) {
+      if (entry.relationship === 'built-in') addUsedBy(entry.component, page.id, entry.role);
+    }
+    for (const member of page.members ?? []) {
+      for (const entry of member.composedOf ?? []) {
+        if (entry.relationship === 'built-in') addUsedBy(entry.component, member.id, entry.role);
+      }
+    }
+  }
+
   // Every id/alias a family page's own `members` and `aliases` use, keyed by page id — gathered up
   // front so `validateFamily` (above) can check catalog-wide uniqueness against every *other*
   // page's ids.
@@ -507,6 +530,10 @@ export function buildCatalogSections<TId extends string>(
       if ((globalThis as { __DEV__?: boolean }).__DEV__) {
         for (const issue of issues) console.error(`[Catalog] ${issue}`);
       }
+      // "Also used by": every id this page's own members (the whole included) use is excluded
+      // from its own members' derived users — a sibling (or the whole) composing a part is still
+      // the same family tree, already expressed by `parent`/the page itself, not a second user.
+      const pageMemberIds = new Set(page.members!.map((m) => m.id));
       family = {
         whole: page.whole!,
         sections: page.sections!,
@@ -518,10 +545,14 @@ export function buildCatalogSections<TId extends string>(
         relatedPages: page.relatedPages,
         members: page.members!.map((member) => {
           const memberComponent = member.component ? componentByName.get(member.component) : undefined;
+          const alsoUsedBy: AlsoUsedByEntry[] = (usedByTarget.get(member.id) ?? [])
+            .filter((entry) => !pageMemberIds.has(entry.component))
+            .map((entry) => ({ component: entry.component, role: entry.role || undefined }));
           return {
             ...member,
             props: memberComponent ? mergePropNotes(memberComponent, undefined) : undefined,
             path: memberComponent?.file ?? member.source,
+            alsoUsedBy,
           };
         }),
       };

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  alsoUsedBySegments,
   anatomyColumns,
   anatomyPinFor,
   ariaLevelFor,
@@ -163,6 +164,49 @@ test('linkifyRelated: matches only whole words, and every occurrence', () => {
     { text: 'A', memberId: 'A' },
     { text: '.' },
   ]);
+});
+
+test('alsoUsedBySegments: empty set renders nothing', () => {
+  assert.deepEqual(alsoUsedBySegments([]), []);
+});
+
+// Breaks if a lone user's own role stops showing in parentheses, or shows when empty.
+test('alsoUsedBySegments: one user shows its role in parentheses, omitted when empty', () => {
+  assert.deepEqual(alsoUsedBySegments([{ component: 'Dock', role: 'Header icon' }]), [
+    { text: 'Also used by ' },
+    { text: 'Dock', component: 'Dock' },
+    { text: ' (Header icon)' },
+  ]);
+  assert.deepEqual(alsoUsedBySegments([{ component: 'Dock' }]), [
+    { text: 'Also used by ' },
+    { text: 'Dock', component: 'Dock' },
+  ]);
+});
+
+// Breaks if two or three users ever show a role (they bloat the line) or drop the "and".
+test('alsoUsedBySegments: two or three users join with commas and "and", never showing roles', () => {
+  assert.deepEqual(alsoUsedBySegments([{ component: 'Dock', role: 'r1' }, { component: 'Toolbar', role: 'r2' }]), [
+    { text: 'Also used by ' },
+    { text: 'Dock', component: 'Dock' },
+    { text: ' and ' },
+    { text: 'Toolbar', component: 'Toolbar' },
+  ]);
+  assert.deepEqual(alsoUsedBySegments([{ component: 'Dock' }, { component: 'Toolbar' }, { component: 'Sidebar' }]), [
+    { text: 'Also used by ' },
+    { text: 'Dock', component: 'Dock' },
+    { text: ', ' },
+    { text: 'Toolbar', component: 'Toolbar' },
+    { text: ' and ' },
+    { text: 'Sidebar', component: 'Sidebar' },
+  ]);
+});
+
+// Breaks if the "+N more" cap stops appearing past three users, or shows as a link instead of
+// plain text.
+test('alsoUsedBySegments: more than three users shows the first three plus a plain-text "+N more"', () => {
+  const segments = alsoUsedBySegments([{ component: 'Dock' }, { component: 'Toolbar' }, { component: 'Sidebar' }, { component: 'Modal' }, { component: 'Drawer' }]);
+  assert.deepEqual(segments.at(-1), { text: ' +2 more' });
+  assert.equal(segments.at(-1)?.component, undefined);
 });
 
 // N7: `resolveWhole` is the pure decision `FamilyPage` uses to skip rendering the whole block when

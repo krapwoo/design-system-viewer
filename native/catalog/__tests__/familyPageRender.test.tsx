@@ -93,3 +93,38 @@ test('a family with no relatedPages and no Related sections renders no Related h
   assert.ok(!headings.includes('Related'), 'an empty Related group must render nothing, not an empty heading');
   cleanup();
 });
+
+// Derived "Also used by" line: every fixture member above omits `alsoUsedBy` entirely, so none of
+// the earlier tests exercise it — these do, reverting the line's own rendering in
+// `BelowSpecimensLine` (FamilyPage.tsx) breaks all three.
+test('alsoUsedBy renders in the member block, linking a resolvable user and showing its role', () => {
+  const def = familyWithPinlessLegendRow();
+  def.family.members = def.family.members.map((m) => (m.id === 'Part' ? { ...m, alsoUsedBy: [{ component: 'Dock', role: 'Header icon' }] } : m));
+  const { container, cleanup } = renderCatalog(
+    React.createElement(FamilyPage as never, { def, knownAddressIds: new Set(['Dock']) } as never),
+  );
+  assert.ok((container.textContent || '').includes('Also used by Dock (Header icon)'), container.textContent || '');
+  const links = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  assert.ok(links.includes('#Dock'), 'a resolvable user must render as a real link');
+  cleanup();
+});
+
+test('alsoUsedBy renders an unresolvable user as plain text, never a dead link', () => {
+  const def = familyWithPinlessLegendRow();
+  def.family.members = def.family.members.map((m) => (m.id === 'Part' ? { ...m, alsoUsedBy: [{ component: 'Ghost' }] } : m));
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def } as never));
+  assert.ok((container.textContent || '').includes('Also used by Ghost'), container.textContent || '');
+  const links = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+  assert.ok(!links.includes('#Ghost'), 'an unresolvable user must never render as a link');
+  cleanup();
+});
+
+// Regression test for making `alsoUsedBy` optional: a hand-built family (a demo, a fixture) that
+// omits the field entirely — every member above does — must still type-check and render no "Also
+// used by" line, the same as an explicit `[]` would.
+test('a hand-built family omitting alsoUsedBy type-checks and renders no "Also used by" line', () => {
+  const def = familyWithPinlessLegendRow();
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def } as never));
+  assert.ok(!(container.textContent || '').includes('Also used by'));
+  cleanup();
+});
