@@ -2,7 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   alsoUsedBySegments,
+  ANATOMY_LEGEND_MIN_COLUMN_WIDTH,
+  ANATOMY_STAGE_PADDING,
   anatomyColumns,
+  anatomyLayout,
   anatomyPinFor,
   ariaLevelFor,
   buildPartTree,
@@ -16,6 +19,7 @@ import {
 // `numberFor` lives in `pageApi.ts` (see that file's own comments) — these tests only need it to
 // build the outline `buildPartTree` (above) nests against.
 import { numberFor } from '../pageApi.ts';
+import { CATALOG_SPACE } from '../tokens.ts';
 import type { CatalogMember, PropDef } from '../types.ts';
 
 // Appendix fixtures — copied from `.hermes-task/family-registry-input.json`, keeping only `id`,
@@ -329,4 +333,91 @@ test('anatomyColumns: never produces more columns than groups', () => {
   const groups = [{ items: [1, 2] }, { items: [1] }];
   assert.equal(anatomyColumns(groups, 3).length, 2);
   assert.deepEqual(anatomyColumns([], 3), []);
+});
+
+// The comment on `ANATOMY_STAGE_PADDING` claims it equals `CATALOG_SPACE.xl`, not just the literal
+// 24 — pin that claim against the real token so the two can never silently drift apart.
+test('ANATOMY_STAGE_PADDING equals CATALOG_SPACE.xl', () => {
+  assert.equal(ANATOMY_STAGE_PADDING, CATALOG_SPACE.xl);
+});
+
+// anatomy-narrow-layout: the consumer's own reproduced measurements (card 1112/440, picture 266,
+// sidebar visible) — the 440px card is the exact defect the controller reproduced.
+const WIDE_CARD = 1112;
+const NARROW_CARD = 440;
+const PICTURE_WIDTH = 266;
+
+test('anatomyLayout: a roomy card (<=6 items) stays side by side', () => {
+  assert.deepEqual(anatomyLayout(4, WIDE_CARD, PICTURE_WIDTH), { stacked: false, legendColumns: 1 });
+  assert.deepEqual(anatomyLayout(6, WIDE_CARD, PICTURE_WIDTH), { stacked: false, legendColumns: 1 });
+});
+
+test('anatomyLayout: the reproduced 440px card stacks (<=6 items)', () => {
+  assert.deepEqual(anatomyLayout(4, NARROW_CARD, PICTURE_WIDTH), { stacked: true, legendColumns: 1 });
+});
+
+test('anatomyLayout: wide -> narrow -> wide is reversible at the same inputs', () => {
+  const wide = anatomyLayout(4, WIDE_CARD, PICTURE_WIDTH);
+  const narrow = anatomyLayout(4, NARROW_CARD, PICTURE_WIDTH);
+  const wideAgain = anatomyLayout(4, WIDE_CARD, PICTURE_WIDTH);
+  assert.deepEqual(wide, { stacked: false, legendColumns: 1 });
+  assert.deepEqual(narrow, { stacked: true, legendColumns: 1 });
+  assert.deepEqual(wideAgain, wide, 'growing back to the same width must reproduce the same decision');
+});
+
+// The exact threshold width (picture + stage padding on both sides + one legend column) is
+// side-by-side; one pixel narrower stacks — a pure boundary, not a guess.
+test('anatomyLayout: the side-by-side/stacked boundary is exact and has no dead zone', () => {
+  const threshold = PICTURE_WIDTH + 2 * ANATOMY_STAGE_PADDING + ANATOMY_LEGEND_MIN_COLUMN_WIDTH;
+  assert.deepEqual(anatomyLayout(4, threshold, PICTURE_WIDTH), { stacked: false, legendColumns: 1 });
+  // One pixel narrower stacks instead — its own stacked legend still gets the column count that
+  // width affords (594 - 1 = 593px keeps two columns; it only drops to one much narrower).
+  assert.deepEqual(anatomyLayout(4, threshold - 1, PICTURE_WIDTH), { stacked: true, legendColumns: 2 });
+});
+
+// A genuinely wider picture needs a wider card to stay side by side — the decision reads the
+// picture's own measured width, not a hardcoded universal figure.
+test('anatomyLayout: the same card width stacks for a wider picture that no longer fits beside a readable legend', () => {
+  const cardWidth = PICTURE_WIDTH + 2 * ANATOMY_STAGE_PADDING + ANATOMY_LEGEND_MIN_COLUMN_WIDTH; // just fits at 266
+  assert.deepEqual(anatomyLayout(4, cardWidth, PICTURE_WIDTH), { stacked: false, legendColumns: 1 });
+  assert.deepEqual(anatomyLayout(4, cardWidth, 400), { stacked: true, legendColumns: 2 }, 'a wider picture no longer fits at the same card width');
+});
+
+test('anatomyLayout: more than 6 items always stacks, even at a wide card width', () => {
+  assert.equal(anatomyLayout(7, WIDE_CARD, PICTURE_WIDTH).stacked, true);
+  assert.equal(anatomyLayout(7, 3000, PICTURE_WIDTH).stacked, true);
+});
+
+// >6 items: the stacked legend itself still narrows from 3 to 2 to 1 columns as the card
+// narrows, rather than staying cramped at 3 (field spec item 3).
+test('anatomyLayout: a stacked (>6 item) legend narrows from 3 to 2 to 1 columns as the card narrows', () => {
+  assert.equal(anatomyLayout(7, WIDE_CARD, PICTURE_WIDTH).legendColumns, 3);
+  assert.equal(anatomyLayout(7, 2 * ANATOMY_LEGEND_MIN_COLUMN_WIDTH, PICTURE_WIDTH).legendColumns, 2);
+  assert.equal(anatomyLayout(7, NARROW_CARD, PICTURE_WIDTH).legendColumns, 1);
+});
+
+// Paired with `anatomyColumns`: the stacked legend columns a narrowing card chooses never drop,
+// duplicate, or split a group — only the column count (and which column each whole group lands
+// in) changes.
+test('anatomyLayout + anatomyColumns: a narrowing >6-item legend keeps every group intact across fewer columns', () => {
+  const anatomyGroups = [{ items: [1, 2, 3] }, { items: [1] }, { items: [1, 2] }, { items: [1, 2, 3, 4] }];
+  const totalItems = anatomyGroups.reduce((sum, g) => sum + g.items.length, 0);
+  for (const width of [WIDE_CARD, 2 * ANATOMY_LEGEND_MIN_COLUMN_WIDTH, NARROW_CARD]) {
+    const { legendColumns } = anatomyLayout(totalItems, width, PICTURE_WIDTH);
+    const columns = anatomyColumns(anatomyGroups, legendColumns);
+    assert.equal(columns.length, legendColumns, `width ${width}`);
+    assert.equal(new Set(columns.flat()).size, anatomyGroups.length, `width ${width}: no group dropped or duplicated`);
+    for (const g of anatomyGroups) assert.ok(columns.flat().includes(g), `width ${width}: ${JSON.stringify(g)} must survive whole`);
+  }
+});
+
+// First measurement / native: an unmeasured width (0) — before layout settles, or on a platform
+// that never measures at all (native keeps its own item-count decision; see FamilyPage.tsx's
+// `onCardLayout`/`onPictureLayout`) — falls back to the original item-count-only rule.
+test('anatomyLayout: an unmeasured width (0) falls back to the original item-count rule', () => {
+  assert.deepEqual(anatomyLayout(4, 0, 0), { stacked: false, legendColumns: 3 });
+  assert.deepEqual(anatomyLayout(7, 0, 0), { stacked: true, legendColumns: 3 });
+  // A measured card with no picture measurement yet (or vice versa) is just as unmeasured.
+  assert.deepEqual(anatomyLayout(4, WIDE_CARD, 0), { stacked: false, legendColumns: 3 });
+  assert.deepEqual(anatomyLayout(4, 0, PICTURE_WIDTH), { stacked: false, legendColumns: 3 });
 });
