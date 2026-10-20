@@ -6,9 +6,9 @@ import { defineCatalogPage, CatalogShell, CATALOG_COLOR, CATALOG_TYPE, type NavG
 type Id = 'Colors' | 'Button' | 'Card';
 const sample = StyleSheet.create({ text: { fontSize: CATALOG_TYPE.md, color: CATALOG_COLOR.textMuted } });
 const SECTIONS: SectionDef<Id>[] = [
-  { id: 'Colors', path: 'src/tokens.ts', description: 'Colour tokens.', tokenGallery: true, previewWidths: 'full', render: () => <Text style={sample.text}>Swatches…</Text> },
-  { id: 'Button', path: 'src/Button.tsx', description: 'The primary tap target.', variants: { items: [{ key: 'primary', name: 'Primary', node: <Text style={sample.text}>Continue</Text> }] } },
-  { id: 'Card', path: 'src/Card.tsx', description: 'A surface for grouped content.', variants: { items: [{ key: 'plain', name: 'Plain', node: <Text style={sample.text}>Card</Text> }] } },
+  { id: 'Colors', title: 'Colour palette', path: 'src/tokens.ts', description: 'Colour tokens.', tokenGallery: true, previewWidths: 'full', render: () => <Text style={sample.text}>Swatches…</Text> },
+  { id: 'Button', title: 'Primary action', path: 'src/Button.tsx', description: 'The primary tap target.', variants: { items: [{ key: 'primary', name: 'Primary', node: <Text style={sample.text}>Continue</Text> }] } },
+  { id: 'Card', title: 'Content card', path: 'src/Card.tsx', description: 'A surface for grouped content.', variants: { items: [{ key: 'plain', name: 'Plain', node: <Text style={sample.text}>Card</Text> }] } },
 ];
 const GROUPS: NavGroup<Id>[] = [
   { label: 'Tokens', ids: ['Colors'] },

@@ -427,7 +427,8 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   alphabetically after the ones that are. The starter kit uses `Tokens`, then every
   component under `Components`, then `Patterns` (whole screens built from the kit, such as
   SavedTrips) and `Reference` (the generated manifest). A larger catalog might add `Recipes` or
-  `Experiences` (full flows) alongside them. Pages sort A–Z inside each group regardless of how
+  `Experiences` (full flows) alongside them. Pages sort A–Z by their displayed title (falling back
+  to their id when they have none; an exact tie breaks on id) inside each group, regardless of how
   many groups you have. Avoid splitting `Components` into finer categories such as "Actions" or
   "Status" purely to browse by — that makes readers guess where a component lives; search and A–Z
   already find it. A distinct semantic group (Tokens vs. Components vs. Patterns) is a different
@@ -444,7 +445,8 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   usually can't render. Custom replacements styled after a platform control (a custom switch or
   spinner) are not OS components.
 - **Readable titles.** The page id is its address (`#ControlHeights`) and comes from the file
-  name; set `title: 'Control heights'` for the heading, sidebar and search. Pages still sort by id.
+  name; set `title: 'Control heights'` for the heading, sidebar and search. Pages now sort by this
+  title, not the id — so "Control heights" sorts under "C", not under whatever the id starts with.
 - **Point token pages at their token file.** A token page has no component, so its Source would be
   the page file; set `source: 'src/design-system/tokens.ts'` (project-relative) instead.
 - **Coverage only counts the component's own options.** `doctor`'s `option-not-covered` checks

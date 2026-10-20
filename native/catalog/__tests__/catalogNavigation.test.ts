@@ -182,3 +182,134 @@ test('searchResults returns member hits with the member id as its label and the 
   assert.deepEqual(searchResults(entries, 'zzz'), []);
   assert.deepEqual(searchResults(entries, ''), []);
 });
+
+// Displayed-title page ordering (fix/title-page-order): `sortIds`/`orderedIds` take an optional
+// `labels` map (id → `SectionDef.title`) and alphabetize by that displayed title instead of by id,
+// falling back to the id itself when a page has no title. Equal titles break the tie on id.
+//
+// The user's own real-world example: a Bot avatar / App connection request / Code block family of
+// pages whose real ids — BotAvatarView, BotConnectionRequestBody, ChatCodeBlock — sort as "Bot
+// avatar, App connection request, Code block" by id alone — the wrong, pre-fix order reported
+// below — but must read "App connection request, Bot avatar, Code block" once sorted by displayed
+// title.
+const titledGroups = [
+  { label: 'Components', ids: ['BotAvatarView', 'BotConnectionRequestBody', 'ChatCodeBlock'] },
+];
+const titledLabels = new Map([
+  ['BotAvatarView', 'Bot avatar'],
+  ['BotConnectionRequestBody', 'App connection request'],
+  ['ChatCodeBlock', 'Code block'],
+]);
+
+test('sortIds with no labels sorts by id alone — the pre-fix, wrong order for titled pages', () => {
+  assert.deepEqual(sortIds(titledGroups[0].ids), ['BotAvatarView', 'BotConnectionRequestBody', 'ChatCodeBlock']);
+});
+
+test("sortIds with labels sorts by each id's displayed title instead of its id", () => {
+  assert.deepEqual(sortIds(titledGroups[0].ids, titledLabels), ['BotConnectionRequestBody', 'BotAvatarView', 'ChatCodeBlock']);
+});
+
+test('orderedIds threads labels through to produce the same title order, within declared group order', () => {
+  assert.deepEqual(orderedIds(titledGroups, undefined, titledLabels), ['BotConnectionRequestBody', 'BotAvatarView', 'ChatCodeBlock']);
+});
+
+test('sortIds falls back to the id itself for a page with no title, interleaving it with titled ones', () => {
+  const ids = ['BotAvatarView', 'BotConnectionRequestBody', 'Bee'];
+  // 'Bee' has no label, so it sorts by its own id ("Bee") against the other two's titles ("Bot
+  // avatar", "App connection request") — it lands between them: "App connection request" < "Bee"
+  // (A < B) < "Bot avatar" (comparing "Bee" to "Bot" letter-by-letter, 'e' < 'o').
+  assert.deepEqual(sortIds(ids, titledLabels), ['BotConnectionRequestBody', 'Bee', 'BotAvatarView']);
+});
+
+test('sortIds breaks an equal-title tie on id, with the same collator, regardless of input order', () => {
+  const labels = new Map([['Beta', 'Same title'], ['Alpha', 'Same title']]);
+  assert.deepEqual(sortIds(['Beta', 'Alpha'], labels), ['Alpha', 'Beta']);
+  assert.deepEqual(sortIds(['Alpha', 'Beta'], labels), ['Alpha', 'Beta']);
+});
+
+test('sortIds comparison is case-insensitive but accent-distinguishing, per Intl.Collator("en", {sensitivity:"accent"})', () => {
+  // Case alone must not affect order ("apple" and "Apple" are equivalent) — the tie then breaks on
+  // id, with the same case-insensitive collator ("Lower" < "Upper"), deterministically regardless
+  // of input order.
+  const caseLabels = new Map([['Lower', 'apple'], ['Upper', 'Apple']]);
+  assert.deepEqual(sortIds(['Upper', 'Lower'], caseLabels), ['Lower', 'Upper']);
+  assert.deepEqual(sortIds(['Lower', 'Upper'], caseLabels), ['Lower', 'Upper']);
+  // Equal titles AND a case-insensitively-equal id tie ("alpha"/"Alpha", also equal under
+  // {sensitivity:"accent"}) fall through the collator-based id tiebreak too, down to the final
+  // exact code-unit comparison, which orders capitals before lowercase — "Alpha" < "alpha" —
+  // again regardless of input order.
+  const foldLabels = new Map([['alpha', 'fruit'], ['Alpha', 'fruit']]);
+  assert.deepEqual(sortIds(['alpha', 'Alpha'], foldLabels), ['Alpha', 'alpha']);
+  assert.deepEqual(sortIds(['Alpha', 'alpha'], foldLabels), ['Alpha', 'alpha']);
+  // ...but an accent must ("café" sorts after "cafe", not equal to it).
+  const accentLabels = new Map([['Accented', 'café'], ['Plain', 'cafe']]);
+  assert.deepEqual(sortIds(['Accented', 'Plain'], accentLabels), ['Plain', 'Accented']);
+});
+
+test('sortIds never mutates its input array', () => {
+  const ids = ['ChatCodeBlock', 'BotAvatarView', 'BotConnectionRequestBody'];
+  const original = [...ids];
+  sortIds(ids, titledLabels);
+  assert.deepEqual(ids, original);
+});
+
+test('orderedIds preserves declared group order while sorting titles only within each group', () => {
+  const groups = [
+    { label: 'Z group', ids: ['ChatCodeBlock', 'BotAvatarView'] },
+    { label: 'A group', ids: ['BotConnectionRequestBody'] },
+  ];
+  // "Z group" still comes first (declared order) even though its own titles ("Code block", "Bot
+  // avatar") sort after "A group"'s ("App connection request") — only within-group order changes.
+  assert.deepEqual(orderedIds(groups, undefined, titledLabels), ['BotAvatarView', 'ChatCodeBlock', 'BotConnectionRequestBody']);
+});
+
+test('orderedIds threads labels through sorting while still deduping and dropping unavailable ids', () => {
+  const groupsWithDuplicate = [
+    { label: 'Components', ids: ['BotAvatarView', 'BotConnectionRequestBody', 'ChatCodeBlock', 'BotAvatarView'] },
+  ];
+  const available = new Set(['BotAvatarView', 'BotConnectionRequestBody']);
+  // The duplicate BotAvatarView collapses to a single occurrence, ChatCodeBlock is dropped as
+  // unavailable, and the two survivors are still title-sorted: "App connection request" before
+  // "Bot avatar".
+  assert.deepEqual(orderedIds(groupsWithDuplicate, available, titledLabels), ['BotConnectionRequestBody', 'BotAvatarView']);
+});
+
+test('filterGroups preserves the canonical title order among filtered-in ids, by id, title, or member alias', () => {
+  const memberIds = new Map([['ChatCodeBlock', ['CodeBlockViewImpl']]]);
+  // No query: every id stays, in canonical (title) order.
+  assert.deepEqual(filterGroups(titledGroups, '', titledLabels), [
+    { label: 'Components', ids: ['BotConnectionRequestBody', 'BotAvatarView', 'ChatCodeBlock'] },
+  ]);
+  // A query matching by id substring: "view" is only in "BotAvatarView" now that the other two
+  // ids — BotConnectionRequestBody, ChatCodeBlock — are the family's real, non-"View" ids.
+  assert.deepEqual(filterGroups(titledGroups, 'view', titledLabels), [
+    { label: 'Components', ids: ['BotAvatarView'] },
+  ]);
+  // A query matching two of the three ids/titles ("bot" is in both "BotAvatarView" and
+  // "BotConnectionRequestBody") still returns them in canonical title order: "App connection
+  // request" (BotConnectionRequestBody) before "Bot avatar" (BotAvatarView).
+  assert.deepEqual(filterGroups(titledGroups, 'bot', titledLabels), [
+    { label: 'Components', ids: ['BotConnectionRequestBody', 'BotAvatarView'] },
+  ]);
+  // A query matching only by title — "connection request" has a space, which no id contains —
+  // proves the title path matches independently of the id path.
+  assert.deepEqual(filterGroups(titledGroups, 'connection request', titledLabels), [
+    { label: 'Components', ids: ['BotConnectionRequestBody'] },
+  ]);
+  // A query matching only by member alias still returns the matched id, correctly placed among
+  // any other filtered-in ids — only one id matches here, so this also pins the member-alias path
+  // isn't disturbed by the labels argument now being threaded through to sortIds.
+  assert.deepEqual(filterGroups(titledGroups, 'codeblockviewimpl', titledLabels, memberIds), [
+    { label: 'Components', ids: ['ChatCodeBlock'] },
+  ]);
+});
+
+test('neighbors and idFromHash fallback share the same title-canonical order', () => {
+  const order = orderedIds(titledGroups, undefined, titledLabels);
+  assert.deepEqual(order, ['BotConnectionRequestBody', 'BotAvatarView', 'ChatCodeBlock']);
+  // previous/next walk the title-sorted order, not id order.
+  assert.deepEqual(neighbors(order, 'BotAvatarView'), { previous: 'BotConnectionRequestBody', next: 'ChatCodeBlock' });
+  // An empty or unknown hash recovers to the title-canonical first page, not the id-canonical one.
+  assert.equal(idFromHash('', order), 'BotConnectionRequestBody');
+  assert.equal(idFromHash('#Nope', order), 'BotConnectionRequestBody');
+});
