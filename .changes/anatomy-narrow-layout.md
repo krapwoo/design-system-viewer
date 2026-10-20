@@ -1,1 +1,0 @@
-A family page's anatomy legend now stays readable in a narrow content pane (e.g. behind a sidebar): it drops below the picture once the card no longer has room for both, instead of squeezing into an unreadably narrow column, and a legend of more than six items now narrows from three to two to one columns rather than staying cramped.

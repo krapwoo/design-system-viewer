@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.14.2
+
+- A family page's anatomy legend now stays readable in a narrow content pane (e.g. behind a sidebar): it drops below the picture once the card no longer has room for both, instead of squeezing into an unreadably narrow column, and a legend of more than six items now narrows from three to two to one columns rather than staying cramped.
+
 ## 0.14.1
 
 - Pages within a sidebar group now sort by their displayed title (falling back to their id when they have none) instead of always by id.
