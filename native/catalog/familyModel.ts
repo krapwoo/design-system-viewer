@@ -59,6 +59,46 @@ export function anatomyPinFor(
   return { number: entry.number, dashed: member.fidelity === 'documentation-only' };
 }
 
+/** The anatomy stage's own padding on each side — equal to `CATALOG_SPACE.xl` (asserted against
+ *  that token in familyModel.test.ts), not a second, independent constant. A side-by-side legend
+ *  only fits once the card is wide enough for the picture's own measured width plus this padding
+ *  on both sides, plus one readable legend column. */
+export const ANATOMY_STAGE_PADDING = 24;
+
+/** A legend column — whether the single column beside the picture, or one of the stacked legend's
+ *  own balanced columns — is never narrower than this: the longest observed member name (~203px)
+ *  plus its row's own pin gutter and padding (~74px). Below it, the legend drops to fewer columns,
+ *  or (when there's no room even for one column beside the stage) the whole card stacks instead. */
+export const ANATOMY_LEGEND_MIN_COLUMN_WIDTH = 280;
+
+/** How many columns a stacked legend uses at a given measured card width, up to 3 — the same
+ *  minimum-column-width budget a side-by-side legend's own single column keeps. */
+function anatomyLegendColumns(cardWidth: number): 1 | 2 | 3 {
+  const fits = (n: number) => cardWidth >= n * ANATOMY_LEGEND_MIN_COLUMN_WIDTH;
+  if (fits(3)) return 3;
+  if (fits(2)) return 2;
+  return 1;
+}
+
+/** Slice fix (anatomy-narrow-layout): whether the anatomy box puts its legend beside the picture
+ *  or below it, and how many columns a stacked legend uses, at a measured anatomy-card width and
+ *  picture width. More than six items always stacks (unchanged), but its own legend still narrows
+ *  to 2 or 1 columns rather than staying cramped at 3. Six or fewer items stay side by side only
+ *  while the card has room for BOTH the intact picture stage (the picture's own measured width
+ *  plus `ANATOMY_STAGE_PADDING` on each side) AND one readable legend column
+ *  (`ANATOMY_LEGEND_MIN_COLUMN_WIDTH`); otherwise they stack too, with the same column budget as
+ *  the >6 path. `cardWidth`/`pictureWidth` of 0 (nothing measured yet, e.g. native's first frame,
+ *  or a platform that never measures at all) falls back to the original item-count-only decision,
+ *  the same one this whole page used before width ever mattered — that decision never oscillates,
+ *  being a pure function of its own inputs. */
+export function anatomyLayout(totalItems: number, cardWidth: number, pictureWidth: number): { stacked: boolean; legendColumns: 1 | 2 | 3 } {
+  if (cardWidth <= 0 || pictureWidth <= 0) return { stacked: totalItems > 6, legendColumns: 3 };
+  if (totalItems > 6) return { stacked: true, legendColumns: anatomyLegendColumns(cardWidth) };
+  const sideBySideWidth = pictureWidth + 2 * ANATOMY_STAGE_PADDING + ANATOMY_LEGEND_MIN_COLUMN_WIDTH;
+  if (cardWidth >= sideBySideWidth) return { stacked: false, legendColumns: 1 };
+  return { stacked: true, legendColumns: anatomyLegendColumns(cardWidth) };
+}
+
 /** Distributes a legend's groups into up to `maxColumns` columns so the columns end as close to
  *  level as possible: each group, in authored order, goes into the column that is currently
  *  shortest (the leftmost on a tie). A group's height is its items plus one row for its label. A

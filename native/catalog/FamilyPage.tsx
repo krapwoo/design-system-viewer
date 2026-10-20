@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, findNodeHandle } from 'react-native';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, findNodeHandle, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { Blocks, SectionPagerRow, type SectionPager } from './SectionBlock';
 import { PropsTable } from './PropsTable';
@@ -13,6 +13,7 @@ import { hashForId } from './catalogNavigation';
 import {
   alsoUsedBySegments,
   anatomyColumns,
+  anatomyLayout,
   anatomyPinFor,
   ariaLevelFor,
   buildPartTree,
@@ -571,6 +572,26 @@ interface MeasurableNode {
   measureLayout?: (relativeToNativeNode: number, onSuccess: (left: number, top: number, width: number, height: number) => void, onFail: () => void) => void;
 }
 
+/** A node with `focus` (every mounted web host node's real DOM method) — narrower than RN's own
+ *  `Text`/`View` ref types, the same reason `MeasurableNode` above exists for `measureLayout`. */
+interface FocusableNode {
+  focus?: (options?: { preventScroll?: boolean }) => void;
+}
+
+/** Anatomy-narrow-layout focus fix: lets a legend row (`AnatomyMemberRow`/`AnatomyOtherRow`)
+ *  register its own focusable name link and report when it gains focus, without either of them
+ *  needing to know *why* — `AnatomyBox` is the only thing that reads `legendNodesRef`, after a
+ *  layout-mode or balanced-column change remounts the row that currently holds focus at a new
+ *  tree position (switching `anatomyLegend` <-> `anatomyColumns`, or redistributing columns)
+ *  disconnects it and the browser drops focus to `<body>`. `register`'s `key` is stable across
+ *  that remount (a member id, or `other:<name>` for an "Other page" row), so the *replacement*
+ *  node at the same address can be found and refocused. */
+interface LegendFocus {
+  register: (key: string, node: FocusableNode | null) => void;
+  onFocus: (key: string) => void;
+  onBlur: (key: string) => void;
+}
+
 /** One Part in its tree position: rendered through `FamilyPart` as always, wrapped in a `Branch`
  *  only when it has children (a leaf costs nothing extra), with its children nested inside its own
  *  block (spec: "so the lines don't cross other parts") at one more 52px gutter. */
@@ -841,7 +862,7 @@ export function AnatomyPin({ member, other }: { member?: string; other?: string 
  *  when there's a pin to show — a member with no number (outside every `inWhole` section) gets no
  *  gutter either, so its name starts flush at the row's own left edge instead of under blank
  *  space. */
-function AnatomyMemberRow({ memberId, description, byId, outline }: { memberId: string; description: string; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline'] }) {
+function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus }: { memberId: string; description: string; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; legendFocus: LegendFocus }) {
   const pin = anatomyPinFor(memberId, byId, outline);
   return (
     <View style={styles.legendRow}>
@@ -854,7 +875,12 @@ function AnatomyMemberRow({ memberId, description, byId, outline }: { memberId: 
         </View>
       )}
       <View style={styles.legendBody}>
-        <Text role="link" style={styles.legendName} {...({ href: hashForId(memberId) } as Record<string, unknown>)}>
+        <Text
+          role="link"
+          style={styles.legendName}
+          ref={(node) => legendFocus.register(memberId, node as unknown as FocusableNode)}
+          {...({ href: hashForId(memberId), onFocus: () => legendFocus.onFocus(memberId), onBlur: () => legendFocus.onBlur(memberId) } as Record<string, unknown>)}
+        >
           {memberId}
         </Text>
         <Text style={styles.legendDesc}>{description}</Text>
@@ -869,8 +895,11 @@ function AnatomyMemberRow({ memberId, description, byId, outline }: { memberId: 
  *  "other page" row always shows its ↗, so the slot is never blank. Keeping it also keeps
  *  APPROVED.md's "the description ... starts at the name's left edge" — pulling the marker inline
  *  instead left each description hanging 26px to the left of its own name. */
-function AnatomyOtherRow({ name, description, resolvesAddress }: { name: string; description: string; resolvesAddress: (name: string) => boolean }) {
+function AnatomyOtherRow({ name, description, resolvesAddress, legendFocus }: { name: string; description: string; resolvesAddress: (name: string) => boolean; legendFocus: LegendFocus }) {
   const resolved = resolvesAddress(name);
+  // No member id of its own (it names a component documented elsewhere), so it needs its own
+  // namespace to never collide with a real member id sharing the same text.
+  const focusKey = `other:${name}`;
   return (
     <View style={styles.legendRow}>
       <View style={styles.legendPinSlot} {...ARIA_HIDDEN} testID="legend-pin-slot">
@@ -881,7 +910,12 @@ function AnatomyOtherRow({ name, description, resolvesAddress }: { name: string;
       <View style={styles.legendBody}>
         <View style={styles.legendNameRow}>
           {resolved ? (
-            <Text role="link" style={styles.legendName} {...({ href: hashForId(name) } as Record<string, unknown>)}>
+            <Text
+              role="link"
+              style={styles.legendName}
+              ref={(node) => legendFocus.register(focusKey, node as unknown as FocusableNode)}
+              {...({ href: hashForId(name), onFocus: () => legendFocus.onFocus(focusKey), onBlur: () => legendFocus.onBlur(focusKey) } as Record<string, unknown>)}
+            >
               {name}
             </Text>
           ) : (
@@ -895,57 +929,142 @@ function AnatomyOtherRow({ name, description, resolvesAddress }: { name: string;
   );
 }
 
-function AnatomyGroup({ group, byId, outline, resolvesAddress }: { group: CatalogAnatomyGroup; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean }) {
+function AnatomyGroup({ group, byId, outline, resolvesAddress, legendFocus }: { group: CatalogAnatomyGroup; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; legendFocus: LegendFocus }) {
   return (
     <View>
       <Text style={styles.legendGroupLabel}>{group.label}</Text>
       {group.items.map((item, i) =>
         'member' in item ? (
-          <AnatomyMemberRow key={i} memberId={item.member} description={item.description} byId={byId} outline={outline} />
+          <AnatomyMemberRow key={i} memberId={item.member} description={item.description} byId={byId} outline={outline} legendFocus={legendFocus} />
         ) : (
-          <AnatomyOtherRow key={i} name={item.other} description={item.description} resolvesAddress={resolvesAddress} />
+          <AnatomyOtherRow key={i} name={item.other} description={item.description} resolvesAddress={resolvesAddress} legendFocus={legendFocus} />
         ),
       )}
     </View>
   );
 }
 
-/** Slice D1 item 5: the anatomy box — always first (right after the page head), a plain-card
- *  "Anatomy" label above the picture (the same label-outside-card treatment the specimen grids
- *  below it use), and a legend beside it (six items or fewer) or below it in up to three balanced
- *  columns (more than six). */
+/** Slice D1 item 5, narrow-layout fix: the anatomy box — always first (right after the page head),
+ *  a plain-card "Anatomy" label above the picture (the same label-outside-card treatment the
+ *  specimen grids below it use), and a legend beside it or below it, decided by `anatomyLayout`
+ *  from the card's own measured width and the picture's own measured intrinsic width (web only —
+ *  see `onCardLayout`/`onPictureLayout` below), in up to three balanced columns when stacked.
+ *
+ *  The stage (and the picture inside it) renders at the same position in this tree whether the
+ *  legend sits beside it or below it — only the wrapper's own `flexDirection` and the legend's own
+ *  shape change around it — so toggling between the two never remounts the picture and discards
+ *  its own authored state or focus. */
 function AnatomyBox({ anatomy, byId, outline, resolvesAddress }: { anatomy: CatalogAnatomy; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean }) {
   const totalItems = anatomy.groups.reduce((sum, group) => sum + group.items.length, 0);
-  const stacked = totalItems > 6;
+  const [cardWidth, setCardWidth] = useState(0);
+  const [pictureWidth, setPictureWidth] = useState(0);
+  // Width-driven layout is a web-only concern (field spec: native keeps its existing item-count
+  // decision) — `onLayout` itself is the same RN-compatible API either platform would use, but
+  // these handlers simply never update state off web, so `anatomyLayout` always sees an
+  // unmeasured (0) width on native and keeps falling back to the original `totalItems > 6` rule.
+  // `onCardLayout` sits on the card's own interior wrapper (below), not the bordered card itself,
+  // so the measured width is the interior content width `anatomyLayout`'s budget already assumes
+  // — the bordered card's own box would overstate it by its own 2px (1px each side) border.
+  const onCardLayout = (event: LayoutChangeEvent) => {
+    if (Platform.OS !== 'web') return;
+    const next = Math.round(event.nativeEvent.layout.width);
+    if (next > 0 && next !== cardWidth) setCardWidth(next);
+  };
+  const onPictureLayout = (event: LayoutChangeEvent) => {
+    if (Platform.OS !== 'web') return;
+    const next = Math.round(event.nativeEvent.layout.width);
+    if (next > 0 && next !== pictureWidth) setPictureWidth(next);
+  };
+  const { stacked, legendColumns } = anatomyLayout(totalItems, cardWidth, pictureWidth);
   const contextValue = useMemo(() => ({ byId, outline }), [byId, outline]);
+
+  // Focus fix: a legend row's own focusable name link, keyed by its stable address (a member id,
+  // or `other:<name>`), registered by whichever row currently renders it — see `LegendFocus`'s own
+  // comment above. Refs/plain mutable state, not React state: recording "who last had focus"
+  // must never itself trigger a render.
+  const legendNodesRef = useRef<Map<string, FocusableNode | null>>(new Map());
+  const focusedLegendKeyRef = useRef<string | undefined>(undefined);
+  const legendFocus: LegendFocus = useMemo(
+    () => ({
+      register: (key, node) => {
+        if (node) legendNodesRef.current.set(key, node);
+        else legendNodesRef.current.delete(key);
+      },
+      onFocus: (key) => {
+        focusedLegendKeyRef.current = key;
+      },
+      onBlur: (key) => {
+        if (focusedLegendKeyRef.current === key) focusedLegendKeyRef.current = undefined;
+      },
+    }),
+    [],
+  );
+  // A layout-mode switch (`anatomyLegend` <-> `anatomyColumns`) or a balanced-column count change
+  // can remount the legend row that currently holds focus at a different tree position — the
+  // browser then drops focus to `<body>` (web's own behavior for a removed focused node). Restore
+  // it to the replacement row at the same address, right after that same render commits, the same
+  // web-only `.focus()` convention `scrollAndFocusMember` already uses below. Guarded on
+  // `document.activeElement === document.body` so another control's focus is never overridden.
+  // Explicit blur clears the recorded key, so clicking page background cannot revive stale focus;
+  // disconnecting an active anchor during reflow does not dispatch that blur event.
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const key = focusedLegendKeyRef.current;
+    if (!key) return;
+    if (document.activeElement !== document.body) return;
+    legendNodesRef.current.get(key)?.focus?.({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stacked, legendColumns]);
+
+  const stage = (
+    <View style={styles.anatomyStage}>
+      {/* Measures the picture's own intrinsic width, not the stage: the stage stretches to the
+          card's full width when stacked (a plain View's default cross-axis stretch in a column
+          layout), but this wrapper's own `alignItems: 'center'` parent never stretches it in turn,
+          so the picture's measured width stays the same whichever layout is in effect. Web only:
+          this measuring wrapper would otherwise give an authored picture (e.g. one already using
+          `alignSelf: 'stretch'` or percentage sizing) a new containing block it never had before —
+          native keeps receiving `anatomy.picture` directly, as it always did. */}
+      {Platform.OS === 'web' ? (
+        // `testID` exists only so a renderer test can trigger a real resize on exactly this node
+        // without depending on the author's own picture markup — see `legendPinSlot`'s comment.
+        <View onLayout={onPictureLayout} testID="anatomy-picture-measure">
+          {anatomy.picture}
+        </View>
+      ) : (
+        anatomy.picture
+      )}
+    </View>
+  );
+
   return (
     <FamilyAnatomyContext.Provider value={contextValue}>
       <View style={styles.anatomy}>
         <Text style={styles.anatomyHeadText}>Anatomy</Text>
         <View style={styles.anatomyCard}>
-        {stacked ? (
-          <View>
-            <View style={styles.anatomyStage}>{anatomy.picture}</View>
-            <View style={styles.anatomyColumns}>
-              {anatomyColumns(anatomy.groups, 3).map((column, i) => (
-                <View key={i} style={styles.anatomyColumn}>
-                  {column.map((group, j) => (
-                    <AnatomyGroup key={j} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} />
-                  ))}
-                </View>
-              ))}
-            </View>
+          <View style={stacked ? undefined : styles.anatomyBody} onLayout={onCardLayout} testID="anatomy-body">
+            {stage}
+            {stacked ? (
+              // `testID` exists only so a renderer test can assert which layout rendered without
+              // depending on geometry jsdom can't provide (no ResizeObserver there — `onLayout`
+              // never fires), the same reason `legendPinSlot` carries one above.
+              <View style={styles.anatomyColumns} testID="anatomy-columns">
+                {anatomyColumns(anatomy.groups, legendColumns).map((column, i) => (
+                  <View key={i} style={styles.anatomyColumn}>
+                    {column.map((group, j) => (
+                      <AnatomyGroup key={j} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} legendFocus={legendFocus} />
+                    ))}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.anatomyLegend} testID="anatomy-legend">
+                {anatomy.groups.map((group, i) => (
+                  <AnatomyGroup key={i} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} legendFocus={legendFocus} />
+                ))}
+              </View>
+            )}
           </View>
-        ) : (
-          <View style={styles.anatomyBody}>
-            <View style={styles.anatomyStage}>{anatomy.picture}</View>
-            <View style={styles.anatomyLegend}>
-              {anatomy.groups.map((group, i) => (
-                <AnatomyGroup key={i} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} />
-              ))}
-            </View>
-          </View>
-        )}
         </View>
       </View>
     </FamilyAnatomyContext.Provider>
