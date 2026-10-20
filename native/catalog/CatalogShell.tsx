@@ -221,7 +221,7 @@ export function CatalogShell<TId extends string>({
 
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
   const labels = useMemo(() => new Map(sections.filter((def) => def.title).map((def) => [def.id as string, def.title as string])), [sections]);
-  const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys())), [groups, sectionsById]);
+  const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys()), labels), [groups, sectionsById, labels]);
   // Spec §5.3: every family page's own member ids/aliases, resolved to their page (and member, for
   // anything other than the whole) — used both for an old/alias/member address (`resolveRoute`)
   // and for the sidebar's member search (`memberSearchEntries` below).

@@ -5,22 +5,40 @@
  */
 import type { NavGroup, SectionDef, UpdateNotice, VersionStatus } from './types.ts';
 
-/** THE canonical within-group ordering of section ids. */
-export function sortIds<TId extends string>(ids: readonly TId[]): TId[] {
-  return ids.slice().sort((a, b) => a.localeCompare(b));
+/** Fixed English locale, case-insensitive, accent-distinguishing — the one comparator every
+ *  canonical ordering (sidebar, filtered matches, previous/next, hash fallback) shares, so none of
+ *  them can drift against each other. */
+const TITLE_COLLATOR = new Intl.Collator('en', { sensitivity: 'accent' });
+
+/** THE canonical ordering of two ids: by displayed title (`labels.get(id) ?? id`) first, then —
+ *  for an equal title — by id with the same collator, then by exact code-unit id comparison for
+ *  the rare case where case-insensitive ids also compare equal. */
+function compareCanonical<TId extends string>(a: TId, b: TId, labels?: ReadonlyMap<string, string>): number {
+  const byTitle = TITLE_COLLATOR.compare(labels?.get(a) ?? a, labels?.get(b) ?? b);
+  if (byTitle !== 0) return byTitle;
+  const byId = TITLE_COLLATOR.compare(a, b);
+  if (byId !== 0) return byId;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Every page id in sidebar order: groups in declared order, ids sorted within each group,
- *  first occurrence wins, and ids without a matching section (when `availableIds` is given) are
- *  dropped. */
+/** THE canonical within-group ordering of section ids: by each id's displayed title
+ *  (`SectionDef.title`, via `labels`), falling back to the id itself when a page has no title. */
+export function sortIds<TId extends string>(ids: readonly TId[], labels?: ReadonlyMap<string, string>): TId[] {
+  return ids.slice().sort((a, b) => compareCanonical(a, b, labels));
+}
+
+/** Every page id in sidebar order: groups in declared order, ids sorted within each group (by
+ *  displayed title, via `labels`), first occurrence wins, and ids without a matching section (when
+ *  `availableIds` is given) are dropped. */
 export function orderedIds<TId extends string>(
   groups: readonly NavGroup<TId>[],
   availableIds?: ReadonlySet<TId>,
+  labels?: ReadonlyMap<string, string>,
 ): TId[] {
   const seen = new Set<TId>();
   const order: TId[] = [];
   for (const group of groups) {
-    for (const id of sortIds(group.ids)) {
+    for (const id of sortIds(group.ids, labels)) {
       if (seen.has(id)) continue;
       if (availableIds && !availableIds.has(id)) continue;
       seen.add(id);
@@ -65,7 +83,7 @@ export function filterGroups<TId extends string>(
         id.toLowerCase().includes(q)
         || (labels?.get(id)?.toLowerCase().includes(q) ?? false)
         || (memberIds?.get(id)?.some((memberId) => memberId.toLowerCase().includes(q)) ?? false),
-      ) : group.ids),
+      ) : group.ids, labels),
     }))
     .filter((group) => group.ids.length > 0);
 }
