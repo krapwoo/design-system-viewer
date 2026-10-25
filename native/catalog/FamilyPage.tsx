@@ -6,6 +6,7 @@ import { PropsTable } from './PropsTable';
 import { presentationBlocks } from './comparison';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { hashForId } from './catalogNavigation';
+import { referenceLinkProps, type ReferenceNavigation } from './catalogReferences';
 // A plain extensionless import — the same one every other `.tsx` file here already uses for its
 // own pure-module siblings (e.g. `CatalogShell.tsx` → `./catalogNavigation`): this file is a React
 // component with no test of its own that imports it directly under Node, so it only ever goes
@@ -51,6 +52,30 @@ function memberAsSectionDef(member: CatalogMember): SectionDef {
 }
 
 const ARIA_HIDDEN = { 'aria-hidden': true } as Record<string, unknown>;
+
+/** Task 2B2: one path for every one of this file's own link producers (below-specimens/whole
+ *  lines, Uses, related pages, anatomy legend) — `navigation` supplied: resolve+activate through
+ *  the shell's own real `CatalogShell` journey (`referenceLinkProps`), the canonical address, even
+ *  when it differs from `name` (an alias, or a component binding). `navigation` omitted (a
+ *  standalone-mounted `FamilyPage`, this framework's own catalog demo included): keep the prior
+ *  plain-`href`-only behavior, gated by the member's own `resolvesAddress` (sibling member ids,
+ *  plus whatever `knownAddressIds` the caller passed) — never a dead link, same as before. */
+function familyLink(
+  navigation: ReferenceNavigation | undefined,
+  resolvesAddress: (name: string) => boolean,
+  name: string,
+  /** Task 2B2 correction: the Part/whole that actually owns this call site (its Uses/related/
+   *  "also used by" line) — see `ReferenceNavigation.open`'s own doc comment. Omitted for a
+   *  page-level link producer (`relatedPages`, an anatomy "other page" entry, or the anatomy
+   *  legend's own member row, which already names its destination). */
+  sourceMemberId?: string,
+): { href: string; onPress?: (event?: { preventDefault?: () => void }) => void } | undefined {
+  if (navigation) {
+    const activation = referenceLinkProps(navigation, name, sourceMemberId);
+    return activation ? { href: hashForId(activation.memberId ?? activation.pageId), onPress: activation.onPress } : undefined;
+  }
+  return resolvesAddress(name) ? { href: hashForId(name) } : undefined;
+}
 
 /** Fidelity badge (spec §5.2 "Badges"): no existing fidelity/OS badge to reuse, so this is a small
  *  pill on `microLabel`, reusing `SectionBlock`'s own OS-badge visual. `replicated` keeps that
@@ -140,6 +165,8 @@ function BelowSpecimensLine({
   source,
   alsoUsedBy,
   resolvesAddress,
+  navigation,
+  sourceMemberId,
 }: {
   related?: RelatedSegment[];
   showRelationship: boolean;
@@ -147,33 +174,39 @@ function BelowSpecimensLine({
   source: string;
   alsoUsedBy: AlsoUsedByEntry[];
   resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
+  /** Task 2B2 correction: this line's own owning member — threaded into every link it renders, so
+   *  a Back return lands on this member, not just the page (`familyLink`'s own doc comment). */
+  sourceMemberId?: string;
 }) {
   const usedBy = alsoUsedBySegments(alsoUsedBy);
   return (
     <Text style={styles.belowLine}>
       {related &&
-        related.map((segment, i) =>
-          segment.memberId ? (
-            <Text key={i} role="link" style={styles.relatedLink} {...({ href: hashForId(segment.memberId) } as Record<string, unknown>)}>
+        related.map((segment, i) => {
+          const link = segment.memberId ? familyLink(navigation, resolvesAddress, segment.memberId, sourceMemberId) : undefined;
+          return link ? (
+            <Text key={i} role="link" style={styles.relatedLink} {...link}>
               {segment.text}
             </Text>
           ) : (
             <Text key={i}>{segment.text}</Text>
-          ),
-        )}
+          );
+        })}
       {related && ' · '}
       {showRelationship && `${relationship} · `}
       {source}
       {usedBy.length > 0 && ' · '}
-      {usedBy.map((segment, i) =>
-        segment.component && resolvesAddress(segment.component) ? (
-          <Text key={i} role="link" style={styles.relatedLink} {...({ href: hashForId(segment.component) } as Record<string, unknown>)}>
+      {usedBy.map((segment, i) => {
+        const link = segment.component ? familyLink(navigation, resolvesAddress, segment.component, sourceMemberId) : undefined;
+        return link ? (
+          <Text key={i} role="link" style={styles.relatedLink} {...link}>
             {segment.text}
           </Text>
         ) : (
           <Text key={i}>{segment.text}</Text>
-        ),
-      )}
+        );
+      })}
     </Text>
   );
 }
@@ -187,12 +220,14 @@ function WholeBelowLine({
   source,
   alsoUsedBy,
   resolvesAddress,
+  navigation,
 }: {
   name: string;
   fidelity: CatalogMember['fidelity'];
   source: string;
   alsoUsedBy: AlsoUsedByEntry[];
   resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
 }) {
   const usedBy = alsoUsedBySegments(alsoUsedBy);
   return (
@@ -203,17 +238,20 @@ function WholeBelowLine({
       <Text style={styles.belowLine}> · </Text>
       <Text style={styles.belowLine}>{source}</Text>
       {usedBy.length > 0 && <Text style={styles.belowLine}> · </Text>}
-      {usedBy.map((segment, i) =>
-        segment.component && resolvesAddress(segment.component) ? (
-          <Text key={i} role="link" style={styles.relatedLink} {...({ href: hashForId(segment.component) } as Record<string, unknown>)}>
+      {usedBy.map((segment, i) => {
+        // The whole's own inverse use returns to the whole wrapper, not just the page — `name` is
+        // this very member's own id (the whole is a member like any other).
+        const link = segment.component ? familyLink(navigation, resolvesAddress, segment.component, name) : undefined;
+        return link ? (
+          <Text key={i} role="link" style={styles.relatedLink} {...link}>
             {segment.text}
           </Text>
         ) : (
           <Text key={i} style={styles.belowLine}>
             {segment.text}
           </Text>
-        ),
-      )}
+        );
+      })}
     </View>
   );
 }
@@ -222,23 +260,36 @@ function WholeBelowLine({
  *  the disclosure, after notes and before Guidance. A name links — the same accent treatment
  *  `BelowSpecimensLine`'s own `related` links use — when it resolves to a real catalog address (a
  *  page, member, or alias); otherwise it shows in `codeSmall`, since there's nothing to link to. */
-function UsesLine({ composedOf, resolvesAddress }: { composedOf: ComposedOfEntry[]; resolvesAddress: (name: string) => boolean }) {
+function UsesLine({
+  composedOf,
+  resolvesAddress,
+  navigation,
+  sourceMemberId,
+}: {
+  composedOf: ComposedOfEntry[];
+  resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
+  sourceMemberId?: string;
+}) {
   return (
     <Text style={styles.usesLine}>
       {'Uses '}
-      {composedOf.map((entry, i) => (
-        <Text key={i}>
-          {resolvesAddress(entry.component) ? (
-            <Text role="link" style={styles.relatedLink} {...({ href: hashForId(entry.component) } as Record<string, unknown>)}>
-              {entry.component}
-            </Text>
-          ) : (
-            <Text style={styles.usesCode}>{entry.component}</Text>
-          )}
-          {` (${entry.role})`}
-          {i < composedOf.length - 1 ? ', ' : ''}
-        </Text>
-      ))}
+      {composedOf.map((entry, i) => {
+        const link = familyLink(navigation, resolvesAddress, entry.component, sourceMemberId);
+        return (
+          <Text key={i}>
+            {link ? (
+              <Text role="link" style={styles.relatedLink} {...link}>
+                {entry.component}
+              </Text>
+            ) : (
+              <Text style={styles.usesCode}>{entry.component}</Text>
+            )}
+            {` (${entry.role})`}
+            {i < composedOf.length - 1 ? ', ' : ''}
+          </Text>
+        );
+      })}
     </Text>
   );
 }
@@ -253,11 +304,13 @@ function DisclosureBody({
   parts,
   resolvedProps,
   resolvesAddress,
+  navigation,
 }: {
   member: CatalogMember;
   parts: DisclosurePart[];
   resolvedProps?: PropDef[];
   resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
 }) {
   return (
     <View style={styles.disclosureBody}>
@@ -268,7 +321,7 @@ function DisclosureBody({
             {note}
           </Text>
         ))}
-      {parts.includes('uses') && <UsesLine composedOf={member.composedOf!} resolvesAddress={resolvesAddress} />}
+      {parts.includes('uses') && <UsesLine composedOf={member.composedOf!} resolvesAddress={resolvesAddress} navigation={navigation} sourceMemberId={member.id} />}
       {parts.includes('whenToUse') && (
         <Text style={styles.disclosureText}>
           <Text style={styles.disclosureLead}>Guidance </Text>
@@ -310,10 +363,12 @@ function MemberDisclosureToggle({
   member,
   apiLabel,
   resolvesAddress,
+  navigation,
 }: {
   member: CatalogMember & { props?: PropDef[] };
   apiLabel: string;
   resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
 }) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -334,7 +389,7 @@ function MemberDisclosureToggle({
         <DisclosureChevron open={open} />
         <Text style={styles.disclosureToggleLabel}>{label}</Text>
       </Pressable>
-      {open && <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} />}
+      {open && <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={navigation} />}
     </>
   );
 }
@@ -354,6 +409,9 @@ interface MemberRenderProps {
   /** V2d item 3: whether a name (a `composedOf` entry's `component`) resolves to a real catalog
    *  address — a page, member, or alias — so `UsesLine` knows which names to link. */
   resolvesAddress: (name: string) => boolean;
+  /** Task 2B2: `CatalogShell`'s own shared reference navigation — see `familyLink`'s own doc
+   *  comment above for how it and `resolvesAddress` combine. */
+  navigation?: ReferenceNavigation;
   // Pressable forwards its ref to its underlying `View` (react-native's own `Pressable.d.ts`), so
   // a registered node is always a `View` instance whether it came from a block member's `View`
   // heading target or a folded row's `Pressable`.
@@ -368,7 +426,7 @@ interface MemberRenderProps {
  *  Related member (no pin, no gutter) — otherwise the same header and body: name, description,
  *  specimens (through `Blocks`, when the member has any), the below-specimens line, and a
  *  closed-by-default disclosure. */
-function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths, apiLabel, resolvesAddress, registerNode, pinRef }: MemberRenderProps & { level: number }) {
+function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths, apiLabel, resolvesAddress, navigation, registerNode, pinRef }: MemberRenderProps & { level: number }) {
   const surface = member.specimenSurface ?? DEFAULT_SPECIMEN_SURFACE;
   const memberDef = useMemo(() => memberAsSectionDef(member), [member]);
   const blocks = useMemo(
@@ -424,9 +482,11 @@ function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths,
           source={member.source}
           alsoUsedBy={member.alsoUsedBy ?? []}
           resolvesAddress={resolvesAddress}
+          navigation={navigation}
+          sourceMemberId={member.id}
         />
         <View style={styles.disclosureSpacer}>
-          <MemberDisclosureToggle member={member} apiLabel={apiLabel} resolvesAddress={resolvesAddress} />
+          <MemberDisclosureToggle member={member} apiLabel={apiLabel} resolvesAddress={resolvesAddress} navigation={navigation} />
         </View>
       </View>
     </View>
@@ -441,7 +501,7 @@ function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths,
  *  show specimens (spec's v8 reference keeps every folded-row example documentation-only). Slice
  *  D1: no gutter either way — a folded row's own pin (when it has a number) sits inline with its
  *  name, never offsetting the row's body. */
-function FoldedRow({ member, number, allMemberIds, resolvesAddress, open, onToggle, registerNode }: MemberRenderProps & { open: boolean; onToggle: () => void }) {
+function FoldedRow({ member, number, allMemberIds, resolvesAddress, navigation, open, onToggle, registerNode }: MemberRenderProps & { open: boolean; onToggle: () => void }) {
   const [focused, setFocused] = useState(false);
   const related = member.related ? linkifyRelated(member.related, allMemberIds) : undefined;
   const parts = disclosureContent(member, member.props);
@@ -475,9 +535,11 @@ function FoldedRow({ member, number, allMemberIds, resolvesAddress, open, onTogg
             source={member.source}
             alsoUsedBy={member.alsoUsedBy ?? []}
             resolvesAddress={resolvesAddress}
+            navigation={navigation}
+            sourceMemberId={member.id}
           />
           {parts.length > 0 && (
-            <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} />
+            <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={navigation} />
           )}
         </View>
       )}
@@ -603,6 +665,7 @@ function PartTreeBranch({
   defaultPreviewWidths,
   apiLabel,
   resolvesAddress,
+  navigation,
   registerNode,
   pinNodesRef,
 }: {
@@ -613,6 +676,7 @@ function PartTreeBranch({
   defaultPreviewWidths?: PreviewWidths;
   apiLabel: string;
   resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
   registerNode: (id: string, node: View | null) => void;
   pinNodesRef: React.RefObject<Map<string, View | null>>;
 }) {
@@ -627,6 +691,7 @@ function PartTreeBranch({
       defaultPreviewWidths={defaultPreviewWidths}
       apiLabel={apiLabel}
       resolvesAddress={resolvesAddress}
+      navigation={navigation}
       registerNode={registerNode}
       pinRef={(pinNode) => {
         if (pinNode) pinNodesRef.current.set(node.id, pinNode);
@@ -649,6 +714,7 @@ function PartTreeBranch({
             defaultPreviewWidths={defaultPreviewWidths}
             apiLabel={apiLabel}
             resolvesAddress={resolvesAddress}
+            navigation={navigation}
             registerNode={registerNode}
             pinNodesRef={pinNodesRef}
           />
@@ -669,6 +735,7 @@ function FamilySectionGroup({
   defaultPreviewWidths,
   apiLabel,
   resolvesAddress,
+  navigation,
   openRows,
   onToggleRow,
   registerNode,
@@ -680,6 +747,7 @@ function FamilySectionGroup({
   defaultPreviewWidths?: PreviewWidths;
   apiLabel: string;
   resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
   openRows: ReadonlySet<string>;
   onToggleRow: (id: string) => void;
   registerNode: (id: string, node: View | null) => void;
@@ -700,6 +768,7 @@ function FamilySectionGroup({
             defaultPreviewWidths={defaultPreviewWidths}
             apiLabel={apiLabel}
             resolvesAddress={resolvesAddress}
+            navigation={navigation}
             registerNode={registerNode}
             pinNodesRef={pinNodesRef}
           />
@@ -718,6 +787,7 @@ function FamilySectionGroup({
             defaultPreviewWidths={defaultPreviewWidths}
             apiLabel={apiLabel}
             resolvesAddress={resolvesAddress}
+            navigation={navigation}
             open={openRows.has(member.id)}
             onToggle={() => onToggleRow(member.id)}
             registerNode={registerNode}
@@ -732,12 +802,12 @@ function FamilySectionGroup({
  *  page's own id as a link when it resolves to a real catalog address, plain text when not — never
  *  a dead link — then its note, when authored. No specimens, no disclosure, no source line, no
  *  number, no pin. */
-function RelatedPageRow({ entry, resolvesAddress }: { entry: RelatedPage; resolvesAddress: (name: string) => boolean }) {
-  const resolved = resolvesAddress(entry.page);
+function RelatedPageRow({ entry, resolvesAddress, navigation }: { entry: RelatedPage; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
+  const link = familyLink(navigation, resolvesAddress, entry.page);
   return (
     <Text style={styles.belowLine}>
-      {resolved ? (
-        <Text role="link" style={styles.relatedPageName} {...({ href: hashForId(entry.page) } as Record<string, unknown>)}>
+      {link ? (
+        <Text role="link" style={styles.relatedPageName} {...link}>
           {entry.page}
         </Text>
       ) : (
@@ -748,11 +818,11 @@ function RelatedPageRow({ entry, resolvesAddress }: { entry: RelatedPage; resolv
   );
 }
 
-function RelatedPagesList({ items, resolvesAddress }: { items: readonly RelatedPage[]; resolvesAddress: (name: string) => boolean }) {
+function RelatedPagesList({ items, resolvesAddress, navigation }: { items: readonly RelatedPage[]; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
   return (
     <View style={styles.relatedPagesList}>
       {items.map((entry, i) => (
-        <RelatedPageRow key={i} entry={entry} resolvesAddress={resolvesAddress} />
+        <RelatedPageRow key={i} entry={entry} resolvesAddress={resolvesAddress} navigation={navigation} />
       ))}
     </View>
   );
@@ -774,6 +844,7 @@ function FamilyLabeledGroup({
   defaultPreviewWidths,
   apiLabel,
   resolvesAddress,
+  navigation,
   openRows,
   onToggleRow,
   registerNode,
@@ -788,6 +859,7 @@ function FamilyLabeledGroup({
   defaultPreviewWidths?: PreviewWidths;
   apiLabel: string;
   resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
   openRows: ReadonlySet<string>;
   onToggleRow: (id: string) => void;
   registerNode: (id: string, node: View | null) => void;
@@ -818,12 +890,13 @@ function FamilyLabeledGroup({
             defaultPreviewWidths={defaultPreviewWidths}
             apiLabel={apiLabel}
             resolvesAddress={resolvesAddress}
+            navigation={navigation}
             openRows={openRows}
             onToggleRow={onToggleRow}
             registerNode={registerNode}
           />
         ))}
-        {relatedPages && relatedPages.length > 0 && <RelatedPagesList items={relatedPages} resolvesAddress={resolvesAddress} />}
+        {relatedPages && relatedPages.length > 0 && <RelatedPagesList items={relatedPages} resolvesAddress={resolvesAddress} navigation={navigation} />}
       </View>
     </View>
   );
@@ -862,8 +935,12 @@ export function AnatomyPin({ member, other }: { member?: string; other?: string 
  *  when there's a pin to show — a member with no number (outside every `inWhole` section) gets no
  *  gutter either, so its name starts flush at the row's own left edge instead of under blank
  *  space. */
-function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus }: { memberId: string; description: string; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; legendFocus: LegendFocus }) {
+function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus, resolvesAddress, navigation }: { memberId: string; description: string; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; legendFocus: LegendFocus; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
   const pin = anatomyPinFor(memberId, byId, outline);
+  // `familyLink` already resolves this row's own member (`resolvesAddress`'s sibling ids, at
+  // minimum, cover it) — an explicitly supplied `navigation` that still can't resolve it must stay
+  // honest plain text, never a raw `hashForId(memberId)` escape hatch around that refusal.
+  const link = familyLink(navigation, resolvesAddress, memberId);
   return (
     <View style={styles.legendRow}>
       {pin && (
@@ -875,14 +952,18 @@ function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus }:
         </View>
       )}
       <View style={styles.legendBody}>
-        <Text
-          role="link"
-          style={styles.legendName}
-          ref={(node) => legendFocus.register(memberId, node as unknown as FocusableNode)}
-          {...({ href: hashForId(memberId), onFocus: () => legendFocus.onFocus(memberId), onBlur: () => legendFocus.onBlur(memberId) } as Record<string, unknown>)}
-        >
-          {memberId}
-        </Text>
+        {link ? (
+          <Text
+            role="link"
+            style={styles.legendName}
+            ref={(node) => legendFocus.register(memberId, node as unknown as FocusableNode)}
+            {...({ ...link, onFocus: () => legendFocus.onFocus(memberId), onBlur: () => legendFocus.onBlur(memberId) } as Record<string, unknown>)}
+          >
+            {memberId}
+          </Text>
+        ) : (
+          <Text style={styles.legendName}>{memberId}</Text>
+        )}
         <Text style={styles.legendDesc}>{description}</Text>
       </View>
     </View>
@@ -895,8 +976,8 @@ function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus }:
  *  "other page" row always shows its ↗, so the slot is never blank. Keeping it also keeps
  *  APPROVED.md's "the description ... starts at the name's left edge" — pulling the marker inline
  *  instead left each description hanging 26px to the left of its own name. */
-function AnatomyOtherRow({ name, description, resolvesAddress, legendFocus }: { name: string; description: string; resolvesAddress: (name: string) => boolean; legendFocus: LegendFocus }) {
-  const resolved = resolvesAddress(name);
+function AnatomyOtherRow({ name, description, resolvesAddress, navigation, legendFocus }: { name: string; description: string; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation; legendFocus: LegendFocus }) {
+  const link = familyLink(navigation, resolvesAddress, name);
   // No member id of its own (it names a component documented elsewhere), so it needs its own
   // namespace to never collide with a real member id sharing the same text.
   const focusKey = `other:${name}`;
@@ -909,12 +990,12 @@ function AnatomyOtherRow({ name, description, resolvesAddress, legendFocus }: { 
       </View>
       <View style={styles.legendBody}>
         <View style={styles.legendNameRow}>
-          {resolved ? (
+          {link ? (
             <Text
               role="link"
               style={styles.legendName}
               ref={(node) => legendFocus.register(focusKey, node as unknown as FocusableNode)}
-              {...({ href: hashForId(name), onFocus: () => legendFocus.onFocus(focusKey), onBlur: () => legendFocus.onBlur(focusKey) } as Record<string, unknown>)}
+              {...({ ...link, onFocus: () => legendFocus.onFocus(focusKey), onBlur: () => legendFocus.onBlur(focusKey) } as Record<string, unknown>)}
             >
               {name}
             </Text>
@@ -929,15 +1010,15 @@ function AnatomyOtherRow({ name, description, resolvesAddress, legendFocus }: { 
   );
 }
 
-function AnatomyGroup({ group, byId, outline, resolvesAddress, legendFocus }: { group: CatalogAnatomyGroup; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; legendFocus: LegendFocus }) {
+function AnatomyGroup({ group, byId, outline, resolvesAddress, navigation, legendFocus }: { group: CatalogAnatomyGroup; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation; legendFocus: LegendFocus }) {
   return (
     <View>
       <Text style={styles.legendGroupLabel}>{group.label}</Text>
       {group.items.map((item, i) =>
         'member' in item ? (
-          <AnatomyMemberRow key={i} memberId={item.member} description={item.description} byId={byId} outline={outline} legendFocus={legendFocus} />
+          <AnatomyMemberRow key={i} memberId={item.member} description={item.description} byId={byId} outline={outline} legendFocus={legendFocus} resolvesAddress={resolvesAddress} navigation={navigation} />
         ) : (
-          <AnatomyOtherRow key={i} name={item.other} description={item.description} resolvesAddress={resolvesAddress} legendFocus={legendFocus} />
+          <AnatomyOtherRow key={i} name={item.other} description={item.description} resolvesAddress={resolvesAddress} navigation={navigation} legendFocus={legendFocus} />
         ),
       )}
     </View>
@@ -954,7 +1035,7 @@ function AnatomyGroup({ group, byId, outline, resolvesAddress, legendFocus }: { 
  *  legend sits beside it or below it — only the wrapper's own `flexDirection` and the legend's own
  *  shape change around it — so toggling between the two never remounts the picture and discards
  *  its own authored state or focus. */
-function AnatomyBox({ anatomy, byId, outline, resolvesAddress }: { anatomy: CatalogAnatomy; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean }) {
+function AnatomyBox({ anatomy, byId, outline, resolvesAddress, navigation }: { anatomy: CatalogAnatomy; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
   const totalItems = anatomy.groups.reduce((sum, group) => sum + group.items.length, 0);
   const [cardWidth, setCardWidth] = useState(0);
   const [pictureWidth, setPictureWidth] = useState(0);
@@ -1052,7 +1133,7 @@ function AnatomyBox({ anatomy, byId, outline, resolvesAddress }: { anatomy: Cata
                 {anatomyColumns(anatomy.groups, legendColumns).map((column, i) => (
                   <View key={i} style={styles.anatomyColumn}>
                     {column.map((group, j) => (
-                      <AnatomyGroup key={j} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} legendFocus={legendFocus} />
+                      <AnatomyGroup key={j} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} navigation={navigation} legendFocus={legendFocus} />
                     ))}
                   </View>
                 ))}
@@ -1060,7 +1141,7 @@ function AnatomyBox({ anatomy, byId, outline, resolvesAddress }: { anatomy: Cata
             ) : (
               <View style={styles.anatomyLegend} testID="anatomy-legend">
                 {anatomy.groups.map((group, i) => (
-                  <AnatomyGroup key={i} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} legendFocus={legendFocus} />
+                  <AnatomyGroup key={i} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} navigation={navigation} legendFocus={legendFocus} />
                 ))}
               </View>
             )}
@@ -1105,6 +1186,7 @@ export function FamilyPage<TId extends string>({
   focusMemberId,
   focusNonce,
   knownAddressIds,
+  navigation,
 }: {
   def: SectionDef<TId>;
   groupLabel?: string;
@@ -1130,6 +1212,14 @@ export function FamilyPage<TId extends string>({
    *  omitted when `FamilyPage` is used standalone (e.g. this very page's own live demo), where
    *  only this family's own members can resolve. */
   knownAddressIds?: ReadonlySet<string>;
+  /** Task 2B2: `CatalogShell`'s own shared reference navigation (see `catalogReferences.ts`'s
+   *  `ReferenceNavigation`/`referenceLinkProps`) — every one of this page's own link producers
+   *  (below-specimens/whole lines, Uses, related pages, anatomy legend) resolves and activates
+   *  through it when supplied, retaining this family's own sibling-member addresses exactly as
+   *  `resolvesAddress` below already does. Omitted (a standalone-mounted `FamilyPage`, this
+   *  framework's own catalog demo included) keeps every one of them at its prior plain-`href`-only
+   *  behavior, unchanged. */
+  navigation?: ReferenceNavigation<TId>;
 }) {
   const family = def.family!;
   const apiLabel = family.apiLabel ?? 'API';
@@ -1211,7 +1301,7 @@ export function FamilyPage<TId extends string>({
         </View>
       </View>
 
-      {family.anatomy && <AnatomyBox anatomy={family.anatomy} byId={byId} outline={family.outline} resolvesAddress={resolvesAddress} />}
+      {family.anatomy && <AnatomyBox anatomy={family.anatomy} byId={byId} outline={family.outline} resolvesAddress={resolvesAddress} navigation={navigation} />}
 
       {wholeMember && (
         <View style={styles.whole} ref={(node) => registerNode(wholeMember.id, node)} tabIndex={-1}>
@@ -1233,9 +1323,10 @@ export function FamilyPage<TId extends string>({
                   source={wholeMember.source}
                   alsoUsedBy={wholeMember.alsoUsedBy ?? []}
                   resolvesAddress={resolvesAddress}
+                  navigation={navigation}
                 />
                 <View style={styles.disclosureSpacer}>
-                  <MemberDisclosureToggle member={wholeMember} apiLabel={apiLabel} resolvesAddress={resolvesAddress} />
+                  <MemberDisclosureToggle member={wholeMember} apiLabel={apiLabel} resolvesAddress={resolvesAddress} navigation={navigation} />
                 </View>
               </>
             );
@@ -1252,6 +1343,7 @@ export function FamilyPage<TId extends string>({
         defaultPreviewWidths={defaultPreviewWidths}
         apiLabel={apiLabel}
         resolvesAddress={resolvesAddress}
+        navigation={navigation}
         openRows={openRows}
         onToggleRow={toggleRow}
         registerNode={registerNode}
@@ -1266,6 +1358,7 @@ export function FamilyPage<TId extends string>({
         defaultPreviewWidths={defaultPreviewWidths}
         apiLabel={apiLabel}
         resolvesAddress={resolvesAddress}
+        navigation={navigation}
         openRows={openRows}
         onToggleRow={toggleRow}
         registerNode={registerNode}

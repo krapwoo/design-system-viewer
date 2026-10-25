@@ -473,34 +473,8 @@ test('ReferenceDetails stacks each shared Fact label above its left-aligned valu
   assert.doesNotMatch(value, /\bflex:\s*1\b/, 'stacked values retain their full intrinsic text height');
 });
 
-// Controller-reproduced: every composition entry's label unconditionally appended
-// "· <relationship>", so a built-in entry (composition's assumed default relationship) read
-// redundantly, e.g. "TrainArrivalRemainingTime · built-in". Only built-in's suffix is redundant —
-// slot/related still need their own suffix to stay distinguishable from a plain built-in entry.
-test('ReferenceDetails\' composition label drops the redundant "· built-in" suffix while keeping it for slot/related, without dropping relationship metadata', () => {
-  const sourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../ReferenceDetails.tsx');
-  const source = readFileSync(sourcePath, 'utf8');
-  assert.doesNotMatch(
-    source,
-    /label=\{`\$\{entry\.component\}\s*·\s*\$\{entry\.relationship\}`\}/,
-    'label must not unconditionally append "· <relationship>" — built-in then redundantly reads "<Component> · built-in"',
-  );
-  assert.match(
-    source,
-    /entry\.relationship\s*===\s*'built-in'/,
-    'the label must branch on relationship, omitting the suffix only when it is \'built-in\'',
-  );
-  assert.match(
-    source,
-    /\$\{entry\.component\}\s*·\s*\$\{entry\.relationship\}/,
-    'slot/related entries must still render their own relationship suffix',
-  );
-  assert.match(
-    source,
-    /entry\.role/,
-    'the Fact value must still show the composition entry\'s role — relationship metadata stays intact, only the label suffix changes',
-  );
-});
+// Composition relationship labels are asserted through the real renderer in
+// referenceNavigationRender.test.tsx; their JSX spelling is not a behavior contract.
 
 test('presentationBlocks carries each item\'s own surface override onto its ListItem, alongside fill', () => {
   const base = { id: 'X', path: 'p', description: 'd' };

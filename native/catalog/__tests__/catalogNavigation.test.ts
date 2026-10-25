@@ -172,6 +172,29 @@ test('resolveRoute: an alias to the whole, and an alias/member id to a member', 
   assert.deepEqual(resolveRoute('#OldFaceView', ['BotAvatarView', 'Button'], targets), { kind: 'member', pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView' });
 });
 
+// C3 repro: a *whole* member's own alias (distinct from the family's page-level `aliases`, already
+// covered by 'OldBotAvatar' above) was dropped entirely by the member loop's `if (member.id ===
+// family.whole) continue` — it never reached `targets` at all, so its URL fell through to notFound.
+const actionsFamilyWithWholeAlias: SectionDef['family'] = {
+  whole: 'Actions',
+  outline: new Map(),
+  sections: [],
+  members: [
+    { id: 'Actions', source: 'native/Actions.swift', fidelity: 'approximated', relationship: 'Whole', description: 'd', path: 'native/Actions.swift', aliases: ['LegacyActions'] },
+  ],
+};
+const actionsSectionsFixture: SectionDef[] = [section('Actions', actionsFamilyWithWholeAlias)];
+
+test('aliasTargets maps a whole member\'s own alias to its page, with no member focus', () => {
+  const targets = aliasTargets(actionsSectionsFixture);
+  assert.deepEqual(targets.get('LegacyActions'), { pageId: 'Actions' });
+});
+
+test('resolveRoute: a whole member\'s own alias routes to its family page, not the first page, and focuses no member', () => {
+  const targets = aliasTargets(actionsSectionsFixture);
+  assert.deepEqual(resolveRoute('#LegacyActions', ['Actions'], targets), { kind: 'page', id: 'Actions' });
+});
+
 test('searchResults returns member hits with the member id as its label and the owning family title', () => {
   const entries = [
     { pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView', aliases: ['OldFaceView'], familyTitle: 'Bot avatar' },

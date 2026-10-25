@@ -1,5 +1,6 @@
 import * as ts from 'typescript';
 import { readFileSync } from 'node:fs';
+import { readStaticTokenDefinition, type StaticTokenDefinition } from './tokenDefinition.ts';
 
 export interface StaticAxis {
   /** The prop name this axis is bound to (design §4), or undefined for a plain, unbound axis. */
@@ -98,10 +99,23 @@ export interface StaticPage {
    *  which also covers a page that parsed fine but has non-literal layout data. */
   parseError?: string;
   id?: string;
+  /** #61: `CatalogPageInput.title`, literal only — read only to check it against a `tokenDefinition`'s
+   *  own canonical title (`checkTokenDefinitionTitleConflict`). Not read for any other reason, so a
+   *  non-literal `title` never affects `checkable` (this field is simply left unset). */
+  title?: string;
   component?: string;
   group?: string;
   specimenSize?: string;
   tokenGallery?: boolean;
+  /** #61: whether the page object has its own `tokenGallery` property at all — presence only,
+   *  independent of the derived `tokenGallery` value above (which a `tokenDefinition` also sets
+   *  when it's the page's only token-content field). Used only by `cli/doctor.ts`'s
+   *  `token-definition-conflict` rule, to tell an author's own explicit `tokenGallery: true` from
+   *  one `tokenDefinition` merely derived for layout parity. */
+  hasExplicitTokenGallery?: boolean;
+  /** #61: whether the page object has its own `tokenSections` property at all — same reasoning as
+   *  `hasExplicitTokenGallery`, for the same rule. */
+  hasExplicitTokenSections?: boolean;
   /** `tokenSections`' titles, in order (a non-literal title reads as ""), and `tokenColumns` when
    *  literal. A page with sections counts as a token gallery with examples. */
   tokenSectionTitles?: string[];
@@ -171,6 +185,9 @@ export interface StaticPage {
    *  the same way `previewLayout`/`propNotes` already do for a value `doctor` can't afford to
    *  guess at. */
   members?: StaticMember[];
+  /** #61: whether the page object has its own `members` property at all — presence only, same
+   *  reasoning as `hasExplicitTokenGallery`, used by the same `token-definition-conflict` rule. */
+  hasMembers?: boolean;
   /** `CatalogPageInput.whole`, literal only. */
   whole?: string;
   /** N3: `CatalogPageInput.sections`, read down to the fields `cli/doctor.ts`'s `family-invalid`
@@ -188,6 +205,26 @@ export interface StaticPage {
    *  `relatedPages` never costs the page its other family checks (see `readSections`'s own
    *  `inWhole` leniency, I1). */
   relatedPages?: { page: string }[];
+  /** #60: `CatalogPageInput.navigation`, literal only. Like `previewLayout`, an unresolvable value
+   *  is not given the benefit of the doubt — the opt-in reference layer is the one thing `doctor`
+   *  needs to get right, so a non-literal or invalid (not `'browse'`/`'reference'`) value makes the
+   *  whole page not checkable rather than silently reading as the default. Absent entirely (never
+   *  read) for an omitted field — the same leniency every optional field here already gets, so an
+   *  old page predating this field never changes `checkable`. */
+  navigation?: 'browse' | 'reference';
+  /** #61: whether the page object has its own `tokenDefinition` property at all (presence only,
+   *  same reasoning as `hasWhenToUse`) — used by `cli/doctor.ts`'s conflict rule regardless of
+   *  whether the definition itself turned out to be literal-readable below. */
+  hasTokenDefinition?: boolean;
+  /** #61: `CatalogPageInput.tokenDefinition`, read down to `kind`/section `id`/`title`/`desc`/
+   *  `wide` and each entry's own literal `id` (for duplicate detection) — never the entry's real
+   *  value, which stays an opaque runtime import (design R4: "no blanket uncheckability of
+   *  otherwise literal page geometry"). Undefined when the page has no `tokenDefinition` at all, or
+   *  when its core shape (`kind`, `sections`, each section's `id`/`title`) isn't itself a literal
+   *  this reader can resolve — the latter case also sets `page.checkable = false` (the same
+   *  established layout-checkability posture `previewLayout`/`propNotes` already use), rather than
+   *  a new, separate "not checkable" rule. */
+  tokenDefinition?: StaticTokenDefinition;
 }
 
 /** One section of a family page, read down to just what `cli/doctor.ts` needs: `label`/`kind`/
@@ -291,16 +328,20 @@ function readStaticPage(file: string): StaticPage {
 
   const page: StaticPage = { file, checkable: true, viewerImports };
   const idProp = findProp(pageObject, 'id');
+  const titleProp = findProp(pageObject, 'title');
   const componentProp = findProp(pageObject, 'component');
   const groupProp = findProp(pageObject, 'group');
   const specimenSizeProp = findProp(pageObject, 'specimenSize');
   const tokenGalleryProp = findProp(pageObject, 'tokenGallery');
   if (idProp) page.id = stringLiteral(resolve(idProp.initializer, consts, new Set()));
+  if (titleProp) page.title = stringLiteral(resolve(titleProp.initializer, consts, new Set()));
   if (componentProp) page.component = stringLiteral(resolve(componentProp.initializer, consts, new Set()));
   if (groupProp) page.group = stringLiteral(resolve(groupProp.initializer, consts, new Set()));
   if (specimenSizeProp) page.specimenSize = stringLiteral(resolve(specimenSizeProp.initializer, consts, new Set()));
+  page.hasExplicitTokenGallery = tokenGalleryProp !== undefined;
   if (tokenGalleryProp) page.tokenGallery = resolve(tokenGalleryProp.initializer, consts, new Set()).kind === ts.SyntaxKind.TrueKeyword;
   const tokenSectionsProp = findProp(pageObject, 'tokenSections');
+  page.hasExplicitTokenSections = tokenSectionsProp !== undefined;
   if (tokenSectionsProp) {
     const list = resolve(tokenSectionsProp.initializer, consts, new Set());
     const items = ts.isArrayLiteralExpression(list) ? list.elements.map((element) => resolve(element, consts, new Set())) : [list];
@@ -423,6 +464,7 @@ function readStaticPage(file: string): StaticPage {
   }
 
   const membersProp = findProp(pageObject, 'members');
+  page.hasMembers = membersProp !== undefined;
   if (membersProp) {
     const members = readFamilyMembers(membersProp.initializer, consts, gridNames, sourceFile);
     if (!members) page.checkable = false;
@@ -448,6 +490,35 @@ function readStaticPage(file: string): StaticPage {
   }
   const relatedPagesProp = findProp(pageObject, 'relatedPages');
   if (relatedPagesProp) page.relatedPages = readRelatedPages(relatedPagesProp.initializer, consts);
+
+  const navigationProp = findProp(pageObject, 'navigation');
+  if (navigationProp) {
+    const resolved = resolve(navigationProp.initializer, consts, new Set());
+    if (ts.isStringLiteral(resolved) && (resolved.text === 'browse' || resolved.text === 'reference')) {
+      page.navigation = resolved.text;
+    } else {
+      page.checkable = false;
+    }
+  }
+
+  const tokenDefinitionProp = findProp(pageObject, 'tokenDefinition');
+  page.hasTokenDefinition = tokenDefinitionProp !== undefined;
+  if (tokenDefinitionProp) {
+    const tokenDefinition = readStaticTokenDefinition(tokenDefinitionProp.initializer, consts);
+    if (!tokenDefinition) page.checkable = false;
+    else {
+      page.tokenDefinition = tokenDefinition;
+      // #61 geometry parity (design R4): the same titles/wide flags `buildCatalogSections` derives
+      // at runtime from `tokenDefinition.sections` — only when no separate `tokenSections` already
+      // set them (an explicit conflict is reported on its own terms by `cli/doctor.ts`; whichever
+      // geometry already won here doesn't change that).
+      if (page.tokenSectionTitles === undefined) {
+        page.tokenSectionTitles = tokenDefinition.sections.map((section) => section.title);
+        page.tokenSectionWide = tokenDefinition.sections.map((section) => section.wide ?? false);
+        page.tokenGallery = true;
+      }
+    }
+  }
 
   return page;
 }
@@ -637,7 +708,7 @@ function topLevelConsts(sourceFile: ts.SourceFile): Map<string, ts.Expression> {
  *  reference to its own initializer (same pattern as `cli/tokens.ts`'s `readExpression`) — returns
  *  the resolved expression node itself, not a value, so callers can pattern-match on its kind
  *  (array/object literal, call expression, …). `seen` guards a reference cycle. */
-function resolve(node: ts.Expression, consts: Map<string, ts.Expression>, seen: Set<string>): ts.Expression {
+export function resolve(node: ts.Expression, consts: Map<string, ts.Expression>, seen: Set<string>): ts.Expression {
   if (ts.isAsExpression(node) || ts.isParenthesizedExpression(node) || ts.isSatisfiesExpression(node)) {
     return resolve(node.expression, consts, seen);
   }
@@ -648,7 +719,7 @@ function resolve(node: ts.Expression, consts: Map<string, ts.Expression>, seen: 
   return node;
 }
 
-function stringLiteral(node: ts.Expression): string | undefined {
+export function stringLiteral(node: ts.Expression): string | undefined {
   return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? node.text : undefined;
 }
 
@@ -669,12 +740,12 @@ function propertyName(name: ts.PropertyName): string {
   return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : name.getText();
 }
 
-function findProp(obj: ts.ObjectLiteralExpression, name: string): ts.PropertyAssignment | undefined {
+export function findProp(obj: ts.ObjectLiteralExpression, name: string): ts.PropertyAssignment | undefined {
   const prop = obj.properties.find((p) => ts.isPropertyAssignment(p) && propertyName(p.name) === name);
   return prop as ts.PropertyAssignment | undefined;
 }
 
-function propertyStringLiteral(obj: ts.ObjectLiteralExpression, name: string, consts: Map<string, ts.Expression>): string | undefined {
+export function propertyStringLiteral(obj: ts.ObjectLiteralExpression, name: string, consts: Map<string, ts.Expression>): string | undefined {
   const prop = findProp(obj, name);
   return prop ? stringLiteral(resolve(prop.initializer, consts, new Set())) : undefined;
 }

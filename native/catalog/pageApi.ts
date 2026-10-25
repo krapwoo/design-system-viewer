@@ -1,5 +1,6 @@
 import type React from 'react';
 import type { AlsoUsedByEntry, CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, RelatedPage, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
+import type { TokenDefinition, TokenKind } from './tokenDefinition.ts';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
  *  generated props), plus the three fields design §1 "Page shape" adds. */
@@ -27,6 +28,16 @@ export interface CatalogPageInput<TId extends string = string> {
   tokenSections?: TokenSection[];
   tokenColumns?: 1 | 2 | 3;
   fullWidthLabel?: string;
+  /** #61: an opt-in structured token definition — real entries (name/value/provenance/source) for
+   *  one of the eight approved kinds, rendered through the existing token-gallery grammar
+   *  (`StructuredTokenPage.tsx`, via `SectionBlock.tsx`'s own `tokenSections` block case) instead
+   *  of a hand-built `render()`/`tokenSections`. Omitting it leaves every existing
+   *  `tokenGallery`/`tokenSections`/`render` page unchanged. Setting it alongside an explicit
+   *  `render`/`tokenGallery`/`tokenSections`/`members`, or an explicit `title` that doesn't match
+   *  the kind's canonical title, is an actionable conflict (`buildCatalogSections` logs it in dev;
+   *  `cli/doctor.ts` fails CI on it) rather than silent precedence — see
+   *  `validateTokenDefinitionUsage`. See README's "Token pages" for the authoring shape. */
+  tokenDefinition?: TokenDefinition;
   comparison?: ComparisonDef;
   specimenSize?: SpecimenSize;
   specimenSurface?: SpecimenSurfaceKind;
@@ -82,6 +93,13 @@ export interface CatalogPageInput<TId extends string = string> {
    *  issues, and an entry that still fails to resolve at runtime renders its name as plain text
    *  instead of a dead link. Only takes effect on a page with `members`. */
   relatedPages?: RelatedPage[];
+  /** #60 controller decision: opts this page into the "reference" browse layer instead of the
+   *  default `'browse'` (omitting the field is identical to `'browse'` — no legacy page changes
+   *  behavior). A reference page keeps its full address, aliases, and (on a family page) every
+   *  member address — only the browse-facing sidebar/pager/hash-fallback sequence drops it; see
+   *  `SectionDef.navigation`. A family page's members inherit this same layer; there is no
+   *  separate per-member opt-in. */
+  navigation?: 'browse' | 'reference';
 }
 
 export interface CatalogPage<TId extends string = string> extends CatalogPageInput<TId> {
@@ -112,6 +130,21 @@ export interface GeneratedComponent {
   inheritedFrom: string[];
 }
 
+/** Shared by a family member's own "also used by" (legacy) and, #60, an ordinary page's own —
+ *  dedupes by `component`, keeping the first role, and drops any user in `excludeIds` (a family
+ *  member excludes its own family's ids; an ordinary page excludes only itself). */
+function dedupeAlsoUsedBy(
+  entries: ReadonlyArray<{ component: string; role: string }>,
+  excludeIds: ReadonlySet<string>,
+): AlsoUsedByEntry[] {
+  const deduped = new Map<string, { component: string; role: string }>();
+  for (const entry of entries) {
+    if (excludeIds.has(entry.component)) continue;
+    if (!deduped.has(entry.component)) deduped.set(entry.component, entry);
+  }
+  return [...deduped.values()].map((entry) => ({ component: entry.component, role: entry.role || undefined }));
+}
+
 function mergePropNotes(component: GeneratedComponent, propNotes: Record<string, string> | undefined): PropDef[] {
   const own = component.props.map((prop) => ({
     name: prop.name,
@@ -129,6 +162,86 @@ function mergePropNotes(component: GeneratedComponent, propNotes: Record<string,
     desc: `Plus all ${source} props, not listed individually.`,
   }));
   return [...own, ...inherited];
+}
+
+// #61: the same canonical-title map `tokenDefinition.ts`'s own `canonicalTokenTitle` holds —
+// duplicated here, deliberately, rather than value-imported: `pageApi.ts` must stay importable
+// from a plain `node --experimental-strip-types` test (`pageApi.test.ts`) with no JSX/bundler
+// loader, which needs a real resolvable `./tokenDefinition.ts` specifier, while the SAME file is
+// also reachable from `kit-host`'s/`viewer-host`'s own "how the app actually resolves this"
+// `moduleResolution: "bundler"` type-check (`npm run check:types`), which rejects a `.ts`-extension
+// *value* import outright (`allowImportingTsExtensions` is off there, and that tsconfig is read-
+// only). A `import type` (erased entirely, so its extension is never resolved at either runtime)
+// stays fine either way — only the three lines of logic below that would otherwise need a real
+// value import are kept local instead. `tokenDefinition.ts`'s own exported `canonicalTokenTitle`/
+// `validateTokenDefinition`/`validateTokenDefinitionUsage` remain the canonical versions for every
+// other consumer (`StructuredTokenPage.tsx`, `cli/doctor.ts`, the public `index.ts` barrel) — only
+// `pageApi.ts` keeps this one local copy, and only for this one reason.
+const TOKEN_KIND_TITLES: Record<TokenKind, string> = {
+  colors: 'Colors', typography: 'Typography', spacing: 'Spacing', radius: 'Radius',
+  dimensions: 'Dimensions', shadows: 'Shadows', opacity: 'Opacity', motion: 'Motion',
+};
+
+/** #61: resolves `page.tokenDefinition` into the page's real `title`/`tokenGallery`/`tokenSections`
+ *  — the only three fields `comparison.ts`'s own `presentationBlocks` (not writable here) reads to
+ *  place a token-gallery block, so an opted-in page needs zero changes anywhere in that layout
+ *  pipeline. Each derived `TokenSection`'s own `render` is a trivial `() => null` placeholder, never
+ *  actually called: `SectionBlock.tsx`'s own `tokenSections` block case renders this page's real
+ *  `tokenDefinition` entries instead whenever it's set (`StructuredTokenPage.tsx`) — keeping every
+ *  JSX-producing closure at that existing rendering boundary, never inside this plain-TS module.
+ *  Conflicts (duplicate section/entry ids, a legacy `render`/`tokenGallery`/`tokenSections`/
+ *  `members` set alongside it, or an explicit title that disagrees with the kind) are logged to the
+ *  dev console only — the same "soft" runtime posture `validateComposedOf`/`validateFamily` already
+ *  use; `cli/doctor.ts`'s own static read of the equivalent rules (`tokenDefinition.ts`'s exported
+ *  `validateTokenDefinition`/`validateTokenDefinitionUsage`) is what actually fails CI on them.
+ *  Undefined when the page didn't opt in — every other field keeps the author's own values
+ *  untouched. */
+function deriveTokenDefinition(page: {
+  tokenDefinition?: TokenDefinition;
+  title?: string;
+  render?: () => React.ReactNode;
+  tokenGallery?: boolean;
+  tokenSections?: TokenSection[];
+  members?: unknown[];
+  id: string;
+}): { title: string; tokenGallery: true; tokenSections: TokenSection[] } | undefined {
+  const def = page.tokenDefinition;
+  if (!def) return undefined;
+  if ((globalThis as { __DEV__?: boolean }).__DEV__) {
+    const issues: string[] = [];
+    if (page.render !== undefined) issues.push('tokenDefinition conflicts with this page\'s own "render" — remove one of them.');
+    if (page.tokenGallery === true) issues.push('tokenDefinition conflicts with this page\'s own "tokenGallery" — remove one of them.');
+    if (page.tokenSections !== undefined && page.tokenSections.length > 0) issues.push('tokenDefinition conflicts with this page\'s own "tokenSections" — remove one of them.');
+    if (page.members !== undefined && page.members.length > 0) issues.push('tokenDefinition conflicts with this page\'s own "members" (a family page) — remove one of them.');
+    const canonicalTitle = TOKEN_KIND_TITLES[def.kind];
+    if (page.title !== undefined && page.title !== canonicalTitle) {
+      issues.push(`tokenDefinition: title "${page.title}" conflicts with kind "${def.kind}" (expected "${canonicalTitle}"). Omit "title" to use it automatically.`);
+    }
+    const duplicateIds = (ids: readonly string[]): string[] => {
+      const seen = new Set<string>();
+      const duplicates = new Set<string>();
+      for (const id of ids) {
+        if (seen.has(id)) duplicates.add(id);
+        seen.add(id);
+      }
+      return [...duplicates];
+    };
+    for (const id of duplicateIds(def.sections.map((s) => s.id))) issues.push(`tokenDefinition has more than one section with id "${id}".`);
+    for (const section of def.sections) {
+      for (const id of duplicateIds(section.entries.map((e) => e.id))) {
+        issues.push(`tokenDefinition section "${section.id}" has more than one entry with id "${id}".`);
+      }
+      for (const entry of section.entries) {
+        if (entry.kind !== def.kind) issues.push(`tokenDefinition section "${section.id}": entry "${entry.id}" has kind "${entry.kind}", but the page's kind is "${def.kind}".`);
+      }
+    }
+    for (const issueMsg of issues) console.error(`[Catalog] ${page.id}: ${issueMsg}`);
+  }
+  return {
+    title: page.title ?? TOKEN_KIND_TITLES[def.kind],
+    tokenGallery: true,
+    tokenSections: def.sections.map((section) => ({ id: section.id, title: section.title, desc: section.desc, wide: section.wide, render: () => null })),
+  };
 }
 
 /** Human-readable problems with a page's (or, V2d, a family member's own) `composedOf`, in
@@ -453,12 +566,45 @@ export function buildCatalogSections<TId extends string>(
   // `FamilyPage`'s own `resolvesAddress`. Without resolving through the same map here, an
   // alias-named or component-named entry would link fine going forward but derive nothing going
   // back: a missing "Also used by" line looks identical to "nothing uses this".
+  // C1 fix: every page's own id and every member's own id is itself an exact registered address —
+  // it must win over any same-named `component` binding elsewhere, including the common case where
+  // a page's own id already equals its component name (so it never gets a chance to appear as a
+  // "claimant" in the ambiguity pass below). Registering these identities first, before any
+  // binding-name guessing runs, is what makes that guessing unable to ever shadow an exact address.
   const canonicalMemberIdByAlias = new Map<string, string>();
   for (const page of pages) {
+    canonicalMemberIdByAlias.set(page.id, page.id);
     for (const member of page.members ?? []) {
+      canonicalMemberIdByAlias.set(member.id, member.id);
       for (const alias of member.aliases ?? []) canonicalMemberIdByAlias.set(alias, member.id);
-      if (member.component && member.component !== member.id) canonicalMemberIdByAlias.set(member.component, member.id);
     }
+    for (const alias of page.aliases ?? []) canonicalMemberIdByAlias.set(alias, page.id);
+  }
+  // #60/C1: a `composedOf` entry may instead name a component export rather than its page/member's
+  // own id or alias — an ordinary page's own `component` (when it differs from its `id`) or a family
+  // member's own `component` (when it differs from its `id`) are the same kind of claim, so both
+  // feed the one shared ambiguity pass below: a name already owned by an exact address above is
+  // never reconsidered, and a name claimed by more than one binding (ordinary-vs-ordinary,
+  // member-vs-member, or ordinary-vs-member alike) is never guessed — it is left unresolved, not
+  // silently decided by whichever binding happened to be declared first.
+  const componentBindingOwners = new Map<string, string[]>();
+  const addComponentBindingOwner = (name: string, ownerId: string) => {
+    if (canonicalMemberIdByAlias.has(name)) return;
+    componentBindingOwners.set(name, [...(componentBindingOwners.get(name) ?? []), ownerId]);
+  };
+  for (const page of pages) {
+    if (page.members && page.members.length > 0) {
+      for (const member of page.members) {
+        if (member.component && member.component !== member.id) addComponentBindingOwner(member.component, member.id);
+      }
+      continue;
+    }
+    const componentName = page.component ?? page.id;
+    if (componentName !== page.id) addComponentBindingOwner(componentName, page.id);
+  }
+  for (const [name, owners] of componentBindingOwners) {
+    if (owners.length !== 1) continue;
+    canonicalMemberIdByAlias.set(name, owners[0]);
   }
   const canonicalUsedByTarget = (name: string) => canonicalMemberIdByAlias.get(name) ?? name;
 
@@ -564,15 +710,7 @@ export function buildCatalogSections<TId extends string>(
           // attribute to the same string for a family's whole (`validateFamily` forces
           // `whole === page.id`), and `validateComposedOf` has no duplicate check of its own, so the
           // same user declared twice would otherwise render "Also used by P and P".
-          const dedupedUsers = new Map<string, { component: string; role: string }>();
-          for (const entry of usedByTarget.get(member.id) ?? []) {
-            if (pageMemberIds.has(entry.component)) continue;
-            if (!dedupedUsers.has(entry.component)) dedupedUsers.set(entry.component, entry);
-          }
-          const alsoUsedBy: AlsoUsedByEntry[] = [...dedupedUsers.values()].map((entry) => ({
-            component: entry.component,
-            role: entry.role || undefined,
-          }));
+          const alsoUsedBy = dedupeAlsoUsedBy(usedByTarget.get(member.id) ?? [], pageMemberIds);
           return {
             ...member,
             props: memberComponent ? mergePropNotes(memberComponent, undefined) : undefined,
@@ -586,9 +724,11 @@ export function buildCatalogSections<TId extends string>(
     // Important finding 4: a standalone page (no matching component record) has no props to show
     // and nothing to say "This component takes no props" about — hide the Props box, and fall back
     // to the page's own file as its Source instead of an empty path.
+    // #61: resolved once so `title`/`tokenGallery`/`tokenSections` below can each fall back to it.
+    const derivedTokenDefinition = deriveTokenDefinition(page);
     return {
       id: page.id,
-      title: page.title,
+      title: derivedTokenDefinition?.title ?? page.title,
       osComponent: page.osComponent,
       description: page.description,
       path: component?.file ?? page.source ?? page.file,
@@ -599,8 +739,11 @@ export function buildCatalogSections<TId extends string>(
       states: page.states,
       render: page.render,
       // `tokenSections` makes a page a token gallery by itself.
-      tokenGallery: page.tokenGallery || (page.tokenSections !== undefined && page.tokenSections.length > 0) || undefined,
-      tokenSections: page.tokenSections,
+      tokenGallery: derivedTokenDefinition?.tokenGallery ?? (page.tokenGallery || (page.tokenSections !== undefined && page.tokenSections.length > 0) || undefined),
+      tokenSections: derivedTokenDefinition?.tokenSections ?? page.tokenSections,
+      // #61: the real entry data `SectionBlock.tsx` renders instead of the placeholder sections
+      // above, when set — see `SectionDef.tokenDefinition`'s own doc comment.
+      tokenDefinition: page.tokenDefinition,
       tokenColumns: page.tokenColumns,
       fullWidthLabel: page.fullWidthLabel,
       comparison: page.comparison,
@@ -613,6 +756,14 @@ export function buildCatalogSections<TId extends string>(
       internalProps: page.internalProps,
       intentionalStaticPreview: page.intentionalStaticPreview,
       family,
+      navigation: page.navigation,
+      // Family pages carry their own component binding per member (`FamilyDef.members[].component`
+      // isn't a field — a member names its binding via `CatalogMember.component` itself); only a
+      // normal page's own single binding is surfaced here.
+      component: isFamily ? undefined : component?.name,
+      // #60: see `SectionDef.alsoUsedBy` (rendered by `ReferenceDetails`'s `AlsoUsedByFact`) — a family page's "also
+      // used by" lives per member instead (`family.members[].alsoUsedBy`, above).
+      alsoUsedBy: isFamily ? undefined : dedupeAlsoUsedBy(usedByTarget.get(page.id) ?? [], new Set([page.id])),
     };
   });
 
@@ -628,7 +779,11 @@ export function buildCatalogSections<TId extends string>(
       }
       continue;
     }
-    sections.push({ id, description: 'No examples documented.', path: component.file, props: mergePropNotes(component, undefined) });
+    sections.push({
+      id, description: 'No examples documented.', path: component.file, props: mergePropNotes(component, undefined),
+      component: component.name,
+      alsoUsedBy: dedupeAlsoUsedBy(usedByTarget.get(id) ?? [], new Set([id])),
+    });
     addToGroup('Components', id);
   }
 

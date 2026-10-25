@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { applyComponentDefaults, withExtraIssues, checkOverlaysFramed, checkPageTypeErrors, collectGlobalIssues, collectIssues, formatHuman, runDoctor, toDoctorJson } from '../doctor.ts';
+import { readStaticPages } from '../staticPage.ts';
 import type { ComponentRecord, ResolvedConfig } from '../types.ts';
 import type { StaticPage } from '../staticPage.ts';
 
@@ -58,6 +59,14 @@ test('page-parse-error maps a reader parse failure into its own issue, and suppr
 test('page-not-checkable fires for a non-literal page with no parse error', () => {
   const issues = collectIssues([page({ checkable: false })], []);
   assert.deepEqual(ids(issues), ['page-not-checkable']);
+});
+
+// #60: opting into navigation: 'reference' is just another literal field — a checkable page with
+// it set raises no new issue beyond whatever it would already raise without it.
+test('a page opted into navigation: \'reference\' raises no new issue when otherwise checkable', () => {
+  const widget = component({ name: 'Widget' });
+  const withNav = page({ component: 'Widget', variantsItems: [{ key: 'a', name: 'A' }], navigation: 'reference' });
+  assert.deepEqual(collectIssues([withNav], [widget]), []);
 });
 
 test('grid-axis-key-invalid fires for a duplicate row key', () => {
@@ -1015,4 +1024,182 @@ test('family-invalid does not report a relatedPages entry naming a member of a n
   const withRelated = familyPage({ relatedPages: [{ page: 'OtherMember' }] });
   const issues = collectIssues([withRelated, otherFamily], [component({ name: 'Banner' })]);
   assert.equal(issues.filter((i) => i.id === 'family-invalid' && i.message.includes('relatedPages')).length, 0);
+});
+
+// #61: tokenDefinition.
+function tokenDefPage(overrides: Partial<StaticPage>): StaticPage {
+  return page({
+    group: 'Tokens',
+    hasTokenDefinition: true,
+    tokenDefinition: { kind: 'colors', sections: [{ id: 'palette', title: 'Palette', entryIds: ['brand'], entriesOpaque: false }] },
+    ...overrides,
+  });
+}
+
+test('token-definition-invalid-kind fires for an unknown kind string', () => {
+  const issues = collectIssues([tokenDefPage({ tokenDefinition: { kind: 'colour', sections: [] } })], []);
+  assert.deepEqual(ids(issues), ['token-definition-invalid-kind']);
+  assert.equal(issues[0].severity, 'error');
+});
+
+test('token-definition-invalid-kind does not also fire token-definition-title-conflict for the same page', () => {
+  const issues = collectIssues([tokenDefPage({ title: 'Anything', tokenDefinition: { kind: 'colour', sections: [] } })], []);
+  assert.deepEqual(ids(issues), ['token-definition-invalid-kind']);
+});
+
+test('a well-formed tokenDefinition with no conflicts reports nothing', () => {
+  const issues = collectIssues([tokenDefPage({})], []);
+  assert.deepEqual(issues, []);
+});
+
+test('token-definition-conflict fires for each of render/tokenGallery/tokenSections/members authored alongside tokenDefinition', () => {
+  assert.deepEqual(ids(collectIssues([tokenDefPage({ hasRender: true })], [])), ['token-definition-conflict']);
+  assert.deepEqual(ids(collectIssues([tokenDefPage({ hasExplicitTokenGallery: true })], [])), ['token-definition-conflict']);
+  assert.deepEqual(ids(collectIssues([tokenDefPage({ hasExplicitTokenSections: true })], [])), ['token-definition-conflict']);
+  assert.deepEqual(ids(collectIssues([tokenDefPage({ hasMembers: true })], [])), ['token-definition-conflict']);
+});
+
+test('token-definition-conflict does not fire for a tokenGallery/tokenSections value merely derived from tokenDefinition itself', () => {
+  // `cli/staticPage.ts` sets `page.tokenGallery`/`tokenSectionTitles` FROM the tokenDefinition for
+  // geometry parity — that derived presence must never be mistaken for an explicit legacy field.
+  const issues = collectIssues([tokenDefPage({ tokenGallery: true, tokenSectionTitles: ['Palette'] })], []);
+  assert.deepEqual(issues.filter((i) => i.id === 'token-definition-conflict'), []);
+});
+
+test('token-definition-title-conflict fires for an explicit title that does not match the kind\'s canonical title', () => {
+  const issues = collectIssues([tokenDefPage({ title: 'Palette' })], []);
+  assert.deepEqual(ids(issues), ['token-definition-title-conflict']);
+  assert.match(issues[0].message, /title "Palette" conflicts with kind "colors" \(expected "Colors"\)/);
+});
+
+test('token-definition-title-conflict does not fire for a title matching the canonical title, or an omitted title', () => {
+  assert.deepEqual(collectIssues([tokenDefPage({ title: 'Colors' })], []).filter((i) => i.id === 'token-definition-title-conflict'), []);
+  assert.deepEqual(collectIssues([tokenDefPage({ title: undefined })], []).filter((i) => i.id === 'token-definition-title-conflict'), []);
+});
+
+test('token-definition-duplicate-id fires for a duplicate section id and for a duplicate entry id within one section, but never across sections', () => {
+  const duplicateSections = tokenDefPage({
+    tokenDefinition: { kind: 'colors', sections: [{ id: 'scale', title: 'A', entryIds: [], entriesOpaque: false }, { id: 'scale', title: 'B', entryIds: [], entriesOpaque: false }] },
+  });
+  const sectionIssues = collectIssues([duplicateSections], []).filter((i) => i.id === 'token-definition-duplicate-id');
+  assert.equal(sectionIssues.length, 1, 'one issue per duplicate id value, not per occurrence');
+  assert.match(sectionIssues[0].message, /more than one section with id "scale"/);
+
+  const duplicateEntries = tokenDefPage({
+    tokenDefinition: { kind: 'colors', sections: [{ id: 'scale', title: 'A', entryIds: ['brand', 'brand'], entriesOpaque: false }] },
+  });
+  const entryIssues = collectIssues([duplicateEntries], []).filter((i) => i.id === 'token-definition-duplicate-id');
+  assert.equal(entryIssues.length, 1);
+  assert.match(entryIssues[0].message, /section "scale" has more than one entry with id "brand"/);
+
+  const scopedDuplicate = tokenDefPage({
+    tokenDefinition: {
+      kind: 'colors',
+      sections: [{ id: 'a', title: 'A', entryIds: ['brand'], entriesOpaque: false }, { id: 'b', title: 'B', entryIds: ['brand'], entriesOpaque: false }],
+    },
+  });
+  assert.deepEqual(collectIssues([scopedDuplicate], []).filter((i) => i.id === 'token-definition-duplicate-id'), []);
+});
+
+// Runtime-imported entries are the intended authoring path (values come from the app's own token
+// modules), so they must be reported as not statically validated without failing CI — including
+// under doctor.strict. They follow the informational "unbound examples" summary precedent.
+test('runtime-only tokenDefinition entries are reported in the summary, never as a failing issue, even with strict', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { DS_COLOR } from '../../tokens';
+    const ENTRIES = Object.entries(DS_COLOR).map(([id, color]) => ({ id, name: id, kind: 'colors' as const, value: { provenance: 'named' as const, resolution: { status: 'resolved' as const, value: { color } } } }));
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'x',
+      tokenDefinition: { kind: 'colors', sections: [
+        { id: 'literal', title: 'Literal', entries: [{ id: 'brand', name: 'Brand', kind: 'colors', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#123456' } } } }] },
+        { id: 'imported', title: 'Imported', entries: ENTRIES },
+      ] },
+    });
+  `);
+  try {
+    const config = { ...configFor(dir), doctor: { strict: true } };
+    const result = runDoctor(config);
+    assert.equal(result.issues.some((i) => i.id.startsWith('token-definition')), false, JSON.stringify(result.issues));
+    assert.deepEqual(result.summary.runtimeOnlyTokenSections, [{ page: 'tokens-colors', sections: ['imported'] }]);
+    assert.match(formatHuman(toDoctorJson(result)), /1 token section with runtime-only entries \(not statically validated\): tokens-colors \(imported\)/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a fully literal tokenDefinition adds nothing to the summary or its human line', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'x',
+      tokenDefinition: { kind: 'colors', sections: [{ id: 'literal', title: 'Literal', entries: [] }] },
+    });
+  `);
+  try {
+    const result = runDoctor(configFor(dir));
+    assert.equal(result.summary.runtimeOnlyTokenSections, undefined);
+    assert.doesNotMatch(formatHuman(toDoctorJson(result)), /runtime-only/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Correction C5(a): drive the real `readStaticPage` → `collectIssues` producer path (not just the
+// `tokenDefPage` fixture helper above) for one conflicting page and one clean page.
+test('real readStaticPage -> collectIssues: a conflicting tokenDefinition page reports the exact expected issue ids, and a clean one reports none', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-doctor-tokendef-'));
+  try {
+    const conflictFile = path.join(dir, 'Conflict.catalog.tsx');
+    writeFileSync(conflictFile, `
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      export default defineCatalogPage({
+        id: 'conflict',
+        group: 'Tokens',
+        title: 'Not Colors',
+        description: 'Fixture.',
+        render: () => null,
+        tokenDefinition: {
+          kind: 'colors',
+          sections: [
+            { id: 'scale', title: 'A', entries: [{ id: 'brand' }, { id: 'brand' }] },
+            { id: 'scale', title: 'B', entries: [] },
+          ],
+        },
+      });
+    `);
+    const cleanFile = path.join(dir, 'Clean.catalog.tsx');
+    writeFileSync(cleanFile, `
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      export default defineCatalogPage({
+        id: 'clean',
+        group: 'Tokens',
+        description: 'Fixture.',
+        tokenDefinition: {
+          kind: 'colors',
+          sections: [{ id: 'scale', title: 'A', entries: [{ id: 'brand' }] }],
+        },
+      });
+    `);
+    const pages = readStaticPages([conflictFile, cleanFile]);
+    const conflictIssues = collectIssues(pages.filter((p) => p.file === conflictFile), []);
+    assert.deepEqual(
+      ids(conflictIssues).sort(),
+      ['token-definition-conflict', 'token-definition-duplicate-id', 'token-definition-duplicate-id', 'token-definition-title-conflict'].sort(),
+    );
+    const cleanIssues = collectIssues(pages.filter((p) => p.file === cleanFile), []);
+    assert.deepEqual(cleanIssues, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a tokenDefinition that is not statically readable (non-literal kind/sections) is reported only as the established page-not-checkable warning, never a token-definition error', () => {
+  const issues = collectIssues([page({ checkable: false, group: 'Tokens', hasTokenDefinition: true })], []);
+  assert.deepEqual(ids(issues), ['page-not-checkable']);
+});
+
+test('every token-definition rule is already error severity, independent of strict mode (design R4\'s own severity list, not a warning promoted under strict)', () => {
+  const base = { version: 1 as const, summary: { errors: 0, warnings: 0, components: 0, withExamples: 0, unboundExamples: 0 }, update: null, issues: [], exitCode: 0 };
+  const extra = collectIssues([tokenDefPage({ hasRender: true, title: 'Palette' })], []);
+  assert.ok(extra.every((i) => i.severity === 'error'));
+  const plain = withExtraIssues(base, extra, false);
+  const strict = withExtraIssues(base, extra, true);
+  assert.deepEqual([plain.summary.errors, plain.exitCode], [strict.summary.errors, strict.exitCode]);
 });

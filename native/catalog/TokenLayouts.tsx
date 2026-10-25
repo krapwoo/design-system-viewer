@@ -36,7 +36,10 @@ export function TokenSections({ sections, columns, label }: { sections: TokenSec
   return (
     <View onLayout={onLayout} style={styles.sections}>
       {width > 0 && sections.map((section) => (
-        <View key={section.title} style={{ width: section.wide || perRow === 1 ? width : columnWidth }}>
+        // #61: `section.id` when the author set one (two sections may legitimately share a human
+        // `title`, e.g. two scoped "Palette" cards — `TokenSection.id`'s own doc comment) — omitted
+        // keeps the prior `title`-keyed behavior exactly as it was.
+        <View key={section.id ?? section.title} style={{ width: section.wide || perRow === 1 ? width : columnWidth }}>
           <Text style={styles.sectionLabel}>{section.title}</Text>
           {section.desc ? <Text style={styles.sectionDesc}>{section.desc}</Text> : null}
           <View style={styles.card}>{section.render()}</View>
@@ -64,7 +67,7 @@ export function TokenGrid({ children, minTileWidth = 140, maxColumns }: { childr
  * One token in a `TokenGrid`: its preview, then its name and value, then its role. `note` says
  * where or why the token is used (from its comments or real usages) — omit it when there is none.
  */
-export function TokenTile({ name, value, note, children }: { name: string; value?: string; note?: string; children: React.ReactNode }) {
+export function TokenTile({ name, value, note, children }: { name: string; value?: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
     <View style={styles.tile}>
       <View style={styles.tilePreview}>{children}</View>

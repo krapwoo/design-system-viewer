@@ -12,16 +12,20 @@ export function Swatch({
   value,
   valueLabel,
   width = 84,
+  wrapName = false,
 }: {
   name: string;
   value: string;
   valueLabel?: string;
   width?: number;
+  /** Lets a long name wrap instead of truncating to one line. Off by default, so every existing
+   *  gallery keeps its compact single-line labels. */
+  wrapName?: boolean;
 }) {
   return (
     <View style={[styles.swatch, { width }]}>
       <View style={[styles.chip, { backgroundColor: value }]} />
-      <Text style={styles.name} numberOfLines={1}>{name}</Text>
+      <Text style={styles.name} numberOfLines={wrapName ? undefined : 1}>{name}</Text>
       <Text style={styles.value} numberOfLines={1}>{valueLabel ?? value}</Text>
     </View>
   );

@@ -3,7 +3,22 @@ import { View, Text, StyleSheet, type LayoutChangeEvent, type TextStyle } from '
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { PropsTable } from './PropsTable';
 import { propsColumns, referenceColumns } from './comparison';
-import type { ComposedOfEntry, SectionDef } from './types';
+import { hashForId } from './catalogNavigation';
+import { referenceLinkProps, type ReferenceNavigation } from './catalogReferences';
+import { alsoUsedBySegments } from './familyModel';
+import type { AlsoUsedByEntry, ComposedOfEntry, SectionDef } from './types';
+
+/** `referenceLinkProps` returns the resolved target, not a ready-made `href` (see its own doc
+ *  comment in `catalogReferences.ts`) — this builds the real link props every `Text role="link"`
+ *  below actually spreads, the one place in this file that turns a target into `hashForId(memberId
+ *  ?? pageId)`. */
+function linkProps<TId extends string>(
+  navigation: ReferenceNavigation<TId> | undefined,
+  name: string,
+): { href: string; onPress: (event?: { preventDefault?: () => void }) => void } | undefined {
+  const activation = referenceLinkProps(navigation, name);
+  return activation ? { href: hashForId(activation.memberId ?? activation.pageId), onPress: activation.onPress } : undefined;
+}
 
 // react-native-web reads `aria-level`; React Native's prop types do not declare it.
 const HEADING_LEVEL_2 = { 'aria-level': 2 } as Record<string, unknown>;
@@ -46,22 +61,95 @@ function PropsBox<TId extends string>({ def }: { def: SectionDef<TId> }) {
 // `built-in` is composition's assumed default relationship, so spelling it out reads redundantly
 // (e.g. "TrainArrivalRemainingTime · built-in"); `slot`/`related` still need their own suffix to
 // stay distinguishable from a plain built-in entry.
-function compositionLabel(entry: ComposedOfEntry): string {
-  return entry.relationship === 'built-in' ? entry.component : `${entry.component} · ${entry.relationship}`;
+function compositionSuffix(entry: ComposedOfEntry): string {
+  return entry.relationship === 'built-in' ? '' : ` · ${entry.relationship}`;
 }
 
-function CompositionFacts({ composedOf, lastIsFlush = false }: { composedOf: ComposedOfEntry[]; lastIsFlush?: boolean }) {
+/** One Composition row: the name links to its real canonical address when `navigation` resolves it
+ *  (plan #60: "Ordinary Composition references become real links when resolvable … unresolved
+ *  names remain honest plain text") — a relationship suffix, when any, stays outside the link, the
+ *  same way `UsesLine` in `FamilyPage.tsx` keeps its own `(role)` text unlinked. `navigation`
+ *  omitted keeps the prior plain-text rendering untouched (a standalone-mounted `ReferenceDetails`,
+ *  this framework's own catalog demo included). */
+function CompositionFact<TId extends string>({
+  entry,
+  navigation,
+  last = false,
+}: {
+  entry: ComposedOfEntry;
+  navigation?: ReferenceNavigation<TId>;
+  last?: boolean;
+}) {
+  const link = linkProps(navigation, entry.component);
+  return (
+    <View style={[styles.fact, last && styles.factLast]}>
+      <Text style={styles.factLabel}>
+        {link ? (
+          <Text role="link" style={styles.factLabelLink} {...link}>{entry.component}</Text>
+        ) : (
+          entry.component
+        )}
+        {compositionSuffix(entry)}
+      </Text>
+      <Text style={styles.factValue}>{entry.role}</Text>
+    </View>
+  );
+}
+
+function CompositionFacts<TId extends string>({
+  composedOf,
+  lastIsFlush = false,
+  navigation,
+}: {
+  composedOf: ComposedOfEntry[];
+  lastIsFlush?: boolean;
+  navigation?: ReferenceNavigation<TId>;
+}) {
   return (
     <>
       {composedOf.map((entry, i) => (
-        <Fact
+        <CompositionFact
           key={`${entry.component}-${entry.relationship}-${i}`}
-          label={compositionLabel(entry)}
-          value={entry.role}
+          entry={entry}
+          navigation={navigation}
           last={lastIsFlush && i === composedOf.length - 1}
         />
       ))}
     </>
+  );
+}
+
+/** The derived "Also used by …" row (`SectionDef.alsoUsedBy`, plan #60's ordinary-page inverse of
+ *  `FamilyDef.members[].alsoUsedBy`): the exact same sentence/segment shape
+ *  `alsoUsedBySegments`/`WholeBelowLine` already render on a family page, so an ordinary page's own
+ *  cross-use reads identically — a resolvable user links, an unresolvable one stays honest plain
+ *  text. Renders nothing for an empty list (the overwhelming majority of pages): no row, no label,
+ *  no gap — the same "nothing renders when nothing else uses it" rule the README already documents
+ *  for a family member. */
+function AlsoUsedByFact<TId extends string>({
+  entries,
+  navigation,
+  last = false,
+}: {
+  entries: readonly AlsoUsedByEntry[];
+  navigation?: ReferenceNavigation<TId>;
+  last?: boolean;
+}) {
+  const segments = alsoUsedBySegments(entries);
+  if (segments.length === 0) return null;
+  return (
+    <View style={[styles.fact, last && styles.factLast]}>
+      <Text style={styles.factValue}>
+        {segments.map((segment, i) => {
+          const link = segment.component ? linkProps(navigation, segment.component) : undefined;
+          return link ? (
+            <Text key={i} role="link" style={styles.factLabelLink} {...link}>{segment.text}</Text>
+          ) : (
+            <Text key={i}>{segment.text}</Text>
+          );
+        })}
+      </Text>
+    </View>
   );
 }
 
@@ -86,26 +174,39 @@ function CompositionFacts({ composedOf, lastIsFlush = false }: { composedOf: Com
  * outer card previously fed `referenceColumns` an outer width up to ~42px wider than what the three
  * columns' content actually has, which can report a column count the inner content doesn't fit.
  */
-export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<TId> }) {
+export function ReferenceDetails<TId extends string>({
+  def,
+  navigation,
+}: {
+  def: SectionDef<TId>;
+  /** Task 2B2: `CatalogShell`'s own shared reference navigation (see `catalogReferences.ts`'s
+   *  `ReferenceNavigation`/`referenceLinkProps`) — turns a resolvable Composition name into a real
+   *  canonical link. Omitted (a standalone-mounted `ReferenceDetails`, this framework's own catalog
+   *  demo included) keeps every name as it always rendered: plain text, no link. */
+  navigation?: ReferenceNavigation<TId>;
+}) {
   const hide = def.hide ?? {};
   const [width, setWidth] = useState(0);
   const onLayout = (event: LayoutChangeEvent) => {
     const next = Math.round(event.nativeEvent.layout.width);
     if (next > 0 && next !== width) setWidth(next);
   };
+  const hasAlsoUsedBy = Boolean(def.alsoUsedBy && def.alsoUsedBy.length > 0);
   if (def.tokenGallery) {
     // Full-width pages with no component API (token galleries, and whole screens such as a
     // starter kit's Patterns) still disclose what they're built from when they say so.
+    const hasComposition = Boolean(def.composedOf && def.composedOf.length > 0);
     return (
       <View style={styles.card}>
         <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-        {def.path && <Fact label="Source" value={def.path} mono last={!(def.composedOf && def.composedOf.length > 0)} />}
-        {def.composedOf && def.composedOf.length > 0 && (
+        {def.path && <Fact label="Source" value={def.path} mono last={!hasComposition && !hasAlsoUsedBy} />}
+        {hasComposition && def.composedOf && (
           <>
             <Text style={styles.subheading}>Composition</Text>
-            <CompositionFacts composedOf={def.composedOf} lastIsFlush />
+            <CompositionFacts composedOf={def.composedOf} lastIsFlush={!hasAlsoUsedBy} navigation={navigation} />
           </>
         )}
+        {hasAlsoUsedBy && <AlsoUsedByFact entries={def.alsoUsedBy!} navigation={navigation} last />}
       </View>
     );
   }
@@ -114,6 +215,10 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
   const stacked = columns === 1;
   const compositionIsOwnColumn = columns === 3 && hasComposition;
   const columnStyle = stacked ? styles.columnStacked : styles.column;
+  // "Also used by" always sits in Quick reference, after Composition when nested there too — it
+  // never gets its own column (plan #60: it's the always-visible inverse of an existing fact, not
+  // a new confirmed-data column like Composition).
+  const compositionNestedHere = !compositionIsOwnColumn && hasComposition;
 
   return (
     <View style={styles.stack}>
@@ -125,25 +230,26 @@ export function ReferenceDetails<TId extends string>({ def }: { def: SectionDef<
           </View>
           <View style={columnStyle}>
             <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-            {def.path && <Fact label="Source" value={def.path} mono last={hide.accessibility && !(!compositionIsOwnColumn && hasComposition)} />}
+            {def.path && <Fact label="Source" value={def.path} mono last={hide.accessibility && !compositionNestedHere && !hasAlsoUsedBy} />}
             {!hide.accessibility && (
               <Fact
                 label="Accessibility"
                 value={def.a11y ?? 'No accessibility notes documented.'}
-                last={!(!compositionIsOwnColumn && hasComposition)}
+                last={!compositionNestedHere && !hasAlsoUsedBy}
               />
             )}
-            {!compositionIsOwnColumn && hasComposition && def.composedOf && (
+            {compositionNestedHere && def.composedOf && (
               <>
                 <Text style={styles.subheading}>Composition</Text>
-                <CompositionFacts composedOf={def.composedOf} lastIsFlush />
+                <CompositionFacts composedOf={def.composedOf} lastIsFlush={!hasAlsoUsedBy} navigation={navigation} />
               </>
             )}
+            {hasAlsoUsedBy && <AlsoUsedByFact entries={def.alsoUsedBy!} navigation={navigation} last />}
           </View>
           {compositionIsOwnColumn && def.composedOf && (
             <View style={columnStyle}>
               <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Composition</Text>
-              <CompositionFacts composedOf={def.composedOf} lastIsFlush />
+              <CompositionFacts composedOf={def.composedOf} lastIsFlush navigation={navigation} />
             </View>
           )}
         </View>
@@ -187,6 +293,9 @@ const styles = StyleSheet.create({
   },
   factLast: { paddingBottom: 0, borderBottomWidth: 0 },
   factLabel: { flexShrink: 1, minWidth: 0, ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.text },
+  // Same accent treatment every other in-app reference link already uses (`FamilyPage.tsx`'s own
+  // `relatedLink`) — a linked Composition/"also used by" name reads the same way across both pages.
+  factLabelLink: { ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.accent },
   factValue: { minWidth: 0, ...CATALOG_TEXT.body, textAlign: 'left', color: CATALOG_COLOR.textMuted },
   // `wordBreak` isn't in the installed `TextStyle` type (RN's own, not RNW's — RNW's own
   // `Text/types.js` declares it; a browser applies any valid CSS property name it recognizes

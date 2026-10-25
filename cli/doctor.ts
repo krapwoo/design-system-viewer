@@ -11,6 +11,7 @@ import { sync } from './sync.ts';
 import { gridColumnLimit } from '../native/catalog/comparison.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
 import { validateComposedOf, validateFamily, type FamilyPageLike } from '../native/catalog/pageApi.ts';
+import { canonicalTokenTitle, findDuplicateIds, isTokenKind } from '../native/catalog/tokenDefinition.ts';
 
 export type DoctorSeverity = 'error' | 'warning';
 
@@ -722,6 +723,78 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
   return issues;
 }
 
+/** #61: errors for an opted-in `tokenDefinition` that is provably malformed, conflicts with an
+ *  explicit legacy `render`/`tokenGallery`/`tokenSections`/`members` recipe on the same page, has a
+ *  duplicate section id or a duplicate entry id within one section, or has an explicit page `title`
+ *  that conflicts with its kind's canonical title (design R4's own severity list). A `tokenDefinition`
+ *  that isn't itself statically readable (non-literal `kind`/`sections`) already made the whole page
+ *  `checkable: false` in `cli/staticPage.ts` — `checkNotCheckable` reports that case as the established
+ *  `page-not-checkable` warning; this rule only ever runs against a definition that WAS readable. */
+/** Opted-in token pages whose sections take their entries from runtime imports — the intended
+ *  authoring path, since values come from the app's own token modules. Doctor never executes them,
+ *  so those sections are listed as not statically validated. Informational only, like the
+ *  "unbound examples" count: it never becomes an issue, never changes the exit code, and is not
+ *  promoted by `doctor.strict`. `undefined` when there are none, so legacy output is unchanged. */
+function runtimeOnlyTokenSections(pages: StaticPage[]): { page: string; sections: string[] }[] | undefined {
+  const found = pages.flatMap((page) => {
+    const sections = page.tokenDefinition?.sections.filter((section) => section.entriesOpaque).map((section) => section.id) ?? [];
+    return sections.length > 0 ? [{ page: resolvePageId(page, page.file), sections }] : [];
+  });
+  return found.length > 0 ? found : undefined;
+}
+
+function checkTokenDefinition(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.hasTokenDefinition || !page.tokenDefinition) continue;
+    const ref = pageRef(page);
+    const def = page.tokenDefinition;
+
+    if (!isTokenKind(def.kind)) {
+      issues.push(issue({
+        id: 'token-definition-invalid-kind', severity: 'error', ...ref,
+        message: `tokenDefinition has an unknown kind "${def.kind}".`,
+        fix: 'Use one of: colors, typography, spacing, radius, dimensions, shadows, opacity, motion.',
+      }));
+      continue; // The canonical-title check below needs a valid kind to compare against.
+    }
+
+    if (page.hasRender) {
+      issues.push(issue({ id: 'token-definition-conflict', severity: 'error', ...ref, message: 'tokenDefinition conflicts with this page\'s own "render".', fix: 'Remove one of them.' }));
+    }
+    if (page.hasExplicitTokenGallery) {
+      issues.push(issue({ id: 'token-definition-conflict', severity: 'error', ...ref, message: 'tokenDefinition conflicts with this page\'s own "tokenGallery".', fix: 'Remove one of them.' }));
+    }
+    if (page.hasExplicitTokenSections) {
+      issues.push(issue({ id: 'token-definition-conflict', severity: 'error', ...ref, message: 'tokenDefinition conflicts with this page\'s own "tokenSections".', fix: 'Remove one of them.' }));
+    }
+    if (page.hasMembers) {
+      issues.push(issue({ id: 'token-definition-conflict', severity: 'error', ...ref, message: 'tokenDefinition conflicts with this page\'s own "members" (a family page).', fix: 'Remove one of them.' }));
+    }
+    if (page.title !== undefined && page.title !== canonicalTokenTitle(def.kind)) {
+      issues.push(issue({
+        id: 'token-definition-title-conflict', severity: 'error', ...ref,
+        message: `tokenDefinition: title "${page.title}" conflicts with kind "${def.kind}" (expected "${canonicalTokenTitle(def.kind)}").`,
+        fix: 'Omit "title" to use the kind\'s canonical title automatically, or change it to match.',
+      }));
+    }
+
+    for (const id of findDuplicateIds(def.sections.map((s) => s.id))) {
+      issues.push(issue({ id: 'token-definition-duplicate-id', severity: 'error', ...ref, message: `tokenDefinition has more than one section with id "${id}".`, fix: 'Give each section its own id.' }));
+    }
+    for (const section of def.sections) {
+      for (const id of findDuplicateIds(section.entryIds)) {
+        issues.push(issue({
+          id: 'token-definition-duplicate-id', severity: 'error', ...ref,
+          message: `tokenDefinition section "${section.id}" has more than one entry with id "${id}".`,
+          fix: 'Give each entry within this section its own id (the same id may still be reused in a different section).',
+        }));
+      }
+    }
+  }
+  return issues;
+}
+
 /** Every page-scoped issue, from every rule above. */
 export function collectIssues(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
   return [
@@ -741,6 +814,7 @@ export function collectIssues(pages: StaticPage[], components: ComponentRecord[]
     ...checkFamilyValidity(pages),
     ...checkMemberComposedOf(pages, components),
     ...checkDeprecatedRelatedSections(pages),
+    ...checkTokenDefinition(pages),
   ];
 }
 
@@ -825,6 +899,9 @@ export interface DoctorSummary {
   components: number;
   withExamples: number;
   unboundExamples: number;
+  /** Token sections whose entries are runtime imports and so were not statically validated.
+   *  Informational; absent when there are none. */
+  runtimeOnlyTokenSections?: { page: string; sections: string[] }[];
 }
 
 export interface DoctorJsonResult {
@@ -938,6 +1015,8 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
     withExamples: countWithExamples(pages, components),
     unboundExamples: countUnboundExamples(pages),
   };
+  const runtimeOnly = runtimeOnlyTokenSections(pages);
+  if (runtimeOnly) summary.runtimeOnlyTokenSections = runtimeOnly;
   const pageFileById = new Map(pages.map((p) => [resolvePageId(p, p.file), path.relative(config.projectRoot, p.file)]));
   return { version: 1, summary, update: null, issues, exitCode: summary.errors > 0 ? 1 : 0, pageFiles: pageFileById };
 }
@@ -973,7 +1052,12 @@ export function formatHuman(result: DoctorJsonResult): string {
     for (const issue of general) renderIssue(issue);
     lines.push('');
   }
-  const { errors, warnings, components, withExamples, unboundExamples } = result.summary;
+  const { errors, warnings, components, withExamples, unboundExamples, runtimeOnlyTokenSections: runtimeOnly } = result.summary;
+  if (runtimeOnly && runtimeOnly.length > 0) {
+    const count = runtimeOnly.reduce((sum, entry) => sum + entry.sections.length, 0);
+    const where = runtimeOnly.map((entry) => `${entry.page} (${entry.sections.join(', ')})`).join('; ');
+    lines.push(`${count} token section${count === 1 ? '' : 's'} with runtime-only entries (not statically validated): ${where}.`, '');
+  }
   lines.push(
     `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — ` +
       `${components} components (${withExamples} with examples), ${unboundExamples} unbound examples.`,
