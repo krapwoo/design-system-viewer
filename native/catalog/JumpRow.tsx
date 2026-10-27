@@ -19,9 +19,12 @@ export interface JumpItem {
   accessibilityLabel?: string;
   href?: string;
   onPress?: (event?: { preventDefault?: () => void; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; button?: number }) => void;
+  /** Makes the chip a toggle (a filter or sort choice): it reports `aria-pressed` and, when true,
+   *  takes the accent look. Omitted: a plain jump chip, as before. Only meaningful without `href`. */
+  selected?: boolean;
 }
 
-export function JumpChip({ title, qualifier, accessibilityLabel, href, onPress }: Omit<JumpItem, 'id'>) {
+export function JumpChip({ title, qualifier, accessibilityLabel, href, onPress, selected }: Omit<JumpItem, 'id'>) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   return (
@@ -37,9 +40,10 @@ export function JumpChip({ title, qualifier, accessibilityLabel, href, onPress }
       // of role="link" to the browser's own anchor handling) — the same convention
       // `catalogReferences.ts`'s link producers already establish.
       {...(href ? ({ href } as Record<string, unknown>) : null)}
-      style={({ pressed }) => [styles.jumpChip, (pressed || hovered) && styles.jumpChipHover, focused && styles.focusRing]}
+      {...(selected !== undefined ? ({ 'aria-pressed': selected } as Record<string, unknown>) : null)}
+      style={({ pressed }) => [styles.jumpChip, (pressed || hovered) && styles.jumpChipHover, selected && styles.jumpChipSelected, focused && styles.focusRing]}
     >
-      <Text style={styles.jumpChipTitle}>{title}</Text>
+      <Text style={[styles.jumpChipTitle, selected && styles.jumpChipTitleSelected]}>{title}</Text>
       {qualifier ? <Text style={styles.jumpChipCount}>{qualifier}</Text> : null}
     </Pressable>
   );
@@ -75,7 +79,9 @@ const styles = StyleSheet.create({
     backgroundColor: CATALOG_COLOR.chip,
   },
   jumpChipHover: { backgroundColor: CATALOG_COLOR.surfacePressed },
+  jumpChipSelected: { backgroundColor: CATALOG_COLOR.accentSubtle },
   jumpChipTitle: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
+  jumpChipTitleSelected: { color: CATALOG_COLOR.accent },
   jumpChipCount: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },
 });

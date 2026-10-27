@@ -5,7 +5,7 @@ import { defineConfig, type DsViewerConfig } from '../config/index.ts';
 import type { ResolvedConfig } from './types.ts';
 
 const KNOWN_FIELDS = new Set<keyof DsViewerConfig>([
-  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'patternGroups', 'starterKit', 'updateCheck', 'doctor',
+  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'patternGroups', 'usage', 'starterKit', 'updateCheck', 'doctor',
 ]);
 
 export interface LoadConfigResult {
@@ -57,6 +57,12 @@ export function loadConfig(configPath: string): LoadConfigResult {
     else warnings.push('"patternGroups" must be an array of group names; using the default [\'Patterns\'].');
   }
 
+  let usage: string | undefined;
+  if (raw.usage !== undefined) {
+    if (typeof raw.usage === 'string' && raw.usage.trim() !== '') usage = raw.usage;
+    else warnings.push('"usage" must be a path to a JSON file; ignoring it.');
+  }
+
   const config: DsViewerConfig = {
     name: raw.name ?? '',
     logo: raw.logo,
@@ -66,6 +72,7 @@ export function loadConfig(configPath: string): LoadConfigResult {
     pages: raw.pages ?? [],
     groupOrder: raw.groupOrder ?? [],
     patternGroups,
+    usage,
     starterKit: raw.starterKit,
     updateCheck: raw.updateCheck ?? true,
     doctor: raw.doctor ?? { strict: false },

@@ -1,0 +1,567 @@
+{
+  "_fixture": "Fixture data for DS Viewer's own catalog (viewer-host), invented to show the Overview and Appears in: not generated from any real project. Unknown fields like this one are ignored.",
+  "version": 1,
+  "areas": [
+    "Page layout",
+    "Navigation",
+    "Update",
+    "Tokens"
+  ],
+  "components": {
+    "SectionBlock": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 17
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 24
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 31
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/ReferenceDetails.tsx",
+          "line": 38
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/PropsTable.tsx",
+          "line": 45
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 52
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 59
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 66
+        }
+      ]
+    },
+    "FamilyPage": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 73
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 80
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 87
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 94
+        }
+      ]
+    },
+    "GroupPage": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 101
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 108
+        }
+      ]
+    },
+    "CatalogSidebar": {
+      "area": "Navigation",
+      "uses": [
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 115
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 122
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/SourceReferencePicker.tsx",
+          "line": 129
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 136
+        }
+      ]
+    },
+    "CatalogSearchInput": {
+      "area": "Navigation",
+      "uses": [
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 143
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 150
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 157
+        }
+      ]
+    },
+    "JumpRow": {
+      "area": "Navigation",
+      "uses": [
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 164
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 171
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/SourceReferencePicker.tsx",
+          "line": 178
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 185
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 192
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 199
+        }
+      ]
+    },
+    "CatalogButton": {
+      "area": "Update",
+      "uses": [
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 206
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 213
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 220
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 227
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 234
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 241
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 248
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 255
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 262
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 269
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogShell.tsx",
+          "line": 276
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 283
+        }
+      ]
+    },
+    "UpdatePanel": {
+      "area": "Update",
+      "uses": [
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 290
+        }
+      ]
+    },
+    "ComparisonList": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 297
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 304
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 311
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/ReferenceDetails.tsx",
+          "line": 318
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 325
+        }
+      ]
+    },
+    "ComparisonGrid": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 332
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 339
+        }
+      ]
+    },
+    "PropsTable": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 346
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 353
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 360
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/ReferenceDetails.tsx",
+          "line": 367
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/PropsTable.tsx",
+          "line": 374
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 381
+        },
+        {
+          "area": "Update",
+          "file": "native/catalog/UpdatePanel.tsx",
+          "line": 388
+        }
+      ]
+    },
+    "Swatch": {
+      "area": "Tokens",
+      "uses": [
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 395
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 402
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenGrid.tsx",
+          "line": 409
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 416
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 423
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenGrid.tsx",
+          "line": 430
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 437
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 444
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenGrid.tsx",
+          "line": 451
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 458
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 465
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenGrid.tsx",
+          "line": 472
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 479
+        }
+      ]
+    },
+    "TokenRow": {
+      "area": "Tokens",
+      "uses": [
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 486
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 493
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenGrid.tsx",
+          "line": 500
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 507
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 514
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenGrid.tsx",
+          "line": 521
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 528
+        }
+      ]
+    },
+    "SpecimenSurface": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 535
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 542
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 549
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/ReferenceDetails.tsx",
+          "line": 556
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/PropsTable.tsx",
+          "line": 563
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 570
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 577
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 584
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/StructuredTokenPage.tsx",
+          "line": 591
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenSections.tsx",
+          "line": 598
+        },
+        {
+          "area": "Tokens",
+          "file": "native/catalog/TokenGrid.tsx",
+          "line": 605
+        },
+        {
+          "area": "Navigation",
+          "file": "native/catalog/CatalogSidebar.tsx",
+          "line": 612
+        }
+      ]
+    },
+    "DividedStack": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 619
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 626
+        }
+      ]
+    },
+    "PhoneFrame": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 633
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 640
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 647
+        }
+      ]
+    },
+    "AppearsIn": {
+      "area": "Page layout",
+      "uses": [
+        {
+          "area": "Page layout",
+          "file": "native/catalog/SectionBlock.tsx",
+          "line": 654
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/FamilyPage.tsx",
+          "line": 661
+        },
+        {
+          "area": "Page layout",
+          "file": "native/catalog/GroupPage.tsx",
+          "line": 668
+        }
+      ]
+    }
+  }
+}

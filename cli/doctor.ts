@@ -16,6 +16,7 @@ import {
 } from '../native/catalog/pageApi.ts';
 import { canonicalTokenTitle, findDuplicateIds, isTokenKind } from '../native/catalog/tokenDefinition.ts';
 import type { StaticTokenDefinition } from './tokenDefinition.ts';
+import type { UsageData } from '../native/catalog/usage.ts';
 
 export type DoctorSeverity = 'error' | 'warning';
 
@@ -667,25 +668,52 @@ function checkNothingToShow(pages: StaticPage[], patternGroups: readonly string[
     const patternUsers = hosts.filter((host) => isPatternPage(host, patternGroups));
     const unreadable = hasUnreadableComposition(pages, page);
     const base = { id: 'nothing-to-show' as const, severity: 'warning' as const, ...pageRef(page) };
-    const otherFix = "Add a specimen, set `navigation: 'reference'`, or `standalone: '<reason>'`.";
+    const fix = 'Add a specimen, list it as a documentation-only part of a page that uses it, or remove the page (record why in your own docs).';
     if (users.length > 0) {
       const alsoPatterns = patternUsers.length > 0 ? ` Pattern pages also use it (${pageList(patternUsers)}).` : '';
       issues.push(issue({ ...base,
         message: `\`${id}\` shows no specimens. It is used by ${pageList(users)}.${alsoPatterns}`,
-        fix: "List it on that page as a documentation-only part, or set `navigation: 'reference'` to keep it reachable through Source reference search without a browse entry, or `standalone: '<reason>'`.",
+        fix,
       }));
     } else if (patternUsers.length > 0) {
-      issues.push(issue({ ...base, message: `\`${id}\` shows no specimens. Only pattern pages use it (${pageList(patternUsers)}).`, fix: otherFix }));
+      issues.push(issue({ ...base, message: `\`${id}\` shows no specimens. Only pattern pages use it (${pageList(patternUsers)}).`, fix }));
     } else {
       issues.push(issue({ ...base,
         message: unreadable
           ? `\`${id}\` shows no specimens, and no page whose \`composedOf\` doctor could read uses it.`
           : `\`${id}\` shows no specimens and no other page uses it.`,
-        fix: otherFix,
+        fix,
       }));
     }
   }
   return issues;
+}
+
+/** `usage-unknown-page` (U4/U5): a key in the usage file that names no page id, page component,
+ *  family/group member id or member component — and no detected component, since the viewer gives
+ *  one without a page its own stub page, which does show that key's usage. Such a key's numbers
+ *  are never displayed, usually because a component was renamed. Not tied to one page, so it is
+ *  listed under "General". */
+function checkUsageUnknownPage(pages: StaticPage[], components: ComponentRecord[], usage: UsageData): DoctorIssue[] {
+  const known = new Set<string>(components.map((component) => component.name));
+  for (const page of pages) {
+    known.add(resolvePageId(page, page.file));
+    if (page.component) known.add(page.component);
+    for (const member of page.members ?? []) {
+      known.add(member.id);
+      if (member.component) known.add(member.component);
+    }
+  }
+  return Object.keys(usage.components)
+    .filter((key) => !known.has(key))
+    .map((key) =>
+      issue({
+        id: 'usage-unknown-page',
+        severity: 'warning',
+        message: `Usage key "${key}" matches no page id, component, or family member id, so its usage is not shown.`,
+        fix: 'Rename the key in the usage file to a page id, component or member id from the catalog, or remove it.',
+      }),
+    );
 }
 
 /** The viewer exports that frame an example as a phone (or another bounded document), so an
@@ -1149,7 +1177,7 @@ function checkTokenDefinitionAliases(pages: StaticPage[]): DoctorIssue[] {
 export function collectIssues(
   pages: StaticPage[],
   components: ComponentRecord[],
-  options: { patternGroups?: readonly string[] } = {},
+  options: { patternGroups?: readonly string[]; usage?: UsageData } = {},
 ): DoctorIssue[] {
   const patternGroups = options.patternGroups ?? DEFAULT_PATTERN_GROUPS;
   return [
@@ -1166,6 +1194,7 @@ export function collectIssues(
     ...checkStandaloneReason(pages),
     ...checkPartOwnPage(pages, patternGroups),
     ...checkNothingToShow(pages, patternGroups),
+    ...(options.usage ? checkUsageUnknownPage(pages, components, options.usage) : []),
     ...checkMissingWorkingPreview(pages, components),
     ...checkPreviewOnlyPages(pages),
     ...checkFamilyMembers(pages, components),
@@ -1357,7 +1386,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
     : undefined;
 
   let issues = [
-    ...collectIssues(pages, components, { patternGroups: config.patternGroups }),
+    ...collectIssues(pages, components, { patternGroups: config.patternGroups, usage: syncResult.usage }),
     ...checkPageTypeErrors(pages, { fallbackPaths, hostRoot: config.projectRoot }),
     ...checkOverlaysFramed(pages, components, config.projectRoot),
     ...collectGlobalIssues({ syncWarnings: syncResult.warnings, tokenFileCount }),

@@ -132,7 +132,8 @@ identified.
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
-and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `starterKit` (new-project only —
+and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `usage` (optional — a path to a usage data file, see
+[Usage data](#usage-data)), `starterKit` (new-project only —
 records the kit's version), `updateCheck`, `doctor` — see `config/index.ts`'s `DsViewerConfig` for
 each field's exact meaning. Write a page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same
 shape as a `SectionDef`, minus `id`/`path`/`props`, plus `component`, `group`, and `propNotes`).
@@ -229,11 +230,12 @@ component source, and serves the whole thing as one app you never have to add a 
 Each catalog shows **one page at a time**: a persistent, searchable sidebar and the selected page.
 On web the page is kept in the URL fragment (`#Button`), so refresh, deep links, and back/forward
 work. Desktop and laptop screens only. `SectionBlock` renders one page: breadcrumb, title,
-description, previous/next, then the specimens, then always-visible
-**Guidance** and **Quick reference** (source path, accessibility, and — when the page has any —
-**Composition** and the derived **"also used by"** inverse of it), then **Props** in their own box
-(two columns, filled across first, when there are 4+ props and room). Token pages show only
-Quick reference with the source path. Guidance, Quick reference, and — only for a page with
+description, previous/next, then the specimens, then a **Notes and API ›** link that opens the
+reference details in the same side panel a family member uses: **Guidance** and **Quick
+reference** (source path, accessibility, and — when the page has any — **Composition** and the
+derived **"also used by"** inverse of it), then **Props** in their own box
+(two columns, filled across first, when there are 4+ props and room). A page with nothing to put
+there has no link. Token pages keep a short Quick reference with the source path inline. Guidance, Quick reference, and — only for a page with
 confirmed `composedOf` entries — Composition lay out from the reference card's own measured inner
 width, not viewport width alone: three columns side by side only when there's confirmed composition
 *and* the card is wide enough for all three (Composition gets its own column only then; otherwise
@@ -315,9 +317,9 @@ Copy the shape of an existing pair, e.g. `starter-kit/components/Button/` or `st
 Then add a `<Name>.catalog.tsx` file next to it, written with `defineCatalogPage()` (description,
 a11y, and its content — `id`/`path`/`props` are derived, never authored), and export it from
 `src/ds/components/index.ts` the same way its siblings are. `SectionBlock` shows the
-specimens first, then Guidance, Quick reference, and Props. Give it whichever of these fields
+specimens first, then a "Notes and API ›" side panel holding Guidance, Quick reference, and Props. Give it whichever of these fields
 actually apply:
-- `notes: string[]` — page-level notes, listed as a "Notes" entry in the page's Quick reference
+- `notes: string[]` — page-level notes, listed as a "Notes" entry in the page's Quick reference (in its Notes and API panel)
   (for facts about the source that aren't part of the description, guidance or accessibility).
 - `comparison: { rowLabel, columnLabel, rows, columns, cells, size? }` — when two props genuinely
   combine. Author every row × column cell with a real instance, or an `unavailableReason` when that
@@ -506,6 +508,84 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   string-literal unions declared in the component's own folder or a token folder. A union
   declared in another component's folder, such as a shared `IconName`, is that component's
   options, so a Banner page never needs one example per icon.
+
+### Usage data
+
+Set `usage` in `ds-viewer.config.ts` to a JSON file your project generates, and every page whose
+component appears in it gets an **Appears in** block after its specimens (and inside each family or
+group member that has usage):
+
+```ts
+export default defineConfig({
+  // …
+  usage: 'build/usage.json', // relative to the project root
+});
+```
+
+The block lists the areas the component is used in, most uses first, each with a proportional bar
+(decorative) and a count that is read out as, for example, "Chat, 5 uses". Below it,
+**Files that use it · N** lists each use as `file:line`; past eight files the list collapses behind
+**Show all N**. A page without usage shows no block, and a project without a `usage` field is
+unchanged.
+
+**File format, version 1:**
+
+```json
+{
+  "version": 1,
+  "areas": ["Chat", "Bots"],
+  "components": {
+    "ChatBubble": {
+      "area": "Chat",
+      "uses": [{ "area": "Bots", "file": "BotRoomView.swift", "line": 152 }]
+    }
+  }
+}
+```
+
+- `version` must be `1`. `areas` (optional) is the display order for areas. Area names are free text.
+- Each key under `components` is a page id, a page's `component`, a family or group member id, or
+  a member's `component`. `area` is the component's home area. `uses` may be empty; each use needs
+  an `area` and a `file`, and may have a `line` (a whole number from 1).
+- Fields it doesn't know are ignored, so a generator can add its own.
+
+`sync` and `dev` read the file. A missing file, malformed JSON or a wrong shape prints a warning
+that names the problem and shows no usage; the file is all-or-nothing, so one bad entry ignores
+the rest. The result is written to `.ds-viewer/generated/usage.json`. `doctor` reports a key that
+matches nothing in the catalog as `usage-unknown-page` (usually a renamed component). `dev` watches
+the usage file too, so regenerating it updates the open catalog without a restart. (Changing the
+`usage` path in `ds-viewer.config.ts` is picked up by the config watcher, but `dev` only starts
+watching a new folder for it on its next start.)
+
+### Overview page
+
+With a [usage file](#usage-data), the sidebar gets an **Overview** entry above every group, and the
+page behind it (`#ds-viewer-overview`) maps the catalog for designers. Without usage data the entry
+does not exist and the address is "Page not found", so a catalog that has no `usage` field is
+unchanged.
+
+- **Components** (the default tab) shows a card for every page that has something to show: a live,
+  scaled-down copy of its first specimen (the first variant, else the first state, comparison cell
+  or `render()` output; for a family or group page, its first part with a specimen), its title, a
+  usage line such as "17 uses · 7 areas" or "52 uses · Settings only", and a **Shared across
+  areas** tag when it is used outside its home area. Cards are grouped by home area (the usage
+  entry's `area`; `areas` order first, then alphabetical), and a page with no usage goes to a final
+  **Other** group. The chips filter by home area or **Shared across areas**; **By area** and
+  **Most used** sort. Token pages, pages with nothing to show and reference-only pages get no card.
+  A token page is one defined with `tokenDefinition` or `tokenSections`, or a `tokenGallery` page in
+  a sidebar group labelled **Tokens**; a `tokenGallery` page anywhere else (a full-width pattern
+  screen, say) gets its card. A thumbnail lays the specimen out at its page's first
+  `previewWidths` entry and on the surface the page gives it, so it looks as it does on the page.
+- **Usage** (`#ds-viewer-overview/usage`) is a table: a row for each component with uses, its
+  **Areas** count, then one column per area whose cell is shaded by how large the count is (text
+  stays at least 4.5:1 on the shading). **Most shared first** or **Most used first**. At narrow
+  widths the table scrolls inside its own container.
+
+Activating a card or a row opens that page like a sidebar link; Back returns to the Overview with
+its tab, filter and sort. A card has one tab stop, its title link; clicking anywhere else on the
+card opens the same page. The two tabs follow the usual keyboard pattern (Left/Right, Home and End
+move between them). Thumbnails are decoration: hidden from assistive technology, never focusable or
+clickable, and on the web mounted only when near the visible part of the page. Nothing animates.
 
 ### Family pages
 
@@ -922,12 +1002,16 @@ Button
   - `nothing-to-show` — a plain page with no variants, states, `render` or comparison, and no
     members or token content (`previewWidths` alone doesn't count; it only sizes `render`). The
     message names the pages that list it in `composedOf` — on the page or on one of its members —
-    or says only pattern pages use it, or that nothing does. List it as a documentation-only part
-    of a page that uses it, set `navigation: 'reference'`, or add a `standalone` reason. A page
+    or says only pattern pages use it, or that nothing does. Add a specimen, list it as a
+    documentation-only part of a page that uses it, or remove the page (record why in your own
+    docs); `standalone` (above) still opts a page out on purpose. A page
     whose specimens can't be read literally is never reported. A component page with no specimens
     usually also gets `component-no-examples` (unless the component is documented elsewhere, on
     another page or as a family member); the two say different things (no examples vs. no reason to
     be its own page) and clear together once it has a specimen.
+  - `usage-unknown-page` — a key in the usage file (see [Usage data](#usage-data)) that matches no
+    page id, page `component`, family or group member id, member `component`, or detected
+    component, so its usage is never shown. Rename the key or remove it.
   - `standalone-reason-empty` — `standalone` is blank, so it records no reason and opts nothing out.
 
   The catalog also warns at render time when a page under-declares the width its examples need.

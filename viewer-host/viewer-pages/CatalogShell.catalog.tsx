@@ -67,6 +67,7 @@ export default defineCatalogPage({
     { component: 'GroupPage', role: 'Each catalog page with members and no whole.', relationship: 'built-in' },
     { component: 'UpdatePanel', role: 'The update page, opened from the sidebar footer.', relationship: 'built-in' },
     { component: 'SpecimenAddressProvider', role: "Wraps the selected page so a PhoneFrame in it knows which example it is.", relationship: 'built-in' },
+    { component: 'Overview', role: 'The Overview page, first in the sidebar when the project has usage data.', relationship: 'built-in' },
     { component: 'SourceReferencePicker', role: 'The catalog-wide Source reference search, opened from the sidebar once any page opts into it.', relationship: 'built-in' },
   ],
   hide: { props: true },

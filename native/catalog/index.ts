@@ -25,7 +25,14 @@ export { ComparisonGrid } from './ComparisonGrid';
 export { grid, axisItems, axisProp } from './comparison';
 export { ComparisonGroups } from './ComparisonGroups';
 export { ComparisonList } from './ComparisonList';
-export { ReferenceDetails } from './ReferenceDetails';
+export { ReferenceDetails, ReferenceDetailsPanel } from './ReferenceDetails';
+export { SidePanel } from './SidePanel';
+export { SidePanelTrigger } from './SidePanelTrigger';
+export { AppearsIn } from './AppearsIn';
+export type { UsageData, UsageEntry, UsageUse } from './usage';
+export { Overview } from './Overview';
+export { OverviewThumbnail } from './OverviewThumbnail';
+export type { ThumbnailSource } from './overviewModel';
 export { PropsTable } from './PropsTable';
 export { VariantGroup } from './VariantGroup';
 export { TokenRow, TokenRowGroup } from './TokenRow';
@@ -74,7 +81,7 @@ export type {
   CatalogAnatomy, CatalogAnatomyGroup, CatalogAnatomyItem, RelatedPage,
 } from './types';
 export { UpdatePanel } from './UpdatePanel';
-export { UPDATE_PAGE_ID } from './catalogNavigation';
+export { UPDATE_PAGE_ID, OVERVIEW_PAGE_ID } from './catalogNavigation';
 export type { UpdateNotice, VersionStatus, AutoCheckSource } from './types';
 export type { ListGroup, ListItem } from './comparison';
 export {

@@ -1,6 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, findNodeHandle, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
-import { CatalogButton } from './CatalogButton';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, findNodeHandle, type LayoutChangeEvent } from 'react-native';
+import { AppearsIn } from './AppearsIn';
+import { UsageContext, useUsage } from './usageContext';
+import { SidePanel, useClosingNavigation } from './SidePanel';
+import { SidePanelTrigger } from './SidePanelTrigger';
+import { findUsage, pageLevelUsage, type UsageData } from './usage';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { Blocks, SectionPagerRow, type SectionPager } from './SectionBlock';
 import { PropsTable } from './PropsTable';
@@ -408,17 +412,6 @@ function DisclosureBody({
   );
 }
 
-/** The disclosure trigger's trailing chevron (`›`), on the `icon` role, hidden from screen readers
- *  (the trigger's own accessible name is its text label). Always `›`: the content opens in a side
- *  panel, never expands in place. */
-function DisclosureChevron() {
-  return (
-    <Text {...ARIA_HIDDEN} style={styles.chevron}>
-      ›
-    </Text>
-  );
-}
-
 /** What the one shared side panel shows: the member's disclosure, headed by its trigger's label. */
 interface MemberPanelRequest {
   member: CatalogMember & { props?: PropDef[] };
@@ -437,91 +430,16 @@ interface MemberPanelControl {
 
 const MemberPanelContext = createContext<MemberPanelControl | null>(null);
 
-const PANEL_WIDTH = 440;
-/** At or below this window width the panel takes the full width, as the approved design shows at
- *  768 (the viewer has no shared narrow breakpoint constant to reuse). */
-const PANEL_FULL_WIDTH_AT_OR_BELOW = 768;
-/** The light scrim behind the panel — no `CATALOG_COLOR` is a translucent overlay. */
-const PANEL_SCRIM = 'rgba(20,20,20,.28)';
-
-/** The member side panel: `role="dialog"`, `aria-modal`, named by the member, one at a time, no
- *  animation. On web, `Modal` (transparent) supplies the dialog role, Esc to close, Tab
- *  containment, and returning focus to the trigger on close. React Native's own `Modal` does none
- *  of those on native (only `onRequestClose` for the hardware back button), so on native the panel
- *  moves screen-reader focus to the × itself on open (`AccessibilityInfo.setAccessibilityFocus`);
- *  it does not return focus to the trigger on close — that is left to the platform. Following a
- *  link inside it closes it first (`navigation` is wrapped), then navigates. */
+/** The member side panel: the shared `SidePanel` shell, headed by the member and holding its
+ *  disclosure. Following a link inside it closes it first (`navigation` is wrapped), then
+ *  navigates. */
 function MemberPanel({ request, onClose }: { request: MemberPanelRequest; onClose: () => void }) {
-  const { width } = useWindowDimensions();
-  const headingId = useId();
-  const closeRef = useRef<View>(null);
-  const focusClose = useCallback(() => {
-    const node = closeRef.current;
-    if (!node) return;
-    if (Platform.OS === 'web') {
-      node.focus?.();
-      return;
-    }
-    const handle = findNodeHandle(node);
-    if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
-  }, []);
   const { member, parts, label, resolvesAddress, navigation } = request;
-  const closingNavigation = useMemo<ReferenceNavigation | undefined>(
-    () =>
-      navigation && {
-        resolve: (name) => navigation.resolve(name),
-        open: (pageId, memberId, sourceMemberId) => {
-          onClose();
-          navigation.open(pageId, memberId, sourceMemberId);
-        },
-      },
-    [navigation, onClose],
-  );
-  // Locks the document's own scroll while the panel is open, for hosts whose body scrolls. The
-  // shell's own pane needs nothing: `Modal` portals outside it, so wheel chaining from the scrim
-  // never reaches it. Restores the previous overflow on close and on unmount. (iOS Safari ignores
-  // body overflow for touch scrolling.)
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const { body } = document;
-    const previous = body.style.overflow;
-    body.style.overflow = 'hidden';
-    return () => { body.style.overflow = previous; };
-  }, []);
-  // A plain-`href` link (no shell navigation) just changes the hash — close the panel on that too.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    window.addEventListener('hashchange', onClose);
-    return () => window.removeEventListener('hashchange', onClose);
-  }, [onClose]);
+  const closingNavigation = useClosingNavigation(navigation, onClose);
   return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose} onShow={focusClose} {...({ 'aria-labelledby': headingId } as Record<string, unknown>)}>
-      <View style={styles.panelRoot}>
-        {/* On web, a plain View, not a Pressable: the Modal's focus trap `focus()`es descendants in turn, and
-            even a tabindex=-1 scrim would take focus — an unnamed, ringless stop. Press-to-close there is a
-            click handler only (the × and Esc are the keyboard paths). */}
-        {Platform.OS === 'web' ? (
-          <View testID="member-panel-scrim" style={styles.panelScrim} {...({ onClick: onClose } as Record<string, unknown>)} />
-        ) : (
-          // Native has no DOM focus trap, so a Pressable is safe there and gives tap-to-close.
-          <Pressable testID="member-panel-scrim" style={styles.panelScrim} onPress={onClose} accessible={false} />
-        )}
-        <View style={[styles.panel, width <= PANEL_FULL_WIDTH_AT_OR_BELOW && styles.panelFull]}>
-          <View style={styles.panelHead}>
-            <View style={styles.panelTitle}>
-              <Text style={styles.panelKicker}>{label}</Text>
-              <Text nativeID={headingId} role="heading" {...({ 'aria-level': 2 } as Record<string, unknown>)} style={styles.panelName}>
-                {member.id}
-              </Text>
-            </View>
-            <CatalogButton ref={closeRef} label="×" accessibilityLabel="Close" variant="secondary" onPress={onClose} />
-          </View>
-          <ScrollView style={styles.panelBody} contentContainerStyle={styles.panelBodyContent}>
-            <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={closingNavigation} />
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    <SidePanel kicker={label} title={member.id} onClose={onClose}>
+      <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={closingNavigation} />
+    </SidePanel>
   );
 }
 
@@ -554,7 +472,6 @@ function MemberDisclosureToggle({
   navigation?: ReferenceNavigation;
 }) {
   const panel = useContext(MemberPanelContext);
-  const [focused, setFocused] = useState(false);
   const parts = disclosureContent(member, member.props);
   if (parts.length === 0) return null;
   // A member rendered outside a page's own host still gets a working panel.
@@ -568,18 +485,7 @@ function MemberDisclosureToggle({
   const label = disclosureLabel(member, apiLabel, parts.includes('props'));
   const open = panel.activeId === member.id;
   return (
-    <Pressable
-      onPress={() => panel.show({ member, parts, label, resolvesAddress, navigation })}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: open }}
-      {...({ 'aria-expanded': open, 'aria-haspopup': 'dialog' } as Record<string, unknown>)}
-      style={[styles.disclosureToggle, focused && styles.focusRing]}
-    >
-      <Text style={styles.disclosureToggleLabel}>{label}</Text>
-      <DisclosureChevron />
-    </Pressable>
+    <SidePanelTrigger label={label} open={open} onPress={() => panel.show({ member, parts, label, resolvesAddress, navigation })} />
   );
 }
 
@@ -634,6 +540,7 @@ export function FamilyPart({ member, number, level, allMemberIds, defaultPreview
   );
   const related = member.related ? linkifyRelated(member.related, allMemberIds) : undefined;
   const numbered = number !== undefined;
+  const usage = findUsage(useUsage(), [member.id, member.component]);
 
   return (
     <View>
@@ -674,6 +581,7 @@ export function FamilyPart({ member, number, level, allMemberIds, defaultPreview
             <Blocks blocks={blocks} def={memberDef} surface={surface} showLabels={false} trimOuterMargin />
           </View>
         )}
+        <AppearsIn entry={usage} />
         {member.notShown && <Text style={styles.belowLine}>{member.notShown}</Text>}
         <BelowSpecimensLine
           related={related}
@@ -1524,6 +1432,7 @@ export function FamilyPage<TId extends string>({
   focusNonce,
   knownAddressIds,
   navigation,
+  usage,
 }: {
   def: SectionDef<TId>;
   groupLabel?: string;
@@ -1532,6 +1441,9 @@ export function FamilyPage<TId extends string>({
   pager?: SectionPager<TId>;
   headingRef?: React.Ref<View>;
   defaultPreviewWidths?: PreviewWidths;
+  /** The project's usage data (`CatalogShell`'s `usage`): each member with an entry for its id or
+   *  component gets an "Appears in" block after its specimens. Omitted: none. */
+  usage?: UsageData | null;
   /** Spec §5.3 "Member address": the member to scroll to, open (if it's a folded row) and focus
    *  once this page has rendered — set by `CatalogShell` from `resolveRoute`'s `member` route.
    *  `undefined` for a plain family-address visit, which focuses the page head instead, like any
@@ -1617,7 +1529,10 @@ export function FamilyPage<TId extends string>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusMemberId, openRows, focusNonce]);
 
+  const pageUsage = pageLevelUsage(usage, def, family.members);
+
   return (
+    <UsageContext.Provider value={usage ?? null}>
     <MemberPanelHost>
     <View>
       <FamilyPageHead kind="family" def={def} groupLabel={groupLabel} breadcrumbRoot={breadcrumbRoot} banner={banner} pager={pager} headingRef={headingRef} notShown={family.notShown} />
@@ -1637,6 +1552,7 @@ export function FamilyPage<TId extends string>({
                     <Blocks blocks={blocks} def={wholeDef} surface={surface} showLabels={false} trimOuterMargin />
                   </View>
                 )}
+                <AppearsIn entry={findUsage(usage, [wholeMember.id, wholeMember.component])} />
                 {wholeMember.notShown && <Text style={styles.belowLine}>{wholeMember.notShown}</Text>}
                 <WholeBelowLine
                   name={wholeMember.id}
@@ -1685,8 +1601,11 @@ export function FamilyPage<TId extends string>({
         onToggleRow={toggleRow}
         registerNode={registerNode}
       />
+      {/* A usage key that names the page itself shows after everything else, like a standalone page's. */}
+      {pageUsage?.uses.length ? <View style={styles.pageUsage}><AppearsIn entry={pageUsage} /></View> : null}
     </View>
     </MemberPanelHost>
+    </UsageContext.Provider>
   );
 }
 
@@ -1695,6 +1614,7 @@ const LABEL_GAP = 80;
 const PIN_GUTTER = 52;
 
 const styles = StyleSheet.create({
+  pageUsage: { marginTop: CATALOG_SPACE['2xl'] },
   breadcrumb: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
   pageHead: { paddingBottom: CATALOG_SPACE.xl, marginBottom: CATALOG_SPACE['2xl'], borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.borderStrong },
   titlebar: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: CATALOG_SPACE.xl, marginTop: 14 },
@@ -1813,26 +1733,6 @@ const styles = StyleSheet.create({
   // below the specimens — `partBody`'s own CATALOG_SPACE.sm gap already contributes 8px, so this
   // subtracts the difference (sm - xs = 4) the same way `memberSpecimens` does above.
   disclosureSpacer: { marginTop: CATALOG_SPACE.xs - CATALOG_SPACE.sm },
-  disclosureToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: CATALOG_SPACE.xs,
-    alignSelf: 'flex-start',
-    minHeight: CATALOG_LAYOUT.controlSize,
-    justifyContent: 'center',
-  },
-  chevron: { ...CATALOG_TEXT.icon, color: CATALOG_COLOR.accent },
-  panelRoot: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
-  panelScrim: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: PANEL_SCRIM },
-  panel: { width: PANEL_WIDTH, maxWidth: '100%', height: '100%', backgroundColor: CATALOG_COLOR.surface, borderLeftWidth: 1, borderLeftColor: CATALOG_COLOR.borderStrong },
-  panelFull: { width: '100%' },
-  panelHead: { flexDirection: 'row', alignItems: 'flex-start', gap: CATALOG_SPACE.md, padding: CATALOG_SPACE.lg, borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },
-  panelTitle: { flex: 1, gap: 2 },
-  panelKicker: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.textMuted },
-  panelName: { ...CATALOG_TEXT.heading3, color: CATALOG_COLOR.text },
-  panelBody: { flex: 1 },
-  panelBodyContent: { padding: CATALOG_SPACE.lg },
-  disclosureToggleLabel: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.accent },
   disclosureBody: { gap: CATALOG_SPACE.sm, paddingTop: CATALOG_SPACE.xs },
   note: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.text },
   disclosureText: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, maxWidth: 700 },

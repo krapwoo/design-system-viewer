@@ -165,3 +165,20 @@ test('loadConfig reads patternGroups and rejects a value that is not a list of n
   assert.deepEqual(bad.warnings, ['"patternGroups" must be an array of group names; using the default [\'Patterns\'].']);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('loadConfig reads usage as a path and rejects anything else', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-config-'));
+  const configPath = path.join(dir, 'ds-viewer.config.ts');
+  const write = (value: string) => writeFileSync(configPath, `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', components: [], tokens: [], usage: ${value} } as any);\n`);
+  write("'build/usage.json'");
+  const ok = loadConfig(configPath);
+  assert.equal(ok.config.usage, 'build/usage.json');
+  assert.deepEqual(ok.warnings, []);
+  for (const bad of ['42', "''", "['a.json']"]) {
+    write(bad);
+    const result = loadConfig(configPath);
+    assert.equal(result.config.usage, undefined, bad);
+    assert.deepEqual(result.warnings, ['"usage" must be a path to a JSON file; ignoring it.'], bad);
+  }
+  rmSync(dir, { recursive: true, force: true });
+});

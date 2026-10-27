@@ -58,6 +58,7 @@ function entryTsx(
   groupOrder: string[],
   logoRequirePath: string | undefined,
   updateEndpoint: { baseUrl: string; secret: string } | undefined,
+  hasUsage = false,
 ): string {
   const safeAreaImport = hasSafeArea ? "import { SafeAreaProvider } from 'react-native-safe-area-context';\n" : '';
   // A literal `require(...)` with a path computed at generation time: Metro resolves every import
@@ -74,7 +75,7 @@ function entryTsx(
   // (no reserved words in either key) — the same reasoning the existing `logoRequirePath` baking
   // already relies on, extended to a whole object instead of one string.
   const endpointConst = `const updateEndpoint = ${updateEndpoint ? JSON.stringify(updateEndpoint) : 'undefined'};\n`;
-  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} update={updateNotice} versionStatus={versionStatus} updateEndpoint={updateEndpoint} />`;
+  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} update={updateNotice} versionStatus={versionStatus} updateEndpoint={updateEndpoint}${hasUsage ? ' usage={usage}' : ''} />`;
   const root = hasSafeArea ? `<SafeAreaProvider>${viewer}</SafeAreaProvider>` : viewer;
   return `import { registerRootComponent } from 'expo';
 import { CatalogShell, buildCatalogSections } from '@krapwoo/ds-viewer';
@@ -82,7 +83,7 @@ ${safeAreaImport}${logoImport}import pages from './generated/pages';
 import components from './generated/components.json';
 import updateNotice from './update.json';
 import versionStatus from './version.json';
-${endpointConst}
+${hasUsage ? "import usage from './generated/usage.json';\n" : ''}${endpointConst}
 function App() {
   const { sections, groups } = buildCatalogSections(pages, components, ${JSON.stringify(groupOrder)});
   return ${root};
@@ -270,6 +271,6 @@ export function writeWorkspace(config: ResolvedConfig, updateEndpoint?: { baseUr
   const logoRequirePath = config.logo
     ? path.relative(workspace, path.resolve(config.projectRoot, config.logo)).split(path.sep).join('/')
     : undefined;
-  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? [], logoRequirePath, updateEndpoint));
+  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? [], logoRequirePath, updateEndpoint, Boolean(config.usage)));
   return workspace;
 }

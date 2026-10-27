@@ -55,6 +55,21 @@ function openPanel(): HTMLElement | null {
   return document.querySelector('[role="dialog"][aria-modal="true"]');
 }
 
+/** A standalone page keeps its Guidance / Quick reference / Composition behind "Notes and API" —
+ *  open it and return the dialog, which portals outside the render container. */
+function openNotes(container: HTMLElement): HTMLElement {
+  const trigger = [...container.querySelectorAll('[aria-haspopup="dialog"]')].find((b) => (b.textContent || '').startsWith('Notes and API'));
+  assert.ok(trigger, 'expected the page\'s "Notes and API" control');
+  click(trigger!);
+  const panel = openPanel();
+  assert.ok(panel, 'the control opens the side panel');
+  return panel!;
+}
+
+function linkIn(root: HTMLElement, text: string, options: { exact?: boolean } = {}): HTMLAnchorElement | undefined {
+  return [...root.querySelectorAll('a')].find((a) => (options.exact ? (a.textContent || '').trim() === text : (a.textContent || '').trim().startsWith(text))) as HTMLAnchorElement | undefined;
+}
+
 function plainTextPresent(container: HTMLElement, text: string): boolean {
   return [...container.querySelectorAll('*')].some((e) => e.children.length === 0 && (e.textContent || '').includes(text));
 }
@@ -156,24 +171,26 @@ function mountShell(initialPage: Id) {
 
 test('an ordinary page\'s resolvable Composition name becomes a real canonical link, and activating it navigates', () => {
   const { container, cleanup } = mountShell('Button');
-  const link = linkNamed(container, 'Icon');
+  const link = linkIn(openNotes(container), 'Icon');
   assert.ok(link, 'expected a real link for the resolvable Composition name');
   assert.equal(link!.getAttribute('href'), hashForId('Icon'));
   click(link!);
   assert.equal(pageHeading(), 'Icon', 'activating the Composition link must navigate to its canonical address');
+  assert.ok(openPanel() === null, 'following the link closes the panel first');
   cleanup();
 });
 
 test('Composition omits only the built-in suffix while preserving slot/related labels, roles and metadata', () => {
   const { container, cleanup } = mountShell('Button');
   try {
+    const panel = openNotes(container);
     const facts = [
       ['Icon', 'Leading glyph'],
       ['Tooltip · slot', 'Optional hint'],
       ['NoSuchComponent · related', 'Nothing real'],
     ];
     for (const [label, role] of facts) {
-      const values = [...container.querySelectorAll('*')].filter(e => e.children.length === 0 && e.textContent === role);
+      const values = [...panel.querySelectorAll('*')].filter(e => e.children.length === 0 && e.textContent === role);
       assert.equal(values.length, 1, `expected one actual composition value for ${role}`);
       assert.equal(values[0].parentElement?.firstElementChild?.textContent, label);
     }
@@ -205,7 +222,7 @@ test('a non-embedded reference return has one activation owner', async () => {
 test('inline reference activation keeps its real page origin and completes a Back return', () => {
   const { container, cleanup } = mountShell('Button');
   try {
-    click(linkNamed(container, 'Icon')!);
+    click(linkIn(openNotes(container), 'Icon')!);
     assert.equal(pageHeading(), 'Icon');
     const back = linkNamed(container, 'Back to Button');
     assert.ok(back, 'inline reference activation must record its real origin, not just call ordinary select');
@@ -229,7 +246,7 @@ test('a non-embedded shell\'s inline activation cancels the native anchor defaul
       await new Promise<void>((resolve) => window.addEventListener('hashchange', () => resolve(), { once: true }));
     });
     const changed = new Promise<void>((resolve) => window.addEventListener('hashchange', () => resolve(), { once: true }));
-    const event = click(linkNamed(container, 'Icon')!);
+    const event = click(linkIn(openNotes(container), 'Icon')!);
     assert.equal(event.defaultPrevented, true, 'the shell owns normal reference activation; the native anchor default must not race it');
     await act(async () => { await changed; });
     assert.equal(pageHeading(), 'Icon');
@@ -361,17 +378,19 @@ test('an explicit unresolved navigation never fabricates an anatomy member link'
 
 test('an ordinary page\'s unresolvable Composition name (and its relationship suffix) stays honest plain text, never a dead link', () => {
   const { container, cleanup } = mountShell('Button');
-  assert.equal(Boolean(linkNamed(container, 'NoSuchComponent')), false);
-  assert.ok(plainTextPresent(container, 'NoSuchComponent · related'), 'the relationship suffix stays, unlinked');
+  const panel = openNotes(container);
+  assert.equal(Boolean(linkIn(panel, 'NoSuchComponent')), false);
+  assert.ok(plainTextPresent(panel, 'NoSuchComponent · related'), 'the relationship suffix stays, unlinked');
   // A 'slot' composition name also renders its own suffix, independent of resolvability.
-  assert.ok(plainTextPresent(container, 'Tooltip · slot') || linkNamed(container, 'Tooltip') !== undefined);
+  assert.ok(plainTextPresent(panel, 'Tooltip · slot') || linkIn(panel, 'Tooltip') !== undefined);
   cleanup();
 });
 
 test("an ordinary page's derived \"also used by\" inverse use is always-visible and links to its real user", () => {
   const { container, cleanup } = mountShell('Button');
-  assert.ok(plainTextPresent(container, 'Also used by'), 'expected the derived inverse-use sentence');
-  const dialogLink = linkNamed(container, 'Dialog');
+  const panel = openNotes(container);
+  assert.ok(plainTextPresent(panel, 'Also used by'), 'expected the derived inverse-use sentence');
+  const dialogLink = linkIn(panel, 'Dialog');
   assert.ok(dialogLink, 'expected "Dialog" to be a real link inside the "Also used by" sentence');
   click(dialogLink!);
   assert.equal(pageHeading(), 'Dialog');
@@ -396,10 +415,11 @@ test('a token-gallery page renders both a linked Composition name and its own "a
 
 test('a component name claimed by more than one page is ambiguous and stays plain text, never a guessed link', () => {
   const { container, cleanup } = mountShell('PageA');
+  const panel = openNotes(container);
   // "Shared" names PageA's own composedOf entry — ambiguous (PageA and PageB both bind it) — so it
   // must render as plain text even though it happens to equal this very page's own component.
-  assert.equal(Boolean(linkNamed(container, 'Shared')), false);
-  assert.ok(plainTextPresent(container, 'Shared · related'));
+  assert.equal(Boolean(linkIn(panel, 'Shared')), false);
+  assert.ok(plainTextPresent(panel, 'Shared · related'));
   cleanup();
 });
 
@@ -541,11 +561,12 @@ test("an embedded shell's new canonical links never touch the host document's UR
   window.location.hash = '#host-page-untouched';
   const hostHash = window.location.hash;
 
-  const modified = click(linkNamed(container, 'Icon')!, { ctrlKey: true });
+  const panel = openNotes(container);
+  const modified = click(linkIn(panel, 'Icon')!, { ctrlKey: true });
   assert.equal(modified.defaultPrevented, false, 'a modified click must reach the browser\'s own new-tab handling');
   assert.equal(pageHeading(), 'Button', 'a modified click must not navigate the current page');
 
-  const plain = click(linkNamed(container, 'Icon')!);
+  const plain = click(linkIn(panel, 'Icon')!);
   assert.equal(plain.defaultPrevented, true, 'an embedded shell must cancel the native document navigation on a plain click');
   assert.equal(pageHeading(), 'Icon', 'the plain click must still have navigated internally');
   assert.equal(window.location.hash, hostHash, 'an embedded shell must never read or write the host document\'s own address');
@@ -555,9 +576,10 @@ test("an embedded shell's new canonical links never touch the host document's UR
 test('a standalone-mounted SectionBlock with no navigation prop keeps its prior unlinked Composition rendering', () => {
   const def: SectionDef<Id> = SECTIONS.find((s) => s.id === 'Button')!;
   const { container, cleanup } = renderCatalog(React.createElement(SectionBlock as never, { def } as never));
-  assert.equal(Boolean(linkNamed(container, 'Icon')), false, 'no navigation prop means no canonical link, the prior default');
-  assert.ok(plainTextPresent(container, 'Icon'));
-  assert.ok(plainTextPresent(container, 'Also used by'), 'the derived inverse-use sentence itself is independent of navigation');
+  const panel = openNotes(container);
+  assert.equal(Boolean(linkIn(panel, 'Icon')), false, 'no navigation prop means no canonical link, the prior default');
+  assert.ok(plainTextPresent(panel, 'Icon'));
+  assert.ok(plainTextPresent(panel, 'Also used by'), 'the derived inverse-use sentence itself is independent of navigation');
   cleanup();
 });
 
@@ -593,13 +615,14 @@ test('producer-to-renderer wiring: a real buildCatalogSections + mounted Catalog
       <CatalogShell embedded initialPage={'ActionPage' as never} appName="App" title="Component Catalog" groups={groups as never} sections={sections as never} />
     </Mount>,
   );
-  const link = linkNamed(container, 'Glyph');
+  const link = linkIn(openNotes(container), 'Glyph');
   assert.ok(link, 'expected the real producer-authored composedOf entry to resolve through the real buildCatalogSections output');
   click(link!);
   assert.equal(pageHeading(), 'GlyphPage', 'must land on the page that actually owns the "Glyph" export, not a guess');
-  assert.ok(plainTextPresent(container, 'Also used by'), 'the real producer inverse must reach the ordinary renderer');
-  assert.ok(linkNamed(container, 'ActionPage'), 'the actual built-in user must be linked');
-  assert.equal(Boolean(linkNamed(container, 'RelatedCaller')), false, 'related comparisons must not become built-in users');
-  assert.equal(Boolean(linkNamed(container, 'SlotCaller')), false, 'optional slots must not become built-in users');
+  const panel = openNotes(container);
+  assert.ok(plainTextPresent(panel, 'Also used by'), 'the real producer inverse must reach the ordinary renderer');
+  assert.ok(linkIn(panel, 'ActionPage'), 'the actual built-in user must be linked');
+  assert.equal(Boolean(linkIn(panel, 'RelatedCaller')), false, 'related comparisons must not become built-in users');
+  assert.equal(Boolean(linkIn(panel, 'SlotCaller')), false, 'optional slots must not become built-in users');
   cleanup();
 });
