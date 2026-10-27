@@ -5,10 +5,12 @@ import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { ReferenceDetails } from './ReferenceDetails';
+import type { ReferenceNavigation } from './catalogReferences';
 import { SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
+import { tokenDefinitionSections } from './StructuredTokenPage';
 import { MATRIX_LAYOUT, PREVIEW_CARD_CHROME, blockMinWidth, choosePlacement, presentationBlocks, type PlacementBlock, type PresentationBlock } from './comparison';
 import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
 
@@ -182,8 +184,14 @@ function BlockContent<TId extends string>({ block, def, surface }: { block: Pres
           <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} layout={def.previewLayout === 'table' ? 'table' : undefined} />
         </SpecimenAddressProvider>
       ) : null;
-    case 'tokenSections':
-      return <TokenSections sections={block.sections} columns={block.columns} label={def.id} />;
+    case 'tokenSections': {
+      // #61: a page's own `tokenDefinition` (when set) carries the real entry data —
+      // `buildCatalogSections` only ever derives `block.sections` from it as placeholder geometry
+      // (`render: () => null`), so the real rendering happens here instead, at this file's own
+      // existing JSX boundary.
+      const sections = def.tokenDefinition ? tokenDefinitionSections(def.tokenDefinition) : block.sections;
+      return <TokenSections sections={sections} columns={block.columns} label={def.id} />;
+    }
     default:
       return (
         <View style={styles.previewCard}>
@@ -319,6 +327,7 @@ export function SectionBlock<TId extends string>({
   headingRef,
   headingLevel = 1,
   defaultPreviewWidths,
+  navigation,
 }: {
   def: SectionDef<TId>;
   groupLabel?: string;
@@ -331,6 +340,11 @@ export function SectionBlock<TId extends string>({
   headingLevel?: 1 | 2;
   /** Preview widths for pages without `previewWidths` (CatalogShell passes its catalog default). */
   defaultPreviewWidths?: PreviewWidths;
+  /** Task 2B2: `CatalogShell`'s own shared reference navigation, passed straight through to
+   *  `ReferenceDetails` so a resolvable Composition name becomes a real canonical link. Omitted for
+   *  a standalone-mounted `SectionBlock` (this framework's own catalog demo included), which then
+   *  keeps its prior, unlinked rendering — see `ReferenceDetails`'s own doc comment. */
+  navigation?: ReferenceNavigation<TId>;
 }) {
   checkCompleteness(def);
   // Memoized so Blocks' placement effect runs on real changes, not on every render.
@@ -363,7 +377,7 @@ export function SectionBlock<TId extends string>({
 
       {blocks.length > 0 && <Blocks blocks={blocks} def={def} surface={surface} />}
 
-      <ReferenceDetails def={def} />
+      <ReferenceDetails def={def} navigation={navigation} />
     </View>
   );
 }

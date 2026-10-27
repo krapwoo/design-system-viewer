@@ -172,7 +172,13 @@ export function aliasTargets<TId extends string>(sections: readonly SectionDef<T
     const family = section.family;
     if (!family) continue;
     for (const member of family.members) {
-      if (member.id === family.whole) continue;
+      if (member.id === family.whole) {
+        // C3: the whole's own id already resolves via `order` (it equals the page's own id), but
+        // its own aliases were never registered anywhere — routing one to the page, with no member
+        // focus (unlike a non-whole member's alias, which focuses that member).
+        for (const alias of member.aliases ?? []) targets.set(alias, { pageId: section.id });
+        continue;
+      }
       targets.set(member.id, { pageId: section.id, memberId: member.id });
       for (const alias of member.aliases ?? []) targets.set(alias, { pageId: section.id, memberId: member.id });
     }

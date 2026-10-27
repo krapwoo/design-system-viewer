@@ -6,6 +6,7 @@ import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
 import { FamilyPage } from './FamilyPage';
 import { UpdatePanel } from './UpdatePanel';
+import { SourceReferencePicker } from './SourceReferencePicker';
 import {
   aliasTargets,
   DS_VIEWER_SECRET_HEADER,
@@ -19,6 +20,7 @@ import {
   UPDATE_PAGE_ID,
   type MemberSearchEntry,
 } from './catalogNavigation';
+import { browsableIds, buildReferenceIndex, hasReferenceNavigation, referenceLinkProps, resolveReference, type ReferenceEntry, type ReferenceNavigation } from './catalogReferences';
 import { findOverlayNode, overlayAddressFromSearch } from './overlayViewport';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice, VersionStatus } from './types';
@@ -26,6 +28,12 @@ import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice, VersionStatus }
 /** `active` can be a real page id, or the reserved update-page id — never both a generic `TId`
  *  constraint and a hardcoded string literal type at once, which is why this is its own alias. */
 type ShellPageId<TId extends string> = TId | typeof UPDATE_PAGE_ID;
+
+/** #60's "opening context" (plan Task 2B item 4): the page/member a Source reference journey
+ *  started from, remembered only in memory (no persistent history manager) so a reference
+ *  destination can offer a real `Back to <origin title>` link. Never an alias — always the actual
+ *  page/member identity the user was looking at. */
+type ReferenceOrigin<TId extends string> = { pageId: TId; memberId?: string };
 
 function isWeb(): boolean {
   return Platform.OS === 'web' && typeof window !== 'undefined';
@@ -128,6 +136,32 @@ function NotFoundPage({ raw, firstHref, onOpenFirst }: { raw: string; firstHref?
   );
 }
 
+/** A quiet return or browse fallback. The callback owns activation in both shell modes,
+ *  using the same modified-click policy as inline references. A same-family return can reuse
+ *  this anchor as "Browse catalog" before the browser runs its default, so that default must
+ *  never follow the newly rendered href after the intended origin has already been selected. */
+function ReferenceReturnLink<TId extends string>({ label, targetId, memberId, onNavigate }: {
+  label: string;
+  targetId: TId;
+  memberId?: string;
+  onNavigate: (id: TId, memberId?: string) => void;
+}) {
+  const activation = referenceLinkProps({
+    resolve: () => ({ pageId: targetId, memberId }),
+    open: onNavigate,
+  }, targetId);
+  return (
+    <Pressable
+      onPress={activation?.onPress}
+      accessibilityRole="link"
+      {...({ href: hashForId(memberId ?? targetId) } as Record<string, unknown>)}
+      style={notFoundStyles.link}
+    >
+      <Text style={notFoundStyles.linkText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const notFoundStyles = StyleSheet.create({
   headingTarget: { alignSelf: 'flex-start', marginBottom: 6 },
   title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text },
@@ -221,7 +255,19 @@ export function CatalogShell<TId extends string>({
 
   const sectionsById = useMemo(() => new Map(sections.map((def) => [def.id, def])), [sections]);
   const labels = useMemo(() => new Map(sections.filter((def) => def.title).map((def) => [def.id as string, def.title as string])), [sections]);
-  const order = useMemo(() => orderedIds(groups, new Set(sectionsById.keys()), labels), [groups, sectionsById, labels]);
+  // #60: the browse-facing subset only (reference-only pages, and their members, stay routable —
+  // see `knownAddressIds` below — but drop out of the sidebar/pager/hash-fallback sequence
+  // `order` itself is).
+  const browsable = useMemo(() => browsableIds(sections), [sections]);
+  const order = useMemo(() => orderedIds(groups, browsable, labels), [groups, browsable, labels]);
+  // #60: true once any page opts into the `'reference'` layer — the sidebar's own trigger for
+  // showing the separate Source reference entry at all; a legacy catalog with no such page keeps
+  // its present sidebar unchanged.
+  const hasReference = useMemo(() => hasReferenceNavigation(sections), [sections]);
+  // #60: the catalog-wide reference index the picker searches — built from every registered page,
+  // never filtered to `browsable`, so a page's family members are findable even when the page
+  // itself is reference-only.
+  const referenceEntries = useMemo(() => buildReferenceIndex(sections), [sections]);
   // Spec §5.3: every family page's own member ids/aliases, resolved to their page (and member, for
   // anything other than the whole) — used both for an old/alias/member address (`resolveRoute`)
   // and for the sidebar's member search (`memberSearchEntries` below).
@@ -230,10 +276,18 @@ export function CatalogShell<TId extends string>({
   // outside its own family — every other page's own id, plus every member id/alias `aliasMap`
   // already resolves (`FamilyPage` itself always adds its own family's member ids on top of this).
   const knownAddressIds = useMemo(() => new Set<string>([...sectionsById.keys(), ...aliasMap.keys()]), [sectionsById, aliasMap]);
+  // #60: every registered page id, independent of `order` (browse-only) — `resolveRoute` only
+  // ever uses this to decide whether a hash literally names a real page (never for display
+  // order), so a reference-only page's own address still resolves even though it's absent from
+  // `order`. The "Implementation seams" warning this plan carries: never repurpose the filtered
+  // browse set as the known-address set.
+  const fullRouteIds = useMemo(() => Array.from(sectionsById.keys()), [sectionsById]);
+  // #60: a reference-only family page's own members are excluded here too (not just `order`) —
+  // "Reference-only pages and their family member search hits stay out of ordinary browsing".
   const memberIndex = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const section of sections) {
-      if (!section.family) continue;
+      if (!section.family || !browsable.has(section.id)) continue;
       const ids: string[] = [];
       for (const member of section.family.members) {
         ids.push(member.id, ...(member.aliases ?? []));
@@ -241,20 +295,28 @@ export function CatalogShell<TId extends string>({
       map.set(section.id, ids);
     }
     return map;
-  }, [sections]);
+  }, [sections, browsable]);
   const memberSearchEntries = useMemo(() => {
     const entries: MemberSearchEntry<TId>[] = [];
     for (const section of sections) {
-      if (!section.family) continue;
+      if (!section.family || !browsable.has(section.id)) continue;
       for (const member of section.family.members) {
         if (member.id === section.family.whole) continue;
         entries.push({ pageId: section.id, memberId: member.id, aliases: member.aliases, familyTitle: section.title ?? section.id });
       }
     }
     return entries;
-  }, [sections]);
+  }, [sections, browsable]);
 
-  const routeFromHash = useCallback((hash: string) => resolveRoute(hash, order, aliasMap), [order, aliasMap]);
+  // #60: the sidebar's own `groups` filtered to `browsable` — a reference-only page is never
+  // listed there regardless of whether the catalog author also left it out of `groups` (defense
+  // in depth, same reasoning as `memberIndex`/`memberSearchEntries` above).
+  const browsableGroups = useMemo(
+    () => groups.map((group) => ({ label: group.label, ids: group.ids.filter((id) => browsable.has(id)) })).filter((group) => group.ids.length > 0),
+    [groups, browsable],
+  );
+
+  const routeFromHash = useCallback((hash: string) => resolveRoute(hash, fullRouteIds, aliasMap), [fullRouteIds, aliasMap]);
 
   const [active, setActive] = useState<ShellPageId<TId> | undefined>(() => {
     if (embedded) return initialPage ?? order[0];
@@ -281,14 +343,42 @@ export function CatalogShell<TId extends string>({
     return route.kind === 'notFound' ? route.raw : undefined;
   });
 
+  // #60: the Source reference picker's own open/close state, and the one journey it may have
+  // started (plan Task 2B item 4) — `undefined` means no recorded origin, which is also the
+  // truthful state for a directly loaded reference URL (no invented origin).
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [sourceOrigin, setSourceOrigin] = useState<ReferenceOrigin<TId> | undefined>(undefined);
+  // What page/member to remember as this journey's origin, captured the moment the picker opens
+  // (a ref, not state — opening never itself changes the route, so it must not re-render or touch
+  // `sourceOrigin` until an actual selection commits to a destination).
+  const pendingOriginRef = useRef<ReferenceOrigin<TId> | undefined>(undefined);
+  // A selected entry, parked here until the picker has actually finished closing (see the effect
+  // below) — the focus-ordering seam both `SourceReferencePicker.tsx` and this file's own module
+  // doc comment warn about: Modal's trigger-restore effect must run first, or it can restore the
+  // trigger focus OVER the destination this same selection is about to open.
+  const pendingReferenceSelectionRef = useRef<{ entry: ReferenceEntry<TId>; origin: ReferenceOrigin<TId> | undefined } | null>(null);
+
   const scrollRef = useRef<ScrollView>(null);
   const headingRef = useRef<View>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
   const pushHistoryNext = useRef(false);
   const focusHeadingNext = useRef(false);
+  // #60 correction: the fragment-sync effect below writes `window.location.hash` itself to keep
+  // the URL in step with `active`/`pendingMemberId` — on web that write queues its own real
+  // `hashchange` event, which arrives at the very listener below meant for genuine external/manual/
+  // back-forward navigation. Recording the exact hash we just wrote (cleared the moment the next
+  // `hashchange` is seen, matched or not) lets that listener recognise its own settling event and
+  // skip it, instead of treating it as new navigation and erasing a just-recorded source origin.
+  const ownHashWriteRef = useRef<string | undefined>(undefined);
 
   const select = useCallback((id: ShellPageId<TId>, memberId?: string) => {
+    // Every ordinary navigation — sidebar, pager, a member hit, the recovery/banner/return links
+    // below — starts a fresh page, so any previously recorded Source reference origin is now
+    // stale (plan Task 2B item 4: "must not leave a stale source-return control on unrelated
+    // pages"). A real selection from the picker re-records it afterwards (see the effect below),
+    // in the same batch, so that later call always wins.
+    setSourceOrigin(undefined);
     setNotFoundRaw(undefined);
     if (id === activeRef.current) {
       if (memberId) {
@@ -308,11 +398,69 @@ export function CatalogShell<TId extends string>({
     setActive(id);
   }, []);
 
+  // Task 2B2 correction: the one private reference-selection routine both the picker's deferred
+  // selection (below) and inline reference activation (`referenceNavigation.open`, further below)
+  // share — `select` alone always clears any recorded origin (every *ordinary* navigation must),
+  // so this is what actually records a truthful one afterwards, in the same batch: a self-
+  // referential selection (destination already equals the recorded origin) records no origin at
+  // all, the same "no self-referential Back link" rule the picker already established.
+  const openReference = useCallback(
+    (pageId: TId, memberId: string | undefined, origin: ReferenceOrigin<TId> | undefined) => {
+      const sameAsOrigin = origin !== undefined && origin.pageId === pageId && origin.memberId === memberId;
+      select(pageId, memberId);
+      setSourceOrigin(sameAsOrigin ? undefined : origin);
+    },
+    [select],
+  );
+
+  // Task 2B2: the shared navigation `SectionBlock`/`FamilyPage` use to turn an already-true
+  // reference fact (a Composition name, an "also used by" user, a `related`/anatomy name) into a
+  // real canonical link — through the exact same `resolveReference`/`openReference` this shell's
+  // own Source reference journey already uses, never a second lookup or a global context. Supplied
+  // to every active page's own renderer below, independent of `hasReference` (plan: "CatalogShell
+  // supplies optional reference-navigation behavior to its own ordinary/family renderers,
+  // independent of whether reference-only navigation metadata exists").
+  const referenceNavigation: ReferenceNavigation<TId> = useMemo(
+    () => ({
+      resolve: (name) => {
+        const result = resolveReference(name, fullRouteIds, aliasMap, referenceEntries);
+        return result.kind === 'address' ? { pageId: result.pageId, memberId: result.memberId } : undefined;
+      },
+      // The inline origin is the page the reference was actually clicked from — never the stale
+      // `pendingMemberId` of a previously selected, unrelated member (plan correction R1: "a
+      // page-level anatomy/relatedPages reference starts at the page"). `sourceMemberId`, when the
+      // calling renderer supplied one, narrows that to the actual owning part/whole instead — but
+      // only once validated against the current page's own real family; an unknown hint can never
+      // fabricate an origin.
+      open: (pageId, memberId, sourceMemberId) => {
+        const current = active !== undefined && active !== UPDATE_PAGE_ID ? active : undefined;
+        if (current === undefined) {
+          openReference(pageId, memberId, undefined);
+          return;
+        }
+        const ownerFamily = sectionsById.get(current)?.family;
+        const validHint = sourceMemberId !== undefined && ownerFamily?.members.some((member) => member.id === sourceMemberId) ? sourceMemberId : undefined;
+        openReference(pageId, memberId, { pageId: current, memberId: validHint });
+      },
+    }),
+    [fullRouteIds, aliasMap, referenceEntries, active, sectionsById, openReference],
+  );
+
   // Back/forward, manual fragment edits, and our own hash assignments below (which also fire
   // `hashchange`) all funnel through here.
   useEffect(() => {
     if (!routesByUrl) return;
     const onHashChange = () => {
+      // This event may just be our own fragment-sync write (below) settling, not new navigation —
+      // state already reflects that write, so there is nothing to reconcile and no stale origin to
+      // clear. One-shot: consumed (and cleared) on the very next event, matched or not, so a later
+      // genuine navigation that happens to land on the same hash is never mistaken for our own.
+      const ownWrite = ownHashWriteRef.current !== undefined && ownHashWriteRef.current === window.location.hash;
+      ownHashWriteRef.current = undefined;
+      if (ownWrite) return;
+      // Back/forward and manual fragment edits bypass `select` entirely — clear any recorded
+      // Source reference origin here too, for the same "no stale return control" reason.
+      setSourceOrigin(undefined);
       const route = routeFromHash(window.location.hash);
       if (route.kind === 'notFound') {
         setNotFoundRaw(route.raw);
@@ -369,6 +517,7 @@ export function CatalogShell<TId extends string>({
     if (routesByUrl) {
       const expected = hashForId(pendingMemberId ?? active);
       if (window.location.hash !== expected) {
+        ownHashWriteRef.current = expected;
         if (push) window.location.hash = expected;
         else window.history.replaceState(null, '', expected);
       }
@@ -379,7 +528,48 @@ export function CatalogShell<TId extends string>({
     }
   }, [active, pendingMemberId, routesByUrl]);
 
+  // #60: captures the current page/member as this journey's origin (before the picker has
+  // changed anything), then opens it. A cancellation (Escape/Close) never reaches the effect
+  // below, so nothing it captured here is ever applied.
+  const openSourceReferencePicker = useCallback(() => {
+    pendingOriginRef.current = active !== undefined && active !== UPDATE_PAGE_ID ? { pageId: active, memberId: pendingMemberId } : undefined;
+    setPickerOpen(true);
+  }, [active, pendingMemberId]);
+
+  const dismissSourceReferencePicker = useCallback(() => setPickerOpen(false), []);
+
+  // The picker leaf never navigates itself (`SourceReferencePicker.tsx`'s own module doc
+  // comment) — only parks the choice and closes. The effect below applies it once closed.
+  const selectReference = useCallback((entry: ReferenceEntry<TId>) => {
+    pendingReferenceSelectionRef.current = { entry, origin: pendingOriginRef.current };
+    setPickerOpen(false);
+  }, []);
+
+  // Runs only after the picker has actually finished closing — React commits a child's (the
+  // Modal's) own closing/trigger-restore effects before this component's own effect, so the
+  // destination's focus below can never be clobbered by that restore (the ordering hazard this
+  // file's own module doc comment and `SourceReferencePicker.tsx`'s both warn about).
+  useEffect(() => {
+    if (pickerOpen) return;
+    const pending = pendingReferenceSelectionRef.current;
+    if (!pending) return;
+    pendingReferenceSelectionRef.current = null;
+    const { entry, origin } = pending;
+    openReference(entry.pageId, entry.memberId, origin);
+  }, [pickerOpen, openReference]);
+
   const activeDef = active !== undefined && active !== UPDATE_PAGE_ID ? sectionsById.get(active) : undefined;
+
+  // Return to the recorded source-lookup origin for any destination. A directly opened
+  // reference-only page has no origin and may instead offer the first real browsing page.
+  const referenceReturn = useMemo(() => {
+    if (!activeDef) return undefined;
+    if (sourceOrigin) {
+      return { label: `Back to ${labels.get(sourceOrigin.pageId) ?? sourceOrigin.pageId}`, targetId: sourceOrigin.pageId, memberId: sourceOrigin.memberId };
+    }
+    if (activeDef.navigation === 'reference' && order[0] !== undefined) return { label: 'Browse catalog', targetId: order[0], memberId: undefined };
+    return undefined;
+  }, [activeDef, sourceOrigin, labels, order]);
 
   // The live version status: starts from what `dev` wrote at startup, then follows the local
   // endpoint (a reload after **Check now** must not fall back to the startup snapshot).
@@ -435,7 +625,7 @@ export function CatalogShell<TId extends string>({
         logo={appName}
         logoImageSource={logoImageSource}
         caption={title}
-        groups={groups}
+        groups={browsableGroups}
         labels={labels}
         memberIndex={memberIndex}
         memberSearchEntries={memberSearchEntries}
@@ -443,8 +633,10 @@ export function CatalogShell<TId extends string>({
         onPress={select}
         onSelectMember={(pageId, memberId) => select(pageId, memberId)}
         footer={footer}
+        sourceReference={hasReference ? { onPress: openSourceReferencePicker } : undefined}
         keepDocumentUrl={embedded}
       />
+      <SourceReferencePicker visible={pickerOpen} entries={referenceEntries} onDismiss={dismissSourceReferencePicker} onSelect={selectReference} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {notFoundRaw !== undefined ? (
           <NotFoundPage raw={notFoundRaw} firstHref={order[0] !== undefined ? hashForId(order[0]) : undefined} onOpenFirst={() => order[0] !== undefined && select(order[0])} />
@@ -458,43 +650,62 @@ export function CatalogShell<TId extends string>({
             headingRef={headingRef}
           />
         ) : activeDef?.family ? (
-          <FamilyPage
-            key={activeDef.id}
-            def={activeDef}
-            groupLabel={groupLabelFor(groups, activeDef.id)}
-            breadcrumbRoot={appName}
-            banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} keepDocumentUrl={embedded} /> : undefined}
-            pager={{
-              previousId: neighbors(order, activeDef.id).previous,
-              nextId: neighbors(order, activeDef.id).next,
-              onNavigate: select,
-              labelOf: (id) => labels.get(id) ?? id,
-            }}
-            headingRef={headingRef}
-            defaultPreviewWidths={defaultPreviewWidths}
-            focusMemberId={pendingMemberId}
-            focusNonce={pendingMemberNonce}
-            knownAddressIds={knownAddressIds}
-          />
+          <React.Fragment key={activeDef.id}>
+            {referenceReturn && <ReferenceReturnLink label={referenceReturn.label} targetId={referenceReturn.targetId} memberId={referenceReturn.memberId} onNavigate={select} />}
+            <FamilyPage
+              def={activeDef}
+              groupLabel={groupLabelFor(groups, activeDef.id)}
+              breadcrumbRoot={appName}
+              banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} keepDocumentUrl={embedded} /> : undefined}
+              pager={{
+                previousId: neighbors(order, activeDef.id).previous,
+                nextId: neighbors(order, activeDef.id).next,
+                onNavigate: select,
+                labelOf: (id) => labels.get(id) ?? id,
+              }}
+              headingRef={headingRef}
+              defaultPreviewWidths={defaultPreviewWidths}
+              focusMemberId={pendingMemberId}
+              focusNonce={pendingMemberNonce}
+              knownAddressIds={knownAddressIds}
+              navigation={referenceNavigation}
+            />
+          </React.Fragment>
         ) : activeDef ? (
-          <SectionBlock
-            key={activeDef.id}
-            def={activeDef}
-            groupLabel={groupLabelFor(groups, activeDef.id)}
-            breadcrumbRoot={appName}
-            // The approved mockup's own `PAGE_BG` order: crumb, then banner, then title — the
-            // banner used to render above the breadcrumb instead (Important finding, Fable
-            // correction pass).
-            banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} keepDocumentUrl={embedded} /> : undefined}
-            pager={{
-              previousId: neighbors(order, activeDef.id).previous,
-              nextId: neighbors(order, activeDef.id).next,
-              onNavigate: select,
-              labelOf: (id) => labels.get(id) ?? id,
-            }}
-            headingRef={headingRef}
-            defaultPreviewWidths={defaultPreviewWidths}
-          />
+          <React.Fragment key={activeDef.id}>
+            {referenceReturn && <ReferenceReturnLink label={referenceReturn.label} targetId={referenceReturn.targetId} memberId={referenceReturn.memberId} onNavigate={select} />}
+            <SectionBlock
+              def={activeDef}
+              groupLabel={groupLabelFor(groups, activeDef.id)}
+              breadcrumbRoot={appName}
+              // The approved mockup's own `PAGE_BG` order: crumb, then banner, then title — the
+              // banner used to render above the breadcrumb instead (Important finding, Fable
+              // correction pass).
+              banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} keepDocumentUrl={embedded} /> : undefined}
+              pager={{
+                previousId: neighbors(order, activeDef.id).previous,
+                nextId: neighbors(order, activeDef.id).next,
+                onNavigate: select,
+                labelOf: (id) => labels.get(id) ?? id,
+              }}
+              headingRef={headingRef}
+              defaultPreviewWidths={defaultPreviewWidths}
+              navigation={referenceNavigation}
+            />
+          </React.Fragment>
+        ) : hasReference ? (
+          // #60 correction: an all-reference catalog with no `initialPage`/browsable page has
+          // `active === undefined` here too, same as a genuinely empty one — but every one of its
+          // registered reference pages is real and selectable, so claiming "No catalog pages are
+          // available" would be false. No destination is fabricated (there is no browsable page to
+          // invent one from); this only ever offers the real Source reference action already wired
+          // above, never a second picker or a guessed route.
+          <View>
+            <Text style={styles.empty}>No pages are set up for ordinary browsing yet.</Text>
+            <Pressable onPress={openSourceReferencePicker} accessibilityRole="button" style={notFoundStyles.link}>
+              <Text style={notFoundStyles.linkText}>Open source reference</Text>
+            </Pressable>
+          </View>
         ) : (
           <Text style={styles.empty}>No catalog pages are available.</Text>
         )}

@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { TokenDefinition } from './tokenDefinition.ts';
 
 /** One documented prop of a component, shown in its Props table. */
 export interface PropDef {
@@ -293,6 +294,35 @@ export interface SectionDef<TId extends string = string> {
   /** Set when the authored page has `members`: the viewer renders a `FamilyPage` instead of the
    *  normal single-component layout. See `CatalogPageInput.members` and `FamilyDef`. */
   family?: FamilyDef;
+  /** #60: which browse layer this page belongs to. Omitted (the default) means `'browse'` —
+   *  unchanged, present in the sidebar/pager/hash fallback like every page always has been.
+   *  `'reference'` keeps the page fully routable (its address, aliases, and member addresses all
+   *  still resolve) but removes it from the browse sequence those three presentation surfaces
+   *  derive — see `catalogReferences.ts`'s `browsableIds`. A family page's members inherit this
+   *  same layer from their own page; there is no separate per-member field. See
+   *  `CatalogPageInput.navigation`. */
+  navigation?: 'browse' | 'reference';
+  /** The real detected component export this page documents, set only from an actual binding
+   *  (`GeneratedComponent.name`) — never guessed from the page's own id. Undefined for a family
+   *  page (each member carries its own `CatalogMember.component` instead) and for a page with no
+   *  matching component record (a token/standalone page). Lets #60's catalog-wide reference index
+   *  (`catalogReferences.ts`) search and resolve a normal page by its component export name even
+   *  when that name differs from the page's own id. */
+  component?: string;
+  /** #60: every other registered page's or member's own `composedOf` entry naming this page,
+   *  tagged `'built-in'` — the same derived "also used by" relationship `FamilyDef.members[]`
+   *  already carries, now also surfaced for an ordinary (non-family) page. Always populated by
+   *  `buildCatalogSections` (`[]` when nothing else uses this page), the same convention
+   *  `AlsoUsedByEntry`'s own doc comment already establishes for a family member. Rendered by
+   *  `ReferenceDetails`'s `AlsoUsedByFact`. */
+  alsoUsedBy?: AlsoUsedByEntry[];
+  /** #61: passed straight through from `CatalogPageInput.tokenDefinition` when the page opted in —
+   *  `SectionBlock.tsx`'s own `tokenSections` block case renders this page's real entries
+   *  (`StructuredTokenPage.tsx`) instead of `tokenSections`' placeholder cards when it is set.
+   *  `buildCatalogSections` always also derives `tokenSections`/`tokenGallery` from it (so layout
+   *  geometry/doctor/explain never need to know this field exists at all) — this is only the real
+   *  entry data the renderer needs. Undefined for every page that doesn't opt in. */
+  tokenDefinition?: TokenDefinition;
 }
 
 /** A labeled group of section ids in the sidebar (e.g. "Components" vs "Tokens"). */
@@ -449,6 +479,12 @@ export interface FamilyDef {
 
 /** One titled card on a token page (`SectionDef.tokenSections`). */
 export interface TokenSection {
+  /** #61: this section's own stable, page-scoped identity — used as its React key instead of
+   *  `title` (`TokenLayouts.tsx`'s `TokenSections`) so two sections that legitimately share a human
+   *  title (e.g. two "Palette" cards in different scopes, `tokenDefinition.ts`'s own scoped-section
+   *  precedent) never collide. Optional, backward-compatible: omitted (every pre-#61 `TokenSection`)
+   *  keeps the prior `title`-keyed behavior exactly as it was. */
+  id?: string;
   /** The kind of token this card holds, e.g. "Semantic colours", "Palette", "Body". */
   title: string;
   /** One line under the title: what this kind of token is for. */

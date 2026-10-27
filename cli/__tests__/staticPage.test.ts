@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readStaticPages } from '../staticPage.ts';
@@ -639,6 +639,59 @@ test("previewLayout is read when literal, and a non-literal one makes the page n
   rmSync(path.dirname(computed), { recursive: true, force: true });
 });
 
+// #60: `navigation` follows the exact same literal-or-not-checkable contract `previewLayout`
+// already does above.
+test('navigation is read when literal, and a non-literal or invalid one makes the page not checkable', () => {
+  const reference = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'A widget.', navigation: 'reference',
+    });
+  `);
+  const [page] = readStaticPages([reference]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.navigation, 'reference');
+  rmSync(path.dirname(reference), { recursive: true, force: true });
+
+  // Absent is fine: the viewer's own default is the browse layer, unchanged.
+  const absent = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'A widget.',
+    });
+  `);
+  const [plain] = readStaticPages([absent]);
+  assert.equal(plain.checkable, true);
+  assert.equal(plain.navigation, undefined);
+  rmSync(path.dirname(absent), { recursive: true, force: true });
+
+  // An invalid string literal (not 'browse'/'reference') is not given the benefit of the doubt —
+  // honest and actionable (page-not-checkable) rather than silently accepted or hidden.
+  const invalid = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'A widget.', navigation: 'archived',
+    });
+  `);
+  const [badLiteral] = readStaticPages([invalid]);
+  assert.equal(badLiteral.checkable, false);
+  assert.equal(badLiteral.navigation, undefined);
+  rmSync(path.dirname(invalid), { recursive: true, force: true });
+
+  // Unreadable (computed) is not checkable either — the same reasoning previewLayout follows.
+  const computed = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const pick = () => 'reference' as const;
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'A widget.', navigation: pick(),
+    });
+  `);
+  const [opaque] = readStaticPages([computed]);
+  assert.equal(opaque.checkable, false);
+  assert.equal(opaque.navigation, undefined);
+  rmSync(path.dirname(computed), { recursive: true, force: true });
+});
+
 // Plan V3: `members`/`whole`/`sections`/`aliases`, read with the same literal-resolution helpers
 // as everything else — a non-literal value makes the page not checkable, as today.
 test('reads members/whole/sections/aliases literally, flattening every section\'s own member ids', () => {
@@ -939,5 +992,136 @@ test('relatedPages is undefined with no "not checkable" penalty when it is autho
   const [page] = readStaticPages([file]);
   assert.equal(page.checkable, true);
   assert.equal(page.relatedPages, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// #61: tokenDefinition.
+test('reads a literal tokenDefinition\'s kind, sections and entry ids, and derives tokenGallery/tokenSectionTitles for parity with the runtime', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'Fixture.',
+      tokenDefinition: {
+        kind: 'colors',
+        sections: [
+          { id: 'palette', title: 'Palette', desc: 'Real palette colors.', entries: [{ id: 'brand', name: 'Brand', kind: 'colors', value: {} }] },
+          { id: 'semantic', title: 'Semantic', wide: true, entries: [] },
+        ],
+      },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.hasTokenDefinition, true);
+  assert.equal(page.tokenDefinition?.kind, 'colors');
+  assert.deepEqual(page.tokenDefinition?.sections, [
+    { id: 'palette', title: 'Palette', desc: 'Real palette colors.', wide: false, entryIds: ['brand'], entriesOpaque: false },
+    { id: 'semantic', title: 'Semantic', desc: undefined, wide: true, entryIds: [], entriesOpaque: false },
+  ]);
+  assert.equal(page.tokenGallery, true);
+  assert.deepEqual(page.tokenSectionTitles, ['Palette', 'Semantic']);
+  assert.deepEqual(page.tokenSectionWide, [false, true]);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a tokenDefinition with a non-literal kind makes the page not checkable, not a fabricated reading', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const KIND = ['colors'][0];
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'Fixture.',
+      tokenDefinition: { kind: KIND, sections: [] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, false);
+  assert.equal(page.hasTokenDefinition, true);
+  assert.equal(page.tokenDefinition, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a tokenDefinition entry with a non-literal id is simply omitted from entryIds, never a "not checkable" penalty', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const dynamicId = 'computed-' + Date.now();
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'Fixture.',
+      tokenDefinition: {
+        kind: 'colors',
+        sections: [{ id: 'palette', title: 'Palette', entries: [{ id: dynamicId, name: 'Brand', kind: 'colors', value: {} }, { id: 'ok', name: 'Ok', kind: 'colors', value: {} }] }],
+      },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.deepEqual(page.tokenDefinition?.sections[0].entryIds, ['ok']);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('reads the page\'s own literal title, for the static title/kind conflict check', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'tokens-colors', title: 'Palette', group: 'Tokens', description: 'Fixture.',
+      tokenDefinition: { kind: 'colors', sections: [] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.title, 'Palette');
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// Correction C3: proves non-execution, not merely asserts it — a real entry `value` that, if ever
+// evaluated, would write a sentinel file to disk, and a section whose own `entries` is an imported
+// identifier (never resolved, so the module it points at is never even located, let alone run).
+test('readStaticPage never executes an entry\'s value or resolves an imported entries list — the sentinel file never appears, and kind/section metadata is still read', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-staticpage-tokendef-exec-'));
+  const sentinel = path.join(dir, 'sentinel-should-never-exist.txt');
+  const file = path.join(dir, 'Widget.catalog.tsx');
+  writeFileSync(file, `
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { EXTERNAL_ENTRIES } from './this-module-does-not-exist-and-is-never-resolved';
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'Fixture.',
+      tokenDefinition: {
+        kind: 'colors',
+        sections: [
+          {
+            id: 'danger', title: 'Danger',
+            entries: [{ id: 'brand', name: 'Brand', kind: 'colors', value: require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'x') }],
+          },
+          { id: 'imported', title: 'Imported', entries: EXTERNAL_ENTRIES },
+        ],
+      },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(existsSync(sentinel), false, 'the reader must never evaluate an entry value, even one written as an immediately-invoked side effect');
+  assert.equal(page.checkable, true, 'neither the dangerous entry value nor the unresolved import makes the page itself not checkable');
+  assert.equal(page.hasTokenDefinition, true);
+  assert.equal(page.tokenDefinition?.kind, 'colors');
+  assert.deepEqual(page.tokenDefinition?.sections.map((s) => ({ id: s.id, title: s.title })), [
+    { id: 'danger', title: 'Danger' },
+    { id: 'imported', title: 'Imported' },
+  ]);
+  assert.deepEqual(page.tokenDefinition?.sections[0].entryIds, ['brand'], 'the literal id is still read even though the sibling value expression was never touched');
+  assert.equal(page.tokenDefinition?.sections[0].entriesOpaque, false, 'the "danger" section is itself fully literal — only its value expression is unexamined');
+  assert.equal(page.tokenDefinition?.sections[1].entriesOpaque, true, 'an imported identifier never resolves to a literal entries array');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('an explicit tokenSections is not overwritten by a co-authored tokenDefinition\'s own geometry', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'Fixture.',
+      tokenSections: [{ title: 'Legacy', render: () => null }],
+      tokenDefinition: { kind: 'colors', sections: [{ id: 'palette', title: 'Palette', entries: [] }] },
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.deepEqual(page.tokenSectionTitles, ['Legacy']);
+  assert.equal(page.hasTokenDefinition, true);
+  assert.equal(page.tokenDefinition?.sections[0]?.title, 'Palette');
   rmSync(path.dirname(file), { recursive: true, force: true });
 });

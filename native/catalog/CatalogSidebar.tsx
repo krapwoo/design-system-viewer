@@ -75,6 +75,31 @@ function MemberResultItem({ label, familyTitle, href, onPress, keepDocumentUrl =
   );
 }
 
+/** #60's quiet Source reference entry (plan Task 2B, "the accepted A access model"): opens the
+ *  catalog-wide picker modal, so — unlike every other row here — it is a real button, not a link
+ *  (no `href`, no navigation of its own). Rendered outside `filtered`/`memberHits` so a filter that
+ *  matches no page never hides it (`CatalogShell` only passes `sourceReference` at all once
+ *  `hasReferenceNavigation` says the catalog has one). Reuses the plain nav-row visual `NavItem`
+ *  already uses. */
+function SourceReferenceEntry({ onPress }: { onPress: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="button"
+      accessibilityLabel="Open source reference"
+      style={({ pressed }) => [styles.item, styles.sourceReferenceItem, (pressed || hovered) && styles.itemHover, focused && styles.focusRing]}
+    >
+      <Text style={styles.label}>Source reference</Text>
+    </Pressable>
+  );
+}
+
 function FooterLink({ label, kind, active, onPress, keepDocumentUrl = false }: { label: string; kind: 'update' | 'version'; active: boolean; onPress: () => void; keepDocumentUrl?: boolean }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -119,6 +144,7 @@ export function CatalogSidebar<TId extends string>({
   onPress,
   onSelectMember,
   footer,
+  sourceReference,
   keepDocumentUrl = false,
 }: {
   logo: string;
@@ -148,6 +174,10 @@ export function CatalogSidebar<TId extends string>({
    *  or the update notice with a dot (`'update'`, design §5's footer line). `active` is true while
    *  the update page itself is open — it gets the same active styling a selected nav item would. */
   footer?: { label: string; kind?: 'update' | 'version'; active: boolean; onPress: () => void };
+  /** #60's catalog-wide Source reference entry: present only once `CatalogShell` has decided (via
+   *  `hasReferenceNavigation`) that the catalog has at least one `'reference'` page. Omitted keeps
+   *  the legacy sidebar unchanged. */
+  sourceReference?: { onPress: () => void };
 }) {
   const [query, setQuery] = useState('');
   // A bundled local image (the only kind `cli/workspace.ts` ever produces — see its doc comment
@@ -238,7 +268,12 @@ export function CatalogSidebar<TId extends string>({
 
         <CatalogSearchInput value={query} onChangeText={setQuery} placeholder="Filter components…" />
 
-        {filtered.length === 0 && memberHits.length === 0 && <Text style={styles.empty}>No matches</Text>}
+        {/* Outside `filtered`/`memberHits`: a filter that matches no page must not hide this. */}
+        {sourceReference && <SourceReferenceEntry onPress={sourceReference.onPress} />}
+
+        {/* Preserve omitted-metadata catalogs; only source-enabled empty lists suppress an
+            unfiltered no-match message. A genuine filtered search still reports no matches. */}
+        {(!sourceReference || query.trim() !== '') && filtered.length === 0 && memberHits.length === 0 && <Text style={styles.empty}>No matches</Text>}
         {/* V2c item 10: pages first, member hits below them — matching `memberSearchEntries`'s own
             doc comment ("below the filtered pages") and the spec's "the sidebar lists family pages
             only, never members" emphasis. */}
@@ -299,6 +334,7 @@ const styles = StyleSheet.create({
   inlineHeaderTop: { alignItems: 'flex-start' },
   inlineText: { flex: 1, minWidth: 0 },
   empty: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX, paddingVertical: 8 },
+  sourceReferenceItem: { marginBottom: CATALOG_SPACE.sm },
   footerContainer: {
     borderTopWidth: 1,
     borderTopColor: CATALOG_COLOR.borderHairline,

@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCatalogSections, defineCatalogPage, numberFor, validateComposedOf, validateFamily } from '../pageApi.ts';
 import { alsoUsedBySegments } from '../familyModel.ts';
+import { validateTokenDefinition, validateTokenDefinitionUsage } from '../tokenDefinition.ts';
+import type { TokenDefinition } from '../tokenDefinition.ts';
 
 const components = [
   {
@@ -166,6 +168,43 @@ test('buildCatalogSections carries previewLayout through to the section, omitted
   const { sections } = buildCatalogSections(pages, [components[0]]);
   assert.equal(sections.find((s) => s.id === 'Collapsible')?.previewLayout, 'table');
   assert.equal(sections.find((s) => s.id === 'Button')?.previewLayout, undefined);
+});
+
+// #60: an opted-in page's `navigation` carries through unchanged; an omitted one leaves the
+// section's own field undefined (identical to the explicit 'browse' default) — no legacy page's
+// section shape changes just because this field now exists.
+test('buildCatalogSections carries navigation through to the section, omitted by default', () => {
+  const pages = [
+    defineCatalogPage({ id: 'TokenSheet', group: 'Tokens', description: 'x', navigation: 'reference' }),
+    defineCatalogPage({ id: 'Button', group: 'Components', description: 'x' }),
+  ];
+  const { sections } = buildCatalogSections(pages, [components[0]]);
+  assert.equal(sections.find((s) => s.id === 'TokenSheet')?.navigation, 'reference');
+  assert.equal(sections.find((s) => s.id === 'Button')?.navigation, undefined);
+});
+
+// #60: `SectionDef.component` is the real detected binding (never a guessed fallback) for a normal
+// page — set even when the page's own id differs from the component it documents — and undefined
+// both for a family page (each member carries its own binding instead) and for a standalone page
+// with no matching component record at all.
+test('buildCatalogSections sets component from the real binding, including when the page id differs from it, and leaves it undefined for a family page or a page with no component', () => {
+  const widget = { name: 'Widget', file: 'src/Widget.tsx', props: [], inheritedFrom: [] };
+  const pages = [
+    defineCatalogPage({ id: 'FancyWidget', component: 'Widget', group: 'Components', description: 'x' }),
+    { ...defineCatalogPage({ id: 'Overview', group: 'Guides', description: 'x' }), file: 'src/Overview.catalog.tsx' },
+    familyPage(),
+  ];
+  const { sections } = buildCatalogSections(pages, [widget, ...familyComponents]);
+  assert.equal(sections.find((s) => s.id === 'FancyWidget')?.component, 'Widget');
+  assert.equal(sections.find((s) => s.id === 'Overview')?.component, undefined);
+  assert.equal(sections.find((s) => s.id === 'BotAvatarView')?.component, undefined);
+});
+
+// #60: an undocumented component's own stub section also carries its real binding, the same way a
+// documented page does — it is, after all, a real catalog address a reference could point at.
+test('buildCatalogSections sets component on an undocumented-component stub too', () => {
+  const { sections } = buildCatalogSections([], [components[1]]); // Badge, no page
+  assert.equal(sections.find((s) => s.id === 'Badge')?.component, 'Badge');
 });
 
 const familyComponents = [
@@ -648,6 +687,9 @@ test('buildCatalogSections: the section\'s family carries the outline and the au
 
 // V2c item 13: a full-object comparison, not just "family is undefined" — a page without
 // `members` must produce exactly the section buildCatalogSections has always produced for it.
+// #60 updated this exact list to add its own three additive fields (`navigation`, `component`,
+// `alsoUsedBy`); #61 adds its own one more (`tokenDefinition`) — every other field's expected
+// value is unchanged from before this task.
 test('buildCatalogSections: a page without members gives a byte-identical section to today\'s', () => {
   const pages = [defineCatalogPage({ id: 'Button', group: 'Components', description: 'Press it.' })];
   const { sections } = buildCatalogSections(pages, [components[0]]);
@@ -665,6 +707,7 @@ test('buildCatalogSections: a page without members gives a byte-identical sectio
     render: undefined,
     tokenGallery: undefined,
     tokenSections: undefined,
+    tokenDefinition: undefined,
     tokenColumns: undefined,
     fullWidthLabel: undefined,
     comparison: undefined,
@@ -677,7 +720,150 @@ test('buildCatalogSections: a page without members gives a byte-identical sectio
     internalProps: undefined,
     intentionalStaticPreview: undefined,
     family: undefined,
+    navigation: undefined,
+    component: 'Button',
+    alsoUsedBy: [],
   });
+});
+
+// #61: a fixture definition exercising a named-token entry whose own value is platform-provided,
+// an unresolved-finding entry with a real drawable literal, and a truly unresolved entry with no
+// fabricated sample — labeled fixture values, never a real product's.
+function fixtureColorsDefinition(): TokenDefinition {
+  return {
+    kind: 'colors',
+    sections: [
+      {
+        id: 'semantic',
+        title: 'Semantic (fixture)',
+        entries: [
+          {
+            id: 'background', name: 'Background', kind: 'colors',
+            value: { provenance: 'platform', named: true, resolution: { status: 'unresolved', reason: 'Provided by the platform at runtime.', expression: 'UIColor.systemBackground' } },
+          },
+        ],
+      },
+      {
+        id: 'unresolved', title: 'Unresolved (fixture)',
+        entries: [
+          {
+            id: 'liveActivityTint', name: 'Live Activity tint', kind: 'colors',
+            value: { provenance: 'unresolved-finding', resolution: { status: 'resolved', value: { color: '#102030' } } },
+          },
+          {
+            id: 'accentColor', name: 'AccentColor', kind: 'colors',
+            value: { provenance: 'unresolved-finding', resolution: { status: 'unresolved', reason: 'AccentColor.colorset has no defined value.', expression: 'AccentColor' } },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+test('buildCatalogSections: tokenDefinition derives the canonical title and real tokenSections geometry', () => {
+  const pages = [defineCatalogPage({ id: 'tokens-colors', group: 'Tokens', description: 'Fixture colors.', tokenDefinition: fixtureColorsDefinition() })];
+  const { sections } = buildCatalogSections(pages, []);
+  const page = sections.find((s) => s.id === 'tokens-colors');
+  assert.equal(page?.title, 'Colors');
+  assert.equal(page?.tokenGallery, true);
+  assert.deepEqual(page?.tokenSections?.map((s) => ({ id: s.id, title: s.title, wide: s.wide })), [
+    { id: 'semantic', title: 'Semantic (fixture)', wide: undefined },
+    { id: 'unresolved', title: 'Unresolved (fixture)', wide: undefined },
+  ]);
+  assert.equal(page?.tokenDefinition, pages[0].tokenDefinition);
+});
+
+test('buildCatalogSections: an explicit title matching the kind\'s canonical title is kept, no conflict', () => {
+  const pages = [defineCatalogPage({ id: 'tokens-colors', title: 'Colors', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixtureColorsDefinition() })];
+  const { sections } = buildCatalogSections(pages, []);
+  assert.equal(sections[0].title, 'Colors');
+});
+
+test('buildCatalogSections: tokenDefinition conflicting with an explicit title/render/tokenGallery/members reaches console.error in development', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const pages = [
+      defineCatalogPage({
+        id: 'tokens-colors', title: 'Palette', group: 'Tokens', description: 'Fixture.',
+        tokenDefinition: fixtureColorsDefinition(), render: () => null,
+      }),
+    ];
+    buildCatalogSections(pages, []);
+    assert.ok(errors.some((e) => e.includes('title "Palette" conflicts with kind "colors"')), errors.join('\n'));
+    assert.ok(errors.some((e) => e.includes('conflicts with this page\'s own "render"')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+test('buildCatalogSections: duplicate entry ids within a tokenDefinition section reach console.error in development', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const def = fixtureColorsDefinition();
+    def.sections[1].entries.push({ ...def.sections[1].entries[0] });
+    const pages = [defineCatalogPage({ id: 'tokens-colors', group: 'Tokens', description: 'Fixture.', tokenDefinition: def })];
+    buildCatalogSections(pages, []);
+    assert.ok(errors.some((e) => e.includes('more than one entry with id "liveActivityTint"')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+// Correction C5(c): `deriveTokenDefinition`'s own local conflict/duplicate-id messages (reached
+// only via `console.error` in development — `pageApi.ts`'s own doc comment explains why that
+// duplication exists at all) must read byte-for-byte identical to `tokenDefinition.ts`'s own
+// canonical `validateTokenDefinition`/`validateTokenDefinitionUsage`, for the exact same input —
+// pinning the deliberate duplication so the two can never silently drift apart.
+test('buildCatalogSections: tokenDefinition\'s console.error messages are byte-for-byte identical to validateTokenDefinition + validateTokenDefinitionUsage for the same conflicting input', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  const def = fixtureColorsDefinition();
+  // Add a duplicate-section-id conflict and a duplicate-entry-id conflict on top of the fixture's
+  // own shape, so this one input exercises every message family `deriveTokenDefinition` emits.
+  def.sections.push({ ...def.sections[1], id: def.sections[0].id });
+  def.sections[1].entries.push({ ...def.sections[1].entries[0] });
+  const page = defineCatalogPage({
+    id: 'tokens-colors', title: 'Palette', group: 'Tokens', description: 'Fixture.',
+    tokenDefinition: def, render: () => null,
+  });
+  try {
+    buildCatalogSections([page], []);
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+  const expected = [
+    ...validateTokenDefinitionUsage(def.kind, { hasRender: true, title: 'Palette' }),
+    ...validateTokenDefinition(def),
+  ];
+  const prefixed = errors.map((e) => {
+    const match = e.match(/^\[Catalog\] tokens-colors: (.*)$/);
+    assert.ok(match, `unexpected console.error message shape: ${e}`);
+    return match![1];
+  });
+  assert.deepEqual(prefixed.slice().sort(), expected.slice().sort());
+});
+
+test('buildCatalogSections: a page without tokenDefinition is unaffected (omission stays legacy-identical)', () => {
+  const pages = [defineCatalogPage({ id: 'tokens-legacy', group: 'Tokens', description: 'Legacy.', tokenGallery: true, render: () => null })];
+  const { sections } = buildCatalogSections(pages, []);
+  const page = sections.find((s) => s.id === 'tokens-legacy');
+  assert.equal(page?.tokenGallery, true);
+  assert.equal(page?.tokenSections, undefined);
+  assert.equal(page?.tokenDefinition, undefined);
 });
 
 // Slice D1 item 1: `anatomy` passes through to `FamilyDef.anatomy` unchanged.
@@ -1191,4 +1377,198 @@ test('buildCatalogSections: an unresolvable relatedPages entry reaches console.e
     console.error = originalError;
     (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
   }
+});
+
+// #60: the same derived "also used by" relationship family members already get, now also surfaced
+// on an ordinary (non-family) page (rendered by `ReferenceDetails`'s `AlsoUsedByFact`). Reverting the
+// derivation (an always-undefined `alsoUsedBy`) fails every test below: each asserts a non-trivial
+// value a no-op field would not match.
+test('buildCatalogSections: an ordinary page with no users gets an empty alsoUsedBy', () => {
+  const pages = [defineCatalogPage({ id: 'Button', group: 'Components', description: 'x' })];
+  const { sections } = buildCatalogSections(pages, [components[0]]);
+  assert.deepEqual(sections.find((s) => s.id === 'Button')?.alsoUsedBy, []);
+});
+
+test('buildCatalogSections: alsoUsedBy derives an outside user of an ordinary page, by its own id', () => {
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'Button', role: 'Primary action', relationship: 'built-in' as const }],
+  });
+  const button = defineCatalogPage({ id: 'Button', group: 'Components', description: 'x' });
+  const { sections } = buildCatalogSections([button, dock], [components[0]]);
+  assert.deepEqual(sections.find((s) => s.id === 'Button')?.alsoUsedBy, [{ component: 'Dock', role: 'Primary action' }]);
+});
+
+// The target-canonicalization half of this task: an ordinary page's id ("PillButton") differs from
+// its own bound component export ("Button") — another page's composedOf names the component, not
+// the page id, and must still attribute to the real page address.
+test('buildCatalogSections: alsoUsedBy resolves a composedOf entry naming an ordinary page\'s own component, not its id', () => {
+  const widget = { name: 'Button', file: 'src/Button.tsx', props: [], inheritedFrom: [] };
+  const pillButton = defineCatalogPage({ id: 'PillButton', component: 'Button', group: 'Components', description: 'x' });
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'Button', role: 'Primary action', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([pillButton, dock], [widget]);
+  assert.deepEqual(sections.find((s) => s.id === 'PillButton')?.alsoUsedBy, [{ component: 'Dock', role: 'Primary action' }]);
+});
+
+// Negative control: two ordinary pages binding the same component export name is ambiguous — the
+// canonicalization must never guess one of them, so neither page's alsoUsedBy picks up the entry
+// (it stays attributed to the literal, unresolved component name, which no page's own id matches).
+test('buildCatalogSections: alsoUsedBy never guesses between two ordinary pages that bind the same component name', () => {
+  const shared = { name: 'Shared', file: 'src/Shared.tsx', props: [], inheritedFrom: [] };
+  const pageA = defineCatalogPage({ id: 'PageA', component: 'Shared', group: 'Components', description: 'a' });
+  const pageB = defineCatalogPage({ id: 'PageB', component: 'Shared', group: 'Components', description: 'b' });
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'Shared', role: 'r', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([pageA, pageB, dock], [shared]);
+  assert.deepEqual(sections.find((s) => s.id === 'PageA')?.alsoUsedBy, []);
+  assert.deepEqual(sections.find((s) => s.id === 'PageB')?.alsoUsedBy, []);
+});
+
+// C1: a family member's own `component` binding and an ordinary page's own `component` binding
+// are the same kind of guess — two of them sharing one name is genuine ambiguity, not a case where
+// one side has legacy priority. (The predecessor version of this test used the same two colliding
+// `FaceComponent` bindings but asserted the member silently won; that encoded a guess as policy.
+// Corrected per the controller's C1 instruction, not carried forward.)
+test('buildCatalogSections: alsoUsedBy never guesses between a family member and an ordinary page that bind the same component name', () => {
+  const faceComponent = { name: 'FaceComponent', file: 'src/Face.tsx', props: [], inheritedFrom: [] };
+  const family = defineCatalogPage({
+    id: 'W', group: 'Components', description: 'd',
+    whole: 'W',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['Face'] }],
+    members: [
+      { id: 'W', source: 'w.tsx:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' },
+      {
+        id: 'Face', component: 'FaceComponent', source: 'f.tsx:1', fidelity: 'documentation-only' as const,
+        relationship: 'Part', parent: 'W', description: 'd',
+      },
+    ],
+  });
+  const unrelated = defineCatalogPage({ id: 'UnrelatedPage', component: 'FaceComponent', group: 'Components', description: 'x' });
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'FaceComponent', role: 'Header icon', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([family, unrelated, dock], [faceComponent]);
+  const memberFamily = sections.find((s) => s.id === 'W')?.family;
+  assert.deepEqual(memberFamily?.members.find((m) => m.id === 'Face')?.alsoUsedBy, []);
+  assert.deepEqual(sections.find((s) => s.id === 'UnrelatedPage')?.alsoUsedBy, []);
+});
+
+// C1, the genuine (non-guessed) version of the legacy rule above: an explicit *alias* is a real
+// registered address, so it still wins over a same-named ordinary page's mere component binding —
+// unlike two colliding component bindings, there is no ambiguity here to guess around.
+test('buildCatalogSections: alsoUsedBy prefers an explicit member alias over a same-named ordinary page\'s component binding', () => {
+  const aliasComponent = { name: 'AliasedExport', file: 'src/Face.tsx', props: [], inheritedFrom: [] };
+  const family = defineCatalogPage({
+    id: 'W', group: 'Components', description: 'd',
+    whole: 'W',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['Face'] }],
+    members: [
+      { id: 'W', source: 'w.tsx:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' },
+      {
+        id: 'Face', source: 'f.tsx:1', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'W',
+        description: 'd', aliases: ['FaceAlias'],
+      },
+    ],
+  });
+  // An ordinary page's component binding happens to share the member's *alias* string, not its id —
+  // the alias is still the one real registered address for that string, so it must win.
+  const unrelated = defineCatalogPage({ id: 'UnrelatedPage', component: 'FaceAlias', group: 'Components', description: 'x' });
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'FaceAlias', role: 'Header icon', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([family, unrelated, dock], [aliasComponent]);
+  const memberFamily = sections.find((s) => s.id === 'W')?.family;
+  assert.deepEqual(memberFamily?.members.find((m) => m.id === 'Face')?.alsoUsedBy, [{ component: 'Dock', role: 'Header icon' }]);
+  assert.deepEqual(sections.find((s) => s.id === 'UnrelatedPage')?.alsoUsedBy, []);
+});
+
+// C1: two different family members (in two different families) binding the same component name is
+// the member-vs-member half of the same ambiguity rule as the ordinary-vs-ordinary negative control
+// above — neither may be guessed.
+test('buildCatalogSections: alsoUsedBy never guesses between two family members (in different families) that bind the same component name', () => {
+  const shared = { name: 'Shared', file: 'src/Shared.tsx', props: [], inheritedFrom: [] };
+  const familyOne = defineCatalogPage({
+    id: 'One', group: 'Components', description: 'd', whole: 'One',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['OnePart'] }],
+    members: [
+      { id: 'One', source: 'one.tsx:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' },
+      { id: 'OnePart', component: 'Shared', source: 'one.tsx:2', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'One', description: 'd' },
+    ],
+  });
+  const familyTwo = defineCatalogPage({
+    id: 'Two', group: 'Components', description: 'd', whole: 'Two',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['TwoPart'] }],
+    members: [
+      { id: 'Two', source: 'two.tsx:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' },
+      { id: 'TwoPart', component: 'Shared', source: 'two.tsx:2', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'Two', description: 'd' },
+    ],
+  });
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'Shared', role: 'r', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([familyOne, familyTwo, dock], [shared]);
+  assert.deepEqual(sections.find((s) => s.id === 'One')?.family?.members.find((m) => m.id === 'OnePart')?.alsoUsedBy, []);
+  assert.deepEqual(sections.find((s) => s.id === 'Two')?.family?.members.find((m) => m.id === 'TwoPart')?.alsoUsedBy, []);
+});
+
+// C1's real producer repro: an ordinary page's own id ("Button") is itself the exact, registered
+// address for that name — it must win "also used by" even though another ordinary page
+// ("Alternative") also binds its own `component` to the same name "Button". Before the fix,
+// `Button`'s own id being equal to its own component name caused it to be skipped from the
+// ambiguity bookkeeping entirely, letting `Alternative` claim the name uncontested.
+test('buildCatalogSections: alsoUsedBy attributes to a page\'s own exact id, not another page that merely binds the same component name', () => {
+  const widget = { name: 'Button', file: 'src/Button.tsx', props: [], inheritedFrom: [] };
+  const button = defineCatalogPage({ id: 'Button', group: 'Components', description: 'x' });
+  const alternative = defineCatalogPage({ id: 'Alternative', component: 'Button', group: 'Components', description: 'x' });
+  const consumer = defineCatalogPage({
+    id: 'Consumer', group: 'Components', description: 'd',
+    composedOf: [{ component: 'Button', role: 'action', relationship: 'built-in' as const }],
+  });
+  for (const pages of [[button, alternative, consumer], [alternative, consumer, button], [consumer, button, alternative]]) {
+    const { sections } = buildCatalogSections(pages, [widget]);
+    assert.deepEqual(sections.find((s) => s.id === 'Button')?.alsoUsedBy, [{ component: 'Consumer', role: 'action' }]);
+    assert.deepEqual(sections.find((s) => s.id === 'Alternative')?.alsoUsedBy, []);
+  }
+});
+
+// Negative control: a page's own composedOf naming itself as built-in never becomes its own user.
+test('buildCatalogSections: an ordinary page\'s alsoUsedBy excludes itself', () => {
+  const pages = [defineCatalogPage({
+    id: 'Button', group: 'Components', description: 'x',
+    composedOf: [{ component: 'Button', role: 'r', relationship: 'built-in' as const }],
+  })];
+  const { sections } = buildCatalogSections(pages, [components[0]]);
+  assert.deepEqual(sections.find((s) => s.id === 'Button')?.alsoUsedBy, []);
+});
+
+// Negative control, same rule family-level alsoUsedBy already follows: only 'built-in' counts.
+test('buildCatalogSections: an ordinary page\'s alsoUsedBy ignores "slot" and "related" composedOf entries', () => {
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [
+      { component: 'Button', role: 'Optional icon', relationship: 'slot' as const },
+      { component: 'Button', role: 'Seen together', relationship: 'related' as const },
+    ],
+  });
+  const button = defineCatalogPage({ id: 'Button', group: 'Components', description: 'x' });
+  const { sections } = buildCatalogSections([button, dock], [components[0]]);
+  assert.deepEqual(sections.find((s) => s.id === 'Button')?.alsoUsedBy, []);
+});
+
+// An undocumented component's own stub also gets alsoUsedBy, the same derivation as a documented page.
+test('buildCatalogSections: an undocumented-component stub also gets alsoUsedBy', () => {
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'Badge', role: 'Status', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([dock], [components[1]]); // Badge, no page of its own
+  assert.deepEqual(sections.find((s) => s.id === 'Badge')?.alsoUsedBy, [{ component: 'Dock', role: 'Status' }]);
 });

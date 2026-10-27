@@ -27,6 +27,33 @@ const shell = (update: UpdateNotice | null, current: string) => (
   </View>
 );
 
+// #60's "actually opts in" specimen (plan Task 2B item 6): the same sample catalog above, plus one
+// `navigation: 'reference'` page — sample data standing in for a native declaration behind
+// "Primary action" (the path below is not a real file in this repository) — left out of `GROUPS`
+// on purpose, the same way an author would never list a reference-only page in their own sidebar
+// groups. This genuinely opts CatalogShell into the Source reference entry: opening it, searching,
+// selecting "Button source", and using its own `Back to Primary action` return link are all the
+// real implementation, not a screenshot or a noop callback.
+type ReferenceId = Id | 'ButtonSource';
+const REFERENCE_SECTIONS: SectionDef<ReferenceId>[] = [
+  ...SECTIONS,
+  {
+    id: 'ButtonSource',
+    title: 'Button source',
+    path: 'native/Button.swift:1', // sample path for this demonstration only — not a real file here
+    description: 'A sample native declaration standing in for Primary action, kept out of ordinary browsing.',
+    navigation: 'reference',
+    component: 'Button',
+    previewWidths: 'full',
+    render: () => <Text style={sample.text}>Documentation-only — no live specimen.</Text>,
+  },
+];
+const referenceShell = (
+  <View style={frame.box}>
+    <CatalogShell embedded initialPage="Button" appName="Rider App" title="Component Catalog" groups={GROUPS} sections={REFERENCE_SECTIONS} />
+  </View>
+);
+
 export default defineCatalogPage({
   component: 'CatalogShell',
   group: 'Components',
@@ -39,9 +66,10 @@ export default defineCatalogPage({
     { component: 'FamilyPage', role: 'Each catalog page with members.', relationship: 'built-in' },
     { component: 'UpdatePanel', role: 'The update page, opened from the sidebar footer.', relationship: 'built-in' },
     { component: 'SpecimenAddressProvider', role: "Wraps the selected page so a PhoneFrame in it knows which example it is.", relationship: 'built-in' },
+    { component: 'SourceReferencePicker', role: 'The catalog-wide Source reference search, opened from the sidebar once any page opts into it.', relationship: 'built-in' },
   ],
   hide: { props: true },
-  description: "The whole catalog: a searchable sidebar plus one selected page. On web the page lives in the URL fragment (#Button), so refresh, deep links and back/forward work. These examples are live shells with `embedded`, which keeps the selected page in its own state instead of the URL. You're also reading a live CatalogShell right now.",
+  description: "The whole catalog: a searchable sidebar plus one selected page. On web the page lives in the URL fragment (#Button), so refresh, deep links and back/forward work. These examples are live shells with `embedded`, which keeps the selected page in its own state instead of the URL. You're also reading a live CatalogShell right now. The \"Source reference\" example below opts a page into `navigation: 'reference'`, which adds a quiet Source reference entry to the sidebar for catalog-wide lookup of pages kept out of ordinary browsing.",
   a11y: 'Selecting a page moves focus to its heading. The sidebar is a navigation landmark of links under plain-text group labels.',
   variants: {
     // A whole catalog is laptop-sized: one per row.
@@ -50,6 +78,7 @@ export default defineCatalogPage({
       { key: 'current', name: 'Up to date', node: shell(null, '0.5.0') },
       { key: 'update', name: 'Update available', node: shell(MINOR, '0.4.9') },
       { key: 'major', name: 'Major update (banner)', node: shell(MAJOR, '0.5.0') },
+      { key: 'source-reference', name: 'Source reference', node: referenceShell },
     ],
   },
 });

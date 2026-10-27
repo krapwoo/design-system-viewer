@@ -10,11 +10,11 @@ function SearchDemo({ initial = '' }: { initial?: string }) {
 export default defineCatalogPage({
   component: 'CatalogSearchInput',
   group: 'Components',
-  whenToUse: 'The catalog\'s own sidebar filter, and only that. It is built from bare RN primitives on purpose, because the catalog documents the host app\'s search field rather than consuming it — in a host app, reach for that app\'s own field component instead.',
+  whenToUse: 'Use for the catalog sidebar and other catalog-owned search surfaces. It is built from bare RN primitives so the documentation does not depend on the host app\'s own field component.',
   source: '../native/catalog/CatalogSearchInput.tsx',
   hide: { props: true },
   description: 'A plain filter input, deliberately built from bare RN primitives rather than the host app\'s own search field — the catalog\'s own chrome shouldn\'t depend on (or break alongside) the thing it\'s documenting. It has no width of its own: it fills whatever column it sits in, 264px in the sidebar and a phone\'s content width here. A clear button appears as soon as there is something to clear.',
-  a11y: 'The field keeps the durable name "Filter components", because the placeholder disappears as soon as the reader types. The clear button is a full 44×44 target labelled "Clear filter", and clearing returns focus to the field it emptied, since the button it was on unmounts.',
+  a11y: 'The field keeps a durable name: "Filter components" by default, or the caller\'s accessibilityLabel. The 44×44 Clear filter control empties the field and restores its focus. autoFocus is off by default. Modal callers should focus inputRef from the modal\'s onShow callback, after it has remembered the initiating control.',
   variants: {
     items: [
       // Filled, because the field has no intrinsic width — filling caps it at a phone's content

@@ -30,12 +30,31 @@ export { MotionSpecimen } from './MotionSpecimen';
 export type { MotionSpecimenProps, MotionSpecimenSpringConfig } from './MotionSpecimen';
 export { SpecimenSurface } from './SpecimenSurface';
 export { TokenSections, TokenGrid, TokenTile } from './TokenLayouts';
+export { StructuredTokenPage, tokenDefinitionSections } from './StructuredTokenPage';
+export {
+  TOKEN_KINDS, isTokenKind, canonicalTokenTitle, findDuplicateIds, tokenEntryAddress,
+  validateTokenDefinition, validateTokenDefinitionUsage,
+} from './tokenDefinition';
+export type {
+  TokenKind, TokenProvenance, TokenResolution, TokenValueInfo, TokenEntryBase, TokenEntry,
+  ColorTokenValue, ColorTokenEntry, DimensionTokenValue, SpacingTokenEntry, RadiusTokenEntry,
+  DimensionsTokenEntry, OpacityTokenValue, OpacityTokenEntry, TypographyTokenValue, TypographyTokenEntry,
+  ShadowTokenValue, ShadowTokenEntry, MotionTimingValue, MotionSpringValue, MotionNativeExpressionValue,
+  MotionTokenValue, MotionTokenEntry, TokenDefinitionSection, TokenDefinition, TokenDefinitionPageUsage,
+} from './tokenDefinition';
 export { DividedStack } from './DividedStack';
 export { Swatch } from './Swatch';
 export { PhoneFrame } from './PhoneFrame';
 export { PhoneScreen } from './PhoneScreen';
 export { OverlayDemo } from './OverlayDemo';
 export { CatalogButton } from './CatalogButton';
+export { SourceReferencePicker } from './SourceReferencePicker';
+export type { SourceReferencePickerProps } from './SourceReferencePicker';
+// #60: only the shape a caller needs to pass real (or, for the self-catalog demo, sample)
+// entries into the picker — `buildReferenceIndex`/`searchReferenceIndex`/`resolveReference` stay
+// internal plumbing for `CatalogShell.tsx`'s own Task 2B wiring, the same precedent Task 1 already
+// established for `catalogReferences.ts`'s other exports.
+export type { ReferenceEntry } from './catalogReferences';
 export { BoundedOverlayViewport } from './BoundedOverlayViewport';
 export type { BoundedOverlayViewportProps } from './BoundedOverlayViewport';
 export { comparisonCellItemKey } from './overlayViewport';

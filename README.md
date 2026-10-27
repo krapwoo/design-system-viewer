@@ -230,7 +230,8 @@ Each catalog shows **one page at a time**: a persistent, searchable sidebar and 
 On web the page is kept in the URL fragment (`#Button`), so refresh, deep links, and back/forward
 work. Desktop and laptop screens only. `SectionBlock` renders one page: breadcrumb, title,
 description, previous/next, then the specimens, then always-visible
-**Guidance** and **Quick reference** (source path, accessibility), then **Props** in their own box
+**Guidance** and **Quick reference** (source path, accessibility, and — when the page has any —
+**Composition** and the derived **"also used by"** inverse of it), then **Props** in their own box
 (two columns, filled across first, when there are 4+ props and room). Token pages show only
 Quick reference with the source path. Guidance, Quick reference, and — only for a page with
 confirmed `composedOf` entries — Composition lay out from the reference card's own measured inner
@@ -238,7 +239,12 @@ width, not viewport width alone: three columns side by side only when there's co
 *and* the card is wide enough for all three (Composition gets its own column only then; otherwise
 it stays nested under Quick reference, as it always has), two when there's room for Guidance and
 Quick reference side by side, or one stacked column — in full document order, nothing dropped —
-when the card is too narrow even for two. The specimens use one of four layouts:
+when the card is too narrow even for two. A Composition name becomes a real link whenever it
+resolves to a real catalog address (a page, a family member, or either one's alias — the same
+resolution a family member's own "Uses" line already uses); an unresolvable name stays honest plain
+text. "Also used by" is derived, never authored, the ordinary-page counterpart of a family member's
+own line of the same name (see "Family pages" below): nothing renders when nothing else uses the
+page. The specimens use one of four layouts:
 - **Grid** — two props that combine freely, from an explicit `comparison` (e.g. Button's
   Variant × State).
 - **Grouped rows** — one row per variant holding that variant's own configurations (e.g.
@@ -259,6 +265,44 @@ Phone width (402px, 370px of content) caps the specimen inside a cell, not the c
 card narrower than its minimum scrolls inside itself rather than squeezing its cells. Full-width
 (`itemsFill`) slots default to `wide`. The catalog's own look comes from `native/catalog/tokens.ts`,
 never from the host app's tokens.
+
+### Source reference
+
+A page's `navigation` field is `'browse'` (the default — omit it) or `'reference'`:
+
+```tsx
+export default defineCatalogPage({
+  id: 'ButtonSource', description: 'The native declaration behind Button.',
+  navigation: 'reference',
+  // ...
+});
+```
+
+A `'reference'` page keeps every one of its addresses — its own id, its aliases, and (on a family
+page) every member's own id/alias — fully routable; `navigation` only ever removes it from the
+sidebar, the pager, and the hash fallback's own browse sequence. A family page's members inherit
+their own page's `navigation`; there's no separate per-member field. The moment any page in the
+catalog opts in, the sidebar grows a quiet **Source reference** entry: a catalog-wide search over
+every registered page's and member's own id, title, detected component export, alias, and source
+path — never a page-local member search, and never a second, hand-maintained registry (it's
+derived from the same `SectionDef[]`/`FamilyDef` every other part of the viewer already reads). A
+legacy catalog with no `'reference'` page keeps its present sidebar and page set, unchanged.
+Selecting a result opens its real page (and, for a member, focuses it directly) and offers a real
+`Back to <origin>` return link to wherever that selection actually started from — any page, not
+only another reference destination. Every other already-true reference fact (a Composition name,
+a derived "also used by" user, a family member's own `related`/anatomy name) becomes the same kind
+of real, canonical, focused-return link once it resolves. Only loading a reference page's own URL
+directly, with no recorded origin, offers `Browse catalog` to the first ordinary browsing page
+instead of inventing one that was never visited; a catalog with no browsable page at all offers
+neither.
+
+Resolution for the Source reference picker, and for every Composition/"also used by"/`related`/
+anatomy name across the whole catalog (see "Browsing the catalog" above and "Family pages" below),
+shares one rule: an exact registered page id, member id, or alias always wins; only when none of
+those claim the name does a unique, detected component export resolve it instead — letting a name
+find an ordinary page whose own id differs from its component (e.g. a `PillButton` page whose
+component export is `Button`). A component name shared by more than one page or member is
+ambiguous and is never guessed; an unknown name stays plain, honest text rather than a dead link.
 
 ## Adding a component (the recipe)
 
@@ -613,6 +657,83 @@ shape:
   ```tsx
   <MotionSpecimen kind="spring" spring={UNIT_SPRING_CONFIG} valueRange="unit" />
   ```
+
+### `tokenDefinition`
+
+An opt-in, structured alternative to `render`/`tokenGallery`/`tokenSections` for a token page's
+*real entries* — name, value, provenance, source — instead of a hand-built preview. Omitting it
+leaves every existing page exactly as it was; nothing here changes unless a page opts in.
+
+```tsx
+import { defineCatalogPage, type TokenDefinition } from '@krapwoo/ds-viewer';
+
+const COLORS: TokenDefinition = {
+  kind: 'colors',
+  sections: [
+    {
+      id: 'semantic', title: 'Semantic',
+      entries: [
+        { id: 'brand', name: 'Brand', kind: 'colors', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: DS_SEMANTIC.brand } } } },
+      ],
+    },
+  ],
+};
+
+export default defineCatalogPage({ group: 'Tokens', description: 'Semantic and palette colors.', tokenDefinition: COLORS });
+```
+
+- **Eight kinds**, each with one fixed canonical title: `colors` → Colors, `typography` →
+  Typography, `spacing` → Spacing, `radius` → Radius, `dimensions` → Dimensions, `shadows` →
+  Shadows, `opacity` → Opacity, `motion` → Motion. Omit the page's own `title` to get it for free;
+  an explicit `title` must match (`doctor`'s `token-definition-title-conflict`, below).
+- **The runtime import is the value authority, not `tokens.json`.** An entry's `value` is whatever
+  real literal/import you give it at the call site — this is not a reader of your build's
+  `tokens.json`/token-scan output. That's also why a static check (`doctor`) can only ever read an
+  entry's literal metadata, never its real value — see "Static honesty" below.
+- **Provenance, resolution and `named` are three independent things**, and every entry shows its
+  own provenance as a plain muted caption (never a badge/pill): `'named'` ("Named token") is a real
+  exported design-system token; `'inline'` ("Inline value") is a one-off literal with no shared
+  name; `'platform'` ("Platform-provided") means the real value comes from the OS at runtime, not a
+  literal this catalog can read; `'unresolved-finding'` ("Unresolved finding") is a real,
+  source-backed literal/expression found in code with no shipped design token behind it yet.
+  `resolution` is separate: `{ status: 'resolved', value }` when there's a real sample to draw, or
+  `{ status: 'unresolved', reason, expression? }` with the real reason (and, when one exists, the
+  real source expression) a human would read at the call site — never a fabricated sample or an
+  invented classification. `named: true` says a `'platform'`/`'unresolved-finding'` value is *also*
+  exposed through a real named token (shown as "Platform-provided · named token"); omit it for
+  `'named'`/`'inline'` provenance, which already say so by themselves. When every entry in a
+  section shares the same provenance/named pair, it's shown once for the whole section instead of
+  repeating on every entry.
+- **Appearances and scoped ids.** A color entry's `appearance: 'light' | 'dark'` renders an
+  independent sample — not a global color-scheme context; omit it for a color with one appearance.
+  An entry's `id` only needs to be unique *within its own section* — the same id may recur in a
+  different section of the same page (e.g. two scoped "Palette" cards), which is the same
+  `TokenSection.id` precedent token galleries already use.
+- **Motion's `native-expression` kind is a real limit, not a gap:** a SwiftUI
+  `.spring(duration:bounce:)`/`.spring(response:dampingFraction:)` (or any other conditional/
+  symbolic value) is shown as its own real text, never converted into a guessed
+  stiffness/damping/mass spring — that conversion genuinely isn't supported.
+- **Conflicts.** `tokenDefinition` replaces, and so conflicts with, an explicit `render`,
+  `tokenGallery`, `tokenSections`, or `members` (a family page) on the same page — remove one of
+  them. These, and an explicit `title` that disagrees with the kind's canonical title, are always
+  `doctor` errors (`token-definition-conflict`, `token-definition-title-conflict`), independent of
+  `doctor.strict`. A duplicate section id, or a duplicate entry id within one section, is
+  `token-definition-duplicate-id` (also always an error) — the same id may still recur in a
+  *different* section.
+- **Static honesty.** `npx ds-viewer doctor` reads a `tokenDefinition`'s `kind` and each section's
+  `id`/`title`/`desc`/`wide`/entry `id`s the same literal-only way it reads every other page field
+  — it never imports or executes a page file, so it can never see a real `value`. When a section's
+  own `entries` isn't a literal array (an imported/computed list), or contains an entry whose own
+  `id` isn't a literal, that section's ids are read on a best-effort basis and the summary lists it
+  as a section with runtime-only entries (not statically validated). That is the normal case when
+  values are imported from your own token modules, so it is informational: it never fails `--ci`
+  and `doctor.strict` does not promote it. Literal sections still get every check. A `tokenDefinition`
+  whose own `kind`/`sections` metadata isn't literal at all makes the whole page not statically
+  checkable — reported only as the existing `page-not-checkable` warning, never a separate
+  `tokenDefinition`-specific one.
+- **Migration.** A legacy `render`/`tokenGallery`/`tokenSections` token page keeps working
+  unchanged — `tokenDefinition` is additive, never required. To convert one, remove `render`/
+  `tokenSections` and author the same data as `tokenDefinition`'s entries instead.
 
 ## Keeping the catalog current
 
