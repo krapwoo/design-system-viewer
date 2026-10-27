@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.17.0
+
+- A catalog with usage data now has an **Overview** page, first in the sidebar, with a Components tab (a card with a live thumbnail for every page, grouped by area, filterable and sortable) and a Usage tab (a components-by-area table shaded by use count).
+- A new `usage` config field points at a JSON file of where each component is used, and every page that has usage now shows an "Appears in" block (uses per area, and the files that use it), with `doctor` flagging usage keys that match no page (`usage-unknown-page`) and a shorter `nothing-to-show` fix. `dev` also watches the usage file, so regenerating it updates the open catalog without a restart.
+- On pages that aren't a family, group or token page, the Guidance, Quick reference, Composition and Props now open from a **Notes and API ›** link in the same side panel family members use, and the Overview's Usage table shows each count in an inset chip (empty when zero) while the "Appears in" bars stop stretching past 240px.
+
 ## 0.16.0
 
 - `doctor` now warns about a page that is only a built-in part of one other page (`part-own-page`) and a page that shows no specimens (`nothing-to-show`), and a new `standalone: '<reason>'` page field records a deliberate exception (a blank one is reported as `standalone-reason-empty`); pages in a pattern group (`patternGroups`, default `Patterns`) never count as the whole.

@@ -1,1 +1,0 @@
-On pages that aren't a family, group or token page, the Guidance, Quick reference, Composition and Props now open from a **Notes and API ›** link in the same side panel family members use, and the Overview's Usage table shows each count in an inset chip (empty when zero) while the "Appears in" bars stop stretching past 240px.
