@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { writePersonalAutoCheck } from '../updateCheck.ts';
 import {
-  assertLocalInstall, bindEndpointServer, isWatchedPath, LocalInstallMissingError, performUpdate, reloadWorkspace, refreshUpdateFile, watchTargetFolders,
+  assertLocalInstall, bindEndpointServer, isWatchedPath, LocalInstallMissingError, performUpdate, reloadWorkspace, refreshUpdateFile, watchTargetFolders, usageWatchTarget, isUsageFileEvent, watchUsageFile,
 } from '../dev.ts';
 import type { UpdatePlan } from '../updatePlan.ts';
 import type { UpdateStatus } from '../endpoint.ts';
@@ -42,6 +42,60 @@ test('watchTargetFolders returns only the glob base folders of components/tokens
     [path.join(dir, 'src', 'components'), path.join(dir, 'src', 'tokens')].sort(),
   );
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('usageWatchTarget resolves the configured usage file and its folder, outside the source globs', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  mkdirSync(path.join(dir, 'build'), { recursive: true });
+  const config: ResolvedConfig = {
+    name: 'X',
+    components: ['src/components/*/index.ts'],
+    updateCheck: true,
+    doctor: { strict: false },
+    projectRoot: dir,
+    configPath: path.join(dir, 'ds-viewer.config.ts'),
+  };
+  assert.equal(usageWatchTarget(config), undefined, 'no usage file configured: nothing extra to watch');
+  assert.deepEqual(usageWatchTarget({ ...config, usage: 'build/usage.json' }), { folder: path.join(dir, 'build'), file: path.join(dir, 'build', 'usage.json') });
+  assert.deepEqual(usageWatchTarget({ ...config, usage: 'usage.json' }), { folder: dir, file: path.join(dir, 'usage.json') }, 'a file at the project root');
+  assert.equal(usageWatchTarget({ ...config, usage: 'missing-folder/usage.json' }), undefined, 'a folder that does not exist cannot be watched');
+  assert.deepEqual(watchTargetFolders({ ...config, usage: 'build/usage.json' }), [], 'the usage folder is not a source folder');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('isUsageFileEvent matches only the usage file by name (and an event with no name, which may be it)', () => {
+  const target = { file: path.join('/p', 'build', 'usage.json') };
+  assert.equal(isUsageFileEvent(target, 'usage.json'), true);
+  assert.equal(isUsageFileEvent(target, Buffer.from('usage.json')), true);
+  assert.equal(isUsageFileEvent(target, null), true);
+  assert.equal(isUsageFileEvent(target, 'other.json'), false, 'a sibling file');
+  assert.equal(isUsageFileEvent(target, '.ds-viewer'), false, 'the workspace folder sync writes into');
+});
+
+test('watchUsageFile fires when the usage file is rewritten or replaced, and not for a sibling file', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-dev-'));
+  const file = path.join(dir, 'usage.json');
+  writeFileSync(file, '{}');
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
+  await settle(); // FSEvents can report the file just created, to a watcher that starts right after
+  let calls = 0;
+  const watcher = watchUsageFile({ folder: dir, file }, () => { calls += 1; });
+  try {
+    writeFileSync(path.join(dir, 'other.json'), '{}');
+    await settle();
+    assert.equal(calls, 0, 'a sibling file is not the usage file');
+    writeFileSync(file, '{"version":1}');
+    await settle();
+    assert.ok(calls >= 1, 'rewriting the usage file is noticed');
+    const seen = calls;
+    writeFileSync(path.join(dir, 'usage.tmp'), '{"version":1,"x":1}');
+    renameSync(path.join(dir, 'usage.tmp'), file); // how many generators replace a file
+    await settle();
+    assert.ok(calls > seen, 'replacing it by rename is noticed too');
+  } finally {
+    watcher.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('assertLocalInstall throws when there is no package.json', () => {

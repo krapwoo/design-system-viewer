@@ -776,12 +776,15 @@ test('a plain component page shows neither page-kind explainer', () => {
   } finally { cleanup(); }
 });
 
-test('page notes render as a Notes entry in the standalone page\'s reference layer', () => {
+test('page notes render as a Notes entry in the standalone page\'s Notes and API panel', () => {
   const page = defineCatalogPage({ id: 'Noted', group: 'Components', description: 'A noted page.', source: 'src/Noted.tsx', notes: ['First page note.', 'Second page note.'] });
   const { sections } = buildCatalogSections([{ ...page, file: 'fixtures/Noted.catalog.tsx' }], []);
   const { container, cleanup } = renderCatalog(React.createElement(SectionBlock as never, { def: sections[0] } as never));
   try {
-    const label = [...container.querySelectorAll('*')].find((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Notes');
+    assert.equal((container.textContent || '').includes('First page note.'), false, 'notes are not inline on the page');
+    press(triggerFor(container, 'Notes and API'));
+    const panel = panelEl()!;
+    const label = [...panel.querySelectorAll('*')].find((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Notes');
     assert.ok(label, 'expected a "Notes" entry label');
     const entry = label!.parentElement!;
     assert.ok((entry.textContent || '').includes('First page note.') && (entry.textContent || '').includes('Second page note.'), 'every note is listed under Notes');
@@ -793,7 +796,8 @@ test('a page without notes renders no Notes entry', () => {
   const { sections } = buildCatalogSections([{ ...page, file: 'fixtures/Unnoted.catalog.tsx' }], []);
   const { container, cleanup } = renderCatalog(React.createElement(SectionBlock as never, { def: sections[0] } as never));
   try {
-    assert.equal([...container.querySelectorAll('*')].some((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Notes'), false);
+    press(triggerFor(container, 'Notes and API'));
+    assert.equal([...panelEl()!.querySelectorAll('*')].some((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Notes'), false);
   } finally { cleanup(); }
 });
 

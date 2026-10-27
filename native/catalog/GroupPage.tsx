@@ -5,6 +5,9 @@ import type { SectionPager } from './SectionBlock';
 import { hashForId } from './catalogNavigation';
 import { referenceLinkProps, type ReferenceNavigation } from './catalogReferences';
 import { JumpRow, type JumpItem } from './JumpRow';
+import { AppearsIn } from './AppearsIn';
+import { UsageContext } from './usageContext';
+import { pageLevelUsage, type UsageData } from './usage';
 import { AnatomyBox, FamilyPageHead, FamilyPart, MemberPanelHost, PartOfLine, PartTreeBranch, scrollAndFocusMember, type FamilyMember } from './FamilyPage';
 import { buildPartTree } from './familyModel';
 import type { CatalogAnatomy, FamilyDef, PreviewWidths, SectionDef } from './types';
@@ -110,6 +113,7 @@ export function GroupPage<TId extends string>({
   focusNonce,
   knownAddressIds,
   navigation,
+  usage,
 }: {
   def: SectionDef<TId>;
   groupLabel?: string;
@@ -118,6 +122,8 @@ export function GroupPage<TId extends string>({
   pager?: SectionPager<TId>;
   headingRef?: React.Ref<View>;
   defaultPreviewWidths?: PreviewWidths;
+  /** Same meaning as `FamilyPage`'s own prop. */
+  usage?: UsageData | null;
   focusMemberId?: string;
   focusNonce?: number;
   knownAddressIds?: ReadonlySet<string>;
@@ -189,7 +195,10 @@ export function GroupPage<TId extends string>({
     if (node) scrollAndFocusMember(node);
   }, [focusMemberId, focusNonce]);
 
+  const pageUsage = pageLevelUsage(usage, def, family.members);
+
   return (
+    <UsageContext.Provider value={usage ?? null}>
     <MemberPanelHost>
     <View>
       <FamilyPageHead kind="group" def={def} groupLabel={groupLabel} breadcrumbRoot={breadcrumbRoot} banner={banner} pager={pager} headingRef={headingRef} notShown={family.notShown} />
@@ -213,8 +222,11 @@ export function GroupPage<TId extends string>({
           />
         ))}
       </View>
+      {/* A usage key that names the page itself shows after the members, not above the first one. */}
+      {pageUsage?.uses.length ? <View style={styles.pageUsage}><AppearsIn entry={pageUsage} /></View> : null}
     </View>
     </MemberPanelHost>
+    </UsageContext.Provider>
   );
 }
 
@@ -222,6 +234,7 @@ const MEMBER_GAP = 64;
 const PIN_GUTTER = 52;
 
 const styles = StyleSheet.create({
+  pageUsage: { marginTop: CATALOG_SPACE['2xl'] },
   // Same rhythm as `FamilyPage`'s own "Parts"/"Related" group body (`labeledGroupBody`) — one
   // top-level member's section to the next.
   members: { marginTop: CATALOG_SPACE.xl, gap: MEMBER_GAP },

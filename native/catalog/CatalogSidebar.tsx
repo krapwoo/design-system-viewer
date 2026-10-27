@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-nati
 import type { ImageSourcePropType, LayoutChangeEvent, NativeSyntheticEvent, ImageLoadEventData } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { logoLayout } from './logoLayout';
-import { filterGroups, hashForId, searchResults, UPDATE_PAGE_ID, type MemberSearchEntry } from './catalogNavigation';
+import { filterGroups, hashForId, OVERVIEW_PAGE_ID, searchResults, UPDATE_PAGE_ID, type MemberSearchEntry } from './catalogNavigation';
 import type { NavGroup } from './types';
 import { CatalogSearchInput } from './CatalogSearchInput';
 
@@ -145,6 +145,7 @@ export function CatalogSidebar<TId extends string>({
   onSelectMember,
   footer,
   sourceReference,
+  overview,
   keepDocumentUrl = false,
 }: {
   logo: string;
@@ -178,6 +179,10 @@ export function CatalogSidebar<TId extends string>({
    *  `hasReferenceNavigation`) that the catalog has at least one `'reference'` page. Omitted keeps
    *  the legacy sidebar unchanged. */
   sourceReference?: { onPress: () => void };
+  /** The Overview entry, first in the list and above every group: present only when the catalog has
+   *  usage data. Like the Source reference entry it sits outside the filter, so a filter that
+   *  matches no page never hides it. `active` is true while the Overview page is open. */
+  overview?: { active: boolean; onPress: () => void };
 }) {
   const [query, setQuery] = useState('');
   // A bundled local image (the only kind `cli/workspace.ts` ever produces — see its doc comment
@@ -267,6 +272,8 @@ export function CatalogSidebar<TId extends string>({
         </View>
 
         <CatalogSearchInput value={query} onChangeText={setQuery} placeholder="Filter components…" />
+
+        {overview && <NavItem id={OVERVIEW_PAGE_ID} label="Overview" active={overview.active} onPress={overview.onPress} keepDocumentUrl={keepDocumentUrl} />}
 
         {/* Outside `filtered`/`memberHits`: a filter that matches no page must not hide this. */}
         {sourceReference && <SourceReferenceEntry onPress={sourceReference.onPress} />}

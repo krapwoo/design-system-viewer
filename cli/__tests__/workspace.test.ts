@@ -533,3 +533,16 @@ test('a repair without an endpoint writes no record at all', () => {
   assert.equal(existsSync(workspacePath(config, 'endpoint.json')), false, 'no endpoint means no record to restore');
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('entry.tsx imports usage and passes it to the shell only when a usage path is configured', () => {
+  const projectRoot = copyFixture();
+  const without = readFileSync(path.join(writeWorkspace(baseConfig(projectRoot)), 'entry.tsx'), 'utf8');
+  assert.doesNotMatch(without, /usage/);
+
+  const withUsage = readFileSync(path.join(writeWorkspace({ ...baseConfig(projectRoot), usage: 'build/usage.json' }), 'entry.tsx'), 'utf8');
+  assert.match(withUsage, /^import usage from '\.\/generated\/usage\.json';$/m);
+  assert.match(withUsage, /<CatalogShell [^\n]* usage=\{usage\} \/>/);
+  // The only differences are those two additions: with no usage the generated entry is unchanged.
+  assert.equal(withUsage.replace("import usage from './generated/usage.json';\n", '').replace(' usage={usage}', ''), without);
+  rmSync(projectRoot, { recursive: true, force: true });
+});

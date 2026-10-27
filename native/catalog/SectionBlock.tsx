@@ -4,7 +4,9 @@ import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_T
 import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
-import { ReferenceDetails } from './ReferenceDetails';
+import { AppearsIn } from './AppearsIn';
+import { ReferenceDetails, ReferenceDetailsPanel } from './ReferenceDetails';
+import { findUsage, type UsageData } from './usage';
 import type { ReferenceNavigation } from './catalogReferences';
 import { SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
@@ -336,7 +338,7 @@ export function Blocks<TId extends string>({
 /**
  * One catalog page: breadcrumb, title, description, previous/next, then one or two specimen
  * blocks (grid, grouped rows, list, or preview), stacked or side by side, then always-visible
- * reference details (Quick reference only for token galleries). Works standalone without a pager
+ * reference details (inline Quick reference for token galleries; behind a "Notes and API" side panel otherwise). Works standalone without a pager
  * inside a host page, as the framework catalog's own SectionBlock demo does.
  */
 export function SectionBlock<TId extends string>({
@@ -351,6 +353,7 @@ export function SectionBlock<TId extends string>({
   navigation,
   focusSectionId,
   focusNonce,
+  usage,
 }: {
   def: SectionDef<TId>;
   groupLabel?: string;
@@ -375,6 +378,9 @@ export function SectionBlock<TId extends string>({
   /** Bumped by `CatalogShell` on every activation, even a repeat one — the same
    *  `focusMemberId`/`focusNonce` convention `FamilyPage` already uses. */
   focusNonce?: number;
+  /** The project's usage data (`CatalogShell`'s `usage`). With an entry for this page's id or
+   *  component, an "Appears in" block follows the specimens. Omitted: no block. */
+  usage?: UsageData | null;
 }) {
   checkCompleteness(def);
   // Memoized so Blocks' placement effect runs on real changes, not on every render.
@@ -407,7 +413,11 @@ export function SectionBlock<TId extends string>({
 
       {blocks.length > 0 && <Blocks blocks={blocks} def={def} surface={surface} focusSectionId={focusSectionId} focusNonce={focusNonce} />}
 
-      <ReferenceDetails def={def} navigation={navigation} />
+      <AppearsIn entry={findUsage(usage, [def.id, def.component])} />
+
+      {/* Token galleries keep their short Quick reference inline; every other page's reference
+          details live in the side panel behind "Notes and API". */}
+      {def.tokenGallery ? <ReferenceDetails def={def} navigation={navigation} /> : <ReferenceDetailsPanel def={def} navigation={navigation} />}
     </View>
   );
 }

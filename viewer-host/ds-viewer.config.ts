@@ -11,5 +11,8 @@ export default defineConfig({
   tokens: ['../native/catalog/tokens.ts'],
   pages: ['viewer-pages/*.catalog.tsx'],
   groupOrder: ['Tokens', 'Components'],
+  // Fixture usage data (invented, see the `_fixture` note inside), so this catalog shows its own
+  // Overview page and "Appears in" blocks. Every key names a real page here.
+  usage: 'usage.fixture.json',
   updateCheck: false,
 });

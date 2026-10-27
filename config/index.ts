@@ -19,6 +19,10 @@ export interface DsViewerConfig {
   /** Sidebar groups whose pages are patterns: example screens built from components. `doctor`
    *  never treats a pattern page as the whole a component is a part of. @default ['Patterns'] */
   patternGroups?: string[];
+  /** Path (relative to the project root) to a JSON file your project generates, saying where each
+   *  component is used (usage file format v1 — see the README). Adds an "Appears in" block to
+   *  every page with usage. Absent: the catalog is unchanged. */
+  usage?: string;
   /** Starter-kit projects only. `root` is the folder `init --new` copied the kit into (default
    *  `src/ds`); absent on a config written before 0.4, in which case `cli/kitRoot.ts` infers it
    *  from the first `components` glob instead. */

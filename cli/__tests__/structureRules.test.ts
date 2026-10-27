@@ -120,12 +120,16 @@ test('a blank standalone is reported alongside nothing-to-show, not instead of i
 
 // ---- nothing-to-show ----
 
+// W1: the contract's exact wording, the same for every variant; it no longer suggests
+// `navigation: 'reference'`.
+const NOTHING_TO_SHOW_FIX = 'Add a specimen, list it as a documentation-only part of a page that uses it, or remove the page (record why in your own docs).';
+
 test('nothing-to-show reports an empty page that no other page uses', () => {
   const found = run([page({ id: 'Empty', component: 'Empty' })], 'nothing-to-show');
   assert.equal(found.length, 1);
   assert.equal(found[0].severity, 'warning');
   assert.equal(found[0].message, '`Empty` shows no specimens and no other page uses it.');
-  assert.equal(found[0].fix, "Add a specimen, set `navigation: 'reference'`, or `standalone: '<reason>'`.");
+  assert.equal(found[0].fix, NOTHING_TO_SHOW_FIX);
 });
 
 test('nothing-to-show names every page that uses an empty page, via composedOf of any relationship', () => {
@@ -137,9 +141,7 @@ test('nothing-to-show names every page that uses an empty page, via composedOf o
   const found = run(pages, 'nothing-to-show');
   assert.equal(found.length, 1);
   assert.equal(found[0].message, '`Empty` shows no specimens. It is used by `Y`, `Z`.');
-  assert.match(found[0].fix, /documentation-only part/);
-  assert.match(found[0].fix, /navigation: 'reference'/);
-  assert.match(found[0].fix, /standalone: '<reason>'/);
+  assert.equal(found[0].fix, NOTHING_TO_SHOW_FIX);
 });
 
 test('nothing-to-show finds a user that lists the empty page by id when the page has a different component', () => {
@@ -211,7 +213,22 @@ test('nothing-to-show says when only pattern pages use an empty page', () => {
   const found = run(pair('built-in', { variantsItems: undefined }, { group: 'Patterns' }), 'nothing-to-show');
   assert.equal(found.length, 1);
   assert.equal(found[0].message, '`Part` shows no specimens. Only pattern pages use it (`Owner`).');
-  assert.doesNotMatch(found[0].fix, /List it on that page/);
+  assert.equal(found[0].fix, NOTHING_TO_SHOW_FIX);
+});
+
+test('nothing-to-show uses the same fix text for every variant and never suggests navigation: reference', () => {
+  const unreadable = page({ id: 'Opaque', component: 'Opaque', file: '/x/Opaque.catalog.tsx', variantsItems: SPECIMEN, hasComposedOf: true });
+  const variants = [
+    run([page({ id: 'Empty', file: '/x/Empty.catalog.tsx' })], 'nothing-to-show'), // nothing uses it
+    run([page({ id: 'Empty', file: '/x/Empty.catalog.tsx' }), unreadable], 'nothing-to-show'), // an unreadable composedOf
+    run(pair('related', { variantsItems: undefined }), 'nothing-to-show'), // a page uses it
+    run(pair('built-in', { variantsItems: undefined }, { group: 'Patterns' }), 'nothing-to-show'), // only pattern pages use it
+  ];
+  for (const found of variants) {
+    assert.equal(found.length, 1);
+    assert.equal(found[0].fix, NOTHING_TO_SHOW_FIX);
+    assert.doesNotMatch(found[0].fix, /navigation/);
+  }
 });
 
 // ---- review corrections ----

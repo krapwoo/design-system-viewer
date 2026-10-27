@@ -111,6 +111,22 @@ export function idFromHash<TId extends string>(hash: string, order: readonly TId
  *  it as an unknown fragment and fall back to the first real page. */
 export const UPDATE_PAGE_ID = 'ds-viewer-update';
 
+/** The Overview page (shown only when the catalog has usage data) is reserved the same way. It has
+ *  two tabs, addressed `#ds-viewer-overview` (Components) and `#ds-viewer-overview/usage`. */
+export const OVERVIEW_PAGE_ID = 'ds-viewer-overview';
+export type OverviewTab = 'components' | 'usage';
+
+export function overviewHash(tab: OverviewTab): string {
+  return tab === 'usage' ? `#${OVERVIEW_PAGE_ID}/usage` : `#${OVERVIEW_PAGE_ID}`;
+}
+
+/** The tab a decoded fragment names, or undefined when it is not an Overview address. */
+export function overviewTabFromFragment(decoded: string): OverviewTab | undefined {
+  if (decoded === OVERVIEW_PAGE_ID) return 'components';
+  if (decoded === `${OVERVIEW_PAGE_ID}/usage`) return 'usage';
+  return undefined;
+}
+
 /** The request header both the local endpoint (Task 12, which checks it) and the panel's own
  *  fetch calls (Task 16, which send it) use for the per-`dev`-run secret (design §5 "Local
  *  endpoint safeguards"). Defined once, here, rather than as a literal string repeated in both the
@@ -207,6 +223,8 @@ export type Route<TId extends string> =
   | { kind: 'page'; id: TId; sectionId?: string }
   | { kind: 'member'; pageId: TId; memberId: string }
   | { kind: 'update' }
+  /** The Overview page (only resolved when the catalog has usage data), on one of its two tabs. */
+  | { kind: 'overview'; tab: OverviewTab }
   | { kind: 'notFound'; raw: string }
   | { kind: 'empty' };
 
@@ -214,6 +232,9 @@ export function resolveRoute<TId extends string>(
   hash: string,
   order: readonly TId[],
   aliases: ReadonlyMap<string, AliasTarget>,
+  /** True when the catalog has usage data: only then does the Overview address resolve, otherwise
+   *  it is as unknown as any other fragment. */
+  overviewEnabled = false,
 ): Route<TId> {
   const raw = hash.startsWith('#') ? hash.slice(1) : hash;
   if (raw === '') return { kind: 'empty' };
@@ -224,6 +245,8 @@ export function resolveRoute<TId extends string>(
     return { kind: 'notFound', raw };
   }
   if (decoded === UPDATE_PAGE_ID) return { kind: 'update' };
+  const overviewTab = overviewEnabled ? overviewTabFromFragment(decoded) : undefined;
+  if (overviewTab) return { kind: 'overview', tab: overviewTab };
   if ((order as readonly string[]).includes(decoded)) return { kind: 'page', id: decoded as TId };
   const target = aliases.get(decoded);
   if (target) {

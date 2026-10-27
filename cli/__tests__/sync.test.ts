@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { sync } from '../sync.ts';
@@ -241,4 +241,72 @@ test('sync carries composedOfCandidates through components.json for a component 
   assert.match(candidate.file, /starter-kit[/\\]components[/\\]Toast[/\\]Toast\.tsx$/);
   assert.equal(typeof candidate.line, 'number');
   rmSync(path.join(REPO_ROOT, '.ds-viewer'), { recursive: true, force: true });
+});
+
+// U3: `sync` validates the configured usage file and writes it for the shell.
+function usageConfig(projectRoot: string, usage?: string): ResolvedConfig {
+  return {
+    name: 'Fixture App',
+    components: ['src/components/*/index.ts'],
+    tokens: ['src/tokens/index.ts'],
+    pages: [],
+    usage,
+    updateCheck: true,
+    doctor: { strict: false },
+    projectRoot,
+    configPath: path.join(projectRoot, 'ds-viewer.config.ts'),
+  };
+}
+
+function quietly<T>(run: () => T): { value: T; warned: string[] } {
+  const original = console.warn;
+  const warned: string[] = [];
+  console.warn = (message: string) => { warned.push(message); };
+  try {
+    return { value: run(), warned };
+  } finally {
+    console.warn = original;
+  }
+}
+
+const USAGE_FILE = { version: 1, components: { Button: { area: 'Chat', uses: [{ area: 'Bots', file: 'Bot.swift', line: 4 }] } } };
+
+test('sync writes the validated usage data to generated/usage.json', () => {
+  const projectRoot = copyFixture();
+  writeFileSync(path.join(projectRoot, 'usage.json'), JSON.stringify({ ...USAGE_FILE, ignored: 1 }));
+  const { value: result, warned } = quietly(() => sync(usageConfig(projectRoot, 'usage.json'), RESOLVE_OPTIONS));
+  assert.deepEqual(warned, []);
+  assert.deepEqual(result.usageWarnings, []);
+  assert.deepEqual(result.usage, USAGE_FILE);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(result.generatedDir, 'usage.json'), 'utf8')), USAGE_FILE);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('sync with a missing or invalid usage file warns, keeps its other output, and writes null', () => {
+  const projectRoot = copyFixture();
+  const missing = quietly(() => sync(usageConfig(projectRoot, 'nope.json'), RESOLVE_OPTIONS));
+  assert.equal(missing.value.componentCount, 2);
+  assert.deepEqual(missing.warned, ['Usage file not found: nope.json — showing no usage data.']);
+  assert.deepEqual(missing.value.usageWarnings, missing.warned);
+  assert.equal(missing.value.usage, undefined);
+  assert.equal(readFileSync(path.join(missing.value.generatedDir, 'usage.json'), 'utf8').trim(), 'null');
+  assert.deepEqual(missing.value.warnings, [], 'usage problems are not component read failures');
+
+  writeFileSync(path.join(projectRoot, 'bad.json'), '{ nope');
+  const bad = quietly(() => sync(usageConfig(projectRoot, 'bad.json'), RESOLVE_OPTIONS));
+  assert.match(bad.warned[0], /is not valid JSON/);
+  assert.equal(readFileSync(path.join(bad.value.generatedDir, 'usage.json'), 'utf8').trim(), 'null');
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
+test('sync without a usage path writes no usage.json and removes a stale one', () => {
+  const projectRoot = copyFixture();
+  writeFileSync(path.join(projectRoot, 'usage.json'), JSON.stringify(USAGE_FILE));
+  const first = quietly(() => sync(usageConfig(projectRoot, 'usage.json'), RESOLVE_OPTIONS)).value;
+  assert.equal(existsSync(path.join(first.generatedDir, 'usage.json')), true);
+  const second = quietly(() => sync(usageConfig(projectRoot), RESOLVE_OPTIONS)).value;
+  assert.equal(existsSync(path.join(second.generatedDir, 'usage.json')), false);
+  assert.equal(second.usage, undefined);
+  assert.deepEqual(second.usageWarnings, []);
+  rmSync(projectRoot, { recursive: true, force: true });
 });

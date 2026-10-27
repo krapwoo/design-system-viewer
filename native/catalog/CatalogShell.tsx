@@ -7,6 +7,9 @@ import { SectionBlock } from './SectionBlock';
 import { FamilyPage } from './FamilyPage';
 import { GroupPage } from './GroupPage';
 import { UpdatePanel } from './UpdatePanel';
+import { Overview } from './Overview';
+import { DEFAULT_OVERVIEW_PREFS, tokenGroupIds, type OverviewPrefs } from './overviewModel';
+import { ScrollRootContext } from './scrollRootContext';
 import { SourceReferencePicker } from './SourceReferencePicker';
 import {
   aliasTargets,
@@ -16,19 +19,29 @@ import {
   hashForId,
   neighbors,
   orderedIds,
+  OVERVIEW_PAGE_ID,
+  overviewHash,
   resolveRoute,
   shouldShowMajorBanner,
   UPDATE_PAGE_ID,
   type MemberSearchEntry,
+  type OverviewTab,
 } from './catalogNavigation';
 import { browsableIds, buildReferenceIndex, hasReferenceNavigation, referenceLinkProps, resolveReference, type ReferenceEntry, type ReferenceNavigation } from './catalogReferences';
 import { findOverlayNode, overlayAddressFromSearch } from './overlayViewport';
 import { SpecimenAddressProvider } from './SpecimenAddress';
+import type { UsageData } from './usage';
 import type { NavGroup, PreviewWidths, SectionDef, UpdateNotice, VersionStatus } from './types';
 
-/** `active` can be a real page id, or the reserved update-page id — never both a generic `TId`
- *  constraint and a hardcoded string literal type at once, which is why this is its own alias. */
-type ShellPageId<TId extends string> = TId | typeof UPDATE_PAGE_ID;
+/** `active` can be a real page id, or a reserved id (the update page, the Overview) — never both a
+ *  generic `TId` constraint and a hardcoded string literal type at once, which is why this is its
+ *  own alias. */
+type ShellPageId<TId extends string> = TId | typeof UPDATE_PAGE_ID | typeof OVERVIEW_PAGE_ID;
+
+/** The reserved pages that are not catalog sections. */
+function isReservedPage(id: string | undefined): boolean {
+  return id === UPDATE_PAGE_ID || id === OVERVIEW_PAGE_ID;
+}
 
 /** #60's "opening context" (plan Task 2B item 4): the page/member a Source reference journey
  *  started from, remembered only in memory (no persistent history manager) so a reference
@@ -207,6 +220,7 @@ export function CatalogShell<TId extends string>({
   update,
   versionStatus,
   updateEndpoint,
+  usage,
   embedded = false,
   initialPage,
 }: {
@@ -242,6 +256,9 @@ export function CatalogShell<TId extends string>({
    *  disables the endpoint entirely — `UpdatePanel` degrades to showing the plan/notice with no
    *  **Update now** button when this is missing. */
   updateEndpoint?: { baseUrl: string; secret: string };
+  /** Where each component is used (usage file format v1), validated by `sync` and written to
+   *  `.ds-viewer/generated/usage.json`. `null`/absent: no "Appears in" blocks anywhere. */
+  usage?: UsageData | null;
 }) {
   // A `BoundedOverlayViewport`'s own child document (design §5): render ONLY the one authored
   // node this document's URL addresses, with no sidebar/breadcrumb/title/pager — never the whole
@@ -317,7 +334,9 @@ export function CatalogShell<TId extends string>({
     [groups, browsable],
   );
 
-  const routeFromHash = useCallback((hash: string) => resolveRoute(hash, fullRouteIds, aliasMap), [fullRouteIds, aliasMap]);
+  // The Overview exists only with usage data: without it its address is as unknown as any other.
+  const overviewEnabled = usage != null;
+  const routeFromHash = useCallback((hash: string) => resolveRoute(hash, fullRouteIds, aliasMap, overviewEnabled), [fullRouteIds, aliasMap, overviewEnabled]);
 
   const [active, setActive] = useState<ShellPageId<TId> | undefined>(() => {
     if (embedded) return initialPage ?? order[0];
@@ -325,10 +344,21 @@ export function CatalogShell<TId extends string>({
     const route = routeFromHash(window.location.hash);
     if (route.kind === 'empty') return order[0];
     if (route.kind === 'update') return UPDATE_PAGE_ID;
+    if (route.kind === 'overview') return OVERVIEW_PAGE_ID;
     if (route.kind === 'page') return route.id;
     if (route.kind === 'member') return route.pageId;
     return undefined; // notFound
   });
+  // The Overview's tab lives in the address (`#ds-viewer-overview/usage`); its filter and sort are
+  // kept here so Back from a card returns to the same view.
+  const [overviewTab, setOverviewTab] = useState<OverviewTab>(() => {
+    if (embedded || !isWeb()) return 'components';
+    const route = routeFromHash(window.location.hash);
+    return route.kind === 'overview' ? route.tab : 'components';
+  });
+  const [overviewPrefs, setOverviewPrefs] = useState<OverviewPrefs>(DEFAULT_OVERVIEW_PREFS);
+  const overviewTabRef = useRef(overviewTab);
+  overviewTabRef.current = overviewTab;
   const [pendingMemberId, setPendingMemberId] = useState<string | undefined>(() => {
     if (embedded || !isWeb()) return undefined;
     const route = routeFromHash(window.location.hash);
@@ -370,6 +400,12 @@ export function CatalogShell<TId extends string>({
   const pendingReferenceSelectionRef = useRef<{ entry: ReferenceEntry<TId>; origin: ReferenceOrigin<TId> | undefined } | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
+  // Where the Overview thumbnails' lookahead is measured: the column that scrolls, not the window.
+  const getScrollRoot = useCallback(
+    () => (Platform.OS === 'web' ? (scrollRef.current as unknown as { getScrollableNode?: () => Element | null } | null)?.getScrollableNode?.() ?? null : null),
+    [],
+  );
+  const tokenIds = useMemo(() => tokenGroupIds(groups), [groups]);
   const headingRef = useRef<View>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -397,6 +433,12 @@ export function CatalogShell<TId extends string>({
     // section-alias arrival — any section scroll still owed from a previous hash resolution is now
     // stale.
     setPendingSectionId(undefined);
+    // The sidebar's Overview link (and a card's way back to it) means the Components tab; leaving
+    // a different tab open would contradict the address the link advertises.
+    if (id === OVERVIEW_PAGE_ID && overviewTabRef.current !== 'components') {
+      pushHistoryNext.current = true;
+      setOverviewTab('components');
+    }
     if (id === activeRef.current) {
       if (memberId) {
         pushHistoryNext.current = true;
@@ -413,6 +455,16 @@ export function CatalogShell<TId extends string>({
     setPendingMemberId(memberId);
     if (memberId) setPendingMemberNonce((n) => n + 1);
     setActive(id);
+  }, []);
+
+  // Stable, so a memoized Overview card is not re-rendered (and its live thumbnail re-run) by every
+  // shell render.
+  const openFromOverview = useCallback((id: string) => select(id as TId), [select]);
+
+  const selectOverviewTab = useCallback((tab: OverviewTab) => {
+    if (tab === overviewTabRef.current) return;
+    pushHistoryNext.current = true;
+    setOverviewTab(tab);
   }, []);
 
   // Task 2B2 correction: the one private reference-selection routine both the picker's deferred
@@ -450,7 +502,7 @@ export function CatalogShell<TId extends string>({
       // only once validated against the current page's own real family; an unknown hint can never
       // fabricate an origin.
       open: (pageId, memberId, sourceMemberId) => {
-        const current = active !== undefined && active !== UPDATE_PAGE_ID ? active : undefined;
+        const current = active !== undefined && !isReservedPage(active) ? (active as TId) : undefined;
         if (current === undefined) {
           openReference(pageId, memberId, undefined);
           return;
@@ -504,6 +556,16 @@ export function CatalogShell<TId extends string>({
         }
         return;
       }
+      if (route.kind === 'overview') {
+        setPendingMemberId(undefined);
+        setPendingSectionId(undefined);
+        setOverviewTab(route.tab);
+        if (OVERVIEW_PAGE_ID !== activeRef.current) {
+          focusHeadingNext.current = true;
+          setActive(OVERVIEW_PAGE_ID);
+        }
+        return;
+      }
       if (route.kind === 'page') {
         setPendingMemberId(undefined);
         // #64 B5: a section-alias route re-scrolls even to the page it's already on (a plain
@@ -546,7 +608,7 @@ export function CatalogShell<TId extends string>({
     // a copied link keeps the section instead of collapsing to the page id.
     const keepSectionAliasHash = pendingMemberId === undefined && pendingSectionId !== undefined;
     if (routesByUrl && !keepSectionAliasHash) {
-      const expected = hashForId(pendingMemberId ?? active);
+      const expected = active === OVERVIEW_PAGE_ID ? overviewHash(overviewTab) : hashForId(pendingMemberId ?? active);
       if (window.location.hash !== expected) {
         ownHashWriteRef.current = expected;
         if (push) window.location.hash = expected;
@@ -563,13 +625,13 @@ export function CatalogShell<TId extends string>({
       resetMainScroll(scrollRef.current);
       if (focus) focusElement(headingRef.current);
     }
-  }, [active, pendingMemberId, pendingSectionId, routesByUrl]);
+  }, [active, pendingMemberId, pendingSectionId, routesByUrl, overviewTab]);
 
   // #60: captures the current page/member as this journey's origin (before the picker has
   // changed anything), then opens it. A cancellation (Escape/Close) never reaches the effect
   // below, so nothing it captured here is ever applied.
   const openSourceReferencePicker = useCallback(() => {
-    pendingOriginRef.current = active !== undefined && active !== UPDATE_PAGE_ID ? { pageId: active, memberId: pendingMemberId } : undefined;
+    pendingOriginRef.current = active !== undefined && !isReservedPage(active) ? { pageId: active as TId, memberId: pendingMemberId } : undefined;
     setPickerOpen(true);
   }, [active, pendingMemberId]);
 
@@ -595,7 +657,7 @@ export function CatalogShell<TId extends string>({
     openReference(entry.pageId, entry.memberId, origin);
   }, [pickerOpen, openReference]);
 
-  const activeDef = active !== undefined && active !== UPDATE_PAGE_ID ? sectionsById.get(active) : undefined;
+  const activeDef = active !== undefined && !isReservedPage(active) ? sectionsById.get(active as TId) : undefined;
 
   // Return to the recorded source-lookup origin for any destination. A directly opened
   // reference-only page has no origin and may instead offer the first real browsing page.
@@ -671,12 +733,30 @@ export function CatalogShell<TId extends string>({
         onSelectMember={(pageId, memberId) => select(pageId, memberId)}
         footer={footer}
         sourceReference={hasReference ? { onPress: openSourceReferencePicker } : undefined}
+        overview={overviewEnabled ? { active: active === OVERVIEW_PAGE_ID, onPress: () => select(OVERVIEW_PAGE_ID) } : undefined}
         keepDocumentUrl={embedded}
       />
       <SourceReferencePicker visible={pickerOpen} entries={referenceEntries} onDismiss={dismissSourceReferencePicker} onSelect={selectReference} />
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {notFoundRaw !== undefined ? (
           <NotFoundPage raw={notFoundRaw} firstHref={order[0] !== undefined ? hashForId(order[0]) : undefined} onOpenFirst={() => order[0] !== undefined && select(order[0])} />
+        ) : active === OVERVIEW_PAGE_ID && usage ? (
+          <ScrollRootContext.Provider value={getScrollRoot}>
+          <Overview
+            sections={sections}
+            usage={usage}
+            browsable={browsable}
+            tokenIds={tokenIds}
+            defaultPreviewWidths={defaultPreviewWidths}
+            tab={overviewTab}
+            onTab={selectOverviewTab}
+            prefs={overviewPrefs}
+            onPrefs={setOverviewPrefs}
+            onOpen={openFromOverview}
+            headingRef={headingRef}
+            keepDocumentUrl={embedded}
+          />
+          </ScrollRootContext.Provider>
         ) : active === UPDATE_PAGE_ID ? (
           <UpdatePanel
             update={effectiveUpdate}
@@ -706,6 +786,7 @@ export function CatalogShell<TId extends string>({
               focusNonce={pendingMemberNonce}
               knownAddressIds={knownAddressIds}
               navigation={referenceNavigation}
+              usage={usage}
             />
           </React.Fragment>
         ) : activeDef?.family ? (
@@ -728,6 +809,7 @@ export function CatalogShell<TId extends string>({
               focusNonce={pendingMemberNonce}
               knownAddressIds={knownAddressIds}
               navigation={referenceNavigation}
+              usage={usage}
             />
           </React.Fragment>
         ) : activeDef ? (
@@ -752,6 +834,7 @@ export function CatalogShell<TId extends string>({
               navigation={referenceNavigation}
               focusSectionId={pendingSectionId}
               focusNonce={pendingSectionNonce}
+              usage={usage}
             />
           </React.Fragment>
         ) : hasReference ? (

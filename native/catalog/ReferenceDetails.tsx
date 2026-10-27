@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent, type TextStyle } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { PropsTable } from './PropsTable';
@@ -6,6 +6,8 @@ import { propsColumns, referenceColumns } from './comparison';
 import { hashForId } from './catalogNavigation';
 import { referenceLinkProps, type ReferenceNavigation } from './catalogReferences';
 import { alsoUsedBySegments } from './familyModel';
+import { SidePanel, useClosingNavigation } from './SidePanel';
+import { SidePanelTrigger } from './SidePanelTrigger';
 import type { AlsoUsedByEntry, ComposedOfEntry, SectionDef } from './types';
 
 /** `referenceLinkProps` returns the resolved target, not a ready-made `href` (see its own doc
@@ -275,6 +277,44 @@ export function ReferenceDetails<TId extends string>({
       </View>
       {!hide.props && <PropsBox def={def} />}
     </View>
+  );
+}
+
+/** Whether `ReferenceDetails` has anything real to show for a standalone page: a source path,
+ *  guidance, accessibility notes (unless hidden), page notes, composition, a derived "also used
+ *  by", or props (unless hidden). A page with none of these gets no "Notes and API" control rather
+ *  than a panel of placeholders. */
+export function hasReferenceContent<TId extends string>(def: SectionDef<TId>): boolean {
+  const hide = def.hide ?? {};
+  return Boolean(
+    def.path ||
+      def.whenToUse ||
+      (!hide.accessibility && def.a11y) ||
+      (def.notes && def.notes.length > 0) ||
+      (def.composedOf && def.composedOf.length > 0) ||
+      (def.alsoUsedBy && def.alsoUsedBy.length > 0) ||
+      (!hide.props && def.props && def.props.length > 0),
+  );
+}
+
+/** A standalone page's reference details: a "Notes and API ›" control that opens them (the same
+ *  Guidance / Quick reference / Composition / Props `ReferenceDetails` shows) in the shared overlay
+ *  side panel, so the page itself stays specimens. Renders nothing when the page has no reference
+ *  content. Following a reference link inside closes the panel first, then navigates. */
+export function ReferenceDetailsPanel<TId extends string>({ def, navigation }: { def: SectionDef<TId>; navigation?: ReferenceNavigation<TId> }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const closingNavigation = useClosingNavigation(navigation as ReferenceNavigation | undefined, close) as ReferenceNavigation<TId> | undefined;
+  if (!hasReferenceContent(def)) return null;
+  return (
+    <>
+      <SidePanelTrigger label="Notes and API" open={open} onPress={() => setOpen(true)} />
+      {open && (
+        <SidePanel kicker="Notes and API" title={def.title ?? def.id} onClose={close}>
+          <ReferenceDetails def={def} navigation={closingNavigation} />
+        </SidePanel>
+      )}
+    </>
   );
 }
 

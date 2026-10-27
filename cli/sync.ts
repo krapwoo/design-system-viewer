@@ -1,10 +1,12 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { globBaseFolder, resolveGlob } from './glob.ts';
 import { createComponentReader, type ReadComponentsOptions } from './props.ts';
 import { readTokenModules } from './tokens.ts';
 import { discoverPages, writePageIndex } from './pageIndex.ts';
 import { workspacePath } from './workspace.ts';
+import { loadUsage } from './usage.ts';
+import type { UsageData } from '../native/catalog/usage.ts';
 import type { ComponentRecord, ResolvedConfig } from './types.ts';
 
 export interface SyncResult {
@@ -15,6 +17,12 @@ export interface SyncResult {
    *  `cli/doctor.ts`'s `props-unreadable` rule (Task 4) can report them without re-deriving
    *  anything `sync` already knows. In declaration order; empty when nothing failed to read. */
   warnings: string[];
+  /** The validated usage data written to `usage.json`; absent when no `usage` file is configured
+   *  or it could not be used. */
+  usage?: UsageData;
+  /** Why the configured usage file was not used (missing, malformed, wrong shape) — kept apart
+   *  from `warnings`, which `doctor` reports as unreadable component files. Also printed. */
+  usageWarnings: string[];
 }
 
 const GENERATED_INDEX = "export { default as components } from './components.json';\nexport { default as tokens } from './tokens.json';\n";
@@ -108,5 +116,22 @@ export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOpti
   const pageFiles = discoverPages({ components: componentRefs, standalonePageGlobs: config.pages ?? [], projectRoot: config.projectRoot });
   writePageIndex(generatedDir, pageFiles);
 
-  return { componentCount: components.length, pageCount: pageFiles.length, generatedDir, warnings };
+  // `usage.json` exists exactly when a `usage` path is configured (`null` if it could not be used),
+  // because the generated entry imports it only then; without one, no file and no import.
+  const usageWarnings: string[] = [];
+  let usage: UsageData | undefined;
+  const usageFile = path.join(generatedDir, 'usage.json');
+  if (config.usage) {
+    const loaded = loadUsage(config.projectRoot, config.usage);
+    usage = loaded.usage;
+    for (const warning of loaded.warnings) {
+      console.warn(warning);
+      usageWarnings.push(warning);
+    }
+    writeFileSync(usageFile, `${JSON.stringify(usage ?? null, null, 2)}\n`);
+  } else {
+    rmSync(usageFile, { force: true });
+  }
+
+  return { componentCount: components.length, pageCount: pageFiles.length, generatedDir, warnings, usage, usageWarnings };
 }

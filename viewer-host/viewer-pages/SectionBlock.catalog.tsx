@@ -78,7 +78,9 @@ export default defineCatalogPage({
     { component: 'ComparisonList', role: "A one-axis list of examples.", relationship: 'built-in' },
     { component: 'ComparisonGroups', role: "Grouped rows of examples.", relationship: 'built-in' },
     { component: 'TokenSections', role: "A token page's titled cards.", relationship: 'built-in' },
-    { component: 'ReferenceDetails', role: "The reference cards below the examples.", relationship: 'built-in' },
+    { component: 'ReferenceDetails', role: "The reference cards, inline on a token page.", relationship: 'built-in' },
+    { component: 'ReferenceDetailsPanel', role: "The \"Notes and API\" control and side panel holding the reference cards on every other page.", relationship: 'built-in' },
+    { component: 'AppearsIn', role: "Where the component is used, between the examples and the reference cards, when the project has usage data.", relationship: 'built-in' },
     // True and previously undeclared: `SectionBlock.tsx:361` renders `<SectionPagerRow />`, while
     // `SectionPagerRow` is documented as a member of the FamilyPage family. Declaring it here is
     // what makes that page's member show its derived "Also used by SectionBlock" line — the only
