@@ -22,7 +22,7 @@ export default defineCatalogPage({
     items: [
       { key: 'small', name: 'A small specimen, centred at its own size', node: <View style={{ width: 240 }}><OverviewThumbnail height={132} source={{ node: pill('Continue') }} /></View> },
       { key: 'wide', name: 'A phone-width specimen, shrunk to fit', node: <View style={{ width: 240 }}><OverviewThumbnail height={132} source={{ node: pill('A button that fills the phone width', 402) }} /></View> },
-      { key: 'row', name: 'The small size used in the Usage table', node: <OverviewThumbnail width={64} height={44} source={{ node: pill('Continue') }} /> },
+      { key: 'row', name: 'A small fixed-width frame (width and height both given)', node: <OverviewThumbnail width={64} height={44} source={{ node: pill('Continue') }} /> },
     ],
   },
 });

@@ -564,28 +564,27 @@ page behind it (`#ds-viewer-overview`) maps the catalog for designers. Without u
 does not exist and the address is "Page not found", so a catalog that has no `usage` field is
 unchanged.
 
-- **Components** (the default tab) shows a card for every page that has something to show: a live,
-  scaled-down copy of its first specimen (the first variant, else the first state, comparison cell
-  or `render()` output; for a family or group page, its first part with a specimen), its title, a
-  usage line such as "17 uses · 7 areas" or "52 uses · Settings only", and a **Shared across
-  areas** tag when it is used outside its home area. Cards are grouped by home area (the usage
-  entry's `area`; `areas` order first, then alphabetical), and a page with no usage goes to a final
-  **Other** group. The chips filter by home area or **Shared across areas**; **By area** and
-  **Most used** sort. Token pages, pages with nothing to show and reference-only pages get no card.
-  A token page is one defined with `tokenDefinition` or `tokenSections`, or a `tokenGallery` page in
-  a sidebar group labelled **Tokens**; a `tokenGallery` page anywhere else (a full-width pattern
-  screen, say) gets its card. A thumbnail lays the specimen out at its page's first
-  `previewWidths` entry and on the surface the page gives it, so it looks as it does on the page.
-- **Usage** (`#ds-viewer-overview/usage`) is a table: a row for each component with uses, its
-  **Areas** count, then one column per area whose cell is shaded by how large the count is (text
-  stays at least 4.5:1 on the shading). **Most shared first** or **Most used first**. At narrow
-  widths the table scrolls inside its own container.
+The page is a grid with a card for every page that has something to show: a live,
+scaled-down copy of its first specimen (the first variant, else the first state, comparison cell
+or `render()` output; for a family or group page, its first part with a specimen), its title, a
+usage line such as "17 uses · 7 areas" or "52 uses · Settings only", and a **Shared across
+areas** tag when it is used outside its home area. Cards are grouped by home area (the usage
+entry's `area`; `areas` order first, then alphabetical), and a page with no usage goes to a final
+**Other** group. The chips filter by home area or **Shared across areas**; **By area** and
+**Most used** sort. Token pages, pages with nothing to show and reference-only pages get no card.
+A token page is one defined with `tokenDefinition` or `tokenSections`, or a `tokenGallery` page in
+a sidebar group labelled **Tokens**; a `tokenGallery` page anywhere else (a full-width pattern
+screen, say) gets its card. A thumbnail lays the specimen out at its page's first
+`previewWidths` entry and on the surface the page gives it, so it looks as it does on the page.
+Every card is the same height, in every group, filter and sort: a title takes up to two lines
+(then ends in an ellipsis; the full title is still the link's name) and the room for the tag is
+always kept, so a card without the tag is no shorter.
 
-Activating a card or a row opens that page like a sidebar link; Back returns to the Overview with
-its tab, filter and sort. A card has one tab stop, its title link; clicking anywhere else on the
-card opens the same page. The two tabs follow the usual keyboard pattern (Left/Right, Home and End
-move between them). Thumbnails are decoration: hidden from assistive technology, never focusable or
-clickable, and on the web mounted only when near the visible part of the page. Nothing animates.
+Activating a card opens that page like a sidebar link; Back returns to the Overview with its
+filter and sort. A card has one tab stop, its title link; clicking anywhere else on the card opens
+the same page. An old `#ds-viewer-overview/usage` bookmark (from when the page had a Usage tab)
+still opens the Overview. Thumbnails are decoration: hidden from assistive technology, never
+focusable or clickable, and on the web mounted only when near the visible part of the page. Nothing animates.
 
 ### Family pages
 

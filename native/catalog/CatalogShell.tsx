@@ -20,12 +20,11 @@ import {
   neighbors,
   orderedIds,
   OVERVIEW_PAGE_ID,
-  overviewHash,
+  OVERVIEW_HASH,
   resolveRoute,
   shouldShowMajorBanner,
   UPDATE_PAGE_ID,
   type MemberSearchEntry,
-  type OverviewTab,
 } from './catalogNavigation';
 import { browsableIds, buildReferenceIndex, hasReferenceNavigation, referenceLinkProps, resolveReference, type ReferenceEntry, type ReferenceNavigation } from './catalogReferences';
 import { findOverlayNode, overlayAddressFromSearch } from './overlayViewport';
@@ -349,16 +348,8 @@ export function CatalogShell<TId extends string>({
     if (route.kind === 'member') return route.pageId;
     return undefined; // notFound
   });
-  // The Overview's tab lives in the address (`#ds-viewer-overview/usage`); its filter and sort are
-  // kept here so Back from a card returns to the same view.
-  const [overviewTab, setOverviewTab] = useState<OverviewTab>(() => {
-    if (embedded || !isWeb()) return 'components';
-    const route = routeFromHash(window.location.hash);
-    return route.kind === 'overview' ? route.tab : 'components';
-  });
+  // The Overview's filter and sort are kept here so Back from a card returns to the same view.
   const [overviewPrefs, setOverviewPrefs] = useState<OverviewPrefs>(DEFAULT_OVERVIEW_PREFS);
-  const overviewTabRef = useRef(overviewTab);
-  overviewTabRef.current = overviewTab;
   const [pendingMemberId, setPendingMemberId] = useState<string | undefined>(() => {
     if (embedded || !isWeb()) return undefined;
     const route = routeFromHash(window.location.hash);
@@ -433,12 +424,6 @@ export function CatalogShell<TId extends string>({
     // section-alias arrival — any section scroll still owed from a previous hash resolution is now
     // stale.
     setPendingSectionId(undefined);
-    // The sidebar's Overview link (and a card's way back to it) means the Components tab; leaving
-    // a different tab open would contradict the address the link advertises.
-    if (id === OVERVIEW_PAGE_ID && overviewTabRef.current !== 'components') {
-      pushHistoryNext.current = true;
-      setOverviewTab('components');
-    }
     if (id === activeRef.current) {
       if (memberId) {
         pushHistoryNext.current = true;
@@ -460,12 +445,6 @@ export function CatalogShell<TId extends string>({
   // Stable, so a memoized Overview card is not re-rendered (and its live thumbnail re-run) by every
   // shell render.
   const openFromOverview = useCallback((id: string) => select(id as TId), [select]);
-
-  const selectOverviewTab = useCallback((tab: OverviewTab) => {
-    if (tab === overviewTabRef.current) return;
-    pushHistoryNext.current = true;
-    setOverviewTab(tab);
-  }, []);
 
   // Task 2B2 correction: the one private reference-selection routine both the picker's deferred
   // selection (below) and inline reference activation (`referenceNavigation.open`, further below)
@@ -559,10 +538,13 @@ export function CatalogShell<TId extends string>({
       if (route.kind === 'overview') {
         setPendingMemberId(undefined);
         setPendingSectionId(undefined);
-        setOverviewTab(route.tab);
         if (OVERVIEW_PAGE_ID !== activeRef.current) {
           focusHeadingNext.current = true;
           setActive(OVERVIEW_PAGE_ID);
+        } else if (window.location.hash !== OVERVIEW_HASH) {
+          // A retired `#ds-viewer-overview/usage` on the page already showing: settle on the
+          // current address without adding a history entry, so Back still leaves the Overview.
+          window.history.replaceState(null, '', OVERVIEW_HASH);
         }
         return;
       }
@@ -608,7 +590,7 @@ export function CatalogShell<TId extends string>({
     // a copied link keeps the section instead of collapsing to the page id.
     const keepSectionAliasHash = pendingMemberId === undefined && pendingSectionId !== undefined;
     if (routesByUrl && !keepSectionAliasHash) {
-      const expected = active === OVERVIEW_PAGE_ID ? overviewHash(overviewTab) : hashForId(pendingMemberId ?? active);
+      const expected = active === OVERVIEW_PAGE_ID ? OVERVIEW_HASH : hashForId(pendingMemberId ?? active);
       if (window.location.hash !== expected) {
         ownHashWriteRef.current = expected;
         if (push) window.location.hash = expected;
@@ -625,7 +607,7 @@ export function CatalogShell<TId extends string>({
       resetMainScroll(scrollRef.current);
       if (focus) focusElement(headingRef.current);
     }
-  }, [active, pendingMemberId, pendingSectionId, routesByUrl, overviewTab]);
+  }, [active, pendingMemberId, pendingSectionId, routesByUrl]);
 
   // #60: captures the current page/member as this journey's origin (before the picker has
   // changed anything), then opens it. A cancellation (Escape/Close) never reaches the effect
@@ -748,8 +730,6 @@ export function CatalogShell<TId extends string>({
             browsable={browsable}
             tokenIds={tokenIds}
             defaultPreviewWidths={defaultPreviewWidths}
-            tab={overviewTab}
-            onTab={selectOverviewTab}
             prefs={overviewPrefs}
             onPrefs={setOverviewPrefs}
             onOpen={openFromOverview}

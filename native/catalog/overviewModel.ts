@@ -1,6 +1,5 @@
-/** The Overview page's data (contract O): which pages qualify, what each card says, and how cards and
- *  table rows are grouped, filtered and sorted. Node-safe and React-free — only React *types* — so
- *  the whole model runs under Node's test runner. */
+/** The Overview page's data (contract O): which pages qualify, what each card says, and how cards are
+ *  grouped, filtered and sorted. Node-safe and React-free — only React *types* — so the whole model runs under Node's test runner. */
 import type { ReactNode } from 'react';
 import type { UsageAreaCount, UsageData, UsageEntry, UsageUse } from './usage.ts';
 import type { NavGroup, PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types.ts';
@@ -14,16 +13,14 @@ export const OVERVIEW_OTHER = 'Other';
 
 export type OverviewFilter = { kind: 'all' } | { kind: 'shared' } | { kind: 'area'; area: string };
 export type ComponentsSort = 'area' | 'used';
-export type UsageSort = 'shared' | 'used';
 
 /** The Overview's own choices, kept by the shell so Back from a card returns to the same view. */
 export interface OverviewPrefs {
   filter: OverviewFilter;
   componentsSort: ComponentsSort;
-  usageSort: UsageSort;
 }
 
-export const DEFAULT_OVERVIEW_PREFS: OverviewPrefs = { filter: { kind: 'all' }, componentsSort: 'area', usageSort: 'shared' };
+export const DEFAULT_OVERVIEW_PREFS: OverviewPrefs = { filter: { kind: 'all' }, componentsSort: 'area' };
 
 /** What a card's thumbnail renders: one authored node, or a page's `render()` (called inside the
  *  thumbnail so its hooks run in a component, as they do in `Preview`). */
@@ -250,27 +247,6 @@ export function sortByUses(pages: readonly OverviewPage[]): OverviewPage[] {
   return pages.slice().sort((a, b) => b.uses - a.uses || compareByTitle(a, b));
 }
 
-/** Table rows: components that have uses. "Most shared first" is areas (desc), then uses; "Most used
- *  first" is uses, then areas; ties by title. */
-export function usageRows(pages: readonly OverviewPage[], sort: UsageSort): OverviewPage[] {
-  return pages
-    .filter((page) => page.uses > 0)
-    .sort((a, b) => (sort === 'shared'
-      ? b.byArea.length - a.byArea.length || b.uses - a.uses
-      : b.uses - a.uses || b.byArea.length - a.byArea.length) || compareByTitle(a, b));
-}
-
-/** The table's area columns: declared order, restricted to areas some row actually uses. */
-export function tableAreas(rows: readonly OverviewPage[], areaOrder: readonly string[]): string[] {
-  const used = new Set<string>();
-  for (const row of rows) for (const { area } of row.byArea) used.add(area);
-  return areaOrder.filter((area) => used.has(area));
-}
-
-export function countInArea(page: OverviewPage, area: string): number {
-  return page.byArea.find((entry) => entry.area === area)?.count ?? 0;
-}
-
 /** "17 uses · 7 areas", "52 uses · Settings only", "1 use · Chat only"; "No usage recorded" without
  *  any, "No uses yet" for an entry with an empty list. */
 export function usageLine(page: Pick<OverviewPage, 'hasUsage' | 'uses' | 'byArea'>): string {
@@ -280,85 +256,9 @@ export function usageLine(page: Pick<OverviewPage, 'hasUsage' | 'uses' | 'byArea
   return page.byArea.length === 1 ? `${uses} · ${page.byArea[0].area} only` : `${uses} · ${page.byArea.length} areas`;
 }
 
-/** The Usage table's row secondary line: "52 uses · home: Chat". */
-export function homeLine(page: Pick<OverviewPage, 'uses' | 'home'>): string {
-  const uses = `${page.uses} ${page.uses === 1 ? 'use' : 'uses'}`;
-  return page.home ? `${uses} · home: ${page.home}` : uses;
-}
-
 /** How far to shrink a specimen of `natural` size so it fits `frame` with `inset` to spare. Never
  *  above 1: a small specimen is centred at its own size, not enlarged. */
 export function thumbnailScale(natural: { width: number; height: number }, frame: { width: number; height: number }, inset: number): number {
   if (natural.width <= 0 || natural.height <= 0 || frame.width <= 0 || frame.height <= 0) return 1;
   return Math.min(1, (frame.width - 2 * inset) / natural.width, (frame.height - 2 * inset) / natural.height);
-}
-
-// ── Heat cells ───────────────────────────────────────────────────────────────────────────────
-// A count's cell is the catalog accent at one of a few fixed opacities over the white surface. A
-// continuous ramp would cross a mid-tone where neither dark nor white text reaches 4.5:1, so the
-// steps are fixed and `overviewModel.test.ts` checks every one — on the white surface and on the hovered
-// row's `surfacePressed`.
-
-export const HEAT_OPACITIES = [0.14, 0.28, 0.45, 0.65, 0.9] as const;
-
-function parseHex(hex: string): [number, number, number] {
-  const value = hex.replace('#', '');
-  return [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16)) as [number, number, number];
-}
-
-function channel(value: number): number {
-  const s = value / 255;
-  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-}
-
-export function relativeLuminance([r, g, b]: readonly [number, number, number]): number {
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
-
-export function contrastRatio(a: readonly [number, number, number], b: readonly [number, number, number]): number {
-  const la = relativeLuminance(a);
-  const lb = relativeLuminance(b);
-  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-}
-
-/** `color` composited at `opacity` over `backdrop`. */
-export function blend(color: readonly [number, number, number], opacity: number, backdrop: readonly [number, number, number]): [number, number, number] {
-  return color.map((value, index) => Math.round(value * opacity + backdrop[index] * (1 - opacity))) as [number, number, number];
-}
-
-export interface HeatStyle {
-  opacity: number;
-  /** The cell background: the accent at `opacity`. */
-  backgroundColor: string;
-  /** The text colour with the better contrast on the blended background. */
-  color: string;
-  contrast: number;
-}
-
-/** The catalog's colours the heat cells use (`CATALOG_COLOR`'s `accent`, `surface` and `text`). */
-export interface HeatPalette {
-  accent: string;
-  surface: string;
-  text: string;
-}
-
-/** The step for `count` out of `max` (the table's largest cell): the smallest opacity step that covers
- *  its share, so the biggest count is always the darkest. */
-export function heatOpacity(count: number, max: number): number {
-  if (count <= 0 || max <= 0) return 0;
-  const share = Math.min(1, count / max);
-  const index = Math.min(HEAT_OPACITIES.length - 1, Math.max(0, Math.ceil(share * HEAT_OPACITIES.length) - 1));
-  return HEAT_OPACITIES[index];
-}
-
-export function heatStyle(count: number, max: number, palette: HeatPalette): HeatStyle {
-  const opacity = heatOpacity(count, max);
-  const accent = parseHex(palette.accent);
-  const background = blend(accent, opacity, parseHex(palette.surface));
-  let best: { color: string; contrast: number } = { color: palette.text, contrast: 0 };
-  for (const color of [palette.text, palette.surface]) {
-    const contrast = contrastRatio(parseHex(color), background);
-    if (contrast > best.contrast) best = { color, contrast };
-  }
-  return { opacity, backgroundColor: `rgba(${accent.join(', ')}, ${opacity})`, color: best.color, contrast: best.contrast };
 }
