@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.16.0
+
+- `doctor` now warns about a page that is only a built-in part of one other page (`part-own-page`) and a page that shows no specimens (`nothing-to-show`), and a new `standalone: '<reason>'` page field records a deliberate exception (a blank one is reported as `standalone-reason-empty`); pages in a pattern group (`patternGroups`, default `Patterns`) never count as the whole.
+
 ## 0.15.0
 
 - A `tokenDefinition` page can now group entries within a section, opens with a jump row when it has more than one section, renders a light/dark color pair as one swatch, resolves its own and its sections' aliases, and gets a `doctor` error (`token-definition-duplicate-kind`) if another page declares the same kind.

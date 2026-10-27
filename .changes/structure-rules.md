@@ -1,1 +1,0 @@
-`doctor` now warns about a page that is only a built-in part of one other page (`part-own-page`) and a page that shows no specimens (`nothing-to-show`), and a new `standalone: '<reason>'` page field records a deliberate exception (a blank one is reported as `standalone-reason-empty`); pages in a pattern group (`patternGroups`, default `Patterns`) never count as the whole.
