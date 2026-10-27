@@ -1,1 +1,0 @@
-A `tokenDefinition` page can now group entries within a section, opens with a jump row when it has more than one section, renders a light/dark color pair as one swatch, resolves its own and its sections' aliases, and gets a `doctor` error (`token-definition-duplicate-kind`) if another page declares the same kind.

@@ -1,1 +1,0 @@
-A page with `members` but no `whole`/`sections` is now a group page — each top-level member gets its own section with a jump row, embedded families can carry their own numbered anatomy, and a family can list an external part defined on a group page that links back and forth between the two. `FamilyDef.whole` is now `string | undefined` (undefined on group pages).

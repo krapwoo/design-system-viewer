@@ -3,6 +3,14 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.15.0
+
+- A `tokenDefinition` page can now group entries within a section, opens with a jump row when it has more than one section, renders a light/dark color pair as one swatch, resolves its own and its sections' aliases, and gets a `doctor` error (`token-definition-duplicate-kind`) if another page declares the same kind.
+- A page can now set `navigation: 'reference'` to stay fully routable but leave the browse lists, which adds a catalog-wide **Source reference** search to the sidebar; a page's Composition names and "also used by" uses now link to their real catalog page when they resolve, with a Back link that returns to where you came from; a family whole's own alias now opens its family page instead of "Page not found"; and every ordinary page now shows its own "also used by" uses, the same way a family member's already did.
+- A page with `members` but no `whole`/`sections` is now a group page — each top-level member gets its own section with a jump row, embedded families can carry their own numbered anatomy, and a family can list an external part defined on a group page that links back and forth between the two. `FamilyDef.whole` is now `string | undefined` (undefined on group pages).
+- A token page can now opt into `tokenDefinition` — a structured shape for its real entries (name, value, provenance, resolution) across all eight token kinds — instead of a hand-built `render()`, with its own `doctor` checks and each entry's provenance shown as plain caption text (once per section when all its entries share it).
+- Family and group page members now open their notes and API in a side panel instead of expanding in place, those pages say what kind of page they are under the description, and standalone pages accept optional `notes`.
+
 ## 0.14.2
 
 - A family page's anatomy legend now stays readable in a narrow content pane (e.g. behind a sidebar): it drops below the picture once the card no longer has room for both, instead of squeezing into an unreadably narrow column, and a legend of more than six items now narrows from three to two to one columns rather than staying cramped.

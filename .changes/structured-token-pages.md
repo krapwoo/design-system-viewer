@@ -1,1 +1,0 @@
-A token page can now opt into `tokenDefinition` — a structured shape for its real entries (name, value, provenance, resolution) across all eight token kinds — instead of a hand-built `render()`, with its own `doctor` checks and each entry's provenance shown as plain caption text (once per section when all its entries share it).
