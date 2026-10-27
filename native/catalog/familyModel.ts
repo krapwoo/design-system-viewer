@@ -53,9 +53,13 @@ export function anatomyPinFor(
   outline: ReadonlyMap<string, { number: string }>,
 ): { number: string; dashed: boolean } | undefined {
   const member = members.get(memberId);
-  if (!member) return undefined;
   const entry = outline.get(memberId);
   if (!entry) return undefined;
+  // #63: an external part is numbered in this family's outline but documented on a group page, so
+  // it isn't in `members`; it keeps its number. Callers that know the owner's fidelity pass it in
+  // `members` (`FamilyDef.externalParts`), so the pin is dashed exactly as an own part's would be;
+  // with none, the pin is the plain solid one.
+  if (!member) return { number: entry.number, dashed: false };
   return { number: entry.number, dashed: member.fidelity === 'documentation-only' };
 }
 
@@ -171,9 +175,11 @@ export function sectionFor(sections: readonly CatalogMemberSection[], memberId: 
  *  bad data (a `whole` that isn't one of its own members, already reported by `validateFamily`),
  *  so `FamilyPage` can skip rendering the whole block instead of crashing on an absent member.
  *  Generic over the member's own shape so `FamilyPage` keeps its resolved `props`/`path` fields
- *  (`FamilyDef.members`'s own type) through the lookup. */
-export function resolveWhole<T>(members: ReadonlyMap<string, T>, whole: string): T | undefined {
-  return members.get(whole);
+ *  (`FamilyDef.members`'s own type) through the lookup. #63: `whole` is `undefined` for a group
+ *  page's own `FamilyDef` — degrades the same way, `undefined`, so a group page never renders a
+ *  whole block either (`FamilyPage` itself still never dispatches to a group page in this slice). */
+export function resolveWhole<T>(members: ReadonlyMap<string, T>, whole: string | undefined): T | undefined {
+  return whole === undefined ? undefined : members.get(whole);
 }
 
 /** V2c item 1 (one-shot jump) + item 11 (repeat activation): in-flight state for a member-address

@@ -10,8 +10,12 @@ import { resolveGlob } from './glob.ts';
 import { sync } from './sync.ts';
 import { gridColumnLimit } from '../native/catalog/comparison.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
-import { validateComposedOf, validateFamily, type FamilyPageLike } from '../native/catalog/pageApi.ts';
+import {
+  resolveExternalPart, validateComposedOf, validateFamily, validateGroupIssues,
+  type FamilyPageLike, type GroupPageLike, type MemberLocation,
+} from '../native/catalog/pageApi.ts';
 import { canonicalTokenTitle, findDuplicateIds, isTokenKind } from '../native/catalog/tokenDefinition.ts';
+import type { StaticTokenDefinition } from './tokenDefinition.ts';
 
 export type DoctorSeverity = 'error' | 'warning';
 
@@ -182,24 +186,21 @@ function checkFamilyMembers(pages: StaticPage[], components: ComponentRecord[]):
   return issues;
 }
 
-/** Plan V3's `family-invalid`: reuses `native/catalog/pageApi.ts`'s own `validateFamily` —
- *  the exact same rule `pageApi.ts`'s `buildCatalogSections` runs at runtime — against every
- *  checkable family page, with the same catalog-wide "every other page/member id" contract that
- *  function already takes. N3: `StaticPage.sections` already carries each section's real
- *  `label`/`kind`, so `validateFamily`'s messages name the real section (never an empty label),
- *  and its N6 list-section rule can tell a `list` section from a `blocks` one. */
-function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
-  // V2c item 6: `members.length > 0`, the same predicate the runtime uses — an empty array is not
-  // a family page.
-  const familyPages = pages.filter((p) => p.members && p.members.length > 0 && p.checkable);
-  const allPageIds = new Set(pages.map((p) => resolvePageId(p, p.file)));
-  const familyIdsByPageId = new Map<string, Set<string>>();
+/** #64 B5: every id/alias one page itself registers — a family's member ids/aliases plus its own
+ *  page-level `aliases` (the existing universe `checkFamilyValidity` already built inline), now
+ *  also including a tokenDefinition page's own `aliases` and each of its sections' own `aliases`
+ *  (extending routing/uniqueness to tokenDefinition pages — #64 B5's own requirement). Keyed by
+ *  each page's own resolved id; a page contributing nothing is simply absent, same as before. */
+function idsRegisteredByPage(pages: StaticPage[]): Map<string, Set<string>> {
+  const byId = new Map<string, Set<string>>();
   // I-B (independent review, confirmation pass): built from every page with members, not only
   // checkable ones — the same precedent `checkMemberComposedOf` above already follows for
   // `knownNames` (no `checkable` filter). A non-checkable family page still contributes a working
   // link at runtime (`pageApi.ts`'s `otherMemberIds` has no `checkable` concept either), so
   // excluding it here turned a valid `relatedPages` entry into a false CI-failing error.
-  for (const page of pages.filter((p) => p.members && p.members.length > 0)) {
+  for (const page of pages) {
+    const hasMembers = Boolean(page.members && page.members.length > 0);
+    if (!hasMembers && !page.tokenDefinition) continue;
     const id = resolvePageId(page, page.file);
     const ids = new Set<string>();
     for (const member of page.members ?? []) {
@@ -207,10 +208,83 @@ function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
       for (const alias of member.aliases ?? []) ids.add(alias);
     }
     for (const alias of page.aliases ?? []) ids.add(alias);
-    familyIdsByPageId.set(id, ids);
+    for (const section of page.tokenDefinition?.sections ?? []) for (const alias of section.aliases ?? []) ids.add(alias);
+    byId.set(id, ids);
   }
+  return byId;
+}
 
+/** Review F9: a page authored with neither `whole` nor `sections` — by presence (`hasWhole` /
+ *  `hasSections`), never by value, so a family whose `whole`/`sections` isn't a literal (and is
+ *  therefore left unset, non-checkable) is never mistaken for a group page. A hand-built
+ *  `StaticPage` without the flags falls back to whether the value is set. */
+function isGroupShape(p: StaticPage): boolean {
+  return !(p.hasWhole ?? p.whole !== undefined) && !(p.hasSections ?? p.sections !== undefined);
+}
+
+/** #63 A5/A6: the static-side equivalent of `buildCatalogSections`'s own external-part pre-pass —
+ *  built from `StaticPage[]` instead of the runtime catalog, but the same `resolveExternalPart`
+ *  rule (imported, never reimplemented). Returns, per family page id, the external part ids it
+ *  resolved (fed into `validateFamily`'s own `externalPartIds` exemption below) and every
+ *  resolution problem as its own `family-external-part` finding. */
+function collectExternalParts(pages: StaticPage[]): { externalPartIdsByPage: Map<string, Set<string>>; issues: DoctorIssue[] } {
+  const memberLocations = new Map<string, MemberLocation[]>();
+  for (const p of pages) {
+    const pHasMembers = Boolean(p.members && p.members.length > 0);
+    const pIsGroup = pHasMembers && isGroupShape(p);
+    for (const member of p.members ?? []) {
+      memberLocations.set(member.id, [...(memberLocations.get(member.id) ?? []), { pageId: resolvePageId(p, p.file), isGroupPage: pIsGroup, parent: member.parent }]);
+    }
+  }
+  const externalPartIdsByPage = new Map<string, Set<string>>();
   const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    const hasMembers = Boolean(page.members && page.members.length > 0);
+    if (!hasMembers || page.whole === undefined || page.sections === undefined || !page.checkable) continue; // not a valid family.
+    const id = resolvePageId(page, page.file);
+    const byIdThisPage = new Set(page.members!.map((m) => m.id));
+    const external = new Set<string>();
+    for (const section of page.sections) {
+      if (!section.inWhole) continue;
+      for (const memberId of section.members) {
+        if (byIdThisPage.has(memberId) || external.has(memberId)) continue;
+        const owners = memberLocations.get(memberId);
+        if (!owners) continue; // genuinely unknown — `family-invalid`'s own "not a member" already covers it.
+        const resolution = resolveExternalPart(memberId, owners, page.whole);
+        if ('issue' in resolution) {
+          issues.push(issue({
+            id: 'family-external-part', severity: 'error', ...pageRef(page),
+            message: `Family "${id}": ${resolution.issue}`,
+            fix: 'Make the id resolve to exactly one group page\'s member, with that member\'s own "parent" equal to this family\'s "whole".',
+          }));
+        } else {
+          external.add(memberId);
+        }
+      }
+    }
+    if (external.size > 0) externalPartIdsByPage.set(id, external);
+  }
+  return { externalPartIdsByPage, issues };
+}
+
+/** Plan V3's `family-invalid`: reuses `native/catalog/pageApi.ts`'s own `validateFamily` —
+ *  the exact same rule `pageApi.ts`'s `buildCatalogSections` runs at runtime — against every
+ *  checkable family page, with the same catalog-wide "every other page/member id" contract that
+ *  function already takes. N3: `StaticPage.sections` already carries each section's real
+ *  `label`/`kind`, so `validateFamily`'s messages name the real section (never an empty label),
+ *  and its N6 list-section rule can tell a `list` section from a `blocks` one. #63 A5: a page with
+ *  neither `whole` nor `sections` (a group) is still included in `familyPages` below, but
+ *  `validateFamily` is now a no-op for it (see its own doc comment) — `checkGroupValidity` is its
+ *  real validator. */
+function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
+  // V2c item 6: `members.length > 0`, the same predicate the runtime uses — an empty array is not
+  // a family page.
+  const familyPages = pages.filter((p) => p.members && p.members.length > 0 && p.checkable);
+  const allPageIds = new Set(pages.map((p) => resolvePageId(p, p.file)));
+  const familyIdsByPageId = idsRegisteredByPage(pages);
+  const { externalPartIdsByPage, issues: externalIssues } = collectExternalParts(pages);
+
+  const issues: DoctorIssue[] = [...externalIssues];
   for (const page of familyPages) {
     const id = resolvePageId(page, page.file);
     const otherPageIds = new Set([...allPageIds].filter((pageId) => pageId !== id));
@@ -234,8 +308,52 @@ function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
       // not only ever silently warned in a browser console (`npm run check:catalog`).
       relatedPages: page.relatedPages,
     };
-    for (const message of validateFamily(pageLike, otherPageIds, otherMemberIds)) {
+    const externalPartIds = externalPartIdsByPage.get(id) ?? new Set<string>();
+    for (const message of validateFamily(pageLike, otherPageIds, otherMemberIds, externalPartIds)) {
       issues.push(issue({ id: 'family-invalid', severity: 'error', ...pageRef(page), message, fix: 'Fix the family\'s members/whole/sections to satisfy the rule above.' }));
+    }
+  }
+  return issues;
+}
+
+/** #63 A1/A3/A4/A6: the static-side equivalent of `buildCatalogSections`'s own `validateGroup`
+ *  call, against every checkable group page (`members` with no `whole`/`sections`). Reuses the
+ *  `family-invalid` rule id for every shape error (same class the family-shaped version already
+ *  reports under), and the new `group-anatomy-member` rule id only for an embedded anatomy
+ *  problem (A4) — per the controller's own decision. */
+function checkGroupValidity(pages: StaticPage[]): DoctorIssue[] {
+  const groupPages = pages.filter((p) => p.members && p.members.length > 0 && isGroupShape(p) && p.checkable);
+  const allPageIds = new Set(pages.map((p) => resolvePageId(p, p.file)));
+  const familyIdsByPageId = idsRegisteredByPage(pages);
+
+  const issues: DoctorIssue[] = [];
+  for (const page of groupPages) {
+    const id = resolvePageId(page, page.file);
+    const otherPageIds = new Set([...allPageIds].filter((pageId) => pageId !== id));
+    const otherMemberIds = new Set<string>();
+    for (const [pageId, ids] of familyIdsByPageId) if (pageId !== id) for (const memberId of ids) otherMemberIds.add(memberId);
+
+    const pageLike: GroupPageLike = {
+      id,
+      members: (page.members ?? []).map((m) => ({
+        id: m.id,
+        parent: m.parent,
+        aliases: m.aliases,
+        anatomy: m.anatomy ? { groups: [{ label: '', items: m.anatomy.memberIds.map((memberId) => ({ member: memberId, description: '' })) }] } : undefined,
+      })),
+      aliases: page.aliases,
+      anatomy: page.hasAnatomy ? {} : undefined,
+      relatedPages: page.relatedPages,
+    };
+    for (const { rule, message } of validateGroupIssues(pageLike, otherPageIds, otherMemberIds)) {
+      const isAnatomyRule = rule === 'group-anatomy-member';
+      issues.push(issue({
+        id: rule,
+        severity: 'error', ...pageRef(page), message,
+        fix: isAnatomyRule
+          ? 'Name only this member\'s own descendants on this page, and set "anatomy" only on a top-level member.'
+          : 'Fix the group\'s members/aliases/anatomy to satisfy the rule above.',
+      }));
     }
   }
   return issues;
@@ -736,8 +854,13 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
  *  "unbound examples" count: it never becomes an issue, never changes the exit code, and is not
  *  promoted by `doctor.strict`. `undefined` when there are none, so legacy output is unchanged. */
 function runtimeOnlyTokenSections(pages: StaticPage[]): { page: string; sections: string[] }[] | undefined {
+  // #64 B1: a section counts as runtime-only when its own entries are opaque, OR its own `groups`
+  // couldn't be read, OR any one group's own entries are opaque — groups are read the same
+  // lenient way as a section's own entries (`cli/tokenDefinition.ts`'s own `readStaticTokenDefinition`).
+  const isOpaque = (section: StaticTokenDefinition['sections'][number]) =>
+    section.entriesOpaque || Boolean(section.groupsOpaque) || (section.groups ?? []).some((g) => g.entriesOpaque);
   const found = pages.flatMap((page) => {
-    const sections = page.tokenDefinition?.sections.filter((section) => section.entriesOpaque).map((section) => section.id) ?? [];
+    const sections = page.tokenDefinition?.sections.filter(isOpaque).map((section) => section.id) ?? [];
     return sections.length > 0 ? [{ page: resolvePageId(page, page.file), sections }] : [];
   });
   return found.length > 0 ? found : undefined;
@@ -790,7 +913,85 @@ function checkTokenDefinition(pages: StaticPage[]): DoctorIssue[] {
           fix: 'Give each entry within this section its own id (the same id may still be reused in a different section).',
         }));
       }
+      // #64 B1: a section's own groups — group ids unique within the section, entry ids unique
+      // within their own group (the same scoping `native/catalog/tokenDefinition.ts`'s own
+      // `validateTokenDefinition` enforces at runtime).
+      for (const id of findDuplicateIds((section.groups ?? []).map((g) => g.id))) {
+        issues.push(issue({
+          id: 'token-definition-duplicate-id', severity: 'error', ...ref,
+          message: `tokenDefinition section "${section.id}" has more than one group with id "${id}".`,
+          fix: 'Give each group within this section its own id.',
+        }));
+      }
+      for (const group of section.groups ?? []) {
+        for (const id of findDuplicateIds(group.entryIds)) {
+          issues.push(issue({
+            id: 'token-definition-duplicate-id', severity: 'error', ...ref,
+            message: `tokenDefinition section "${section.id}" group "${group.id}" has more than one entry with id "${id}".`,
+            fix: 'Give each entry within this group its own id (the same id may still be reused in a different group or in the section\'s own entries).',
+          }));
+        }
+      }
     }
+  }
+  return issues;
+}
+
+/** #64 B4: a literal `tokenDefinition.kind` shared by two or more pages — one issue per page in
+ *  the group (every one of them is reported, each naming the other page(s)). A page with no
+ *  `tokenDefinition` at all is never involved. */
+function checkTokenDefinitionDuplicateKind(pages: StaticPage[]): DoctorIssue[] {
+  const byKind = new Map<string, StaticPage[]>();
+  for (const page of pages) {
+    if (!page.tokenDefinition) continue;
+    const kind = page.tokenDefinition.kind;
+    byKind.set(kind, [...(byKind.get(kind) ?? []), page]);
+  }
+  const issues: DoctorIssue[] = [];
+  for (const [kind, group] of byKind) {
+    if (group.length < 2) continue;
+    for (const page of group) {
+      const others = group.filter((p) => p !== page).map((p) => resolvePageId(p, p.file)).join(', ');
+      issues.push(issue({
+        id: 'token-definition-duplicate-kind', severity: 'error', ...pageRef(page),
+        message: `tokenDefinition kind "${kind}" is also used by ${others}.`,
+        fix: 'Give one of these pages its own kind, or merge them into one page.',
+      }));
+    }
+  }
+  return issues;
+}
+
+/** #64 B5: a tokenDefinition page's own page-level `aliases`, and each of its sections' own
+ *  `aliases`, join the exact same catalog-wide "one owner" pool `family-invalid` already checks
+ *  family ids/aliases against (`idsRegisteredByPage`) — reusing that rule id rather than adding a
+ *  second alias-collision rule. */
+function checkTokenDefinitionAliases(pages: StaticPage[]): DoctorIssue[] {
+  const allPageIds = new Set(pages.map((p) => resolvePageId(p, p.file)));
+  const idsByPage = idsRegisteredByPage(pages);
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.tokenDefinition) continue;
+    const id = resolvePageId(page, page.file);
+    const otherPageIds = new Set([...allPageIds].filter((pid) => pid !== id));
+    const otherIds = new Set<string>();
+    for (const [pid, ids] of idsByPage) if (pid !== id) for (const x of ids) otherIds.add(x);
+
+    const seen = new Set<string>();
+    const checkAlias = (alias: string) => {
+      if (seen.has(alias)) {
+        issues.push(issue({ id: 'family-invalid', severity: 'error', ...pageRef(page), message: `Page "${id}": id "${alias}" is used more than once on this page.`, fix: 'Give each alias its own name.' }));
+      }
+      seen.add(alias);
+      if (otherPageIds.has(alias)) {
+        issues.push(issue({ id: 'family-invalid', severity: 'error', ...pageRef(page), message: `Page "${id}": id "${alias}" collides with another page's id.`, fix: 'Choose a different alias.' }));
+      }
+      if (otherIds.has(alias)) {
+        issues.push(issue({ id: 'family-invalid', severity: 'error', ...pageRef(page), message: `Page "${id}": id "${alias}" collides with another member or alias elsewhere in the catalog.`, fix: 'Choose a different alias.' }));
+      }
+    };
+    for (const alias of page.aliases ?? []) checkAlias(alias);
+    for (const section of page.tokenDefinition.sections) for (const alias of section.aliases ?? []) checkAlias(alias);
   }
   return issues;
 }
@@ -812,9 +1013,12 @@ export function collectIssues(pages: StaticPage[], components: ComponentRecord[]
     ...checkPreviewOnlyPages(pages),
     ...checkFamilyMembers(pages, components),
     ...checkFamilyValidity(pages),
+    ...checkGroupValidity(pages),
     ...checkMemberComposedOf(pages, components),
     ...checkDeprecatedRelatedSections(pages),
     ...checkTokenDefinition(pages),
+    ...checkTokenDefinitionDuplicateKind(pages),
+    ...checkTokenDefinitionAliases(pages),
   ];
 }
 

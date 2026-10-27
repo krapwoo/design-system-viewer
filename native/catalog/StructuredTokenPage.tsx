@@ -1,13 +1,18 @@
-import React from 'react';
-import { View, Text, StyleSheet, type TextStyle } from 'react-native';
-import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
-import { TokenGrid, TokenTile } from './TokenLayouts';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { View, Text, Platform, StyleSheet, type TextStyle } from 'react-native';
+import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
+import { TokenGrid, TokenTile, TokenSections } from './TokenLayouts';
 import { TokenRow, TokenRowGroup } from './TokenRow';
 import { Swatch } from './Swatch';
 import { MotionSpecimen } from './MotionSpecimen';
+import { JumpRow, type JumpItem } from './JumpRow';
 import {
   consolidatedProvenanceCaption,
   isTokenKind,
+  filteredKindEntriesFromList,
+  pairLightDarkColorEntries,
+  pairRendersAsOneSwatch,
+  sectionEntryCount,
   tokenProvenanceCaption,
   validateTokenDefinition,
   type ColorTokenEntry,
@@ -75,18 +80,8 @@ function tileProvenanceNote(entry: TokenEntryBase, value: TokenValueInfo<unknown
   );
 }
 
-/** The real entries for one section, deduplicated by id within this kind — shared by the renderer
- *  (`StructuredTokenSectionBody`) and its own section-level provenance consolidation, so both read
- *  the exact same set an entry whose own `kind` doesn't match (already reported by
- *  `validateTokenDefinition`) or whose `id` repeats is never double-counted between the two. */
 function filteredKindEntries(kind: TokenKind, section: TokenDefinitionSection): TokenEntry[] {
-  const seen = new Set<string>();
-  return section.entries.filter((entry) => {
-    if (entry.kind !== kind) return false;
-    if (seen.has(entry.id)) return false;
-    seen.add(entry.id);
-    return true;
-  });
+  return filteredKindEntriesFromList(kind, section.entries);
 }
 
 /** Visible diagnostic for invalid opted-in data (design R3: "never a plausible fake specimen or
@@ -129,8 +124,44 @@ function ColorEntryCell({ entry, showProvenance }: { entry: ColorTokenEntry; sho
   );
 }
 
+/** #64 B3: a light/dark pair, one swatch — a split chip (light half left, dark half right), the
+ *  bare shared `name`, and `<light value> · <dark value>` as the value line. Only ever called with
+ *  a pair whose both sides are resolved (`ColorEntries` falls back to two plain cells otherwise —
+ *  a split chip with no real colour to show on one side would misrepresent the data). */
+function PairedColorCell({ name, light, dark, showProvenance }: { name: string; light: ColorTokenEntry; dark: ColorTokenEntry; showProvenance: boolean }) {
+  const lightColor = (light.value.resolution as { status: 'resolved'; value: { color: string } }).value.color;
+  const darkColor = (dark.value.resolution as { status: 'resolved'; value: { color: string } }).value.color;
+  const note = entryNote(light) ?? entryNote(dark);
+  return (
+    <View style={styles.colorCell}>
+      <Swatch name={name} value={lightColor} splitValue={darkColor} valueLabel={`${lightColor} · ${darkColor}`} width={COLOR_CELL_WIDTH} wrapName />
+      {showProvenance ? <ProvenanceLine value={light.value} /> : null}
+      {note ? <Text style={styles.swatchNote}>{note}</Text> : null}
+    </View>
+  );
+}
+
 function ColorEntries({ entries, showProvenance }: { entries: ColorTokenEntry[]; showProvenance: boolean }) {
-  return <View style={styles.wrapRow}>{entries.map((entry) => <ColorEntryCell key={entry.id} entry={entry} showProvenance={showProvenance} />)}</View>;
+  const paired = pairLightDarkColorEntries(entries);
+  return (
+    <View style={styles.wrapRow}>
+      {paired.map((item) => {
+        if (item.kind === 'single') return <ColorEntryCell key={item.entry.id} entry={item.entry} showProvenance={showProvenance} />;
+        const { light, dark } = item;
+        // A pair whose light or dark side has no real drawable value (unresolved) can't render a
+        // meaningful split chip — fall back to each entry's own normal (unpaired-style) cell.
+        if (!pairRendersAsOneSwatch(light, dark)) {
+          return (
+            <React.Fragment key={`${light.id}-${dark.id}`}>
+              <ColorEntryCell entry={light} showProvenance={showProvenance} />
+              <ColorEntryCell entry={dark} showProvenance={showProvenance} />
+            </React.Fragment>
+          );
+        }
+        return <PairedColorCell key={`${light.id}-${dark.id}`} name={item.name} light={light} dark={dark} showProvenance={showProvenance} />;
+      })}
+    </View>
+  );
 }
 
 function TypographyRow({ entry, last, showProvenance }: { entry: TypographyTokenEntry; last: boolean; showProvenance: boolean }) {
@@ -316,40 +347,54 @@ function MotionEntries({ entries, showProvenance }: { entries: MotionTokenEntry[
   return <View style={styles.wrapRow}>{entries.map((entry) => <MotionCell key={entry.id} entry={entry} showProvenance={showProvenance} />)}</View>;
 }
 
+/** One entries list's real body, dispatched by the page's own `kind` — shared by a section's own
+ *  entries and, #64 B1, each of its groups' own entries, so both render through the exact same
+ *  per-kind grammar. */
+function renderKindEntries(kind: TokenKind, entries: TokenEntry[], showProvenance: boolean): React.ReactNode {
+  switch (kind) {
+    case 'colors':
+      return <ColorEntries entries={entries as ColorTokenEntry[]} showProvenance={showProvenance} />;
+    case 'typography':
+      return <TypographyEntries entries={entries as TypographyTokenEntry[]} showProvenance={showProvenance} />;
+    case 'spacing':
+    case 'radius':
+    case 'dimensions':
+      return <DimensionEntries kind={kind} entries={entries as DimensionLikeEntry[]} showProvenance={showProvenance} />;
+    case 'opacity':
+      return <OpacityEntries entries={entries as OpacityTokenEntry[]} showProvenance={showProvenance} />;
+    case 'shadows':
+      return <ShadowEntries entries={entries as ShadowTokenEntry[]} showProvenance={showProvenance} />;
+    case 'motion':
+      return <MotionEntries entries={entries as MotionTokenEntry[]} showProvenance={showProvenance} />;
+    default:
+      return null;
+  }
+}
+
 /** One section's real entries, dispatched by the page's own `kind` — an entry whose own `kind`
  *  doesn't match (already reported by `validateTokenDefinition`) or whose `id` repeats another
  *  entry already rendered in this section (same) is skipped here rather than rendered twice or
  *  rendered as if it were a different kind. Correction C1: when every rendered entry shares the
  *  same provenance+named pair, it is shown once as a leading section-level caption instead of
- *  repeating it on each entry below. */
+ *  repeating it on each entry below — #64 B1 extends that same consolidation across the section's
+ *  own entries AND every one of its groups, which then each render under their own sub-heading,
+ *  after the section's own entries, in the same grid grammar. */
 function StructuredTokenSectionBody({ kind, section }: { kind: TokenKind; section: TokenDefinitionSection }) {
-  const entries = filteredKindEntries(kind, section);
-  const consolidated = consolidatedProvenanceCaption(entries);
+  const ownEntries = filteredKindEntries(kind, section);
+  const groups = (section.groups ?? []).map((group) => ({ group, entries: filteredKindEntriesFromList(kind, group.entries) }));
+  const consolidated = consolidatedProvenanceCaption([...ownEntries, ...groups.flatMap((g) => g.entries)]);
   const showProvenance = consolidated === undefined;
-  const body = (() => {
-    switch (kind) {
-      case 'colors':
-        return <ColorEntries entries={entries as ColorTokenEntry[]} showProvenance={showProvenance} />;
-      case 'typography':
-        return <TypographyEntries entries={entries as TypographyTokenEntry[]} showProvenance={showProvenance} />;
-      case 'spacing':
-      case 'radius':
-      case 'dimensions':
-        return <DimensionEntries kind={kind} entries={entries as DimensionLikeEntry[]} showProvenance={showProvenance} />;
-      case 'opacity':
-        return <OpacityEntries entries={entries as OpacityTokenEntry[]} showProvenance={showProvenance} />;
-      case 'shadows':
-        return <ShadowEntries entries={entries as ShadowTokenEntry[]} showProvenance={showProvenance} />;
-      case 'motion':
-        return <MotionEntries entries={entries as MotionTokenEntry[]} showProvenance={showProvenance} />;
-      default:
-        return null;
-    }
-  })();
   return (
     <>
       {consolidated ? <Text style={styles.sectionProvenance}>{consolidated}</Text> : null}
-      {body}
+      {ownEntries.length > 0 ? renderKindEntries(kind, ownEntries, showProvenance) : null}
+      {groups.map(({ group, entries }) => (
+        <View key={group.id} style={styles.groupBlock}>
+          <Text style={styles.groupTitle}>{group.title}</Text>
+          {group.desc ? <Text style={styles.groupDesc}>{group.desc}</Text> : null}
+          {renderKindEntries(kind, entries, showProvenance)}
+        </View>
+      ))}
     </>
   );
 }
@@ -377,21 +422,106 @@ export function tokenDefinitionSections(definition: TokenDefinition): TokenSecti
   return [{ id: '__token-definition-issues__', title: 'Invalid token data', wide: true, render: () => <IssuesBanner issues={issues} /> }, ...sections];
 }
 
-/** A standalone preview of a whole `tokenDefinition` — every section, stacked, each with its own
+/** #64 B2/B5: scrolls a section's own node into view — the same instant, web-only
+ *  `scrollIntoView` convention `FamilyPage.tsx`'s own `scrollAndFocusMember` already established
+ *  for a member address; this is its section-level counterpart (no focus steal — a chip press or a
+ *  section-alias arrival moves the viewport, not keyboard focus, since nothing here is itself a
+ *  landable heading). Native has no scroll-into-view of its own; this is a no-op there, same as
+ *  that function's own web-only half. */
+function scrollSectionIntoView(node: unknown): void {
+  if (Platform.OS !== 'web' || !node) return;
+  (node as { scrollIntoView?: (options: { behavior: 'auto'; block: 'start' }) => void }).scrollIntoView?.({ behavior: 'auto', block: 'start' });
+}
+
+/** #64 B2 / #63 R1: one `JumpItem` per section — its title, its own entry count
+ *  (`sectionEntryCount`, own entries plus every group's) as the chip's muted qualifier, and an
+ *  accessible name like "Attention, 3 values" — the shared `JumpRow` (`JumpRow.tsx`) renders the
+ *  actual chip/pill visual. `undefined` for a single-section page (nothing to jump between). */
+function tokenJumpItems(definition: TokenDefinition, onJump: (id: string) => void): JumpItem[] | undefined {
+  if (definition.sections.length <= 1) return undefined;
+  return definition.sections.map((section) => {
+    const count = sectionEntryCount(definition.kind, section);
+    return {
+      id: section.id,
+      title: section.title,
+      qualifier: String(count),
+      accessibilityLabel: `${section.title}, ${count} value${count === 1 ? '' : 's'}`,
+      onPress: () => onJump(section.id),
+    };
+  });
+}
+
+/** #64 B2/B5: the real per-page wrapper `SectionBlock.tsx`'s own `tokenSections` block case
+ *  renders for an opted-in `tokenDefinition` — the jump row (above the first section, B2) plus the
+ *  existing `TokenSections` grammar, unchanged, now also given each section's own mounted node so
+ *  a chip press, or a section-alias arrival (`focusSectionId`/`focusNonce`, set by `CatalogShell`
+ *  from `resolveRoute`'s own `sectionId`), can scroll that section into view. */
+export function TokenDefinitionBlock({
+  definition, columns, label, focusSectionId, focusNonce,
+}: {
+  definition: TokenDefinition;
+  columns: 1 | 2 | 3;
+  label?: string;
+  focusSectionId?: string;
+  focusNonce?: number;
+}) {
+  const sections = tokenDefinitionSections(definition);
+  const nodesRef = useRef<Map<string, unknown>>(new Map());
+  // A section arrival can land before `TokenSections` has measured its width and mounted any
+  // section, so the requested id waits here and is scrolled to the moment its node registers.
+  const pendingRef = useRef<string | undefined>(undefined);
+  const registerNode = useCallback((id: string, node: unknown) => {
+    if (node) {
+      nodesRef.current.set(id, node);
+      if (pendingRef.current === id) {
+        pendingRef.current = undefined;
+        scrollSectionIntoView(node);
+      }
+    } else nodesRef.current.delete(id);
+  }, []);
+  const scrollToSection = useCallback((id: string) => {
+    scrollSectionIntoView(nodesRef.current.get(id));
+  }, []);
+  useEffect(() => {
+    if (!focusSectionId) return;
+    if (nodesRef.current.has(focusSectionId)) scrollToSection(focusSectionId);
+    else pendingRef.current = focusSectionId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSectionId, focusNonce]);
+  const jumpItems = tokenJumpItems(definition, scrollToSection);
+  return (
+    <>
+      {jumpItems ? <JumpRow items={jumpItems} /> : null}
+      <TokenSections sections={sections} columns={columns} label={label} onSectionNode={registerNode} />
+    </>
+  );
+}
+
+/** A standalone preview of a whole `tokenDefinition` — the same jump row `TokenDefinitionBlock`
+ *  shows (B2) when there's more than one section, then every section, stacked, each with its own
  *  title/desc and real entries. `SectionBlock.tsx`'s own `tokenSections` block case is the real
  *  per-page rendering path (`tokenDefinitionSections`, above); this component exists for a direct
  *  preview outside that path — e.g. this framework's own self-catalog demonstration. */
 export function StructuredTokenPage({ definition }: { definition: TokenDefinition }) {
   const sections = tokenDefinitionSections(definition);
+  const nodesRef = useRef<Map<string, unknown>>(new Map());
+  const scrollToSection = useCallback((id: string) => {
+    scrollSectionIntoView(nodesRef.current.get(id));
+  }, []);
+  const jumpItems = tokenJumpItems(definition, scrollToSection);
   return (
     <View style={styles.pageStack}>
-      {sections.map((section) => (
-        <View key={section.id ?? section.title}>
-          <Text style={styles.pageSectionTitle}>{section.title}</Text>
-          {section.desc ? <Text style={styles.pageSectionDesc}>{section.desc}</Text> : null}
-          <View style={styles.pageSectionBody}>{section.render()}</View>
-        </View>
-      ))}
+      {jumpItems ? <JumpRow items={jumpItems} /> : null}
+      {sections.map((section) => {
+        const key = section.id ?? section.title;
+        return (
+          <View key={key} ref={(node: unknown) => { if (node) nodesRef.current.set(key, node); else nodesRef.current.delete(key); }}>
+            <Text style={styles.pageSectionTitle}>{section.title}</Text>
+            {section.desc ? <Text style={styles.pageSectionDesc}>{section.desc}</Text> : null}
+            <View style={styles.pageSectionBody}>{section.render()}</View>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -399,6 +529,15 @@ export function StructuredTokenPage({ definition }: { definition: TokenDefinitio
 const styles = StyleSheet.create({
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.lg },
   rowStack: { gap: CATALOG_SPACE.lg },
+
+  // #63 R1: the category jump row moved to the shared `JumpRow.tsx` (used by group pages too).
+
+  // #64 B1: a sub-group's own sub-heading — `microLabel`, a smaller step than the section's own
+  // `label` role (`TokenLayouts.tsx`'s `sectionLabel`), the same role already used for a
+  // variant-group name.
+  groupBlock: { marginTop: CATALOG_SPACE.lg, gap: CATALOG_SPACE.sm },
+  groupTitle: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.text },
+  groupDesc: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
 
   colorCell: { gap: CATALOG_SPACE.xs, width: COLOR_CELL_WIDTH },
   swatchNote: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted, width: COLOR_CELL_WIDTH },

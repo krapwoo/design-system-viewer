@@ -5,6 +5,7 @@ import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_RADIU
 import { CatalogSidebar } from './CatalogSidebar';
 import { SectionBlock } from './SectionBlock';
 import { FamilyPage } from './FamilyPage';
+import { GroupPage } from './GroupPage';
 import { UpdatePanel } from './UpdatePanel';
 import { SourceReferencePicker } from './SourceReferencePicker';
 import {
@@ -337,6 +338,16 @@ export function CatalogShell<TId extends string>({
   // one-shot jump (`shouldRunMemberJump`) counts a re-selected member address as fresh — a plain
   // `pendingMemberId` state update bails out (no re-render) when the string value is unchanged.
   const [pendingMemberNonce, setPendingMemberNonce] = useState(0);
+  // #64 B5: the tokenDefinition section (if any) a page route's own `sectionId` named — set only
+  // by hash resolution (a section-alias route), never by `select` (an ordinary navigation never
+  // carries one). Consumed once by `SectionBlock`'s own scroll effect, the same one-shot-jump
+  // convention `pendingMemberId`/`pendingMemberNonce` already establishes for a member address.
+  const [pendingSectionId, setPendingSectionId] = useState<string | undefined>(() => {
+    if (embedded || !isWeb()) return undefined;
+    const route = routeFromHash(window.location.hash);
+    return route.kind === 'page' ? route.sectionId : undefined;
+  });
+  const [pendingSectionNonce, setPendingSectionNonce] = useState(0);
   const [notFoundRaw, setNotFoundRaw] = useState<string | undefined>(() => {
     if (embedded || !isWeb()) return undefined;
     const route = routeFromHash(window.location.hash);
@@ -371,6 +382,8 @@ export function CatalogShell<TId extends string>({
   // `hashchange` is seen, matched or not) lets that listener recognise its own settling event and
   // skip it, instead of treating it as new navigation and erasing a just-recorded source origin.
   const ownHashWriteRef = useRef<string | undefined>(undefined);
+  // The page/member the last scroll reset ran for — see the URL-sync effect.
+  const lastScrollTargetRef = useRef<{ active: ShellPageId<TId>; memberId: string | undefined } | undefined>(undefined);
 
   const select = useCallback((id: ShellPageId<TId>, memberId?: string) => {
     // Every ordinary navigation — sidebar, pager, a member hit, the recovery/banner/return links
@@ -380,6 +393,10 @@ export function CatalogShell<TId extends string>({
     // in the same batch, so that later call always wins.
     setSourceOrigin(undefined);
     setNotFoundRaw(undefined);
+    // #64 B5: `select` is always an ordinary navigation (sidebar, pager, a member hit, …), never a
+    // section-alias arrival — any section scroll still owed from a previous hash resolution is now
+    // stale.
+    setPendingSectionId(undefined);
     if (id === activeRef.current) {
       if (memberId) {
         pushHistoryNext.current = true;
@@ -465,11 +482,13 @@ export function CatalogShell<TId extends string>({
       if (route.kind === 'notFound') {
         setNotFoundRaw(route.raw);
         setPendingMemberId(undefined);
+        setPendingSectionId(undefined);
         return;
       }
       setNotFoundRaw(undefined);
       if (route.kind === 'empty') {
         setPendingMemberId(undefined);
+        setPendingSectionId(undefined);
         if (order[0] !== undefined && order[0] !== activeRef.current) {
           focusHeadingNext.current = true;
           setActive(order[0]);
@@ -478,6 +497,7 @@ export function CatalogShell<TId extends string>({
       }
       if (route.kind === 'update') {
         setPendingMemberId(undefined);
+        setPendingSectionId(undefined);
         if (UPDATE_PAGE_ID !== activeRef.current) {
           focusHeadingNext.current = true;
           setActive(UPDATE_PAGE_ID);
@@ -486,6 +506,12 @@ export function CatalogShell<TId extends string>({
       }
       if (route.kind === 'page') {
         setPendingMemberId(undefined);
+        // #64 B5: a section-alias route re-scrolls even to the page it's already on (a plain
+        // `pendingSectionId` string update would otherwise bail out when re-visiting the same
+        // section) — bump the nonce whenever one is named, the same "even a repeat one" reasoning
+        // `pendingMemberNonce` already uses for a member address.
+        setPendingSectionId(route.sectionId);
+        if (route.sectionId) setPendingSectionNonce((n) => n + 1);
         if (route.id !== activeRef.current) {
           focusHeadingNext.current = true;
           setActive(route.id);
@@ -494,6 +520,7 @@ export function CatalogShell<TId extends string>({
       }
       // member: scroll/open/focus is the member itself (FamilyPage's own effect), never the page
       // heading — even when this also switches the active page.
+      setPendingSectionId(undefined);
       setPendingMemberId(route.memberId);
       setPendingMemberNonce((n) => n + 1);
       if (route.pageId !== activeRef.current) {
@@ -514,7 +541,11 @@ export function CatalogShell<TId extends string>({
     const focus = focusHeadingNext.current;
     pushHistoryNext.current = false;
     focusHeadingNext.current = false;
-    if (routesByUrl) {
+    // F7: while a section-alias arrival is live (`pendingSectionId` is cleared by every other
+    // navigation), the URL already names that section — leave the alias hash alone so a reload or
+    // a copied link keeps the section instead of collapsing to the page id.
+    const keepSectionAliasHash = pendingMemberId === undefined && pendingSectionId !== undefined;
+    if (routesByUrl && !keepSectionAliasHash) {
       const expected = hashForId(pendingMemberId ?? active);
       if (window.location.hash !== expected) {
         ownHashWriteRef.current = expected;
@@ -522,11 +553,17 @@ export function CatalogShell<TId extends string>({
         else window.history.replaceState(null, '', expected);
       }
     }
-    if (!pendingMemberId) {
+    // Only a real page or member change returns to the top. A change of `pendingSectionId` alone
+    // (a same-page section-alias arrival) re-runs this effect for the hash above, but the section
+    // has already scrolled itself into view (child effects run first), so resetting would undo it.
+    const previous = lastScrollTargetRef.current;
+    lastScrollTargetRef.current = { active, memberId: pendingMemberId };
+    const targetChanged = previous === undefined || previous.active !== active || previous.memberId !== pendingMemberId;
+    if (!pendingMemberId && targetChanged) {
       resetMainScroll(scrollRef.current);
       if (focus) focusElement(headingRef.current);
     }
-  }, [active, pendingMemberId, routesByUrl]);
+  }, [active, pendingMemberId, pendingSectionId, routesByUrl]);
 
   // #60: captures the current page/member as this journey's origin (before the picker has
   // changed anything), then opens it. A cancellation (Escape/Close) never reaches the effect
@@ -649,6 +686,28 @@ export function CatalogShell<TId extends string>({
             appName={appName}
             headingRef={headingRef}
           />
+        ) : activeDef?.family?.kind === 'group' ? (
+          <React.Fragment key={activeDef.id}>
+            {referenceReturn && <ReferenceReturnLink label={referenceReturn.label} targetId={referenceReturn.targetId} memberId={referenceReturn.memberId} onNavigate={select} />}
+            <GroupPage
+              def={activeDef}
+              groupLabel={groupLabelFor(groups, activeDef.id)}
+              breadcrumbRoot={appName}
+              banner={showBanner && effectiveUpdate ? <MajorBanner update={effectiveUpdate} onReviewUpdate={() => select(UPDATE_PAGE_ID)} onDismiss={dismissMajorBanner} keepDocumentUrl={embedded} /> : undefined}
+              pager={{
+                previousId: neighbors(order, activeDef.id).previous,
+                nextId: neighbors(order, activeDef.id).next,
+                onNavigate: select,
+                labelOf: (id) => labels.get(id) ?? id,
+              }}
+              headingRef={headingRef}
+              defaultPreviewWidths={defaultPreviewWidths}
+              focusMemberId={pendingMemberId}
+              focusNonce={pendingMemberNonce}
+              knownAddressIds={knownAddressIds}
+              navigation={referenceNavigation}
+            />
+          </React.Fragment>
         ) : activeDef?.family ? (
           <React.Fragment key={activeDef.id}>
             {referenceReturn && <ReferenceReturnLink label={referenceReturn.label} targetId={referenceReturn.targetId} memberId={referenceReturn.memberId} onNavigate={select} />}
@@ -691,6 +750,8 @@ export function CatalogShell<TId extends string>({
               headingRef={headingRef}
               defaultPreviewWidths={defaultPreviewWidths}
               navigation={referenceNavigation}
+              focusSectionId={pendingSectionId}
+              focusNonce={pendingSectionNonce}
             />
           </React.Fragment>
         ) : hasReference ? (

@@ -317,6 +317,8 @@ a11y, and its content — `id`/`path`/`props` are derived, never authored), and 
 `src/ds/components/index.ts` the same way its siblings are. `SectionBlock` shows the
 specimens first, then Guidance, Quick reference, and Props. Give it whichever of these fields
 actually apply:
+- `notes: string[]` — page-level notes, listed as a "Notes" entry in the page's Quick reference
+  (for facts about the source that aren't part of the description, guidance or accessibility).
 - `comparison: { rowLabel, columnLabel, rows, columns, cells, size? }` — when two props genuinely
   combine. Author every row × column cell with a real instance, or an `unavailableReason` when that
   combination does not exist. Never multiply `variants` by `states` to fill it. Keep the column axis
@@ -530,6 +532,9 @@ export default defineCatalogPage({
 });
 ```
 
+Every family page shows a one-line "Family page." explainer under its description, so a reader
+knows its parts are separate components, unlike variants.
+
 - **`whole`** is a member id, and must equal the page's own `id`. It renders first, with no header
   of its own (the page title already names it) and no number.
 - **`sections`** (`{ label, kind: 'blocks' | 'list', inWhole, members }`) group the rest: `blocks`
@@ -601,12 +606,84 @@ export default defineCatalogPage({
   for behavior a web catalog can't demonstrate (a timer, a native gesture). A member's own
   `notShown` works the same way, under its specimens. Like `aliases`, the page-level field only
   takes effect on a page with `members`.
+- **Notes and API.** A member's notes, "Uses …" line, guidance, accessibility, props and
+  reference excerpt open in one shared side panel (a modal dialog on the right, full width at
+  768px and narrower) from a "Notes and API" link under the member — Esc, the × button or a click outside closes
+  it and returns focus to the link; a member with nothing to show has no link.
 - **`apiLabel`** (default `'API'`) renames the disclosure's reference-excerpt part for a host app
   that generates one (e.g. `'Swift API'`) — never hardcode a specific language's wording. Also
   only takes effect on a page with `members`.
 - Every component-bound member (one with `component` set) wants a real `whenToUse`, a real `a11y`,
   and at least one specimen, the same as a normal page's component — `doctor` checks each one.
   See `viewer-host/viewer-pages/FamilyPage.catalog.tsx` in this repo for a complete, worked example.
+
+### Group pages
+
+A page can also document several unrelated-but-adjacent components on one page — e.g. two SwiftUI
+button styles used together on one screen, or the handful of request-card bodies a switch statement
+picks between — with no single "whole" that owns the others. Give it `members` with **no `whole`
+and no `sections`** (both omitted, not just empty):
+
+```tsx
+export default defineCatalogPage({
+  id: 'OnboardingButtons', group: 'Components', description: 'Two separate button styles used together on onboarding screens.',
+  members: [
+    { id: 'OnboardingPrimaryButtonStyle', source: 'Onboarding.swift:172', fidelity: 'replicated', relationship: 'Style', description: '...', whenToUse: '...', a11y: '...', variants: { items: [/* ... */] } },
+    { id: 'OnboardingSecondaryButtonStyle', source: 'Onboarding.swift:298', fidelity: 'replicated', relationship: 'Style', description: '...', whenToUse: '...', a11y: '...', variants: { items: [/* ... */] } },
+  ],
+});
+```
+
+Every group page shows a one-line "Group page." explainer under its description, so a reader knows
+the members are separate components with their own APIs, unlike variants.
+
+**Group vs. family:** reach for a family when the members genuinely compose one thing (a view and
+its own subviews) — the page then opens with that thing's own specimens, before its parts. Reach
+for a group when the members are independently meaningful and would otherwise each get their own
+tiny page with nothing to compare them against; a group page shows every member's own section with
+no shared "whole" and no Compare block (layout B) — just the page head, a jump row, then each
+top-level member's own section in authored order.
+
+- **Shape.** `sections` and page-level `anatomy` are never used on a group page — `doctor`'s
+  `family-invalid` rule reports either one if present. Every member keeps its full `CatalogMember`
+  shape (the same fields a family member has).
+- **Top-level vs. nested.** A member whose `parent` names another member *on the same page* is one
+  of that member's own parts, nested underneath it; a member with no `parent`, or whose `parent`
+  names a member defined on a *different* page (see "External parts" below), is **top-level**. The
+  jump row lists exactly the top-level members, in authored order, each as a chip linking to its
+  own address; its muted qualifier is "Part N of `<Family>`" when the member is an external part,
+  "+k parts" when it has its own nested parts on this page, or nothing.
+- **Embedded families.** A top-level member with parts of its own on the page may carry its own
+  `anatomy` (`CatalogMember.anatomy` — the same `{ picture, groups }` shape a family's page-level
+  `anatomy` has, but scoped to that one member's own descendants). Its parts number independently of
+  every other top-level member's: `1`, `2`, … among siblings, then `1.1`, `1.2`, … for children —
+  the same rule a family uses under its own whole, just re-anchored per top-level member instead of
+  once per page. `doctor`'s `group-anatomy-member` rule reports an embedded anatomy item naming
+  anything other than that member's own descendant.
+- **External parts.** A family's own `inWhole` section may list a member id that is defined on a
+  group page instead of its own `members`, as long as that member's own `parent` equals the
+  family's whole — an *external part*. The family's outline numbers it exactly like an own part (the
+  same number shows on both pages); on the family page its row shows that number, its name, and a
+  "Details on `<group title>`" link to the member's own address, with no specimens or duplicated
+  description. On the group page, that member's own section heading shows "Part N of `<Family>`",
+  linking back to the family page. An id that no page defines at all is reported by
+  `family-invalid` ("not a member of this page"); an id that is defined but doesn't resolve to
+  exactly one group-page member with a matching parent (defined on several pages, on a page that
+  isn't a group page, or with a different `parent`) is reported by `doctor`'s
+  `family-external-part` rule. Listing the same external id in two sections, or twice in one, is a
+  `family-invalid` "in more than one section" error.
+- **Routing, search, aliases.** A group page's own id and `aliases` resolve to the page, exactly
+  like a family's; every member id and alias on a group page resolves to that page with that member
+  focused, exactly like a family member's does (a member id or alias equal to its own page's id
+  could never be addressed, so `family-invalid` reports it). The sidebar, pager and search list the group page
+  once (its own title) — members are reachable by address and search, never as separate sidebar
+  rows, the same convention a family's own members already follow.
+- No whole, no Compare block, no `relatedPages`/`composedOf`-at-the-page-level concept of its own
+  (a non-empty `relatedPages` on a group page is reported by `family-invalid` as unused) —
+  everything else (fidelity badges, `whenToUse`/`a11y`, `composedOf`'s own "Uses …" line, derived
+  "Also used by", `notShown`, `apiLabel`) works exactly the same as it does for a family member, see
+  above. See `viewer-host/viewer-pages/GroupPage.catalog.tsx` in this repo for a worked example,
+  including an embedded family and an external part of a small fixture family page.
 
 ### Token pages
 
@@ -709,6 +786,22 @@ export default defineCatalogPage({ group: 'Tokens', description: 'Semantic and p
   An entry's `id` only needs to be unique *within its own section* — the same id may recur in a
   different section of the same page (e.g. two scoped "Palette" cards), which is the same
   `TokenSection.id` precedent token galleries already use.
+- **Groups inside a section.** A section may add `groups: [{ id, title, desc?, entries }]` — each
+  renders under its own sub-heading, after the section's own entries, in the same grid the section
+  itself uses. A group id is unique within its own section; an entry id is unique within its own
+  group, a separate scope from the section's own entries and every other group. The section-level
+  provenance consolidation (above) considers the section's own entries *and* every one of its
+  groups together, so a shared provenance/named pair is still shown only once for the whole section.
+- **The category jump row.** A page with more than one section opens with one chip per section —
+  its title plus how many entries it holds (its own, plus every group's) — so "Attention" might
+  read "Attention, 3 values". Each chip scrolls that section into view; a single-section page shows
+  no jump row, since there's nothing to jump between.
+- **Light/dark pairing.** Within one entries list (a section's own, or one group's), two `colors`
+  entries sharing the same `name` — one `appearance: 'light'`, the other `'dark'` — render as a
+  single swatch: a split chip (light half left, dark half right), the bare shared name once, and
+  `<light value> · <dark value>` as the value line. An entry with no matching opposite appearance
+  (or a third same-named entry once both appearances are already paired) renders exactly as any
+  other unpaired entry.
 - **Motion's `native-expression` kind is a real limit, not a gap:** a SwiftUI
   `.spring(duration:bounce:)`/`.spring(response:dampingFraction:)` (or any other conditional/
   symbolic value) is shown as its own real text, never converted into a guessed
@@ -717,19 +810,27 @@ export default defineCatalogPage({ group: 'Tokens', description: 'Semantic and p
   `tokenGallery`, `tokenSections`, or `members` (a family page) on the same page — remove one of
   them. These, and an explicit `title` that disagrees with the kind's canonical title, are always
   `doctor` errors (`token-definition-conflict`, `token-definition-title-conflict`), independent of
-  `doctor.strict`. A duplicate section id, or a duplicate entry id within one section, is
-  `token-definition-duplicate-id` (also always an error) — the same id may still recur in a
-  *different* section.
+  `doctor.strict`. A duplicate section id, a duplicate group id within a section, or a duplicate
+  entry id within one section or one group, is `token-definition-duplicate-id` (also always an
+  error) — the same id may still recur in a different section/group/the section's own entries.
+- **One page per kind.** Two or more pages declaring the same literal `tokenDefinition.kind` each
+  get a `token-definition-duplicate-kind` error naming the other page(s) — a page with no
+  `tokenDefinition` is never involved. Give one of them its own kind, or merge them into one page.
+- **Aliases.** A `tokenDefinition` page's own `aliases` resolve to the page, the same way a family
+  page's `aliases` already do. A section's own `aliases` resolve to the page too, with that section
+  scrolled into view. Every one of these joins the catalog's existing alias-collision check
+  (`family-invalid`) — an alias must still name exactly one thing, catalog-wide.
 - **Static honesty.** `npx ds-viewer doctor` reads a `tokenDefinition`'s `kind` and each section's
-  `id`/`title`/`desc`/`wide`/entry `id`s the same literal-only way it reads every other page field
-  — it never imports or executes a page file, so it can never see a real `value`. When a section's
-  own `entries` isn't a literal array (an imported/computed list), or contains an entry whose own
-  `id` isn't a literal, that section's ids are read on a best-effort basis and the summary lists it
-  as a section with runtime-only entries (not statically validated). That is the normal case when
-  values are imported from your own token modules, so it is informational: it never fails `--ci`
-  and `doctor.strict` does not promote it. Literal sections still get every check. A `tokenDefinition`
-  whose own `kind`/`sections` metadata isn't literal at all makes the whole page not statically
-  checkable — reported only as the existing `page-not-checkable` warning, never a separate
+  `id`/`title`/`desc`/`wide`/entry `id`s — and, the same way, each group's own `id`/`title`/entry
+  `id`s — the same literal-only way it reads every other page field — it never imports or executes a
+  page file, so it can never see a real `value`. When a section's (or a group's) own `entries` isn't
+  a literal array (an imported/computed list), or contains an entry whose own `id` isn't a literal,
+  that list's ids are read on a best-effort basis and the summary lists it as a section with
+  runtime-only entries (not statically validated). That is the normal case when values are imported
+  from your own token modules, so it is informational: it never fails `--ci` and `doctor.strict`
+  does not promote it. Literal sections still get every check. A `tokenDefinition` whose own
+  `kind`/`sections` metadata isn't literal at all makes the whole page not statically checkable —
+  reported only as the existing `page-not-checkable` warning, never a separate
   `tokenDefinition`-specific one.
 - **Migration.** A legacy `render`/`tokenGallery`/`tokenSections` token page keeps working
   unchanged — `tokenDefinition` is additive, never required. To convert one, remove `render`/

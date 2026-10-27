@@ -8,6 +8,7 @@ import {
 } from '../native/catalog/comparison.ts';
 import { CATALOG_LAYOUT } from '../native/catalog/tokens.ts';
 import { sectionColumns } from '../native/catalog/tokenLayout.ts';
+import { numberForGroupMember } from '../native/catalog/pageApi.ts';
 import type { ComparisonDef, SectionDef, SpecimenAlign, SpecimenSize, SpecimenSurfaceKind } from '../native/catalog/types.ts';
 import type { ResolvedConfig } from './types.ts';
 
@@ -36,6 +37,31 @@ export interface ExplainResult {
    *  `cli/doctor.ts`'s missing-working-preview advisory with no visible trace. Undefined with no
    *  such declaration. */
   intentionalStaticPreviewReason?: string;
+  /** #63 A10: set only for a group page (`members` with no `whole`/`sections`) — net-new output,
+   *  with no prior behavior to preserve (a family or group page's real content lives on its
+   *  members, which `blocks` above never reads at all). `blocks`/`placement` are left empty/absent
+   *  for a group page; this is its own outline instead. */
+  group?: ExplainGroupResult;
+}
+
+export interface ExplainGroupPart {
+  number: string;
+  id: string;
+}
+
+export interface ExplainGroupTopLevel {
+  id: string;
+  /** A component binding's own name when the member has one, else "documentation-only" — the
+   *  closest static-read equivalent of the member header's own kind/fidelity qualifier (its real
+   *  `fidelity` isn't part of `StaticMember`). */
+  qualifier: string;
+  /** This top-level member's own parts, numbered exactly like `numberForGroupMember`, in authored
+   *  (pre-order) sequence — a part's own children immediately follow it, already nested by number. */
+  parts: ExplainGroupPart[];
+}
+
+export interface ExplainGroupResult {
+  topLevel: ExplainGroupTopLevel[];
 }
 
 function placeholderItem(item: StaticListItem) {
@@ -194,6 +220,21 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
   // to never drift from what the viewer actually renders.
   if (!page.checkable) return { pageId, notCheckable: true, blocks: [] };
 
+  // #63 A10: a group page (`members` with no `whole`/`sections`) — its real content lives entirely
+  // on its members, which `toSectionDef`/`presentationBlocks` below never read, so it gets its own
+  // outline instead of an (otherwise empty) block list.
+  if (page.members !== undefined && page.members.length > 0 && page.whole === undefined && page.sections === undefined) {
+    const members = page.members;
+    const byId = new Set(members.map((m) => m.id));
+    const topLevelMembers = members.filter((m) => m.parent === undefined || !byId.has(m.parent));
+    const topLevel: ExplainGroupTopLevel[] = topLevelMembers.map((m) => ({
+      id: m.id,
+      qualifier: m.component ? m.component : 'documentation-only',
+      parts: [...numberForGroupMember(m.id, members).entries()].map(([id, entry]) => ({ number: entry.number, id })),
+    }));
+    return { pageId, blocks: [], group: { topLevel } };
+  }
+
   const def = toSectionDef(page);
   const blocks = presentationBlocks(def, { defaultPreviewWidths: [402] });
 
@@ -237,6 +278,16 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
 export function formatExplain(result: ExplainResult): string {
   if (result.notCheckable) {
     return `${result.pageId}\n\nPage not statically checkable — some of its layout data is not a literal doctor can read.`;
+  }
+  // #63 A10: a group page prints its own outline — title, each top-level member with its
+  // qualifier, nested parts with numbers — instead of the block-based report below.
+  if (result.group) {
+    const lines = [result.pageId, ''];
+    for (const top of result.group.topLevel) {
+      lines.push(`${top.id} (${top.qualifier})`);
+      for (const part of top.parts) lines.push(`  ${part.number}. ${part.id}`);
+    }
+    return lines.join('\n').replace(/\n+$/, '');
   }
   const lines = [result.pageId, ''];
   for (const block of result.blocks) {

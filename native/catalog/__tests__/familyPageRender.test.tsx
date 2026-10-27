@@ -28,10 +28,16 @@ Object.defineProperty(globalThis, 'navigator', { value: warmup.window.navigator,
 // exists as a property of our own `window` object, so the bare identifier throws a `ReferenceError`
 // unless it's exposed as a true global too.
 (globalThis as Record<string, unknown>).ShadowRoot = warmup.window.ShadowRoot;
+// The member side panel is a real `Modal`; its focus trap checks a bare `instanceof Node` against
+// whichever window `renderCatalog` currently mounted into (`sourceReferencePickerRender.test.tsx`'s
+// own precedent).
+Object.defineProperty(globalThis, 'Node', { configurable: true, get: () => window.Node });
 
 const { renderCatalog } = await import('../../../test/renderCatalog.tsx');
 const { FamilyPage } = await import('../FamilyPage.tsx');
 const { anatomyColumns } = await import('../familyModel.ts');
+const { buildCatalogSections, defineCatalogPage } = await import('../pageApi.ts');
+const { SectionBlock } = await import('../SectionBlock.tsx');
 
 // A family whose legend has one numbered row and one row with no number at all: `Related` sits
 // outside every `inWhole` section, so `numberFor` gives it no number and its legend row must
@@ -91,6 +97,18 @@ test('a legend row with no pin reserves no pin slot, while a numbered row does',
   assert.equal(pinlessSlots.length, 0, 'a legend row with no pin must reserve no slot at all');
 
   cleanup();
+});
+
+test('an anatomy with no picture renders no empty picture slot, and its legend still renders', () => {
+  const def = familyWithPinlessLegendRow();
+  const { picture: _picture, ...pictureless } = def.family.anatomy;
+  const { container, cleanup } = renderCatalog(
+    React.createElement(FamilyPage as never, { def: { ...def, family: { ...def.family, anatomy: pictureless } } } as never),
+  );
+  try {
+    assert.equal(Boolean(container.querySelector('[data-testid="anatomy-picture-measure"]')), false, 'a picture-less anatomy must not reserve a picture column');
+    assert.ok((container.textContent || '').includes('The numbered part.'), 'expected the legend to render');
+  } finally { cleanup(); }
 });
 
 // anatomy-narrow-layout: a family whose anatomy legend has more than six items, across two
@@ -499,4 +517,299 @@ test('mounted wiring: deliberately blurring a legend link keeps focus off it acr
   assert.equal(isBody(), true, 'narrowing after a deliberate blur must not steal focus back to the replacement ExternalOne anchor');
 
   cleanup();
+});
+
+// #63 R3: a family's own part list for an id defined on a group page (`FamilyDef.externalParts`)
+// — real `defineCatalogPage` → `buildCatalogSections` (not a hand-built `FamilyDef`), since the
+// external part's own number is computed by that pre-pass, not authorable directly.
+function familyWithExternalPartFixture(ownerFidelity: 'documentation-only' | 'replicated' = 'documentation-only', withAnatomy = false) {
+  const family = defineCatalogPage({
+    id: 'BotAvatarView', group: 'Components', description: 'd', whole: 'BotAvatarView',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['BotAnimatedFaceView', 'ExternalEyes'] }],
+    members: [
+      { id: 'BotAvatarView', source: 'w.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'The whole.' },
+      { id: 'BotAnimatedFaceView', source: 'f.swift:1', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'BotAvatarView', description: 'The own part.' },
+    ],
+    ...(withAnatomy ? {
+      anatomy: {
+        picture: React.createElement('div', null, 'picture'),
+        groups: [{ label: 'Shown', items: [{ member: 'BotAnimatedFaceView', description: 'Own.' }, { member: 'ExternalEyes', description: 'External.' }] }],
+      },
+    } : {}),
+  });
+  const group = defineCatalogPage({
+    id: 'EyesGroup', group: 'Components', description: 'd', title: 'Eyes group',
+    members: [
+      { id: 'ExternalEyes', source: 'e.swift:1', fidelity: ownerFidelity, relationship: 'Top', parent: 'BotAvatarView', description: 'd' },
+    ],
+  });
+  const { sections } = buildCatalogSections([family, group].map((p) => ({ ...p, file: `fixtures/${p.id}.catalog.tsx` })), []);
+  return sections.find((s) => s.id === 'BotAvatarView')!;
+}
+
+test('an external-part row in the family\'s own part list shows its number, no specimens, and a "Details on <group title>" link', () => {
+  const def = familyWithExternalPartFixture();
+  // In the real shell, `knownAddressIds` is every page id plus every member id/alias catalog-wide
+  // (`CatalogShell`'s own `aliasMap`) — `ExternalEyes` itself, not only its own group page's id.
+  const { container, cleanup } = renderCatalog(
+    React.createElement(FamilyPage as never, { def, knownAddressIds: new Set(['EyesGroup', 'ExternalEyes']) } as never),
+  );
+  try {
+    assert.ok((container.textContent || '').includes('ExternalEyes'), 'expected the external part\'s own name to render');
+    assert.ok((container.textContent || '').includes('Details on Eyes group'), 'expected the "Details on <group title>" link text');
+    assert.equal((container.textContent || '').includes('2'), true, 'expected the external part\'s own outline number (2) to render as a pin');
+    assert.equal((container.textContent || '').includes('e.swift:1'), false, 'the external part must never show its own source line (no duplicated details)');
+
+    const links = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+    assert.ok(links.includes('#ExternalEyes'), 'the "Details on" link must point at the external member\'s own address');
+  } finally { cleanup(); }
+});
+
+/** The class list of the pin showing `number` — scoped to a root; a dashed pin (documentation-only)
+ *  and a solid one carry different atomic classes, so comparing two pins' classes tells them apart. */
+function pinClassFor(root: ParentNode, number: string): string {
+  const leaf = [...root.querySelectorAll('[aria-hidden="true"] > *')].find((e) => e.children.length === 0 && (e.textContent || '').trim() === number);
+  assert.ok(leaf, `expected a pin reading "${number}"`);
+  return leaf!.parentElement!.className;
+}
+
+// Part-list rows are solid for own and external parts alike (only anatomy pins are ever dashed).
+test('an external part\'s anatomy legend pin is dashed or solid by its owning member\'s fidelity', () => {
+  for (const [fidelity, sameAsDashedOwnPart] of [['documentation-only', true], ['replicated', false]] as const) {
+    const def = familyWithExternalPartFixture(fidelity, true);
+    const { container, cleanup } = renderCatalog(
+      React.createElement(FamilyPage as never, { def, knownAddressIds: new Set(['EyesGroup', 'ExternalEyes']) } as never),
+    );
+    try {
+      const slots = [...container.querySelectorAll('[data-testid="legend-pin-slot"]')];
+      assert.equal(slots.length, 2);
+      assert.equal(pinClassFor(slots[1], '2') === pinClassFor(slots[0], '1'), sameAsDashedOwnPart, `owner ${fidelity}`);
+    } finally { cleanup(); }
+  }
+});
+
+// ---- Member side panel (P1), page-kind explainer (P2), page notes (P3) -------------------------
+
+const PANEL_SELECTOR = '[role="dialog"][aria-modal="true"]';
+
+function panelEl(): HTMLElement | null {
+  return document.querySelector(PANEL_SELECTOR);
+}
+
+function triggers(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll('[aria-haspopup="dialog"]')] as HTMLElement[];
+}
+
+function triggerFor(container: HTMLElement, memberLabelStart: string): HTMLElement {
+  const match = triggers(container).find((t) => (t.textContent || '').startsWith(memberLabelStart));
+  assert.ok(match, `expected a side-panel trigger starting "${memberLabelStart}"`);
+  return match!;
+}
+
+function press(el: Element) {
+  act(() => { el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); });
+}
+
+function pressEscape() {
+  act(() => { document.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'Escape', bubbles: true })); });
+}
+
+function panelTitle(): string {
+  const dialog = panelEl()!;
+  const id = dialog.getAttribute('aria-labelledby');
+  assert.ok(id, 'the dialog must be labelled by its heading');
+  return (document.getElementById(id!)?.textContent || '').trim();
+}
+
+function panelFamilyFixture() {
+  const page = defineCatalogPage({
+    id: 'Suite', group: 'Components', description: 'The suite.', whole: 'Suite',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['Alpha', 'Beta', 'Gamma'] }],
+    members: [
+      { id: 'Suite', source: 's.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'The whole.' },
+      {
+        id: 'Alpha', source: 'a.swift:1', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'Suite', description: 'First part.',
+        notes: ['Alpha note one.'], whenToUse: 'Use Alpha for first things.', api: 'struct Alpha: View',
+        composedOf: [{ component: 'Beta', role: 'Helper', relationship: 'built-in' as const }],
+      },
+      { id: 'Beta', source: 'b.swift:1', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'Suite', description: 'Second part.', notes: ['Beta note one.'] },
+      { id: 'Gamma', source: 'g.swift:1', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'Suite', description: 'Nothing to disclose.' },
+    ],
+  });
+  const { sections } = buildCatalogSections([{ ...page, file: 'fixtures/Suite.catalog.tsx' }], []);
+  return sections.find((s) => s.id === 'Suite')!;
+}
+
+test('pressing a member trigger opens a dialog with its notes and API, and nothing expands below the member', () => {
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+  try {
+    assert.ok(panelEl() === null, 'no panel until a trigger is pressed');
+    const trigger = triggerFor(container, 'Notes and API');
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+    assert.ok((trigger.textContent || '').trim().endsWith('›'), 'the trigger ends in a › chevron');
+    press(trigger);
+    const dialog = panelEl();
+    assert.ok(dialog, 'expected a dialog after pressing the trigger');
+    assert.equal(panelTitle(), 'Alpha', 'the dialog is labelled by the member name');
+    const text = dialog!.textContent || '';
+    assert.ok(text.includes('Notes and API'), 'the panel kicker is the trigger label');
+    assert.ok(text.includes('Alpha note one.') && text.includes('Use Alpha for first things.') && text.includes('struct Alpha: View'), 'the panel shows notes, guidance and API');
+    assert.equal(triggerFor(container, 'Notes and API').getAttribute('aria-expanded'), 'true');
+    assert.equal(triggerFor(container, 'Notes and API').getAttribute('aria-haspopup'), 'dialog');
+    assert.equal((container.textContent || '').includes('Alpha note one.'), false, 'nothing expands inline below the member');
+    assert.equal((container.textContent || '').includes('struct Alpha: View'), false);
+  } finally { cleanup(); }
+});
+
+test('Esc closes the panel and returns focus to the trigger that opened it', () => {
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+  try {
+    const trigger = triggerFor(container, 'Notes and API');
+    act(() => { trigger.focus(); });
+    press(trigger);
+    assert.ok(panelEl());
+    assert.ok(panelEl()!.contains(document.activeElement), 'focus moves into the panel on open');
+    pressEscape();
+    assert.ok(panelEl() === null, 'Esc closes the panel');
+    assert.ok(document.activeElement === trigger, 'focus returns to the opening trigger');
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  } finally { cleanup(); }
+});
+
+test('the × button (named "Close") and a scrim press both close the panel', () => {
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+  try {
+    press(triggerFor(container, 'Notes and API'));
+    const close = panelEl()!.querySelector('[aria-label="Close"]');
+    assert.ok(close, 'expected a control with the accessible name "Close"');
+    press(close!);
+    assert.ok(panelEl() === null, 'the Close button closes the panel');
+    press(triggerFor(container, 'Notes and API'));
+    const scrim = document.querySelector('[data-testid="member-panel-scrim"]');
+    assert.ok(scrim, 'expected the scrim behind the panel');
+    press(scrim!);
+    assert.ok(panelEl() === null, 'a scrim press closes the panel');
+  } finally { cleanup(); }
+});
+
+test('Tab wrapping out of the panel (either focus bracket) lands on a real control inside it, never the scrim', () => {
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+  try {
+    press(triggerFor(container, 'Notes and API'));
+    const dialog = panelEl()!;
+    const scrim = document.querySelector('[data-testid="member-panel-scrim"]')!;
+    assert.ok(scrim, 'expected the scrim behind the panel');
+    const brackets = [...document.querySelectorAll('div[role="presentation"][tabindex="0"]')] as HTMLElement[];
+    assert.ok(brackets.length >= 2, 'expected the modal focus trap\'s leading and trailing brackets');
+    for (const bracket of [brackets[brackets.length - 1], brackets[0]]) {
+      act(() => { bracket.focus(); });
+      const active = document.activeElement as HTMLElement;
+      assert.ok(active !== scrim && !scrim.contains(active), 'focus never lands on the scrim');
+      assert.ok(active !== document.body && dialog.contains(active), 'focus stays inside the panel');
+      assert.ok(active.matches('button, a, [role="button"], [role="link"], [tabindex="0"]'), `focus lands on a real control, got <${active.tagName.toLowerCase()} tabindex=${active.getAttribute('tabindex')}>`);
+    }
+  } finally { cleanup(); }
+});
+
+test('the open panel sets body overflow to hidden and restores it on close and on unmount', () => {
+  try {
+    const first = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+    try {
+      document.body.style.overflow = 'auto'; // after render: `renderCatalog` resets the body's style
+      assert.equal(document.body.style.overflow, 'auto', 'untouched until a panel opens');
+      press(triggerFor(first.container, 'Notes and API'));
+      assert.equal(document.body.style.overflow, 'hidden', 'locked while the panel is open');
+      pressEscape();
+      assert.equal(document.body.style.overflow, 'auto', 'restored to what it was on close');
+    } finally { first.cleanup(); }
+
+    const second = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+    document.body.style.overflow = 'auto';
+    press(triggerFor(second.container, 'Notes and API'));
+    assert.equal(document.body.style.overflow, 'hidden');
+    second.cleanup(); // unmounted while still open
+    assert.equal(document.body.style.overflow, 'auto', 'restored on unmount');
+  } finally { document.body.style.overflow = ''; }
+});
+
+test('opening a second member\'s trigger swaps the panel content; only one panel is ever open', () => {
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+  try {
+    const [first, second] = triggers(container);
+    assert.equal(triggers(container).length, 2, 'Alpha and Beta have a trigger');
+    press(first);
+    assert.equal(panelTitle(), 'Alpha');
+    press(second);
+    assert.equal(document.querySelectorAll(PANEL_SELECTOR).length, 1, 'only one panel at a time');
+    assert.equal(panelTitle(), 'Beta');
+    assert.ok((panelEl()!.textContent || '').includes('Beta note one.'));
+    assert.equal((panelEl()!.textContent || '').includes('Alpha note one.'), false, 'the first member\'s content is gone');
+  } finally { cleanup(); }
+});
+
+test('a member with nothing to disclose renders no trigger', () => {
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+  try {
+    assert.equal(triggers(container).length, 2, 'Gamma (no notes/API/guidance) gets no trigger, Alpha and Beta do');
+    assert.ok((container.textContent || '').includes('Nothing to disclose.'), 'Gamma itself still renders');
+  } finally { cleanup(); }
+});
+
+test('the family explainer renders on a family page, the group copy does not', () => {
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture() } as never));
+  try {
+    const text = container.textContent || '';
+    assert.ok(text.includes('Family page. One component and the parts it’s built from. Each part is its own component, unlike variants, which are one component changed by its props.'));
+    assert.equal(text.includes('Group page.'), false);
+  } finally { cleanup(); }
+});
+
+test('a plain component page shows neither page-kind explainer', () => {
+  const page = defineCatalogPage({ id: 'Plain', group: 'Components', description: 'A plain page.', source: 'src/Plain.tsx' });
+  const { sections } = buildCatalogSections([{ ...page, file: 'fixtures/Plain.catalog.tsx' }], []);
+  const { container, cleanup } = renderCatalog(React.createElement(SectionBlock as never, { def: sections[0] } as never));
+  try {
+    const text = container.textContent || '';
+    assert.ok(text.includes('A plain page.'));
+    assert.equal(text.includes('Family page.'), false);
+    assert.equal(text.includes('Group page.'), false);
+  } finally { cleanup(); }
+});
+
+test('page notes render as a Notes entry in the standalone page\'s reference layer', () => {
+  const page = defineCatalogPage({ id: 'Noted', group: 'Components', description: 'A noted page.', source: 'src/Noted.tsx', notes: ['First page note.', 'Second page note.'] });
+  const { sections } = buildCatalogSections([{ ...page, file: 'fixtures/Noted.catalog.tsx' }], []);
+  const { container, cleanup } = renderCatalog(React.createElement(SectionBlock as never, { def: sections[0] } as never));
+  try {
+    const label = [...container.querySelectorAll('*')].find((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Notes');
+    assert.ok(label, 'expected a "Notes" entry label');
+    const entry = label!.parentElement!;
+    assert.ok((entry.textContent || '').includes('First page note.') && (entry.textContent || '').includes('Second page note.'), 'every note is listed under Notes');
+  } finally { cleanup(); }
+});
+
+test('a page without notes renders no Notes entry', () => {
+  const page = defineCatalogPage({ id: 'Unnoted', group: 'Components', description: 'No notes.', source: 'src/Unnoted.tsx' });
+  const { sections } = buildCatalogSections([{ ...page, file: 'fixtures/Unnoted.catalog.tsx' }], []);
+  const { container, cleanup } = renderCatalog(React.createElement(SectionBlock as never, { def: sections[0] } as never));
+  try {
+    assert.equal([...container.querySelectorAll('*')].some((e) => e.children.length === 0 && (e.textContent || '').trim() === 'Notes'), false);
+  } finally { cleanup(); }
+});
+
+test('following a link inside the panel closes the panel first, then navigates (same-page target)', () => {
+  const calls: string[] = [];
+  const navigation = {
+    resolve: (name: string) => ({ pageId: 'Suite', memberId: name }),
+    open: (pageId: string, memberId?: string) => { calls.push(`${pageId}/${memberId}:panelOpen=${panelEl() !== null}`); },
+  };
+  const { container, cleanup } = renderCatalog(React.createElement(FamilyPage as never, { def: panelFamilyFixture(), navigation } as never));
+  try {
+    press(triggerFor(container, 'Notes and API'));
+    const link = [...panelEl()!.querySelectorAll('a')].find((a) => (a.textContent || '').trim() === 'Beta');
+    assert.ok(link, 'expected the Uses line\'s Beta reference to be a link inside the panel');
+    press(link!);
+    assert.deepEqual(calls, ['Suite/Beta:panelOpen=true'], 'navigation is requested exactly once');
+    assert.ok(panelEl() === null, 'the panel is closed after following the link');
+  } finally { cleanup(); }
 });

@@ -24,8 +24,8 @@ test('readStaticTokenDefinition reads kind, section id/title/desc/wide and entry
   assert.deepEqual(def, {
     kind: 'colors',
     sections: [
-      { id: 'palette', title: 'Palette', desc: 'Real colors.', wide: false, entryIds: ['brand', 'accent'], entriesOpaque: false },
-      { id: 'semantic', title: 'Semantic', desc: undefined, wide: true, entryIds: [], entriesOpaque: false },
+      { id: 'palette', title: 'Palette', desc: 'Real colors.', wide: false, entryIds: ['brand', 'accent'], entriesOpaque: false, groups: [], groupsOpaque: false },
+      { id: 'semantic', title: 'Semantic', desc: undefined, wide: true, entryIds: [], entriesOpaque: false, groups: [], groupsOpaque: false },
     ],
   });
 });
@@ -100,5 +100,67 @@ test('readStaticTokenDefinition marks a section entriesOpaque when one element i
 test('readStaticTokenDefinition leaves a fully literal section with no entries at all as not opaque', () => {
   const { node, consts } = parseProperty(`{ kind: 'spacing', sections: [{ id: 'scale', title: 'Scale', entries: [] }] }`);
   const def = readStaticTokenDefinition(node, consts);
-  assert.deepEqual(def?.sections[0], { id: 'scale', title: 'Scale', desc: undefined, wide: false, entryIds: [], entriesOpaque: false });
+  assert.deepEqual(def?.sections[0], { id: 'scale', title: 'Scale', desc: undefined, wide: false, entryIds: [], entriesOpaque: false, groups: [], groupsOpaque: false });
+});
+
+// #64 B1: groups, read the same literal-only way as sections/entries.
+test('readStaticTokenDefinition reads a section\'s own groups and their entry ids', () => {
+  const { node, consts } = parseProperty(`{
+    kind: 'colors',
+    sections: [{
+      id: 'palette', title: 'Palette',
+      entries: [{ id: 'brand' }],
+      groups: [{ id: 'extra', title: 'Extra', entries: [{ id: 'accent' }, { id: 'accent2' }] }],
+    }],
+  }`);
+  const def = readStaticTokenDefinition(node, consts);
+  assert.deepEqual(def?.sections[0].groups, [{ id: 'extra', title: 'Extra', entryIds: ['accent', 'accent2'], entriesOpaque: false }]);
+  assert.equal(def?.sections[0].groupsOpaque, false);
+});
+
+test('readStaticTokenDefinition marks groupsOpaque when a group element is not a literal object, and omits a group missing a literal id/title', () => {
+  const { node, consts } = parseProperty(`{
+    kind: 'colors',
+    sections: [{ id: 'palette', title: 'Palette', entries: [], groups: [{ id: 'ok', title: 'Ok', entries: [] }, ...SPREAD_GROUPS] }],
+  }`);
+  const def = readStaticTokenDefinition(node, consts);
+  assert.deepEqual(def?.sections[0].groups, [{ id: 'ok', title: 'Ok', entryIds: [], entriesOpaque: false }]);
+  assert.equal(def?.sections[0].groupsOpaque, true);
+});
+
+test('readStaticTokenDefinition marks a group\'s own entriesOpaque independently of the section\'s', () => {
+  const { node, consts } = parseProperty(`{
+    kind: 'colors',
+    sections: [{ id: 'palette', title: 'Palette', entries: [{ id: 'brand' }], groups: [{ id: 'extra', title: 'Extra', entries: IMPORTED_ENTRIES }] }],
+  }`);
+  const def = readStaticTokenDefinition(node, consts);
+  assert.equal(def?.sections[0].entriesOpaque, false, 'the section\'s own entries are still fully literal');
+  assert.equal(def?.sections[0].groups[0].entriesOpaque, true);
+});
+
+test('readStaticTokenDefinition leaves a section with no groups field at all as groups: [], groupsOpaque: false', () => {
+  const { node, consts } = parseProperty(`{ kind: 'colors', sections: [{ id: 'palette', title: 'Palette', entries: [] }] }`);
+  const def = readStaticTokenDefinition(node, consts);
+  assert.deepEqual(def?.sections[0].groups, []);
+  assert.equal(def?.sections[0].groupsOpaque, false);
+});
+
+// #64 B5: a section's own literal aliases.
+test('readStaticTokenDefinition reads a section\'s own literal aliases', () => {
+  const { node, consts } = parseProperty(`{
+    kind: 'colors',
+    sections: [{ id: 'palette', title: 'Palette', entries: [], aliases: ['OldPalette', 'LegacyPalette'] }],
+  }`);
+  const def = readStaticTokenDefinition(node, consts);
+  assert.deepEqual(def?.sections[0].aliases, ['OldPalette', 'LegacyPalette']);
+});
+
+test('readStaticTokenDefinition omits aliases when absent, and when not a fully literal string array', () => {
+  const { node, consts } = parseProperty(`{ kind: 'colors', sections: [{ id: 'palette', title: 'Palette', entries: [] }] }`);
+  const def = readStaticTokenDefinition(node, consts);
+  assert.equal(def?.sections[0].aliases, undefined);
+
+  const { node: node2, consts: consts2 } = parseProperty(`{ kind: 'colors', sections: [{ id: 'palette', title: 'Palette', entries: [], aliases: COMPUTED_ALIASES }] }`);
+  const def2 = readStaticTokenDefinition(node2, consts2);
+  assert.equal(def2?.sections[0].aliases, undefined);
 });

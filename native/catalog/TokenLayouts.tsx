@@ -18,7 +18,18 @@ function useWidth(): [number, (event: LayoutChangeEvent) => void] {
  * in up to `columns` columns. A `wide` section takes a full row; the page drops to fewer columns
  * rather than squeeze a section under its minimum width.
  */
-export function TokenSections({ sections, columns, label }: { sections: TokenSection[]; columns: 1 | 2 | 3; label?: string }) {
+export function TokenSections({
+  sections, columns, label, onSectionNode,
+}: {
+  sections: TokenSection[];
+  columns: 1 | 2 | 3;
+  label?: string;
+  /** #64 B2/B5: called with each section's own outer node (web: the real DOM node) as it mounts,
+   *  and `undefined` as it unmounts — keyed by the same id/title React already keys the section
+   *  by. Lets a caller (the jump row, or a section-alias arrival) scroll a given section into view.
+   *  Omitted (every existing caller) leaves every section's own rendering untouched. */
+  onSectionNode?: (key: string, node: unknown) => void;
+}) {
   const [width, onLayout] = useWidth();
   const perRow = sectionColumns(width, columns);
   // Degrading quietly is how a page ends up claiming a column count it never renders: the author
@@ -35,16 +46,23 @@ export function TokenSections({ sections, columns, label }: { sections: TokenSec
   const columnWidth = perRow === 1 ? width : (width - TOKEN_LAYOUT_GAP * (perRow - 1)) / perRow;
   return (
     <View onLayout={onLayout} style={styles.sections}>
-      {width > 0 && sections.map((section) => (
+      {width > 0 && sections.map((section) => {
         // #61: `section.id` when the author set one (two sections may legitimately share a human
         // `title`, e.g. two scoped "Palette" cards — `TokenSection.id`'s own doc comment) — omitted
         // keeps the prior `title`-keyed behavior exactly as it was.
-        <View key={section.id ?? section.title} style={{ width: section.wide || perRow === 1 ? width : columnWidth }}>
-          <Text style={styles.sectionLabel}>{section.title}</Text>
-          {section.desc ? <Text style={styles.sectionDesc}>{section.desc}</Text> : null}
-          <View style={styles.card}>{section.render()}</View>
-        </View>
-      ))}
+        const key = section.id ?? section.title;
+        return (
+          <View
+            key={key}
+            ref={onSectionNode ? (node: unknown) => onSectionNode(key, node) : undefined}
+            style={{ width: section.wide || perRow === 1 ? width : columnWidth }}
+          >
+            <Text style={styles.sectionLabel}>{section.title}</Text>
+            {section.desc ? <Text style={styles.sectionDesc}>{section.desc}</Text> : null}
+            <View style={styles.card}>{section.render()}</View>
+          </View>
+        );
+      })}
     </View>
   );
 }

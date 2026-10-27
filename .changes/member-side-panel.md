@@ -1,0 +1,1 @@
+Family and group page members now open their notes and API in a side panel instead of expanding in place, those pages say what kind of page they are under the description, and standalone pages accept optional `notes`.

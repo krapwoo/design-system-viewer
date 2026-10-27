@@ -185,6 +185,8 @@ export interface SectionDef<TId extends string = string> {
    *  not a generic disclaimer. Say plainly when a component has no explicit handling beyond the
    *  host element's default semantics, rather than inventing coverage that isn't there. */
   a11y?: string;
+  /** Page-level notes, listed as a "Notes" entry in the page's Quick reference. */
+  notes?: string[];
   /** Every value of the component's primary enum prop (e.g. `variant`), as individual instances —
    *  **including whichever value that prop defaults to** (e.g. Button's Variants starts with
    *  "Primary" since `variant` defaults to `'primary'`; Card's single instance is named "Default"
@@ -323,6 +325,11 @@ export interface SectionDef<TId extends string = string> {
    *  geometry/doctor/explain never need to know this field exists at all) — this is only the real
    *  entry data the renderer needs. Undefined for every page that doesn't opt in. */
   tokenDefinition?: TokenDefinition;
+  /** #64 B5: a tokenDefinition page's own `CatalogPageInput.aliases`, extended to resolve to this
+   *  page (`catalogNavigation.ts`'s `aliasTargets`) — the same page-level alias a family page's
+   *  own `aliases` already resolves via `FamilyDef.aliases`. Set only when the page has
+   *  `tokenDefinition`; every other page's own `aliases` stays accepted-but-unused, unchanged. */
+  tokenDefinitionAliases?: string[];
 }
 
 /** A labeled group of section ids in the sidebar (e.g. "Components" vs "Tokens"). */
@@ -409,6 +416,13 @@ export interface CatalogMember {
   /** Same meaning as `SectionDef.intentionalStaticPreview` — accepted per member, but not yet
    *  consumed by anything (neither the viewer nor `doctor`'s member-level checks read it). */
   intentionalStaticPreview?: { reason: string };
+  /** #63 A4: only meaningful on a group page's own top-level member (one with parts of its own on
+   *  the same page) — the same `CatalogAnatomy` shape `FamilyDef.anatomy` gives a family's whole,
+   *  scoped to this member's own descendants instead of a whole page. Its `member` items must name
+   *  this member's own descendants on the page; `validateGroup` reports anything else. Unused (and
+   *  an issue if set) on any other member, and on every family member — a family's own anatomy
+   *  stays page-level (`FamilyDef.anatomy`), unchanged. */
+  anatomy?: CatalogAnatomy;
 }
 
 /** One section of a family page (spec §5.1): `kind` alone decides full blocks versus the folded
@@ -453,14 +467,28 @@ export interface RelatedPage {
 }
 
 /** A family page's members with resolved props and paths, the whole, sections, and the computed
- *  outline — set on `SectionDef.family` by `buildCatalogSections` when a page has `members`. */
+ *  outline — set on `SectionDef.family` by `buildCatalogSections` when a page has `members`.
+ *  #63: also set, with `whole: undefined`, for a *group* page (`members` with no `whole` and no
+ *  `sections`) — see `kind`. The structural finding behind this reuse: every existing consumer of
+ *  this type (`catalogNavigation.ts`'s `aliasTargets`, `catalogReferences.ts`'s
+ *  `buildReferenceIndex`, `familyModel.ts`'s `resolveWhole`) only ever compares a member's id
+ *  against `whole`, which degrades safely to "no match" when `whole` is `undefined` — so a group
+ *  page's members route, search, and resolve exactly like a family's non-whole members, with no
+ *  change to any of those functions. */
 export interface FamilyDef {
-  whole: string;
+  whole: string | undefined;
+  /** #63 A1: distinguishes a group page's own `FamilyDef` from an ordinary family's. Omitted
+   *  (`undefined`) for every family page, including today's and the "exactly one of whole/sections"
+   *  invalid shape, which keeps reporting as a family everywhere else already does — this field
+   *  changes no existing behavior, it only labels the new shape. */
+  kind?: 'group';
   /** `alsoUsedBy` is derived — `buildCatalogSections` always populates it (`[]` when nothing else
    *  uses this member) — see `AlsoUsedByEntry`. Optional only so a hand-built `FamilyDef` (a demo,
    *  a fixture) that predates this field still type-checks; a reader treats an absent value the
-   *  same as `[]`. */
-  members: Array<CatalogMember & { props?: PropDef[]; path: string; alsoUsedBy?: AlsoUsedByEntry[] }>;
+   *  same as `[]`. #63 A5: `partOf` is set only on a group member that is also an external part of
+   *  some family's outline (`FamilyDef.externalParts`, on that family's own `FamilyDef`) — its own
+   *  owning family's page id/title and the number that family gave it. */
+  members: Array<CatalogMember & { props?: PropDef[]; path: string; alsoUsedBy?: AlsoUsedByEntry[]; partOf?: { pageId: string; title: string; number: string } }>;
   sections: CatalogMemberSection[];
   outline: Map<string, { number: string; level: number }>;
   notShown?: string;
@@ -470,11 +498,19 @@ export interface FamilyDef {
   /** Label for the disclosure's API part (`disclosureLabel`). See `CatalogPageInput.apiLabel`.
    *  Defaults to `'API'` when absent. */
   apiLabel?: string;
-  /** Slice D1 item 1. See `CatalogPageInput.anatomy`. */
+  /** Slice D1 item 1. See `CatalogPageInput.anatomy`. Never set for a group page — A1 forbids
+   *  page-level anatomy there (an embedded family's own anatomy lives on its top-level member
+   *  instead, see `CatalogMember.anatomy`). */
   anatomy?: CatalogAnatomy;
   /** Other catalog pages named at the bottom of this page, under the "Related" heading, after any
    *  deprecated non-`inWhole` sections. See `CatalogPageInput.relatedPages`. */
   relatedPages?: RelatedPage[];
+  /** #63 A5: every one of this family's own outline ids that is actually an *external part* — a
+   *  member defined on a group page rather than this page's own `members` — keyed by that id, with
+   *  the owning group page's id/title and the owning member's `fidelity` (so its pin is dashed for a
+   *  documentation-only member, the same as an own part's). Set only on a family's own `FamilyDef`; always `undefined`
+   *  for a group's own (a group page is never itself a family with external parts). */
+  externalParts?: ReadonlyMap<string, { pageId: string; title: string; fidelity?: CatalogMember['fidelity'] }>;
 }
 
 /** One titled card on a token page (`SectionDef.tokenSections`). */

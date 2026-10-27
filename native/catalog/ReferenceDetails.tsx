@@ -119,6 +119,22 @@ function CompositionFacts<TId extends string>({
   );
 }
 
+/** The page's own `notes` as one Quick reference entry — one bullet per note, the same `• ` style
+ *  a family member's notes use in its side panel. */
+function NotesFact({ notes, last = false }: { notes: readonly string[]; last?: boolean }) {
+  return (
+    <View style={[styles.fact, last && styles.factLast]}>
+      <Text style={styles.factLabel}>Notes</Text>
+      {notes.map((note, i) => (
+        <Text key={i} style={styles.factValue}>
+          {'• '}
+          {note}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 /** The derived "Also used by …" row (`SectionDef.alsoUsedBy`, plan #60's ordinary-page inverse of
  *  `FamilyDef.members[].alsoUsedBy`): the exact same sentence/segment shape
  *  `alsoUsedBySegments`/`WholeBelowLine` already render on a family page, so an ordinary page's own
@@ -192,6 +208,7 @@ export function ReferenceDetails<TId extends string>({
     if (next > 0 && next !== width) setWidth(next);
   };
   const hasAlsoUsedBy = Boolean(def.alsoUsedBy && def.alsoUsedBy.length > 0);
+  const hasNotes = Boolean(def.notes && def.notes.length > 0);
   if (def.tokenGallery) {
     // Full-width pages with no component API (token galleries, and whole screens such as a
     // starter kit's Patterns) still disclose what they're built from when they say so.
@@ -199,7 +216,8 @@ export function ReferenceDetails<TId extends string>({
     return (
       <View style={styles.card}>
         <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-        {def.path && <Fact label="Source" value={def.path} mono last={!hasComposition && !hasAlsoUsedBy} />}
+        {def.path && <Fact label="Source" value={def.path} mono last={!hasNotes && !hasComposition && !hasAlsoUsedBy} />}
+        {hasNotes && <NotesFact notes={def.notes!} last={!hasComposition && !hasAlsoUsedBy} />}
         {hasComposition && def.composedOf && (
           <>
             <Text style={styles.subheading}>Composition</Text>
@@ -230,14 +248,15 @@ export function ReferenceDetails<TId extends string>({
           </View>
           <View style={columnStyle}>
             <Text role="heading" {...HEADING_LEVEL_2} style={styles.heading}>Quick reference</Text>
-            {def.path && <Fact label="Source" value={def.path} mono last={hide.accessibility && !compositionNestedHere && !hasAlsoUsedBy} />}
+            {def.path && <Fact label="Source" value={def.path} mono last={hide.accessibility && !hasNotes && !compositionNestedHere && !hasAlsoUsedBy} />}
             {!hide.accessibility && (
               <Fact
                 label="Accessibility"
                 value={def.a11y ?? 'No accessibility notes documented.'}
-                last={!compositionNestedHere && !hasAlsoUsedBy}
+                last={!hasNotes && !compositionNestedHere && !hasAlsoUsedBy}
               />
             )}
+            {hasNotes && <NotesFact notes={def.notes!} last={!compositionNestedHere && !hasAlsoUsedBy} />}
             {compositionNestedHere && def.composedOf && (
               <>
                 <Text style={styles.subheading}>Composition</Text>

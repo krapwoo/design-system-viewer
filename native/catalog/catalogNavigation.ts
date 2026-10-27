@@ -157,32 +157,42 @@ export function resolveActiveFromHash<TId extends string>(
 }
 
 /** Where an alias or member id resolves: the family page `pageId`, and — unless it names the
- *  whole itself — the specific `memberId` within it. Built by `aliasTargets`. */
+ *  whole itself — the specific `memberId` within it. Built by `aliasTargets`. #64 B5: a
+ *  tokenDefinition page's section alias instead sets `sectionId` (never together with
+ *  `memberId`), so the page can scroll that section into view on arrival. */
 export interface AliasTarget {
   pageId: string;
   memberId?: string;
+  sectionId?: string;
 }
 
 /** Every member id other than the whole, every member alias, and every family page's own
- *  (page-level) alias, mapped to where it resolves (spec §5.3 "Old addresses"). Pages without a
- *  `family` contribute nothing. */
+ *  (page-level) alias, mapped to where it resolves (spec §5.3 "Old addresses"). #64 B5: also, a
+ *  tokenDefinition page's own page-level aliases (`tokenDefinitionAliases`) and each of its
+ *  sections' own `aliases` — the same routing a family page's aliases already get, extended to
+ *  tokenDefinition pages. A page with neither contributes nothing. */
 export function aliasTargets<TId extends string>(sections: readonly SectionDef<TId>[]): Map<string, AliasTarget> {
   const targets = new Map<string, AliasTarget>();
   for (const section of sections) {
     const family = section.family;
-    if (!family) continue;
-    for (const member of family.members) {
-      if (member.id === family.whole) {
-        // C3: the whole's own id already resolves via `order` (it equals the page's own id), but
-        // its own aliases were never registered anywhere — routing one to the page, with no member
-        // focus (unlike a non-whole member's alias, which focuses that member).
-        for (const alias of member.aliases ?? []) targets.set(alias, { pageId: section.id });
-        continue;
+    if (family) {
+      for (const member of family.members) {
+        if (member.id === family.whole) {
+          // C3: the whole's own id already resolves via `order` (it equals the page's own id), but
+          // its own aliases were never registered anywhere — routing one to the page, with no member
+          // focus (unlike a non-whole member's alias, which focuses that member).
+          for (const alias of member.aliases ?? []) targets.set(alias, { pageId: section.id });
+          continue;
+        }
+        targets.set(member.id, { pageId: section.id, memberId: member.id });
+        for (const alias of member.aliases ?? []) targets.set(alias, { pageId: section.id, memberId: member.id });
       }
-      targets.set(member.id, { pageId: section.id, memberId: member.id });
-      for (const alias of member.aliases ?? []) targets.set(alias, { pageId: section.id, memberId: member.id });
+      for (const alias of family.aliases ?? []) targets.set(alias, { pageId: section.id });
     }
-    for (const alias of family.aliases ?? []) targets.set(alias, { pageId: section.id });
+    for (const alias of section.tokenDefinitionAliases ?? []) targets.set(alias, { pageId: section.id });
+    for (const tdSection of section.tokenDefinition?.sections ?? []) {
+      for (const alias of tdSection.aliases ?? []) targets.set(alias, { pageId: section.id, sectionId: tdSection.id });
+    }
   }
   return targets;
 }
@@ -191,7 +201,10 @@ export function aliasTargets<TId extends string>(sections: readonly SectionDef<T
  *  (kept, unchanged, for existing callers), this never silently falls back to the first page: an
  *  unknown or malformed fragment is reported as `notFound` instead. */
 export type Route<TId extends string> =
-  | { kind: 'page'; id: TId }
+  // #64 B5: `sectionId` is set only when a tokenDefinition page's own section alias resolved here
+  // — the page then scrolls that section into view on arrival. Absent for every other page route,
+  // exactly as before.
+  | { kind: 'page'; id: TId; sectionId?: string }
   | { kind: 'member'; pageId: TId; memberId: string }
   | { kind: 'update' }
   | { kind: 'notFound'; raw: string }
@@ -215,6 +228,7 @@ export function resolveRoute<TId extends string>(
   const target = aliases.get(decoded);
   if (target) {
     if (target.memberId !== undefined) return { kind: 'member', pageId: target.pageId as TId, memberId: target.memberId };
+    if (target.sectionId !== undefined) return { kind: 'page', id: target.pageId as TId, sectionId: target.sectionId };
     return { kind: 'page', id: target.pageId as TId };
   }
   return { kind: 'notFound', raw: decoded };

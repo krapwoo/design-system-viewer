@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, findNodeHandle, type LayoutChangeEvent } from 'react-native';
+import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, findNodeHandle, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { CatalogButton } from './CatalogButton';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { Blocks, SectionPagerRow, type SectionPager } from './SectionBlock';
 import { PropsTable } from './PropsTable';
@@ -52,6 +53,69 @@ function memberAsSectionDef(member: CatalogMember): SectionDef {
 }
 
 const ARIA_HIDDEN = { 'aria-hidden': true } as Record<string, unknown>;
+
+/** The one muted line under a family/group page's description: what kind of page this is and how
+ *  it differs from a page of variants. The same wording on every page of that kind. */
+const PAGE_KIND_EXPLAINER = {
+  group: {
+    lead: 'Group page.',
+    text: 'These are separate components shown together because they’re used in the same place. Each has its own API, unlike variants, which are one component changed by its props.',
+  },
+  family: {
+    lead: 'Family page.',
+    text: 'One component and the parts it’s built from. Each part is its own component, unlike variants, which are one component changed by its props.',
+  },
+} as const;
+
+/** #63 R2: the shared page head both `FamilyPage` and `GroupPage` render — breadcrumb, banner,
+ *  title/description (plus an optional "Not shown in the browser" note) and the pager. Pulled out
+ *  of `FamilyPage`'s own top-level render rather than duplicated, per the contract's "factor the
+ *  head into a small shared piece rather than duplicating markup". */
+export function FamilyPageHead<TId extends string>({
+  def, kind, groupLabel, breadcrumbRoot, banner, pager, headingRef, notShown,
+}: {
+  /** Which page kind this head introduces — adds that kind's one-line explainer under the
+   *  description (`PAGE_KIND_EXPLAINER`). */
+  kind: 'family' | 'group';
+  def: Pick<SectionDef<TId>, 'id' | 'title' | 'description'>;
+  groupLabel?: string;
+  breadcrumbRoot?: string;
+  banner?: React.ReactNode;
+  pager?: SectionPager<TId>;
+  headingRef?: React.Ref<View>;
+  /** See `FamilyDef.notShown`. */
+  notShown?: string;
+}) {
+  return (
+    <>
+      {groupLabel && <Text style={styles.breadcrumb}>{breadcrumbRoot ? `${breadcrumbRoot} / ${groupLabel}` : groupLabel}</Text>}
+      {banner}
+      <View style={styles.pageHead}>
+        <View style={styles.titlebar}>
+          <View style={styles.titleText}>
+            <View ref={headingRef} tabIndex={-1} role="heading" {...({ 'aria-level': 1 } as Record<string, unknown>)} style={styles.headingTarget}>
+              <Text style={styles.title}>{def.title ?? def.id}</Text>
+            </View>
+            <Text style={styles.desc}>{def.description}</Text>
+            <View style={styles.kindNote}>
+              <Text style={styles.kindNoteText}>
+                <Text style={styles.kindNoteLead}>{PAGE_KIND_EXPLAINER[kind].lead} </Text>
+                {PAGE_KIND_EXPLAINER[kind].text}
+              </Text>
+            </View>
+            {notShown && (
+              <Text style={styles.notShown}>
+                <Text style={styles.notShownLead}>Not shown in the browser: </Text>
+                {notShown}
+              </Text>
+            )}
+          </View>
+          {pager && <SectionPagerRow pager={pager} />}
+        </View>
+      </View>
+    </>
+  );
+}
 
 /** Task 2B2: one path for every one of this file's own link producers (below-specimens/whole
  *  lines, Uses, related pages, anatomy legend) — `navigation` supplied: resolve+activate through
@@ -344,21 +408,140 @@ function DisclosureBody({
   );
 }
 
-/** V2b item 6: the disclosure toggle shows a chevron before its label (`›` closed, `⌄` open, as
- *  v8 does), on the `icon` role, hidden from screen readers (the toggle's own accessible name is
- *  its text label — Errata 4's `accessibilityState`/`aria-expanded` already say whether it's
- *  open). No animation. */
-function DisclosureChevron({ open }: { open: boolean }) {
+/** The disclosure trigger's trailing chevron (`›`), on the `icon` role, hidden from screen readers
+ *  (the trigger's own accessible name is its text label). Always `›`: the content opens in a side
+ *  panel, never expands in place. */
+function DisclosureChevron() {
   return (
     <Text {...ARIA_HIDDEN} style={styles.chevron}>
-      {open ? '⌄' : '›'}
+      ›
     </Text>
   );
 }
 
-/** Slice D1 item 9: "Notes and API" (using `apiLabel`) as a controlled toggle, closed by default —
- *  shared by the whole and every Part/Related member (never by a folded row, which has no second,
- *  nested toggle of its own: its own open state already decides whether its disclosure body shows). */
+/** What the one shared side panel shows: the member's disclosure, headed by its trigger's label. */
+interface MemberPanelRequest {
+  member: CatalogMember & { props?: PropDef[] };
+  parts: DisclosurePart[];
+  label: string;
+  resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
+}
+
+interface MemberPanelControl {
+  /** The member whose panel is open, if any — a trigger's `aria-expanded`. */
+  activeId?: string;
+  show: (request: MemberPanelRequest) => void;
+  hide: () => void;
+}
+
+const MemberPanelContext = createContext<MemberPanelControl | null>(null);
+
+const PANEL_WIDTH = 440;
+/** At or below this window width the panel takes the full width, as the approved design shows at
+ *  768 (the viewer has no shared narrow breakpoint constant to reuse). */
+const PANEL_FULL_WIDTH_AT_OR_BELOW = 768;
+/** The light scrim behind the panel — no `CATALOG_COLOR` is a translucent overlay. */
+const PANEL_SCRIM = 'rgba(20,20,20,.28)';
+
+/** The member side panel: `role="dialog"`, `aria-modal`, named by the member, one at a time, no
+ *  animation. On web, `Modal` (transparent) supplies the dialog role, Esc to close, Tab
+ *  containment, and returning focus to the trigger on close. React Native's own `Modal` does none
+ *  of those on native (only `onRequestClose` for the hardware back button), so on native the panel
+ *  moves screen-reader focus to the × itself on open (`AccessibilityInfo.setAccessibilityFocus`);
+ *  it does not return focus to the trigger on close — that is left to the platform. Following a
+ *  link inside it closes it first (`navigation` is wrapped), then navigates. */
+function MemberPanel({ request, onClose }: { request: MemberPanelRequest; onClose: () => void }) {
+  const { width } = useWindowDimensions();
+  const headingId = useId();
+  const closeRef = useRef<View>(null);
+  const focusClose = useCallback(() => {
+    const node = closeRef.current;
+    if (!node) return;
+    if (Platform.OS === 'web') {
+      node.focus?.();
+      return;
+    }
+    const handle = findNodeHandle(node);
+    if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+  }, []);
+  const { member, parts, label, resolvesAddress, navigation } = request;
+  const closingNavigation = useMemo<ReferenceNavigation | undefined>(
+    () =>
+      navigation && {
+        resolve: (name) => navigation.resolve(name),
+        open: (pageId, memberId, sourceMemberId) => {
+          onClose();
+          navigation.open(pageId, memberId, sourceMemberId);
+        },
+      },
+    [navigation, onClose],
+  );
+  // Locks the document's own scroll while the panel is open, for hosts whose body scrolls. The
+  // shell's own pane needs nothing: `Modal` portals outside it, so wheel chaining from the scrim
+  // never reaches it. Restores the previous overflow on close and on unmount. (iOS Safari ignores
+  // body overflow for touch scrolling.)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const { body } = document;
+    const previous = body.style.overflow;
+    body.style.overflow = 'hidden';
+    return () => { body.style.overflow = previous; };
+  }, []);
+  // A plain-`href` link (no shell navigation) just changes the hash — close the panel on that too.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    window.addEventListener('hashchange', onClose);
+    return () => window.removeEventListener('hashchange', onClose);
+  }, [onClose]);
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={onClose} onShow={focusClose} {...({ 'aria-labelledby': headingId } as Record<string, unknown>)}>
+      <View style={styles.panelRoot}>
+        {/* On web, a plain View, not a Pressable: the Modal's focus trap `focus()`es descendants in turn, and
+            even a tabindex=-1 scrim would take focus — an unnamed, ringless stop. Press-to-close there is a
+            click handler only (the × and Esc are the keyboard paths). */}
+        {Platform.OS === 'web' ? (
+          <View testID="member-panel-scrim" style={styles.panelScrim} {...({ onClick: onClose } as Record<string, unknown>)} />
+        ) : (
+          // Native has no DOM focus trap, so a Pressable is safe there and gives tap-to-close.
+          <Pressable testID="member-panel-scrim" style={styles.panelScrim} onPress={onClose} accessible={false} />
+        )}
+        <View style={[styles.panel, width <= PANEL_FULL_WIDTH_AT_OR_BELOW && styles.panelFull]}>
+          <View style={styles.panelHead}>
+            <View style={styles.panelTitle}>
+              <Text style={styles.panelKicker}>{label}</Text>
+              <Text nativeID={headingId} role="heading" {...({ 'aria-level': 2 } as Record<string, unknown>)} style={styles.panelName}>
+                {member.id}
+              </Text>
+            </View>
+            <CatalogButton ref={closeRef} label="×" accessibilityLabel="Close" variant="secondary" onPress={onClose} />
+          </View>
+          <ScrollView style={styles.panelBody} contentContainerStyle={styles.panelBodyContent}>
+            <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={closingNavigation} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/** Owns the one shared side panel for a page: every member trigger below it opens it, a second
+ *  trigger swaps its content, and only one is ever open. */
+export function MemberPanelHost({ children }: { children: React.ReactNode }) {
+  const [request, setRequest] = useState<MemberPanelRequest | null>(null);
+  const hide = useCallback(() => setRequest(null), []);
+  const control = useMemo<MemberPanelControl>(() => ({ activeId: request?.member.id, show: setRequest, hide }), [request?.member.id, hide]);
+  return (
+    <MemberPanelContext.Provider value={control}>
+      {children}
+      {request && <MemberPanel request={request} onClose={hide} />}
+    </MemberPanelContext.Provider>
+  );
+}
+
+/** Slice D1 item 9: "Notes and API" (using `apiLabel`) as a link-style trigger that opens the
+ *  member's side panel — shared by the whole, every Part/Related member, and an open folded row.
+ *  Renders nothing for a member with nothing to disclose. */
 function MemberDisclosureToggle({
   member,
   apiLabel,
@@ -370,31 +553,41 @@ function MemberDisclosureToggle({
   resolvesAddress: (name: string) => boolean;
   navigation?: ReferenceNavigation;
 }) {
-  const [open, setOpen] = useState(false);
+  const panel = useContext(MemberPanelContext);
   const [focused, setFocused] = useState(false);
   const parts = disclosureContent(member, member.props);
   if (parts.length === 0) return null;
+  // A member rendered outside a page's own host still gets a working panel.
+  if (!panel) {
+    return (
+      <MemberPanelHost>
+        <MemberDisclosureToggle member={member} apiLabel={apiLabel} resolvesAddress={resolvesAddress} navigation={navigation} />
+      </MemberPanelHost>
+    );
+  }
   const label = disclosureLabel(member, apiLabel, parts.includes('props'));
+  const open = panel.activeId === member.id;
   return (
-    <>
-      <Pressable
-        onPress={() => setOpen((value) => !value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        {...({ 'aria-expanded': open } as Record<string, unknown>)}
-        style={[styles.disclosureToggle, focused && styles.focusRing]}
-      >
-        <DisclosureChevron open={open} />
-        <Text style={styles.disclosureToggleLabel}>{label}</Text>
-      </Pressable>
-      {open && <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={navigation} />}
-    </>
+    <Pressable
+      onPress={() => panel.show({ member, parts, label, resolvesAddress, navigation })}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      {...({ 'aria-expanded': open, 'aria-haspopup': 'dialog' } as Record<string, unknown>)}
+      style={[styles.disclosureToggle, focused && styles.focusRing]}
+    >
+      <Text style={styles.disclosureToggleLabel}>{label}</Text>
+      <DisclosureChevron />
+    </Pressable>
   );
 }
 
-type FamilyMember = CatalogMember & { props?: PropDef[]; path: string; alsoUsedBy?: AlsoUsedByEntry[] };
+/** #63 R2: exported so `GroupPage.tsx` can type its own `byId`/member records the same way
+ *  `FamilyPage`'s internals already do — a group's own `FamilyDef.members` carries the same shape
+ *  plus an optional `partOf` (`types.ts`), which this type simply doesn't need to name to stay
+ *  assignable. */
+export type FamilyMember = CatalogMember & { props?: PropDef[]; path: string; alsoUsedBy?: AlsoUsedByEntry[] };
 
 interface MemberRenderProps {
   member: FamilyMember;
@@ -426,7 +619,13 @@ interface MemberRenderProps {
  *  Related member (no pin, no gutter) — otherwise the same header and body: name, description,
  *  specimens (through `Blocks`, when the member has any), the below-specimens line, and a
  *  closed-by-default disclosure. */
-function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths, apiLabel, resolvesAddress, navigation, registerNode, pinRef }: MemberRenderProps & { level: number }) {
+/** #63 R2: exported so `GroupPage.tsx` can render a top-level group member through the exact same
+ *  piece a family's own Part/Related member uses, with no second copy of its name row/specimens/
+ *  below-line/disclosure rendering. `afterNameRow` is additive (`undefined` elsewhere, unchanged
+ *  behavior for every existing family-page call site) — a group's own "Part N of <Family>" link
+ *  (`PartOfLine`, below) renders there, right under the member's own name row and before its
+ *  description, per the contract's own ordering. */
+export function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths, apiLabel, resolvesAddress, navigation, registerNode, pinRef, afterNameRow }: MemberRenderProps & { level: number; afterNameRow?: React.ReactNode }) {
   const surface = member.specimenSurface ?? DEFAULT_SPECIMEN_SURFACE;
   const memberDef = useMemo(() => memberAsSectionDef(member), [member]);
   const blocks = useMemo(
@@ -458,6 +657,7 @@ function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths,
           />
         </View>
       </View>
+      {afterNameRow}
       {/* D2 item A1: `partBody`'s own rhythm gap applies to every member, numbered or not — only
           the gutter indent (`partBodyIndented`) is conditional — so a Related member (never
           numbered) still gets the same spacing between its own description/specimens/below-line/
@@ -501,10 +701,9 @@ function FamilyPart({ member, number, level, allMemberIds, defaultPreviewWidths,
  *  show specimens (spec's v8 reference keeps every folded-row example documentation-only). Slice
  *  D1: no gutter either way — a folded row's own pin (when it has a number) sits inline with its
  *  name, never offsetting the row's body. */
-function FoldedRow({ member, number, allMemberIds, resolvesAddress, navigation, open, onToggle, registerNode }: MemberRenderProps & { open: boolean; onToggle: () => void }) {
+function FoldedRow({ member, number, allMemberIds, apiLabel, resolvesAddress, navigation, open, onToggle, registerNode }: MemberRenderProps & { open: boolean; onToggle: () => void }) {
   const [focused, setFocused] = useState(false);
   const related = member.related ? linkifyRelated(member.related, allMemberIds) : undefined;
-  const parts = disclosureContent(member, member.props);
   return (
     <View style={styles.foldedRow}>
       <Pressable
@@ -538,9 +737,7 @@ function FoldedRow({ member, number, allMemberIds, resolvesAddress, navigation, 
             navigation={navigation}
             sourceMemberId={member.id}
           />
-          {parts.length > 0 && (
-            <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={navigation} />
-          )}
+          <MemberDisclosureToggle member={member} apiLabel={apiLabel} resolvesAddress={resolvesAddress} navigation={navigation} />
         </View>
       )}
     </View>
@@ -654,10 +851,55 @@ interface LegendFocus {
   onBlur: (key: string) => void;
 }
 
+/** #63 R3: a family's own stub row for an *external part* — a member defined on a group page
+ *  rather than this family's own `members` (`FamilyDef.externalParts`). Same pin/gutter as a real
+ *  `FamilyPart`, but no specimens, description, or disclosure: only the name and a "Details on
+ *  <group title>" link to that member's own address (`familyLink`, the same resolve-and-activate
+ *  convention every other canonical link here uses — plain text, never a dead link, when it
+ *  doesn't resolve). */
+function ExternalPartRow({
+  memberId, number, groupTitle, resolvesAddress, navigation,
+}: {
+  memberId: string;
+  number?: string;
+  groupTitle: string;
+  resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
+}) {
+  const link = familyLink(navigation, resolvesAddress, memberId);
+  return (
+    <View>
+      <View style={styles.partHeadRow}>
+        {number !== undefined && (
+          <View style={styles.pinBox}>
+            <Pin number={number} />
+          </View>
+        )}
+        <View style={styles.partHeadMain}>
+          <Text style={[CATALOG_TEXT.heading2, styles.memberName]}>{memberId}</Text>
+        </View>
+      </View>
+      <View style={[styles.partBody, number !== undefined && styles.partBodyIndented]}>
+        <Text style={styles.belowLine}>
+          {link ? (
+            <Text role="link" style={styles.relatedLink} {...link}>
+              {`Details on ${groupTitle}`}
+            </Text>
+          ) : (
+            <Text>{`Details on ${groupTitle}`}</Text>
+          )}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 /** One Part in its tree position: rendered through `FamilyPart` as always, wrapped in a `Branch`
  *  only when it has children (a leaf costs nothing extra), with its children nested inside its own
- *  block (spec: "so the lines don't cross other parts") at one more 52px gutter. */
-function PartTreeBranch({
+ *  block (spec: "so the lines don't cross other parts") at one more 52px gutter. #63 R2: exported
+ *  so `GroupPage.tsx` can nest a top-level group member's own parts underneath it, the same tree
+ *  (pins, tree lines, numbering) a family's own Parts section already renders. */
+export function PartTreeBranch({
   node,
   byId,
   outline,
@@ -668,6 +910,7 @@ function PartTreeBranch({
   navigation,
   registerNode,
   pinNodesRef,
+  externalParts,
 }: {
   node: PartTreeEntry;
   byId: ReadonlyMap<string, FamilyMember>;
@@ -679,10 +922,15 @@ function PartTreeBranch({
   navigation?: ReferenceNavigation;
   registerNode: (id: string, node: View | null) => void;
   pinNodesRef: React.RefObject<Map<string, View | null>>;
+  /** #63 R3: every id this family's own `inWhole` sections list that is actually a group-page
+   *  member rather than one of `byId` above — rendered as `ExternalPartRow` instead of
+   *  `FamilyPart`. Omitted (the default) outside a family page's own Parts tree — `GroupPage.tsx`'s
+   *  own use of this same component never passes one, since a group never has external parts of
+   *  its own. */
+  externalParts?: FamilyDef['externalParts'];
 }) {
   const member = byId.get(node.id);
-  if (!member) return null;
-  const part = (
+  const part = member ? (
     <FamilyPart
       member={member}
       number={outline.get(node.id)?.number}
@@ -698,7 +946,13 @@ function PartTreeBranch({
         else pinNodesRef.current.delete(node.id);
       }}
     />
-  );
+  ) : (() => {
+    const external = externalParts?.get(node.id);
+    return external ? (
+      <ExternalPartRow memberId={node.id} number={outline.get(node.id)?.number} groupTitle={external.title} resolvesAddress={resolvesAddress} navigation={navigation} />
+    ) : null;
+  })();
+  if (part === null) return null;
   if (node.children.length === 0) return part;
   return (
     <Branch parentId={node.id} childIds={node.children.map((child) => child.id)} pinNodesRef={pinNodesRef}>
@@ -717,6 +971,7 @@ function PartTreeBranch({
             navigation={navigation}
             registerNode={registerNode}
             pinNodesRef={pinNodesRef}
+            externalParts={externalParts}
           />
         ))}
       </View>
@@ -739,6 +994,7 @@ function FamilySectionGroup({
   openRows,
   onToggleRow,
   registerNode,
+  externalParts,
 }: {
   section: CatalogMemberSection;
   members: FamilyMember[];
@@ -751,11 +1007,18 @@ function FamilySectionGroup({
   openRows: ReadonlySet<string>;
   onToggleRow: (id: string) => void;
   registerNode: (id: string, node: View | null) => void;
+  /** #63 R3: see `PartTreeBranch`'s own doc comment. Omitted for the "Related" bucket — A5 only
+   *  ever applies to an `inWhole` section. */
+  externalParts?: FamilyDef['externalParts'];
 }) {
   const byId = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const pinNodesRef = useRef<Map<string, View | null>>(new Map());
+  // #63 R3: `section.members` may list an external part — present in `externalParts` but never in
+  // `byId` (it isn't one of this family's own `members`) — kept here (unlike a genuinely unknown
+  // id, still dropped) so it gets its own `ExternalPartRow` stub below.
+  const ids = section.members.filter((id) => byId.has(id) || externalParts?.has(id));
   if (section.kind === 'blocks') {
-    const tree = buildPartTree(members.map((member) => member.id), outline);
+    const tree = buildPartTree(ids, outline);
     return (
       <View style={styles.blocksSection}>
         {tree.map((node) => (
@@ -771,6 +1034,7 @@ function FamilySectionGroup({
             navigation={navigation}
             registerNode={registerNode}
             pinNodesRef={pinNodesRef}
+            externalParts={externalParts}
           />
         ))}
       </View>
@@ -778,22 +1042,30 @@ function FamilySectionGroup({
   }
   return (
     <View style={styles.foldedList}>
-      {members.map((member, i) => (
-        <View key={member.id} style={[styles.foldedListRow, i < members.length - 1 && styles.foldedListRowDivider]}>
-          <FoldedRow
-            member={member}
-            number={outline.get(member.id)?.number}
-            allMemberIds={allMemberIds}
-            defaultPreviewWidths={defaultPreviewWidths}
-            apiLabel={apiLabel}
-            resolvesAddress={resolvesAddress}
-            navigation={navigation}
-            open={openRows.has(member.id)}
-            onToggle={() => onToggleRow(member.id)}
-            registerNode={registerNode}
-          />
-        </View>
-      ))}
+      {ids.map((id, i) => {
+        const member = byId.get(id);
+        const external = member ? undefined : externalParts?.get(id);
+        return (
+          <View key={id} style={[styles.foldedListRow, i < ids.length - 1 && styles.foldedListRowDivider]}>
+            {member ? (
+              <FoldedRow
+                member={member}
+                number={outline.get(id)?.number}
+                allMemberIds={allMemberIds}
+                defaultPreviewWidths={defaultPreviewWidths}
+                apiLabel={apiLabel}
+                resolvesAddress={resolvesAddress}
+                navigation={navigation}
+                open={openRows.has(id)}
+                onToggle={() => onToggleRow(id)}
+                registerNode={registerNode}
+              />
+            ) : external ? (
+              <ExternalPartRow memberId={id} number={outline.get(id)?.number} groupTitle={external.title} resolvesAddress={resolvesAddress} navigation={navigation} />
+            ) : null}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -848,6 +1120,7 @@ function FamilyLabeledGroup({
   openRows,
   onToggleRow,
   registerNode,
+  externalParts,
 }: {
   label: 'Parts' | 'Related';
   sections: CatalogMemberSection[];
@@ -863,6 +1136,9 @@ function FamilyLabeledGroup({
   openRows: ReadonlySet<string>;
   onToggleRow: (id: string) => void;
   registerNode: (id: string, node: View | null) => void;
+  /** #63 R3: see `PartTreeBranch`'s own doc comment — only ever passed for the "Parts" group
+   *  (A5 only applies to an `inWhole` section). */
+  externalParts?: FamilyDef['externalParts'];
 }) {
   // Field spec item 3: "a page with no relatedPages and no Related sections renders exactly as it
   // does today — no heading, no divider, nothing."
@@ -894,6 +1170,7 @@ function FamilyLabeledGroup({
             openRows={openRows}
             onToggleRow={onToggleRow}
             registerNode={registerNode}
+            externalParts={externalParts}
           />
         ))}
         {relatedPages && relatedPages.length > 0 && <RelatedPagesList items={relatedPages} resolvesAddress={resolvesAddress} navigation={navigation} />}
@@ -902,10 +1179,24 @@ function FamilyLabeledGroup({
   );
 }
 
+/** What an anatomy pin looks up by member id: only the `fidelity` (dashed or solid). An own member
+ *  satisfies it as is; an external part is represented by a stub carrying its owner's fidelity
+ *  (`pinMembersWithExternal`). */
+type PinMembers = ReadonlyMap<string, Pick<FamilyMember, 'fidelity'>>;
+
+/** `byId` plus one fidelity-only entry per external part (a member documented on a group page), so
+ *  its anatomy pin is dashed or solid by its owner's fidelity, exactly like an own part's. */
+function pinMembersWithExternal(byId: ReadonlyMap<string, FamilyMember>, externalParts: FamilyDef['externalParts']): PinMembers {
+  if (!externalParts || externalParts.size === 0) return byId;
+  const merged = new Map<string, Pick<FamilyMember, 'fidelity'>>(byId);
+  for (const [id, external] of externalParts) if (!merged.has(id) && external.fidelity) merged.set(id, { fidelity: external.fidelity });
+  return merged;
+}
+
 /** Slice D1 item 5: the family page's own member records and computed outline, read by `AnatomyPin`
  *  so a page's `anatomy.picture` (author-supplied markup, possibly arbitrarily positioned) never
  *  hardcodes a number. `undefined` outside a family page's own anatomy box. */
-const FamilyAnatomyContext = createContext<{ byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline'] } | undefined>(undefined);
+const FamilyAnatomyContext = createContext<{ byId: PinMembers; outline: FamilyDef['outline'] } | undefined>(undefined);
 
 /** Slice D1 item 5: a pin for use inside `anatomy.picture`. `member` names one of this page's
  *  members and shows its number (dashed when it has no area of its own), looked up through
@@ -935,7 +1226,7 @@ export function AnatomyPin({ member, other }: { member?: string; other?: string 
  *  when there's a pin to show — a member with no number (outside every `inWhole` section) gets no
  *  gutter either, so its name starts flush at the row's own left edge instead of under blank
  *  space. */
-function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus, resolvesAddress, navigation }: { memberId: string; description: string; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; legendFocus: LegendFocus; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
+function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus, resolvesAddress, navigation }: { memberId: string; description: string; byId: PinMembers; outline: FamilyDef['outline']; legendFocus: LegendFocus; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
   const pin = anatomyPinFor(memberId, byId, outline);
   // `familyLink` already resolves this row's own member (`resolvesAddress`'s sibling ids, at
   // minimum, cover it) — an explicitly supplied `navigation` that still can't resolve it must stay
@@ -1010,7 +1301,7 @@ function AnatomyOtherRow({ name, description, resolvesAddress, navigation, legen
   );
 }
 
-function AnatomyGroup({ group, byId, outline, resolvesAddress, navigation, legendFocus }: { group: CatalogAnatomyGroup; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation; legendFocus: LegendFocus }) {
+function AnatomyGroup({ group, byId, outline, resolvesAddress, navigation, legendFocus }: { group: CatalogAnatomyGroup; byId: PinMembers; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation; legendFocus: LegendFocus }) {
   return (
     <View>
       <Text style={styles.legendGroupLabel}>{group.label}</Text>
@@ -1034,8 +1325,13 @@ function AnatomyGroup({ group, byId, outline, resolvesAddress, navigation, legen
  *  The stage (and the picture inside it) renders at the same position in this tree whether the
  *  legend sits beside it or below it — only the wrapper's own `flexDirection` and the legend's own
  *  shape change around it — so toggling between the two never remounts the picture and discards
- *  its own authored state or focus. */
-function AnatomyBox({ anatomy, byId, outline, resolvesAddress, navigation }: { anatomy: CatalogAnatomy; byId: ReadonlyMap<string, FamilyMember>; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
+ *  its own authored state or focus.
+ *
+ *  #63 R2: exported so `GroupPage.tsx` can render an embedded family's own anatomy box — several
+ *  may exist on one group page (one per top-level member that has one), each its own independent
+ *  instance of this component (its own `FamilyAnatomyContext`/measurement state), not a
+ *  page-singleton. */
+export function AnatomyBox({ anatomy, byId, outline, resolvesAddress, navigation }: { anatomy: CatalogAnatomy; byId: PinMembers; outline: FamilyDef['outline']; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
   const totalItems = anatomy.groups.reduce((sum, group) => sum + group.items.length, 0);
   const [cardWidth, setCardWidth] = useState(0);
   const [pictureWidth, setPictureWidth] = useState(0);
@@ -1123,6 +1419,15 @@ function AnatomyBox({ anatomy, byId, outline, resolvesAddress, navigation }: { a
       <View style={styles.anatomy}>
         <Text style={styles.anatomyHeadText}>Anatomy</Text>
         <View style={styles.anatomyCard}>
+          {anatomy.picture == null ? (
+            // No picture (e.g. mutually exclusive parts that never share one frame): the legend
+            // takes the card's full width instead of sitting beside an empty picture column.
+            <View style={styles.anatomyLegendAlone} testID="anatomy-legend">
+              {anatomy.groups.map((group, i) => (
+                <AnatomyGroup key={i} group={group} byId={byId} outline={outline} resolvesAddress={resolvesAddress} navigation={navigation} legendFocus={legendFocus} />
+              ))}
+            </View>
+          ) : (
           <View style={stacked ? undefined : styles.anatomyBody} onLayout={onCardLayout} testID="anatomy-body">
             {stage}
             {stacked ? (
@@ -1146,9 +1451,38 @@ function AnatomyBox({ anatomy, byId, outline, resolvesAddress, navigation }: { a
               </View>
             )}
           </View>
+          )}
         </View>
       </View>
     </FamilyAnatomyContext.Provider>
+  );
+}
+
+/** #63 R2: a group member that is also an external part of some family's own outline — a plain
+ *  link line, "Part N of <Family>", to the family page (never to a specific member address — the
+ *  family page has no separate address for one of its own parts). Reuses this file's own
+ *  `belowLine`/`relatedLink` styles rather than a new visual; renders through `familyLink` so it
+ *  resolves and activates exactly like every other canonical link `FamilyPage`'s own pieces
+ *  produce (plain text, never a dead link, when it doesn't resolve). */
+export function PartOfLine({
+  partOf, resolvesAddress, navigation,
+}: {
+  partOf: { pageId: string; title: string; number: string };
+  resolvesAddress: (name: string) => boolean;
+  navigation?: ReferenceNavigation;
+}) {
+  const link = familyLink(navigation, resolvesAddress, partOf.pageId);
+  return (
+    <Text style={styles.belowLine}>
+      {`Part ${partOf.number} of `}
+      {link ? (
+        <Text role="link" style={styles.relatedLink} {...link}>
+          {partOf.title}
+        </Text>
+      ) : (
+        <Text>{partOf.title}</Text>
+      )}
+    </Text>
   );
 }
 
@@ -1156,8 +1490,11 @@ function AnatomyBox({ anatomy, byId, outline, resolvesAddress, navigation }: { a
  *  is always instant, like a normal anchor link: a smooth `scrollIntoView` does not reliably move
  *  the shell's nested scroll container on web (the same limitation `CatalogShell`'s
  *  `resetMainScroll` works around), and an instant jump also satisfies Reduce Motion. Native has
- *  no scroll-into-view of its own; `AccessibilityInfo`'s focus call is enough there. */
-function scrollAndFocusMember(node: View): void {
+ *  no scroll-into-view of its own; `AccessibilityInfo`'s focus call is enough there.
+ *
+ *  #63 R2: exported so `GroupPage.tsx` reuses the exact same jump mechanics for its own member
+ *  addresses, rather than a second implementation. */
+export function scrollAndFocusMember(node: View): void {
   if (Platform.OS === 'web') {
     const dom = node as unknown as { scrollIntoView?: (options: { behavior: 'auto'; block: 'start' }) => void; focus?: (options?: { preventScroll?: boolean }) => void };
     dom.scrollIntoView?.({ behavior: 'auto', block: 'start' });
@@ -1224,6 +1561,7 @@ export function FamilyPage<TId extends string>({
   const family = def.family!;
   const apiLabel = family.apiLabel ?? 'API';
   const byId = useMemo(() => new Map(family.members.map((member) => [member.id, member])), [family.members]);
+  const anatomyById = useMemo(() => pinMembersWithExternal(byId, family.externalParts), [byId, family.externalParts]);
   // N7: a `whole` that isn't one of its own members (bad data, already reported by
   // `validateFamily`) must degrade to a missing block, never a crash reading an absent member.
   const wholeMember = resolveWhole(byId, family.whole);
@@ -1280,28 +1618,11 @@ export function FamilyPage<TId extends string>({
   }, [focusMemberId, openRows, focusNonce]);
 
   return (
+    <MemberPanelHost>
     <View>
-      {groupLabel && <Text style={styles.breadcrumb}>{breadcrumbRoot ? `${breadcrumbRoot} / ${groupLabel}` : groupLabel}</Text>}
-      {banner}
-      <View style={styles.pageHead}>
-        <View style={styles.titlebar}>
-          <View style={styles.titleText}>
-            <View ref={headingRef} tabIndex={-1} role="heading" {...({ 'aria-level': 1 } as Record<string, unknown>)} style={styles.headingTarget}>
-              <Text style={styles.title}>{def.title ?? def.id}</Text>
-            </View>
-            <Text style={styles.desc}>{def.description}</Text>
-            {family.notShown && (
-              <Text style={styles.notShown}>
-                <Text style={styles.notShownLead}>Not shown in the browser: </Text>
-                {family.notShown}
-              </Text>
-            )}
-          </View>
-          {pager && <SectionPagerRow pager={pager} />}
-        </View>
-      </View>
+      <FamilyPageHead kind="family" def={def} groupLabel={groupLabel} breadcrumbRoot={breadcrumbRoot} banner={banner} pager={pager} headingRef={headingRef} notShown={family.notShown} />
 
-      {family.anatomy && <AnatomyBox anatomy={family.anatomy} byId={byId} outline={family.outline} resolvesAddress={resolvesAddress} navigation={navigation} />}
+      {family.anatomy && <AnatomyBox anatomy={family.anatomy} byId={anatomyById} outline={family.outline} resolvesAddress={resolvesAddress} navigation={navigation} />}
 
       {wholeMember && (
         <View style={styles.whole} ref={(node) => registerNode(wholeMember.id, node)} tabIndex={-1}>
@@ -1347,6 +1668,7 @@ export function FamilyPage<TId extends string>({
         openRows={openRows}
         onToggleRow={toggleRow}
         registerNode={registerNode}
+        externalParts={family.externalParts}
       />
       <FamilyLabeledGroup
         label="Related"
@@ -1364,6 +1686,7 @@ export function FamilyPage<TId extends string>({
         registerNode={registerNode}
       />
     </View>
+    </MemberPanelHost>
   );
 }
 
@@ -1380,6 +1703,9 @@ const styles = StyleSheet.create({
   title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text, marginBottom: 5 },
   desc: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   notShown: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, maxWidth: 700, marginTop: CATALOG_SPACE.sm },
+  kindNote: { maxWidth: 700, marginTop: CATALOG_SPACE.sm, borderLeftWidth: 2, borderLeftColor: CATALOG_COLOR.borderStrong, paddingLeft: CATALOG_SPACE.md, paddingVertical: 2 },
+  kindNoteText: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
+  kindNoteLead: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
   notShownLead: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
 
   // Slice D1 item 5: the anatomy box's own "Anatomy" label sits outside, above a plain card —
@@ -1391,6 +1717,7 @@ const styles = StyleSheet.create({
   anatomyBody: { flexDirection: 'row', alignItems: 'flex-start' },
   anatomyStage: { padding: CATALOG_SPACE.xl, alignItems: 'center', justifyContent: 'center' },
   anatomyLegend: { flex: 1, borderLeftWidth: 1, borderLeftColor: CATALOG_COLOR.border, paddingVertical: CATALOG_SPACE.sm },
+  anatomyLegendAlone: { paddingVertical: CATALOG_SPACE.sm },
   anatomyColumns: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: CATALOG_COLOR.border },
   anatomyColumn: { flex: 1, borderLeftWidth: 1, borderLeftColor: CATALOG_COLOR.border, paddingVertical: CATALOG_SPACE.sm },
   // Host-authored text (`anatomy.groups[].label`) — never a transforming role like `microLabel`,
@@ -1495,6 +1822,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chevron: { ...CATALOG_TEXT.icon, color: CATALOG_COLOR.accent },
+  panelRoot: { flex: 1, flexDirection: 'row', justifyContent: 'flex-end' },
+  panelScrim: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: PANEL_SCRIM },
+  panel: { width: PANEL_WIDTH, maxWidth: '100%', height: '100%', backgroundColor: CATALOG_COLOR.surface, borderLeftWidth: 1, borderLeftColor: CATALOG_COLOR.borderStrong },
+  panelFull: { width: '100%' },
+  panelHead: { flexDirection: 'row', alignItems: 'flex-start', gap: CATALOG_SPACE.md, padding: CATALOG_SPACE.lg, borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.border },
+  panelTitle: { flex: 1, gap: 2 },
+  panelKicker: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.textMuted },
+  panelName: { ...CATALOG_TEXT.heading3, color: CATALOG_COLOR.text },
+  panelBody: { flex: 1 },
+  panelBodyContent: { padding: CATALOG_SPACE.lg },
   disclosureToggleLabel: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.accent },
   disclosureBody: { gap: CATALOG_SPACE.sm, paddingTop: CATALOG_SPACE.xs },
   note: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.text },

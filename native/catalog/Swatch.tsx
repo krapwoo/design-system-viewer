@@ -13,6 +13,7 @@ export function Swatch({
   valueLabel,
   width = 84,
   wrapName = false,
+  splitValue,
 }: {
   name: string;
   value: string;
@@ -21,10 +22,21 @@ export function Swatch({
   /** Lets a long name wrap instead of truncating to one line. Off by default, so every existing
    *  gallery keeps its compact single-line labels. */
   wrapName?: boolean;
+  /** #64 B3: a second colour, rendered as the right half of the chip (`value`'s own colour stays
+   *  the left half) — for a light/dark pair rendered as one swatch. Omit for every existing
+   *  single-appearance swatch, whose chip renders exactly as before (one solid fill). */
+  splitValue?: string;
 }) {
   return (
     <View style={[styles.swatch, { width }]}>
-      <View style={[styles.chip, { backgroundColor: value }]} />
+      {splitValue ? (
+        <View style={styles.splitChip}>
+          <View style={[styles.splitHalf, { backgroundColor: value }]} />
+          <View style={[styles.splitHalf, { backgroundColor: splitValue }]} />
+        </View>
+      ) : (
+        <View style={[styles.chip, { backgroundColor: value }]} />
+      )}
       <Text style={styles.name} numberOfLines={wrapName ? undefined : 1}>{name}</Text>
       <Text style={styles.value} numberOfLines={1}>{valueLabel ?? value}</Text>
     </View>
@@ -39,6 +51,17 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: CATALOG_COLOR.border,
   },
+  // #64 B3: the same chip geometry as `chip` above, split into two equal halves for a light/dark
+  // pair — `overflow: 'hidden'` keeps both halves inside the chip's own rounded corners.
+  splitChip: {
+    height: 40,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    borderRadius: CATALOG_RADIUS.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: CATALOG_COLOR.border,
+  },
+  splitHalf: { flex: 1 },
   name: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
   value: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
 });

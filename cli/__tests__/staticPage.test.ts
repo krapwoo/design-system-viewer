@@ -725,11 +725,11 @@ test('reads members/whole/sections/aliases literally, flattening every section\'
     { label: 'Related', kind: 'blocks', members: ['ToastStandalone'], inWhole: false },
   ]);
   assert.deepEqual(page.members, [
-    { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false },
+    { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
     // V2c item 5: `variants: { items: [] }` has no real specimen — `hasExamples` must be false,
     // not just "the variants key is present".
-    { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasWhenToUse: true, hasA11y: true, hasExamples: false },
-    { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false },
+    { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasWhenToUse: true, hasA11y: true, hasExamples: false, anatomy: undefined },
+    { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
   ]);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
@@ -1015,8 +1015,8 @@ test('reads a literal tokenDefinition\'s kind, sections and entry ids, and deriv
   assert.equal(page.hasTokenDefinition, true);
   assert.equal(page.tokenDefinition?.kind, 'colors');
   assert.deepEqual(page.tokenDefinition?.sections, [
-    { id: 'palette', title: 'Palette', desc: 'Real palette colors.', wide: false, entryIds: ['brand'], entriesOpaque: false },
-    { id: 'semantic', title: 'Semantic', desc: undefined, wide: true, entryIds: [], entriesOpaque: false },
+    { id: 'palette', title: 'Palette', desc: 'Real palette colors.', wide: false, entryIds: ['brand'], entriesOpaque: false, groups: [], groupsOpaque: false },
+    { id: 'semantic', title: 'Semantic', desc: undefined, wide: true, entryIds: [], entriesOpaque: false, groups: [], groupsOpaque: false },
   ]);
   assert.equal(page.tokenGallery, true);
   assert.deepEqual(page.tokenSectionTitles, ['Palette', 'Semantic']);
@@ -1124,4 +1124,106 @@ test('an explicit tokenSections is not overwritten by a co-authored tokenDefinit
   assert.equal(page.hasTokenDefinition, true);
   assert.equal(page.tokenDefinition?.sections[0]?.title, 'Palette');
   rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// #63 A1/A10: a group page (`members` with no `whole`/`sections`) reads exactly like today's
+// family reader already handles each field independently — no code change needed in the reader
+// itself, only in `cli/doctor.ts`'s own consumer.
+test('reads a group page (members with no whole or sections) the same way as a family\'s members', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Widgets', group: 'Components', description: 'A group.',
+      members: [
+        { id: 'WidgetA', source: 'a.tsx:1', fidelity: 'documentation-only', relationship: 'Top', description: 'd' },
+        { id: 'WidgetB', source: 'b.tsx:1', fidelity: 'documentation-only', relationship: 'Top', description: 'd', parent: 'Elsewhere' },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.whole, undefined);
+  assert.equal(page.sections, undefined);
+  assert.equal(page.hasMembers, true);
+  assert.deepEqual(page.members?.map((m) => m.id), ['WidgetA', 'WidgetB']);
+  assert.equal(page.members?.[1].parent, 'Elsewhere');
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// #63 A4/A10: member-level `anatomy`, read down to its literal `member` ids only.
+test('reads a member\'s own anatomy down to its literal member ids, ignoring "other"/description', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Widgets', group: 'Components', description: 'A group.',
+      members: [
+        {
+          id: 'Top', source: 'a.tsx:1', fidelity: 'documentation-only', relationship: 'Top', description: 'd',
+          anatomy: { groups: [{ label: 'X', items: [
+            { member: 'Part', description: 'd1' },
+            { other: 'SomeOtherComponent', description: 'd2' },
+          ] }] },
+        },
+        { id: 'Part', source: 'a.tsx:2', fidelity: 'documentation-only', relationship: 'Part', parent: 'Top', description: 'd' },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.deepEqual(page.members?.find((m) => m.id === 'Top')?.anatomy, { memberIds: ['Part'] });
+  assert.equal(page.members?.find((m) => m.id === 'Part')?.anatomy, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+// #63 A1/A10: page-level `anatomy` presence, independent of its own shape — `doctor`'s group-shape
+// rule only ever needs to know it was authored at all.
+test('hasAnatomy reflects whether the page object has its own "anatomy" property, regardless of value', () => {
+  const withAnatomy = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Widgets', group: 'Components', description: 'd', members: [{ id: 'A', source: 'a:1', fidelity: 'documentation-only', relationship: 'x', description: 'd' }],
+      anatomy: { groups: [] },
+    });
+  `);
+  const [page1] = readStaticPages([withAnatomy]);
+  assert.equal(page1.hasAnatomy, true);
+  rmSync(path.dirname(withAnatomy), { recursive: true, force: true });
+
+  const withoutAnatomy = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ id: 'Widgets', group: 'Components', description: 'd' });
+  `);
+  const [page2] = readStaticPages([withoutAnatomy]);
+  assert.equal(page2.hasAnatomy, false);
+  rmSync(path.dirname(withoutAnatomy), { recursive: true, force: true });
+});
+
+// Review F9: presence of `whole`/`sections`, separate from their (literal-only) values.
+test('hasWhole / hasSections record presence even when the value is not a literal', () => {
+  const nonLiteral = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    const WHOLE = ['Card', 'Other'][0];
+    export default defineCatalogPage({
+      id: 'Card', group: 'Components', description: 'd', whole: WHOLE, sections: makeSections(),
+      members: [{ id: 'Card', source: 'a:1', fidelity: 'documentation-only', relationship: 'x', description: 'd' }],
+    });
+  `);
+  const [family] = readStaticPages([nonLiteral]);
+  assert.equal(family.whole, undefined);
+  assert.equal(family.sections, undefined);
+  assert.equal(family.hasWhole, true);
+  assert.equal(family.hasSections, true);
+  rmSync(path.dirname(nonLiteral), { recursive: true, force: true });
+
+  const group = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Widgets', group: 'Components', description: 'd',
+      members: [{ id: 'A', source: 'a:1', fidelity: 'documentation-only', relationship: 'x', description: 'd' }],
+    });
+  `);
+  const [groupPage] = readStaticPages([group]);
+  assert.equal(groupPage.hasWhole, false);
+  assert.equal(groupPage.hasSections, false);
+  rmSync(path.dirname(group), { recursive: true, force: true });
 });

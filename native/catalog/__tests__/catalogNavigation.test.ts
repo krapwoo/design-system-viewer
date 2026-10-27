@@ -135,6 +135,55 @@ const botAvatarFamily: SectionDef['family'] = {
 
 const sectionsFixture: SectionDef[] = [section('BotAvatarView', botAvatarFamily), section('Button')];
 
+// #63 A7/A8: a group page's `FamilyDef` has `whole: undefined` — the structural finding this slice
+// relies on is that `aliasTargets`/`resolveRoute` need no code changes at all for it, since every
+// member (there being no whole to skip) ends up registered exactly like a family's non-whole
+// members already are.
+const groupFamily: SectionDef['family'] = {
+  whole: undefined,
+  kind: 'group',
+  outline: new Map(),
+  sections: [],
+  aliases: ['OldWidgets'],
+  members: [
+    { id: 'WidgetA', source: 'a:1', fidelity: 'documentation-only', relationship: 'Top', description: 'd', path: 'a:1', aliases: ['OldWidgetA'] },
+    { id: 'WidgetB', source: 'b:1', fidelity: 'documentation-only', relationship: 'Top', description: 'd', path: 'b:1' },
+  ],
+};
+const groupSectionsFixture: SectionDef[] = [section('Widgets', groupFamily), section('Button')];
+
+test('aliasTargets maps every group member id and alias to its group page, focusing that member — the same as a family\'s non-whole members', () => {
+  const targets = aliasTargets(groupSectionsFixture);
+  assert.deepEqual(targets.get('WidgetA'), { pageId: 'Widgets', memberId: 'WidgetA' });
+  assert.deepEqual(targets.get('OldWidgetA'), { pageId: 'Widgets', memberId: 'WidgetA' });
+  assert.deepEqual(targets.get('WidgetB'), { pageId: 'Widgets', memberId: 'WidgetB' });
+  // The page-level alias still resolves to the page, with no member focus, same as a family's.
+  assert.deepEqual(targets.get('OldWidgets'), { pageId: 'Widgets' });
+});
+
+test('resolveRoute: a group page\'s own id, a member id, and a member/page alias all resolve, like a family\'s', () => {
+  const targets = aliasTargets(groupSectionsFixture);
+  const order = ['Widgets', 'Button'];
+  assert.deepEqual(resolveRoute('#Widgets', order, targets), { kind: 'page', id: 'Widgets' });
+  assert.deepEqual(resolveRoute('#WidgetA', order, targets), { kind: 'member', pageId: 'Widgets', memberId: 'WidgetA' });
+  assert.deepEqual(resolveRoute('#OldWidgetA', order, targets), { kind: 'member', pageId: 'Widgets', memberId: 'WidgetA' });
+  assert.deepEqual(resolveRoute('#OldWidgets', order, targets), { kind: 'page', id: 'Widgets' });
+});
+
+// A8: the page itself is listed once in `orderedIds`'s browse order (same as a family); its
+// members are reachable only via `filterGroups`' own `memberIds` search parameter, never as
+// separate sidebar rows.
+test('A8: a group page is listed once in browse order, and its members are searchable but not separate rows', () => {
+  const groupGroups = [{ label: 'Components', ids: ['Widgets', 'Button'] }];
+  assert.deepEqual(orderedIds(groupGroups), ['Button', 'Widgets']); // sorted by title/id within the group
+
+  const memberIndex = new Map([['Widgets', ['WidgetA', 'WidgetB']]]);
+  assert.deepEqual(filterGroups(groupGroups, 'widgeta', undefined, memberIndex), [{ label: 'Components', ids: ['Widgets'] }]);
+  assert.deepEqual(filterGroups(groupGroups, 'widgetb', undefined, memberIndex), [{ label: 'Components', ids: ['Widgets'] }]);
+  // Searching a member id never surfaces it as its own row — only its owning page's row.
+  assert.ok(!filterGroups(groupGroups, 'widgeta', undefined, memberIndex).some((g) => g.ids.includes('WidgetA')));
+});
+
 test('aliasTargets maps every member id other than the whole, and every alias, to its family page', () => {
   const targets = aliasTargets(sectionsFixture);
   assert.deepEqual(targets.get('BotAnimatedFaceView'), { pageId: 'BotAvatarView', memberId: 'BotAnimatedFaceView' });
@@ -193,6 +242,45 @@ test('aliasTargets maps a whole member\'s own alias to its page, with no member 
 test('resolveRoute: a whole member\'s own alias routes to its family page, not the first page, and focuses no member', () => {
   const targets = aliasTargets(actionsSectionsFixture);
   assert.deepEqual(resolveRoute('#LegacyActions', ['Actions'], targets), { kind: 'page', id: 'Actions' });
+});
+
+// #64 B5: a tokenDefinition page's own aliases, and each of its sections' own aliases.
+const tokenDefSectionsFixture: SectionDef[] = [{
+  id: 'Colors',
+  description: 'd',
+  path: 'p',
+  tokenDefinitionAliases: ['OldColors'],
+  tokenDefinition: {
+    kind: 'colors',
+    sections: [{ id: 'palette', title: 'Palette', entries: [], aliases: ['OldPalette', 'LegacyPalette'] }],
+  },
+}];
+
+test('aliasTargets maps a tokenDefinition page\'s own page-level alias to the page, with no section focus', () => {
+  const targets = aliasTargets(tokenDefSectionsFixture);
+  assert.deepEqual(targets.get('OldColors'), { pageId: 'Colors' });
+});
+
+test('aliasTargets maps a tokenDefinition section\'s own alias to the page with that section named', () => {
+  const targets = aliasTargets(tokenDefSectionsFixture);
+  assert.deepEqual(targets.get('OldPalette'), { pageId: 'Colors', sectionId: 'palette' });
+  assert.deepEqual(targets.get('LegacyPalette'), { pageId: 'Colors', sectionId: 'palette' });
+});
+
+test('aliasTargets contributes nothing for a page with neither family nor tokenDefinition', () => {
+  const targets = aliasTargets(sectionsFixture);
+  assert.equal(targets.has('OldColors'), false);
+  assert.equal(targets.has('OldPalette'), false);
+});
+
+test('resolveRoute: a tokenDefinition page\'s own page-level alias routes to the page with no sectionId', () => {
+  const targets = aliasTargets(tokenDefSectionsFixture);
+  assert.deepEqual(resolveRoute('#OldColors', ['Colors'], targets), { kind: 'page', id: 'Colors' });
+});
+
+test('resolveRoute: a tokenDefinition section\'s own alias routes to the page with that sectionId', () => {
+  const targets = aliasTargets(tokenDefSectionsFixture);
+  assert.deepEqual(resolveRoute('#OldPalette', ['Colors'], targets), { kind: 'page', id: 'Colors', sectionId: 'palette' });
 });
 
 test('searchResults returns member hits with the member id as its label and the owning family title', () => {

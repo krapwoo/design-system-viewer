@@ -49,6 +49,12 @@ function linkNamed(container: HTMLElement, text: string): HTMLAnchorElement | un
     .find((a) => (a.textContent || '').trim().startsWith(text)) as HTMLAnchorElement | undefined;
 }
 
+/** The member side panel is a `Modal`: it portals into `document.body`, outside the render
+ *  container, so its own content is looked up from the open dialog instead. */
+function openPanel(): HTMLElement | null {
+  return document.querySelector('[role="dialog"][aria-modal="true"]');
+}
+
 function plainTextPresent(container: HTMLElement, text: string): boolean {
   return [...container.querySelectorAll('*')].some((e) => e.children.length === 0 && (e.textContent || '').includes(text));
 }
@@ -231,6 +237,89 @@ test('a non-embedded shell\'s inline activation cancels the native anchor defaul
   } finally { cleanup(); }
 });
 
+test('arriving through a tokenDefinition section alias keeps the alias hash, so a reload or copied URL keeps the section', async () => {
+  const opacity = (id: string) => ({ id, name: id, kind: 'opacity' as const, value: { provenance: 'named' as const, resolution: { status: 'resolved' as const, value: { amount: 0.1 } } } });
+  const tokenPage = {
+    id: 'AliasTokens', title: 'Alias tokens', description: 'Two sections.', path: 'src/tokens.ts',
+    tokenDefinition: {
+      kind: 'opacity',
+      sections: [
+        { id: 'attention', title: 'Attention', entries: [opacity('a')] },
+        { id: 'palette', title: 'Palette', entries: [opacity('b')], aliases: ['palette-alias'] },
+      ],
+    },
+  };
+  const sections = [...SECTIONS, tokenPage] as unknown as SectionDef<Id>[];
+  const groups = [{ label: 'Components', ids: [...GROUPS[0].ids, 'AliasTokens'] }] as unknown as NavGroup<Id>[];
+  const { container, cleanup } = renderCatalog(
+    <Mount hash="#palette-alias">
+      <CatalogShell appName="App" title="Component Catalog" groups={groups} sections={sections} />
+    </Mount>,
+  );
+  try {
+    await act(async () => {
+      await new Promise<void>((resolve) => window.addEventListener('hashchange', () => resolve(), { once: true }));
+    });
+    assert.equal(pageHeading(), 'Alias tokens', 'the section alias opens its page');
+    assert.equal(window.location.hash, '#palette-alias', 'the alias hash must not be rewritten to the page id while the section arrival is live');
+    // Leaving the arrival (an ordinary navigation) canonicalizes as before.
+    const next = linkNamed(container, 'Icon') ?? ([...document.querySelectorAll('[role="navigation"] a')].find((a) => (a.textContent || '').trim() === 'Icon') as HTMLAnchorElement);
+    assert.ok(next, 'expected a nav link to another page');
+    click(next);
+    assert.equal(window.location.hash, hashForId('Icon'));
+  } finally { cleanup(); }
+});
+
+test('a same-page section-alias arrival does not reset the main scroll', async () => {
+  const opacity = (id: string) => ({ id, name: id, kind: 'opacity' as const, value: { provenance: 'named' as const, resolution: { status: 'resolved' as const, value: { amount: 0.1 } } } });
+  const tokenPage = {
+    id: 'AliasTokens', title: 'Alias tokens', description: 'Two sections.', path: 'src/tokens.ts',
+    tokenDefinition: {
+      kind: 'opacity',
+      sections: [
+        { id: 'attention', title: 'Attention', entries: [opacity('a')], aliases: ['attention-alias'] },
+        { id: 'palette', title: 'Palette', entries: [opacity('b')], aliases: ['palette-alias'] },
+      ],
+    },
+  };
+  const sections = [...SECTIONS, tokenPage] as unknown as SectionDef<Id>[];
+  const groups = [{ label: 'Components', ids: [...GROUPS[0].ids, 'AliasTokens'] }] as unknown as NavGroup<Id>[];
+  let proto: Record<string, unknown> | undefined;
+  let originalScrollTo: unknown;
+  const resets: unknown[] = [];
+  const { cleanup } = renderCatalog(
+    <Mount hash="#palette-alias">
+      <CatalogShell appName="App" title="Component Catalog" groups={groups} sections={sections} />
+    </Mount>,
+  );
+  try {
+    await act(async () => {
+      await new Promise<void>((resolve) => window.addEventListener('hashchange', () => resolve(), { once: true }));
+    });
+    assert.equal(pageHeading(), 'Alias tokens');
+    // Installed after mounting: `renderCatalog` provides the window this shell actually uses.
+    // jsdom never scrolls, so record the shell's own reset of the main pane (`scrollTop = 0`, or the
+    // `scrollTo` react-native-web's ScrollView falls back to). jsdom has no layout, so the token
+    // sections never mount here; the section's own scroll is covered by the browser check.
+    proto = window.HTMLElement.prototype as unknown as Record<string, unknown>;
+    originalScrollTo = proto.scrollTo;
+    Object.defineProperty(proto, 'scrollTop', { configurable: true, get: () => 0, set: (v: number) => { resets.push(v); } });
+    proto.scrollTo = function (...args: unknown[]) { resets.push(args); };
+    const changed = new Promise<void>((resolve) => window.addEventListener('hashchange', () => resolve(), { once: true }));
+    window.location.hash = '#attention-alias';
+    await act(async () => { await changed; });
+    assert.equal(pageHeading(), 'Alias tokens', 'the second alias stays on the same page');
+    assert.equal(window.location.hash, '#attention-alias');
+    assert.deepEqual(resets, [], 'a same-page section arrival must not return the main pane to the top');
+  } finally {
+    if (proto) {
+      delete proto.scrollTop;
+      proto.scrollTo = originalScrollTo;
+    }
+    cleanup();
+  }
+});
+
 test('a member-owned inverse reference returns to that member rather than the family page heading', () => {
   const { container, cleanup } = mountShell('BotFamily');
   try {
@@ -316,18 +405,74 @@ test('a component name claimed by more than one page is ambiguous and stays plai
 
 test('a family member\'s "Uses" line links a resolvable sibling composition name and leaves an unresolvable one as plain text', () => {
   const { container, cleanup } = mountShell('BotFamily');
-  // Open BotFace's own disclosure toggle to reveal its Uses line.
+  // Open BotFace's own side panel to reveal its Uses line.
   const toggle = [...container.querySelectorAll('[role="button"]')].find((b) => (b.textContent || '').includes('Notes') || (b.textContent || '').includes('API') || (b.textContent || '').includes('Details')) as HTMLElement | undefined;
-  assert.ok(toggle, 'expected BotFace\'s own disclosure toggle');
+  assert.ok(toggle, 'expected BotFace\'s own disclosure trigger');
   click(toggle!);
-  const usesLine = [...container.querySelectorAll('div')].find(e => e.textContent?.startsWith('Uses ') && e.textContent.includes('(Eyes)'));
-  assert.ok(usesLine, 'find the actual Uses sentence rather than the earlier anatomy link with the same label');
-  const usesIconLink = linkNamed(usesLine as HTMLElement, 'Icon');
+  const panel = openPanel();
+  assert.ok(panel, 'the trigger opens a side panel dialog');
+  const usesLine = [...panel!.querySelectorAll('div')].find(e => e.textContent?.startsWith('Uses ') && e.textContent.includes('(Eyes)'));
+  assert.ok(usesLine, 'find the Uses sentence inside the panel rather than the earlier anatomy link with the same label');
+  const usesIconLink = [...usesLine!.querySelectorAll('a')].find((a) => (a.textContent || '').trim().startsWith('Icon')) as HTMLAnchorElement | undefined;
   assert.ok(usesIconLink, 'expected "Icon" inside the Uses line to be a real link');
-  assert.equal(Boolean(linkNamed(usesLine as HTMLElement, 'NoSuchComponent')), false);
+  assert.equal([...usesLine!.querySelectorAll('a')].some((a) => (a.textContent || '').trim().startsWith('NoSuchComponent')), false);
   click(usesIconLink!);
   assert.equal(pageHeading(), 'Icon');
+  assert.ok(openPanel() === null, 'following a reference inside the panel closes the panel');
   cleanup();
+});
+
+test('a group page is dispatched to GroupPage, and a member\'s inline reference link completes a Back return like a family member', () => {
+  // A deliberately separate, minimal sections/groups pair (the same isolation the
+  // "producer-to-renderer wiring" test below uses) — reusing the shared `SECTIONS`/`GROUPS` above
+  // would shift their own alphabetical-by-title browse order and break an unrelated test.
+  type GroupId = 'Icon' | 'BotGroup';
+  const groupFamily: SectionDef<GroupId>['family'] = {
+    kind: 'group',
+    whole: undefined,
+    outline: new Map(),
+    sections: [],
+    members: [
+      {
+        id: 'GroupWidget', source: 'GroupWidget.tsx:1', path: 'GroupWidget.tsx:1', fidelity: 'replicated', relationship: 'Top-level',
+        description: 'A plain group member.', composedOf: [{ component: 'Icon', role: 'Eyes', relationship: 'built-in' }],
+      },
+    ],
+  };
+  const sections: SectionDef<GroupId>[] = [
+    { id: 'Icon', title: 'Icon', description: 'A glyph.', path: 'src/Icon.tsx', component: 'IconComponent' },
+    { id: 'BotGroup', title: 'Bot group', description: 'A group of parts.', path: 'src/BotGroup.tsx', family: groupFamily },
+  ];
+  const groups: NavGroup<GroupId>[] = [{ label: 'Components', ids: ['Icon', 'BotGroup'] }];
+  const { container, cleanup } = renderCatalog(
+    <Mount>
+      <CatalogShell embedded initialPage={'BotGroup' as never} appName="App" title="Component Catalog" groups={groups as never} sections={sections as never} />
+    </Mount>,
+  );
+  try {
+    assert.ok((container.textContent || '').includes('GroupWidget'), 'expected the group page to render its own top-level member');
+    const toggle = [...container.querySelectorAll('[role="button"]')].find((b) => (b.textContent || '').includes('Notes') || (b.textContent || '').includes('API') || (b.textContent || '').includes('Details')) as HTMLElement | undefined;
+    assert.ok(toggle, 'expected GroupWidget\'s own disclosure trigger');
+    click(toggle!);
+    const panel = openPanel();
+    assert.ok(panel, 'the trigger opens a side panel dialog');
+    const usesLine = [...panel!.querySelectorAll('div')].find((e) => e.textContent?.startsWith('Uses ') && e.textContent.includes('(Eyes)'));
+    assert.ok(usesLine, 'expected the Uses sentence inside the group member\'s side panel');
+    const usesIconLink = [...usesLine!.querySelectorAll('a')].find((a) => (a.textContent || '').trim().startsWith('Icon')) as HTMLAnchorElement | undefined;
+    assert.ok(usesIconLink, 'expected "Icon" inside the Uses line to be a real link');
+    click(usesIconLink!);
+    assert.equal(pageHeading(), 'Icon', 'the group member\'s inline reference link must actually navigate');
+    assert.ok(openPanel() === null, 'following a reference inside the panel closes the panel');
+    const back = linkNamed(container, 'Back to Bot group');
+    assert.ok(back, 'a group member reference must retain an actual return destination, like a family member');
+    click(back!);
+    assert.equal(pageHeading(), 'Bot group');
+    const active = document.activeElement as HTMLElement | null;
+    assert.ok(active && active !== document.body, 'return must move focus off <body> (whose text contains every member)');
+    assert.equal(active!.getAttribute('tabindex'), '-1', 'the member\'s own focusable heading');
+    assert.equal(active!.getAttribute('role'), 'heading');
+    assert.equal((active!.textContent || '').trim().startsWith('GroupWidget'), true, 'return must focus the member that owned the clicked reference');
+  } finally { cleanup(); }
 });
 
 test('the family whole\'s own "also used by" line links its real user', () => {
