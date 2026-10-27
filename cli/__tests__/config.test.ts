@@ -152,3 +152,16 @@ test('resolveConfig warns and drops a logo path that resolves outside the projec
   rmSync(dir, { recursive: true, force: true });
   rmSync(outsideDir, { recursive: true, force: true });
 });
+
+test('loadConfig reads patternGroups and rejects a value that is not a list of names', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-config-'));
+  const configPath = path.join(dir, 'ds-viewer.config.ts');
+  const write = (value: string) => writeFileSync(configPath, `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', components: [], tokens: [], patternGroups: ${value} } as any);\n`);
+  write("['Screens']");
+  assert.deepEqual(loadConfig(configPath).config.patternGroups, ['Screens']);
+  write("'Screens'");
+  const bad = loadConfig(configPath);
+  assert.equal(bad.config.patternGroups, undefined);
+  assert.deepEqual(bad.warnings, ['"patternGroups" must be an array of group names; using the default [\'Patterns\'].']);
+  rmSync(dir, { recursive: true, force: true });
+});

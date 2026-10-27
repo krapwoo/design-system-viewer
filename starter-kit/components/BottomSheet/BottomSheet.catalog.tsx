@@ -65,6 +65,7 @@ const dock = (close: () => void) => (
 export default defineCatalogPage({
   component: 'BottomSheet',
   group: 'Components',
+  standalone: 'A reusable kit component in its own right; Dropdown is just the only kit component that uses it.',
   // Every example is a phone. At the default size two blocks share the row and each cell falls to
   // 270px, which squeezes the frame until the sheet's own text is barely readable — 'wide' keeps a
   // 402px minimum, the width the sheet is actually used at.

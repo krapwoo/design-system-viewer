@@ -42,6 +42,7 @@ function SidebarDemo({ footer, footerActive = false }: { footer: { label: string
 export default defineCatalogPage({
   component: 'CatalogSidebar',
   group: 'Components',
+  standalone: 'Exported on its own, so a catalog can use it outside CatalogShell.',
   whenToUse: 'The navigation list on its own — grouped links and the filter field, with no page area. CatalogShell already contains one, so reach for this directly only when composing your own shell around it.',
   source: '../native/catalog/CatalogSidebar.tsx',
   composedOf: [

@@ -24,6 +24,9 @@ export interface CatalogPageInput<TId extends string = string> {
   /** Page-level notes, shown as a "Notes" entry in the page's Quick reference (the page-level
    *  counterpart of a family member's `notes`). */
   notes?: string[];
+  /** Why this page stands on its own. Opts it out of `doctor`'s `part-own-page` and
+   *  `nothing-to-show` checks and records the decision in source; the viewer does not render it. */
+  standalone?: string;
   variants?: VariantSlot;
   states?: VariantSlot;
   render?: () => React.ReactNode;

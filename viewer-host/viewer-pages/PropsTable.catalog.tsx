@@ -19,6 +19,7 @@ const SIX: PropDef[] = [
 export default defineCatalogPage({
   component: 'PropsTable',
   group: 'Components',
+  standalone: 'Exported on its own, so a catalog can use it outside ReferenceDetails.',
   whenToUse: 'One prop\'s row, stacked so a long union type has the full width to wrap into. ReferenceDetails already lays these out for a page\'s whole props list; reach for this directly only when building your own props box.',
   source: '../native/catalog/PropsTable.tsx',
   specimenSize: 'page',

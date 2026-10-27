@@ -70,6 +70,7 @@ const longTitleBlock = (
 export default defineCatalogPage({
   component: 'SectionBlock',
   group: 'Components',
+  standalone: 'Exported on its own, so a catalog can use it outside CatalogShell.',
   whenToUse: 'A whole catalog page — heading, specimen blocks, and reference details. CatalogShell renders one for the selected page, so use it standalone only to embed a single page inside a host screen, as this catalog\'s own SectionBlock page does.',
   source: '../native/catalog/SectionBlock.tsx',
   composedOf: [

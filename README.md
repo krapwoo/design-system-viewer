@@ -132,7 +132,7 @@ identified.
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
-and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `starterKit` (new-project only —
+and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `starterKit` (new-project only —
 records the kit's version), `updateCheck`, `doctor` — see `config/index.ts`'s `DsViewerConfig` for
 each field's exact meaning. Write a page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same
 shape as a `SectionDef`, minus `id`/`path`/`props`, plus `component`, `group`, and `propNotes`).
@@ -495,6 +495,13 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   title, not the id — so "Control heights" sorts under "C", not under whatever the id starts with.
 - **Point token pages at their token file.** A token page has no component, so its Source would be
   the page file; set `source: 'src/design-system/tokens.ts'` (project-relative) instead.
+- **Parts and empty pages.** `doctor` warns about a page that is only a built-in part of one other
+  page (`part-own-page`) and about a page that shows nothing (`nothing-to-show`); see the rule list
+  under `doctor`. To keep such a page on purpose, set `standalone: '<why>'`, for example
+  `standalone: 'Not a part of GitFileCard; it draws its own counts.'`. The reason must be non-blank
+  and is only a note in the source — the viewer ignores it. Family and group pages, token pages and
+  `navigation: 'reference'` pages are never checked. Both checks count `composedOf` written on a
+  family or group member as well as on a page.
 - **Coverage only counts the component's own options.** `doctor`'s `option-not-covered` checks
   string-literal unions declared in the component's own folder or a token folder. A union
   declared in another component's folder, such as a shared `IconName`, is that component's
@@ -905,6 +912,23 @@ Button
     non-`inWhole` section, naming every one of them so you can act without opening the file. Give
     each its own catalog page and name it in the family's `relatedPages` list instead; the section
     keeps working until you do.
+  - `part-own-page` — a standalone page for a component that exactly one other page declares in
+    `composedOf` as `relationship: 'built-in'`, and that page doesn't list it as a member. Fold it
+    into that page's family, or record why it isn't part of it with `standalone`. A component built
+    into two or more pages is exempt, and `'slot'`/`'related'` entries never count. Pages in a pattern
+    group (example screens built from components) never count as the whole: by default the group
+    named `Patterns`; set `patternGroups` in `ds-viewer.config.ts` to name your own (e.g.
+    `patternGroups: ['Screens']`).
+  - `nothing-to-show` — a plain page with no variants, states, `render` or comparison, and no
+    members or token content (`previewWidths` alone doesn't count; it only sizes `render`). The
+    message names the pages that list it in `composedOf` — on the page or on one of its members —
+    or says only pattern pages use it, or that nothing does. List it as a documentation-only part
+    of a page that uses it, set `navigation: 'reference'`, or add a `standalone` reason. A page
+    whose specimens can't be read literally is never reported. A component page with no specimens
+    usually also gets `component-no-examples` (unless the component is documented elsewhere, on
+    another page or as a family member); the two say different things (no examples vs. no reason to
+    be its own page) and clear together once it has a specimen.
+  - `standalone-reason-empty` — `standalone` is blank, so it records no reason and opts nothing out.
 
   The catalog also warns at render time when a page under-declares the width its examples need.
   A `PhoneFrame` given a cell narrower than the 375px device scales the whole phone down, and its

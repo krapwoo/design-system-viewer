@@ -16,6 +16,9 @@ export interface DsViewerConfig {
   pages?: string[];
   /** Sidebar group display order; groups not listed here follow alphabetically. */
   groupOrder?: string[];
+  /** Sidebar groups whose pages are patterns: example screens built from components. `doctor`
+   *  never treats a pattern page as the whole a component is a part of. @default ['Patterns'] */
+  patternGroups?: string[];
   /** Starter-kit projects only. `root` is the folder `init --new` copied the kit into (default
    *  `src/ds`); absent on a config written before 0.4, in which case `cli/kitRoot.ts` infers it
    *  from the first `components` glob instead. */

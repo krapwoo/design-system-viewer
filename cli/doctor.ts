@@ -539,6 +539,155 @@ function checkMissingComposition(pages: StaticPage[], components: ComponentRecor
   return issues;
 }
 
+/** #66: a page is a family or group (it has `members`) — presence, so a page whose `members` could
+ *  not be read is still never treated as a plain page. */
+function hasMembers(page: StaticPage): boolean {
+  return page.hasMembers === true || Boolean(page.members && page.members.length > 0);
+}
+
+/** #66: a token page — a `tokenDefinition`, a token gallery, or token sections, by presence. */
+function isTokenPage(page: StaticPage): boolean {
+  return page.hasTokenDefinition === true || page.tokenDefinition !== undefined || page.tokenGallery === true
+    || page.hasExplicitTokenGallery === true || page.hasExplicitTokenSections === true || Boolean(page.tokenSectionTitles?.length);
+}
+
+/** #66: a non-blank `standalone` reason opts a page out of `part-own-page` and `nothing-to-show`. */
+function hasStandaloneReason(page: StaticPage): boolean {
+  return page.standalone !== undefined && page.standalone.trim() !== '';
+}
+
+/** #66: the pages the two structure rules consider — readable, plain (no members, not a token page),
+ *  browse-listed, and without a recorded `standalone` reason. */
+function isStructureCandidate(page: StaticPage): boolean {
+  return page.checkable && !hasMembers(page) && !isTokenPage(page) && page.navigation !== 'reference' && !hasStandaloneReason(page);
+}
+
+/** #66: the default `patternGroups` — the starter kit's own group for example screens. */
+export const DEFAULT_PATTERN_GROUPS: readonly string[] = ['Patterns'];
+
+/** #66: whether a page sits in a pattern group (case-insensitive). A pattern page uses components; it
+ *  is never the whole they are parts of. */
+function isPatternPage(page: StaticPage, patternGroups: readonly string[]): boolean {
+  const group = page.group?.trim().toLowerCase();
+  return group !== undefined && patternGroups.some((name) => name.trim().toLowerCase() === group);
+}
+
+/** #66 `standalone-reason-empty`: a `standalone` that is blank or whitespace records no reason, so it
+ *  is not an opt-out. */
+function checkStandaloneReason(pages: StaticPage[]): DoctorIssue[] {
+  return pages
+    .filter((page) => page.standalone !== undefined && page.standalone.trim() === '')
+    .map((page) => issue({
+      id: 'standalone-reason-empty', severity: 'warning', ...pageRef(page),
+      message: '`standalone` is empty, so it does not opt this page out of the structure checks.',
+      fix: "Write the reason, e.g. standalone: 'Not a part of GitFileCard; it draws its own counts.', or remove the field.",
+    }));
+}
+
+/** #66: one page's use of another component, from its own page-level `composedOf` or from one of
+ *  its family/group members' `composedOf` (families keep composition on their members). */
+interface StructureUse { host: StaticPage; relationship?: string }
+
+/** #66: every page that uses one of `names`, excluding `self`, deduplicated by host page (a page
+ *  counts once however many of its entries name the component). A built-in entry anywhere on the
+ *  host wins over a non-built-in one. */
+function usesOf(pages: StaticPage[], self: StaticPage, names: ReadonlySet<string>): StructureUse[] {
+  const byHost = new Map<StaticPage, StructureUse>();
+  for (const host of pages) {
+    if (host === self) continue;
+    const entries = [...(host.composedOf ?? []), ...(host.members ?? []).flatMap((member) => member.composedOf ?? [])];
+    for (const entry of entries) {
+      if (!names.has(entry.component)) continue;
+      const known = byHost.get(host);
+      if (!known || (known.relationship !== 'built-in' && entry.relationship === 'built-in')) byHost.set(host, { host, relationship: entry.relationship });
+    }
+  }
+  return [...byHost.values()];
+}
+
+/** #66: the names a page answers to — its id and its component. */
+function pageNames(page: StaticPage): Set<string> {
+  return new Set([resolvePageId(page, page.file), ...(page.component ? [page.component] : [])]);
+}
+
+/** #66: whether some other page has composition this reader couldn't read — a page-level or
+ *  member-level `composedOf`, or a `members` list that wasn't read at all — so "only" and "nothing
+ *  uses it" can't be claimed outright. */
+function hasUnreadableComposition(pages: StaticPage[], self: StaticPage): boolean {
+  return pages.some((other) => other !== self && (
+    (other.hasComposedOf === true && other.composedOf === undefined)
+    || (other.hasMembers === true && other.members === undefined)
+    || Boolean(other.members?.some((member) => member.hasComposedOf === true && member.composedOf === undefined))
+  ));
+}
+
+const pageList = (pages: StaticPage[]): string => [...new Set(pages.map((p) => `\`${resolvePageId(p, p.file)}\``))].join(', ');
+
+/** #66 `part-own-page`: a candidate page whose component is declared `{ relationship: 'built-in' }`
+ *  (at page or member level) by exactly one other non-pattern page, which doesn't already list it
+ *  as a member (by member id, component or alias). Two or more users can't give it one owner, so it
+ *  is exempt; `slot`/`related`/missing/non-literal relationships never count. Reports; never infers
+ *  an owner or a relationship. */
+function checkPartOwnPage(pages: StaticPage[], patternGroups: readonly string[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!isStructureCandidate(page)) continue;
+    const names = pageNames(page);
+    const owners = usesOf(pages, page, names)
+      .filter((use) => use.relationship === 'built-in' && !isPatternPage(use.host, patternGroups))
+      .map((use) => use.host);
+    if (owners.length !== 1) continue;
+    const owner = owners[0];
+    if (owner.members?.some((member) => names.has(member.id) || (member.component !== undefined && names.has(member.component))
+      || member.aliases?.some((alias) => names.has(alias)))) continue;
+    const ownerId = resolvePageId(owner, owner.file);
+    const id = resolvePageId(page, page.file);
+    const caveat = hasUnreadableComposition(pages, page) ? ' (Some pages\' `composedOf` could not be read, so another user may exist.)' : '';
+    issues.push(issue({
+      id: 'part-own-page', severity: 'warning', ...pageRef(page),
+      message: `\`${id}\` is a built-in part of \`${ownerId}\` only, but has its own page.${caveat}`,
+      fix: `List it as a part in ${ownerId}'s family (\`members\`/\`sections\`), or set \`standalone: '<reason>'\` if it is not really part of ${ownerId}.`,
+    }));
+  }
+  return issues;
+}
+
+/** #66 `nothing-to-show`: a candidate page with no variants, states, comparison or `render`. A page
+ *  this reader could not fully read is never a candidate (`checkable`), so "nothing" is only claimed
+ *  about a page that was read in full. `previewWidths` alone is not content: it only sizes `render`. */
+function checkNothingToShow(pages: StaticPage[], patternGroups: readonly string[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!isStructureCandidate(page)) continue;
+    const hasSpecimens = Boolean(page.comparison) || Boolean(page.variantsItems?.length) || Boolean(page.statesItems?.length) || page.hasRender === true;
+    if (hasSpecimens) continue;
+    const id = resolvePageId(page, page.file);
+    const hosts = usesOf(pages, page, pageNames(page)).map((use) => use.host);
+    const users = hosts.filter((host) => !isPatternPage(host, patternGroups));
+    const patternUsers = hosts.filter((host) => isPatternPage(host, patternGroups));
+    const unreadable = hasUnreadableComposition(pages, page);
+    const base = { id: 'nothing-to-show' as const, severity: 'warning' as const, ...pageRef(page) };
+    const otherFix = "Add a specimen, set `navigation: 'reference'`, or `standalone: '<reason>'`.";
+    if (users.length > 0) {
+      const alsoPatterns = patternUsers.length > 0 ? ` Pattern pages also use it (${pageList(patternUsers)}).` : '';
+      issues.push(issue({ ...base,
+        message: `\`${id}\` shows no specimens. It is used by ${pageList(users)}.${alsoPatterns}`,
+        fix: "List it on that page as a documentation-only part, or set `navigation: 'reference'` to keep it reachable through Source reference search without a browse entry, or `standalone: '<reason>'`.",
+      }));
+    } else if (patternUsers.length > 0) {
+      issues.push(issue({ ...base, message: `\`${id}\` shows no specimens. Only pattern pages use it (${pageList(patternUsers)}).`, fix: otherFix }));
+    } else {
+      issues.push(issue({ ...base,
+        message: unreadable
+          ? `\`${id}\` shows no specimens, and no page whose \`composedOf\` doctor could read uses it.`
+          : `\`${id}\` shows no specimens and no other page uses it.`,
+        fix: otherFix,
+      }));
+    }
+  }
+  return issues;
+}
+
 /** The viewer exports that frame an example as a phone (or another bounded document), so an
  *  overlay that portals to the document body opens inside it instead of over the catalog. */
 const DEVICE_FRAME_EXPORTS = ['PhoneFrame', 'OverlayDemo', 'PhoneScreen', 'BoundedOverlayViewport'];
@@ -997,7 +1146,12 @@ function checkTokenDefinitionAliases(pages: StaticPage[]): DoctorIssue[] {
 }
 
 /** Every page-scoped issue, from every rule above. */
-export function collectIssues(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
+export function collectIssues(
+  pages: StaticPage[],
+  components: ComponentRecord[],
+  options: { patternGroups?: readonly string[] } = {},
+): DoctorIssue[] {
+  const patternGroups = options.patternGroups ?? DEFAULT_PATTERN_GROUPS;
   return [
     ...checkParseErrors(pages),
     ...checkNotCheckable(pages),
@@ -1009,6 +1163,9 @@ export function collectIssues(pages: StaticPage[], components: ComponentRecord[]
     ...checkDegenerateGridAxis(pages),
     ...checkComponentPages(pages, components),
     ...checkMissingComposition(pages, components),
+    ...checkStandaloneReason(pages),
+    ...checkPartOwnPage(pages, patternGroups),
+    ...checkNothingToShow(pages, patternGroups),
     ...checkMissingWorkingPreview(pages, components),
     ...checkPreviewOnlyPages(pages),
     ...checkFamilyMembers(pages, components),
@@ -1200,7 +1357,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
     : undefined;
 
   let issues = [
-    ...collectIssues(pages, components),
+    ...collectIssues(pages, components, { patternGroups: config.patternGroups }),
     ...checkPageTypeErrors(pages, { fallbackPaths, hostRoot: config.projectRoot }),
     ...checkOverlaysFramed(pages, components, config.projectRoot),
     ...collectGlobalIssues({ syncWarnings: syncResult.warnings, tokenFileCount }),

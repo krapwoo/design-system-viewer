@@ -166,10 +166,11 @@ export interface StaticPage {
    *  built with `.map()`) is given the same "never a partial read" benefit of the doubt as any
    *  other not-literally-checkable field, rather than risk a false "missing" claim. */
   hasComposedOf?: boolean;
-  /** `ComposedOfEntry.component` names only (design §4: never role/relationship, which `doctor`'s
-   *  comparison against `ComponentRecord.composedOfCandidates` never needs) — present only when
-   *  `composedOf` is itself a literal array of object literals, each with a literal `component`. */
-  composedOf?: { component: string }[];
+  /** `ComposedOfEntry.component` names, plus `relationship` when it is a string literal (#66: the
+   *  structure rules count only a literal `'built-in'`; a non-literal relationship stays unset and
+   *  never counts). `role` is never read. Present only when `composedOf` is itself a literal array
+   *  of object literals, each with a literal `component`. */
+  composedOf?: StaticComposedOfEntry[];
   /** `CatalogPageInput.intentionalStaticPreview.reason`, literal only — a non-literal reason is
    *  left unset (not fabricated, not a "not checkable" penalty, same leniency as `whenToUse`/`a11y`
    *  presence checks: this never affects `page.checkable`). */
@@ -237,6 +238,16 @@ export interface StaticPage {
    *  established layout-checkability posture `previewLayout`/`propNotes` already use), rather than
    *  a new, separate "not checkable" rule. */
   tokenDefinition?: StaticTokenDefinition;
+  /** #66: `CatalogPageInput.standalone`, literal only. The reason is kept as authored (possibly
+   *  blank — doctor's `standalone-reason-empty` reports that); a non-literal value is left unset,
+   *  never a "not checkable" penalty. */
+  standalone?: string;
+}
+
+/** One `composedOf` entry, read down to `component` and (when literal) `relationship`. */
+export interface StaticComposedOfEntry {
+  component: string;
+  relationship?: string;
 }
 
 /** One section of a family page, read down to just what `cli/doctor.ts` needs: `label`/`kind`/
@@ -270,7 +281,10 @@ export interface StaticMember {
    *  unknown-name check (mirroring `buildCatalogSections`'s `validateComposedOf`) simply has
    *  nothing to check in either case, the same "never a partial read" leniency the page-level field
    *  already gets. */
-  composedOf?: { component: string }[];
+  composedOf?: StaticComposedOfEntry[];
+  /** #66: whether the member authored `composedOf` at all (presence only), so `doctor` can tell an
+   *  unread member-level `composedOf` from none. */
+  hasComposedOf?: boolean;
   /** Presence-only checks, exactly like the page-level `hasWhenToUse`/`hasA11y` above — `doctor`
    *  never needs either value, only whether the member authored one at all. */
   hasWhenToUse: boolean;
@@ -523,6 +537,9 @@ function readStaticPage(file: string): StaticPage {
     }
   }
 
+  const standaloneProp = findProp(pageObject, 'standalone');
+  if (standaloneProp) page.standalone = stringLiteral(resolve(standaloneProp.initializer, consts, new Set()));
+
   const tokenDefinitionProp = findProp(pageObject, 'tokenDefinition');
   page.hasTokenDefinition = tokenDefinitionProp !== undefined;
   if (tokenDefinitionProp) {
@@ -611,6 +628,7 @@ function readFamilyMembers(
       parent,
       aliases,
       composedOf,
+      hasComposedOf: composedOfProp !== undefined,
       hasWhenToUse: findProp(resolvedElement, 'whenToUse') !== undefined,
       hasA11y: findProp(resolvedElement, 'a11y') !== undefined,
       hasExamples: Boolean(variants.items?.length) || Boolean(states.items?.length) || Boolean(comparison),
@@ -648,21 +666,22 @@ function readSections(node: ts.Expression, consts: Map<string, ts.Expression>): 
   return sections;
 }
 
-/** A literal array of `ComposedOfEntry`-shaped object literals, read down to just `component`
- *  (design §4: role/relationship are authored prose `doctor` never needs for its missing-
- *  composition comparison). Undefined — not an empty array — for anything that isn't itself a
+/** A literal array of `ComposedOfEntry`-shaped object literals, read down to `component` and a
+ *  literal `relationship` (a non-literal one is left off the entry; `role` is authored prose
+ *  `doctor` never needs). Undefined — not an empty array — for anything that isn't itself a
  *  literal array, or whose element isn't an object literal with a literal `component`: `doctor`
  *  must never mistake "couldn't read this" for "author declared no composition here". */
-function readComposedOf(node: ts.Expression, consts: Map<string, ts.Expression>): { component: string }[] | undefined {
+function readComposedOf(node: ts.Expression, consts: Map<string, ts.Expression>): StaticComposedOfEntry[] | undefined {
   const resolved = resolve(node, consts, new Set());
   if (!ts.isArrayLiteralExpression(resolved)) return undefined;
-  const entries: { component: string }[] = [];
+  const entries: StaticComposedOfEntry[] = [];
   for (const element of resolved.elements) {
     const resolvedElement = resolve(element, consts, new Set());
     if (!ts.isObjectLiteralExpression(resolvedElement)) return undefined;
     const component = propertyStringLiteral(resolvedElement, 'component', consts);
     if (component === undefined) return undefined;
-    entries.push({ component });
+    const relationship = propertyStringLiteral(resolvedElement, 'relationship', consts);
+    entries.push(relationship === undefined ? { component } : { component, relationship });
   }
   return entries;
 }

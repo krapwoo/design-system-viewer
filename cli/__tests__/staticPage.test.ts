@@ -396,8 +396,8 @@ test('a file whose own AST walk throws (not just an unreadable file) still yield
 });
 
 // Guided intelligence design §4 / plan Task 3 — reading a page's own authored `composedOf` names
-// (never role/relationship, which `doctor` never needs for the missing-composition comparison).
-test('reads a literal composedOf array\'s component names', () => {
+// plus (#66) a literal `relationship`; `role` is never read.
+test('reads a literal composedOf array\'s component names and literal relationships', () => {
   const file = writePage(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
     export default defineCatalogPage({
@@ -407,8 +407,40 @@ test('reads a literal composedOf array\'s component names', () => {
   `);
   const [page] = readStaticPages([file]);
   assert.equal(page.hasComposedOf, true);
-  assert.deepEqual(page.composedOf, [{ component: 'Button' }, { component: 'Icon' }]);
+  assert.deepEqual(page.composedOf, [{ component: 'Button', relationship: 'built-in' }, { component: 'Icon', relationship: 'built-in' }]);
   rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a non-literal relationship is left unset on its entry and the page stays checkable', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { REL } from './rel';
+    export default defineCatalogPage({
+      component: 'Toast', group: 'Components', description: 'x',
+      composedOf: [{ component: 'Button', relationship: REL }, { component: 'Icon', relationship: 'slot' }, { component: 'Badge' }],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.deepEqual(page.composedOf, [{ component: 'Button' }, { component: 'Icon', relationship: 'slot' }, { component: 'Badge' }]);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('reads a literal standalone reason as authored, including a blank one', () => {
+  const read = (value: string) => {
+    const file = writePage(`
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x', standalone: ${value} });
+    `);
+    const [page] = readStaticPages([file]);
+    rmSync(path.dirname(file), { recursive: true, force: true });
+    return page;
+  };
+  assert.equal(read("'Draws its own counts.'").standalone, 'Draws its own counts.');
+  assert.equal(read("'  '").standalone, '  ');
+  const nonLiteral = read('REASON');
+  assert.equal(nonLiteral.standalone, undefined);
+  assert.equal(nonLiteral.checkable, true);
 });
 
 test('composedOf is undefined with no "not checkable" penalty when the page has none at all', () => {
@@ -725,11 +757,11 @@ test('reads members/whole/sections/aliases literally, flattening every section\'
     { label: 'Related', kind: 'blocks', members: ['ToastStandalone'], inWhole: false },
   ]);
   assert.deepEqual(page.members, [
-    { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
+    { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
     // V2c item 5: `variants: { items: [] }` has no real specimen — `hasExamples` must be false,
     // not just "the variants key is present".
-    { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasWhenToUse: true, hasA11y: true, hasExamples: false, anatomy: undefined },
-    { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
+    { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasComposedOf: false, hasWhenToUse: true, hasA11y: true, hasExamples: false, anatomy: undefined },
+    { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
   ]);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
@@ -755,7 +787,7 @@ test('reads a family member\'s own composedOf, the same literal-checkable way as
   `);
   const [page] = readStaticPages([file]);
   assert.equal(page.checkable, true);
-  assert.deepEqual(page.members?.find((m) => m.id === 'Toast')?.composedOf, [{ component: 'ToastBanner' }]);
+  assert.deepEqual(page.members?.find((m) => m.id === 'Toast')?.composedOf, [{ component: 'ToastBanner', relationship: 'built-in' }]);
   assert.equal(page.members?.find((m) => m.id === 'ToastBanner')?.composedOf, undefined);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });

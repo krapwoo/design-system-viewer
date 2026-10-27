@@ -47,6 +47,7 @@ const demoStyles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'SourceReferencePicker',
   group: 'Components',
+  standalone: 'Exported on its own, so a catalog can use it outside CatalogShell.',
   specimenSize: 'wide',
   source: '../native/catalog/SourceReferencePicker.tsx',
   hide: { props: true },

@@ -1321,3 +1321,17 @@ test('family-invalid never considers aliases on a plain page without tokenDefini
   const other = page({ id: 'OldPlain', group: 'Components' });
   assert.deepEqual(collectIssues([plainWithAlias, other], []).filter((i) => i.id === 'family-invalid'), []);
 });
+
+test('runDoctor passes config.patternGroups to the structure checks', () => {
+  const dir = makeProject(FULLY_COVERED_PAGE);
+  mkdirSync(path.join(dir, 'pages'), { recursive: true });
+  writeFileSync(path.join(dir, 'pages', 'Screen.catalog.tsx'), `
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ id: 'Screen', title: 'Screen', group: 'Screens', description: 'x', render: () => null,
+      composedOf: [{ component: 'Widget', relationship: 'built-in' }] });
+  `);
+  const count = (overrides: Partial<ResolvedConfig>) => runDoctor(configFor(dir, { pages: ['pages/*.catalog.tsx'], ...overrides })).issues.filter((i) => i.id === 'part-own-page').length;
+  assert.equal(count({}), 1, 'Screens is not a pattern group by default');
+  assert.equal(count({ patternGroups: ['Screens'] }), 0);
+  rmSync(dir, { recursive: true, force: true });
+});
