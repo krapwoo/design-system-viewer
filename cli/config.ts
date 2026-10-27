@@ -5,7 +5,7 @@ import { defineConfig, type DsViewerConfig } from '../config/index.ts';
 import type { ResolvedConfig } from './types.ts';
 
 const KNOWN_FIELDS = new Set<keyof DsViewerConfig>([
-  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'starterKit', 'updateCheck', 'doctor',
+  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'patternGroups', 'starterKit', 'updateCheck', 'doctor',
 ]);
 
 export interface LoadConfigResult {
@@ -51,6 +51,12 @@ export function loadConfig(configPath: string): LoadConfigResult {
     if (!KNOWN_FIELDS.has(key as keyof DsViewerConfig)) warnings.push(`Unknown config field "${key}" is ignored.`);
   }
 
+  let patternGroups: string[] | undefined;
+  if (raw.patternGroups !== undefined) {
+    if (Array.isArray(raw.patternGroups) && raw.patternGroups.every((name) => typeof name === 'string')) patternGroups = raw.patternGroups;
+    else warnings.push('"patternGroups" must be an array of group names; using the default [\'Patterns\'].');
+  }
+
   const config: DsViewerConfig = {
     name: raw.name ?? '',
     logo: raw.logo,
@@ -59,6 +65,7 @@ export function loadConfig(configPath: string): LoadConfigResult {
     tokens: raw.tokens ?? [],
     pages: raw.pages ?? [],
     groupOrder: raw.groupOrder ?? [],
+    patternGroups,
     starterKit: raw.starterKit,
     updateCheck: raw.updateCheck ?? true,
     doctor: raw.doctor ?? { strict: false },

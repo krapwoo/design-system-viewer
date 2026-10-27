@@ -41,6 +41,7 @@ const PILL_COMPARISON = grid(
 export default defineCatalogPage({
   component: 'Pill',
   group: 'Components',
+  standalone: 'A reusable kit component in its own right; PillRow is just the only kit component that uses it.',
   composedOf: [
     { component: 'Loading', role: "The spinner shown instead of the label and icon while loading is true.", relationship: 'built-in' },
   ],

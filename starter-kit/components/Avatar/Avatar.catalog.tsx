@@ -32,6 +32,7 @@ const AVATAR_COMPARISON = grid(
 export default defineCatalogPage({
   component: 'Avatar',
   group: 'Components',
+  standalone: 'A reusable kit component in its own right; EmptyState is just the only kit component that uses it.',
   whenToUse: 'A person or place\'s identity in a circle. Pass whatever you have: image, icon, or initials are tried in that order, so a missing image degrades to initials without leaving a gap.',
   specimenSize: 'compact',
   comparison: AVATAR_COMPARISON,

@@ -24,6 +24,7 @@ function Screen({ note, intentionalScale }: { note: string; intentionalScale?: b
 export default defineCatalogPage({
   component: 'PhoneFrame',
   group: 'Components',
+  standalone: 'Exported on its own, so a catalog can use it outside OverlayDemo.',
   source: '../native/catalog/PhoneFrame.tsx',
   hide: { props: true },
   description: 'A real phone screen for a live demo: an iPhone SE viewport (375 × 667 points), scaled down only when its cell is narrower — the content keeps laying out at the device\'s real size, so nothing reflows just because the cell shrank. In the browser viewer it opens its example in its own device-sized document, so overlays that portal to the page (React Native\'s `Modal`) open inside the phone, not over the catalog.',

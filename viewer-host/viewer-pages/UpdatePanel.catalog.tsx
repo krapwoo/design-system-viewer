@@ -23,6 +23,7 @@ const panel = (update: UpdateNotice | null, versionStatus: VersionStatus) => (
 export default defineCatalogPage({
   component: 'UpdatePanel',
   group: 'Components',
+  standalone: 'The reserved update page; CatalogShell mounts it by id rather than as a part.',
   whenToUse: 'The reserved update page (`#ds-viewer-update`) — the one page that talks to the local endpoint. CatalogShell mounts it by that reserved id rather than it being added as a catalog page, and nothing else should fetch `/update/status`.',
   source: '../native/catalog/UpdatePanel.tsx',
   // Wider than a phone (its column is 512px), so its examples use page-width cells.

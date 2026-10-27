@@ -22,6 +22,7 @@ const TOKEN_PAGE: SectionDef<'ReferenceDetailsDemo'> = { ...DEMO, tokenGallery: 
 export default defineCatalogPage({
   component: 'ReferenceDetails',
   group: 'Components',
+  standalone: 'Exported on its own, so a catalog can use it outside SectionBlock.',
   whenToUse: 'A page\'s props in their own full-width box, in two columns once there are four or more. SectionBlock renders one at the foot of every page, so use it directly only when composing a page yourself.',
   source: '../native/catalog/ReferenceDetails.tsx',
   composedOf: [
