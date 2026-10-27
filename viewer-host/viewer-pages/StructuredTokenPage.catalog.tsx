@@ -10,14 +10,24 @@ const FIXTURE: TokenDefinition = {
     {
       id: 'semantic',
       title: 'Semantic (fixture)',
-      desc: 'A named token, and a named token whose own value is platform-provided.',
+      desc: 'A named token, a named token whose own value is platform-provided, and a light/dark pair.',
       entries: [
         { id: 'brand', name: 'Brand', kind: 'colors', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#174dc6' } } } },
         {
           id: 'background', name: 'Background', kind: 'colors', role: 'Screen background',
           value: { provenance: 'platform', named: true, resolution: { status: 'unresolved', reason: 'Provided by the platform at runtime.', expression: 'UIColor.systemBackground' } },
         },
+        // #64 B3: a light/dark pair — two entries sharing one name, rendered as a single swatch.
+        { id: 'surfaceLight', name: 'Surface', kind: 'colors', appearance: 'light', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#ffffff' } } } },
+        { id: 'surfaceDark', name: 'Surface', kind: 'colors', appearance: 'dark', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#1c1c1e' } } } },
       ],
+      // #64 B1: a group inside a category — its own sub-heading, after the section's own entries.
+      groups: [{
+        id: 'brand-extended', title: 'Brand (extended)', desc: 'A sub-group of Semantic for brand-adjacent roles.',
+        entries: [
+          { id: 'brandHover', name: 'Brand hover', kind: 'colors', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#123a94' } } } },
+        ],
+      }],
     },
     {
       id: 'unresolved',
@@ -89,6 +99,7 @@ export default defineCatalogPage({
   source: '../native/catalog/StructuredTokenPage.tsx',
   specimenSize: 'page',
   hide: { props: true },
+  composedOf: [{ component: 'JumpRow', role: 'One chip per category, when there is more than one.', relationship: 'built-in' }],
   description:
     'A whole opted-in tokenDefinition\'s real entries, every section stacked — the real rendering path is SectionBlock\'s own "tokenSections" block case (StructuredTokenPage.tsx\'s own exported `tokenDefinitionSections`); this component is a direct, standalone preview of the same data. Every value shown here is a fixture, not a real design system\'s tokens.',
   whenToUse: 'A page opting into tokenDefinition never renders this directly — SectionBlock renders it automatically. Use it only for a direct preview outside that path.',

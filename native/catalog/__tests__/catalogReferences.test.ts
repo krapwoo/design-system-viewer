@@ -194,3 +194,33 @@ test('resolveReference: an unknown name is unresolved', () => {
   const entries = buildReferenceIndex([section({ id: 'Button', path: 'p' })]);
   assert.deepEqual(resolveReference('NoSuchThing', ['Button'], new Map(), entries), { kind: 'unresolved' });
 });
+
+// #63 A7: a group page's own `FamilyDef` has `whole: undefined` — `family?.members.find(m => m.id
+// === family.whole)` never matches, so every member (there being no whole to skip) gets its own
+// reference-index entry, exactly like a family's non-whole members already do, with no code change.
+const groupFamily: SectionDef['family'] = {
+  whole: undefined,
+  kind: 'group',
+  outline: new Map(),
+  sections: [],
+  members: [
+    { id: 'WidgetA', component: 'WidgetAComponent', source: 'a:1', path: 'a:1', description: 'd', relationship: 'Top', fidelity: 'documentation-only' },
+    { id: 'WidgetB', source: 'b:1', path: 'b:1', description: 'd', relationship: 'Top', fidelity: 'documentation-only' },
+  ],
+};
+
+test('buildReferenceIndex lists a group page\'s own entry plus one entry per member — no member is skipped as "the whole"', () => {
+  const entries = buildReferenceIndex([section({ id: 'Widgets', title: 'Widgets', family: groupFamily, path: 'src/Widgets.tsx' })]);
+  assert.equal(entries.filter((e) => e.pageId === 'Widgets' && e.memberId === undefined).length, 1);
+  assert.equal(entries.filter((e) => e.memberId === 'WidgetA').length, 1);
+  assert.equal(entries.filter((e) => e.memberId === 'WidgetB').length, 1);
+  assert.equal(entries.length, 3);
+});
+
+test('resolveReference: a group member\'s own component binding resolves to that member, not the page', () => {
+  const entries = buildReferenceIndex([section({ id: 'Widgets', family: groupFamily, path: 'p' })]);
+  assert.deepEqual(
+    resolveReference('WidgetAComponent', ['Widgets'], new Map(), entries),
+    { kind: 'address', pageId: 'Widgets', memberId: 'WidgetA' },
+  );
+});

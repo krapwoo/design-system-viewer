@@ -21,6 +21,9 @@ export interface CatalogPageInput<TId extends string = string> {
   description: string;
   whenToUse?: string;
   a11y?: string;
+  /** Page-level notes, shown as a "Notes" entry in the page's Quick reference (the page-level
+   *  counterpart of a family member's `notes`). */
+  notes?: string[];
   variants?: VariantSlot;
   states?: VariantSlot;
   render?: () => React.ReactNode;
@@ -234,6 +237,19 @@ function deriveTokenDefinition(page: {
       for (const entry of section.entries) {
         if (entry.kind !== def.kind) issues.push(`tokenDefinition section "${section.id}": entry "${entry.id}" has kind "${entry.kind}", but the page's kind is "${def.kind}".`);
       }
+      // #64 B1: groups inside a category — the same duplicate-id/kind-mismatch checks, scoped to
+      // each group's own entries, mirroring `tokenDefinition.ts`'s own `validateTokenDefinition`.
+      for (const id of duplicateIds((section.groups ?? []).map((g) => g.id))) {
+        issues.push(`tokenDefinition section "${section.id}" has more than one group with id "${id}".`);
+      }
+      for (const group of section.groups ?? []) {
+        for (const id of duplicateIds(group.entries.map((e) => e.id))) {
+          issues.push(`tokenDefinition section "${section.id}" group "${group.id}" has more than one entry with id "${id}".`);
+        }
+        for (const entry of group.entries) {
+          if (entry.kind !== def.kind) issues.push(`tokenDefinition section "${section.id}" group "${group.id}": entry "${entry.id}" has kind "${entry.kind}", but the page's kind is "${def.kind}".`);
+        }
+      }
     }
     for (const issueMsg of issues) console.error(`[Catalog] ${page.id}: ${issueMsg}`);
   }
@@ -291,12 +307,25 @@ export interface FamilyAnatomyLike {
  *  member in exactly one section; every parent resolving within the page with no cycles; member
  *  and alias ids unique catalog-wide and never colliding with a page id, except the whole (whose
  *  id equals its own page's id). Returns `[]` for a page without `members`. `allPageIds` and
- *  `otherMemberIds` are the ids used by every *other* page/member in the catalog. */
-export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<string>, otherMemberIds: ReadonlySet<string>): string[] {
+ *  `otherMemberIds` are the ids used by every *other* page/member in the catalog. #63 A1: a page
+ *  with neither `whole` nor `sections` is a *group* page, not a family — validated instead by
+ *  `validateGroup`; this function is a no-op for it (its own "both present" behavior and messages
+ *  are otherwise unchanged). A page with exactly one of the two stays a family-shape error, as
+ *  before. #63 A5: `externalPartIds` names every id this family's own `inWhole` sections list that
+ *  was resolved (catalog-wide, by the caller) to a real, validly-parented group-page member —
+ *  these are exempted from the "not a member of this page" check below; omit it (the default, `[]`)
+ *  to keep every existing call site's behavior byte-for-byte unchanged. */
+export function validateFamily(
+  page: FamilyPageLike,
+  allPageIds: ReadonlySet<string>,
+  otherMemberIds: ReadonlySet<string>,
+  externalPartIds: ReadonlySet<string> = new Set(),
+): string[] {
   const { members } = page;
   if (!members || members.length === 0) return [];
   const issues: string[] = [];
 
+  if (!page.whole && !page.sections) return issues; // A group page — see `validateGroup`.
   if (!page.whole || !page.sections) {
     issues.push(`Family "${page.id}": "members" requires both "whole" and "sections".`);
     return issues;
@@ -315,10 +344,17 @@ export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<str
   // here, rather than left to crash the renderer or silently occupy authored order in `numberFor`.
   // N6: a `list`-section member authored with a specimen — `FoldedRow` never renders one, so this
   // degrades to a silently dropped specimen rather than a crash, same as the unknown-id case.
+  const externalCountById = new Map<string, number>();
   for (const section of page.sections) {
     for (const id of section.members) {
       const resolved = byId.get(id);
       if (!resolved) {
+        // #63 A5: a validly-resolved external part — a group-page member, already checked by the
+        // caller against `memberLocations`/parent — is never reported as missing.
+        if (section.inWhole && externalPartIds.has(id)) {
+          externalCountById.set(id, (externalCountById.get(id) ?? 0) + 1);
+          continue;
+        }
         issues.push(`Family "${page.id}": section "${section.label}" lists "${id}", which is not a member of this page.`);
         continue;
       }
@@ -326,6 +362,11 @@ export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<str
         issues.push(`Family "${page.id}": "${id}" has specimens, but list sections show members as folded rows without specimens.`);
       }
     }
+  }
+
+  // An external part rendered twice would duplicate its row, React key and registered node.
+  for (const [id, count] of externalCountById) {
+    if (count > 1) issues.push(`Family "${page.id}": member "${id}" is in more than one section.`);
   }
 
   const sectionCountById = new Map<string, number>();
@@ -399,6 +440,15 @@ export function validateFamily(page: FamilyPageLike, allPageIds: ReadonlySet<str
           continue;
         }
         if (!byId.has(item.member)) {
+          // #63 A5: a resolved external part (numbered by the catalog-wide pre-pass, documented on a
+          // group page) may be named in the anatomy, exactly as its `inWhole` section may list it.
+          if (externalPartIds.has(item.member)) {
+            if (seenAnatomyMembers.has(item.member)) {
+              issues.push(`Family "${page.id}": anatomy lists member "${item.member}" more than once.`);
+            }
+            seenAnatomyMembers.add(item.member);
+            continue;
+          }
           issues.push(`Family "${page.id}": anatomy item "${item.member}" is not a member of this page.`);
           continue;
         }
@@ -510,6 +560,224 @@ export function numberFor(page: FamilyOutlineInput): Map<string, { number: strin
   }
 
   return outline;
+}
+
+/** #63 A4: numbers one group member's own parts — authored (array) order among siblings, `1`,
+ *  `2`, then `1.1`, … for children, exactly like `numberFor`'s own child assignment under a
+ *  family's whole — scoped to `topLevelId`'s own descendants among `members` (a group page has no
+ *  `sections` to scan, so "authored order" is simply the `members` array's own order). `topLevelId`
+ *  itself gets no number, the same way a family's whole never does. Lifted, not reimplemented, from
+ *  `numberFor`'s own `assignChildren`/cycle guard, re-anchored on one top-level member instead of
+ *  one page-wide whole. */
+export function numberForGroupMember(
+  topLevelId: string,
+  members: ReadonlyArray<Pick<CatalogMember, 'id' | 'parent'>>,
+): Map<string, { number: string; level: number }> {
+  const outline = new Map<string, { number: string; level: number }>();
+  const childrenOf = new Map<string, string[]>();
+  for (const m of members) {
+    if (m.parent === undefined) continue;
+    childrenOf.set(m.parent, [...(childrenOf.get(m.parent) ?? []), m.id]);
+  }
+  const assignChildren = (parentId: string, parentNumber: string, level: number, visited: Set<string>) => {
+    const kids = childrenOf.get(parentId) ?? [];
+    kids.forEach((childId, index) => {
+      if (visited.has(childId)) return;
+      visited.add(childId);
+      const number = `${parentNumber}.${index + 1}`;
+      outline.set(childId, { number, level: level + 1 });
+      assignChildren(childId, number, level + 1, visited);
+    });
+  };
+  const visited = new Set<string>([topLevelId]);
+  const kids = childrenOf.get(topLevelId) ?? [];
+  kids.forEach((childId, index) => {
+    if (visited.has(childId)) return;
+    visited.add(childId);
+    const number = String(index + 1);
+    outline.set(childId, { number, level: 2 });
+    assignChildren(childId, number, 2, visited);
+  });
+  return outline;
+}
+
+/** #63 A3/A6: the minimal shape `validateGroup` needs from a group page's own `members`. */
+export interface GroupMemberLike {
+  id: string;
+  parent?: string;
+  aliases?: string[];
+  /** #63 A4: only meaningful on a top-level member — see `CatalogMember.anatomy`. */
+  anatomy?: FamilyAnatomyLike;
+}
+
+export interface GroupPageLike {
+  id: string;
+  members?: GroupMemberLike[];
+  aliases?: string[];
+  /** #63 A1: forbidden on a group page — only ever checked for presence here, never for shape
+   *  (an author who sets a family-shaped `anatomy` object here still gets this one message, not a
+   *  second, confusing shape error). */
+  anatomy?: unknown;
+  /** Review F8: a group page has no "Related" layer, so a non-empty list here would silently never
+   *  render — reported as unused instead. Presence only, never shape. */
+  relatedPages?: readonly unknown[];
+}
+
+/** One group-page problem with the doctor rule it belongs to, decided where the issue is raised
+ *  (never by matching its message text): `group-anatomy-member` for an embedded `anatomy` problem
+ *  (A4), `family-invalid` for every other shape error. */
+export interface GroupIssue {
+  rule: 'family-invalid' | 'group-anatomy-member';
+  message: string;
+}
+
+/** Validates a group page (#63 A1/A3/A4/A6): no page-level `anatomy` and no `relatedPages` (a group page renders no Related list, so it is reported as unused); every `parent` resolves
+ *  either to a same-page member (checked for cycles, the same guard `validateFamily` already
+ *  lifts) or — A3's cross-page case — to a member known catalog-wide (`otherMemberIds`), never to
+ *  neither; member and alias ids unique catalog-wide, with no privileged "whole" exemption (a group
+ *  has none); and `anatomy` set only on a top-level member (one with no parent, or whose parent
+ *  isn't one of this page's own members), naming only that member's own descendants on this page.
+ *  Returns `[]` for a page without `members`. Mirrors `validateFamily`'s own contract and the same
+ *  `allPageIds`/`otherMemberIds` meaning (every *other* page's/member's id in the catalog). */
+export function validateGroupIssues(page: GroupPageLike, allPageIds: ReadonlySet<string>, otherMemberIds: ReadonlySet<string>): GroupIssue[] {
+  const { members } = page;
+  if (!members || members.length === 0) return [];
+  const issues: GroupIssue[] = [];
+  const shapeIssue = (message: string) => issues.push({ rule: 'family-invalid', message });
+  const anatomyIssue = (message: string) => issues.push({ rule: 'group-anatomy-member', message });
+  const byId = new Map(members.map((m) => [m.id, m]));
+
+  if (page.anatomy !== undefined) {
+    shapeIssue(`Group "${page.id}": page-level "anatomy" is not used on a group page — move it to the relevant top-level member instead.`);
+  }
+
+  if (page.relatedPages && page.relatedPages.length > 0) {
+    shapeIssue(`Group "${page.id}": "relatedPages" is not used on a group page (it renders no Related list) — name the related page in a member's "related" text or "composedOf" instead.`);
+  }
+
+  for (const m of members) {
+    if (m.parent === undefined) continue;
+    if (!byId.has(m.parent) && !otherMemberIds.has(m.parent)) {
+      shapeIssue(`Group "${page.id}": member "${m.id}" has an unknown parent "${m.parent}".`);
+      continue;
+    }
+    // Lifted verbatim from `validateFamily`'s own cycle guard: `byId.get(current)?.parent` already
+    // degrades to `undefined` (loop ends, no cycle) the moment `current` resolves off this page —
+    // exactly A3's cross-page top-level case, so no change is needed for that case here.
+    const seen = new Set([m.id]);
+    let current: string | undefined = m.parent;
+    let cycle = false;
+    while (current !== undefined) {
+      if (seen.has(current)) {
+        cycle = true;
+        break;
+      }
+      seen.add(current);
+      current = byId.get(current)?.parent;
+    }
+    if (cycle) shapeIssue(`Group "${page.id}": member "${m.id}" has a parent cycle.`);
+  }
+
+  const seenInPage = new Set<string>();
+  const checkId = (id: string, isMemberOrMemberAlias = true) => {
+    // `allPageIds` excludes this page, and `resolveRoute` matches page ids before aliases — so a
+    // member (or its alias) named like its own page could never be addressed.
+    if (isMemberOrMemberAlias && id === page.id) shapeIssue(`Group "${page.id}": id "${id}" collides with this group page's own id.`);
+    if (seenInPage.has(id)) shapeIssue(`Group "${page.id}": id "${id}" is used more than once on this page.`);
+    seenInPage.add(id);
+    if (allPageIds.has(id)) shapeIssue(`Group "${page.id}": id "${id}" collides with another page's id.`);
+    if (otherMemberIds.has(id)) shapeIssue(`Group "${page.id}": id "${id}" collides with another member or alias elsewhere in the catalog.`);
+  };
+  for (const m of members) {
+    checkId(m.id);
+    for (const alias of m.aliases ?? []) checkId(alias);
+  }
+  for (const alias of page.aliases ?? []) checkId(alias, false);
+
+  // A3/A4: a top-level member has no parent, or a parent not among this page's own members
+  // (resolved cross-page above). `anatomy` is only ever meaningful there.
+  const isTopLevel = (m: GroupMemberLike) => m.parent === undefined || !byId.has(m.parent);
+  const descendantsOf = (topLevelId: string): Set<string> => {
+    const result = new Set<string>();
+    const stack = [topLevelId];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      for (const m of members) {
+        if (m.parent === current && m.id !== topLevelId && !result.has(m.id)) {
+          result.add(m.id);
+          stack.push(m.id);
+        }
+      }
+    }
+    return result;
+  };
+  for (const m of members) {
+    if (!m.anatomy) continue;
+    if (!isTopLevel(m)) {
+      anatomyIssue(`Group "${page.id}": member "${m.id}" has "anatomy", but anatomy is only used on a top-level member.`);
+      continue;
+    }
+    const descendants = descendantsOf(m.id);
+    const seenAnatomyMembers = new Set<string>();
+    for (const group of m.anatomy.groups) {
+      for (const item of group.items) {
+        if (!('member' in item)) continue;
+        if (item.member === m.id) {
+          anatomyIssue(`Group "${page.id}": member "${m.id}": anatomy item "${item.member}" names itself.`);
+          continue;
+        }
+        if (!descendants.has(item.member)) {
+          anatomyIssue(`Group "${page.id}": member "${m.id}": anatomy item "${item.member}" is not one of its descendants on this page.`);
+          continue;
+        }
+        if (seenAnatomyMembers.has(item.member)) {
+          anatomyIssue(`Group "${page.id}": member "${m.id}": anatomy lists member "${item.member}" more than once.`);
+          continue;
+        }
+        seenAnatomyMembers.add(item.member);
+      }
+    }
+  }
+
+  return issues;
+}
+
+export function validateGroup(page: GroupPageLike, allPageIds: ReadonlySet<string>, otherMemberIds: ReadonlySet<string>): string[] {
+  return validateGroupIssues(page, allPageIds, otherMemberIds).map((issue) => issue.message);
+}
+
+/** #63 A5/A6: where one catalog member id lives — every page that declares it as one of its own
+ *  `members` (never an alias), whether that page is itself a group page, and that member's own
+ *  `parent`. Built catalog-wide, once, by the caller (`buildCatalogSections`'s own pre-pass, or
+ *  `cli/doctor.ts`'s equivalent over `StaticPage[]`) — never a second, independent registry. */
+export interface MemberLocation {
+  pageId: string;
+  isGroupPage: boolean;
+  parent?: string;
+}
+
+/** #63 A5/A6: resolves one family `inWhole` section id that is not one of that family's own
+ *  `members` — a candidate external part — against `owners`, every catalog location that id
+ *  resolves to as a real member. Exactly one owner, itself a group page, whose own `parent` equals
+ *  `familyWhole`, is the only success; anything else is the validation issue A6 requires (zero or
+ *  multiple owners, an owner that isn't a group page, or a parent that doesn't match). Pure and
+ *  catalog-shape-agnostic — shared between `buildCatalogSections` (runtime) and `cli/doctor.ts`
+ *  (static), which each build `owners` from their own page representation. */
+export function resolveExternalPart(
+  id: string,
+  owners: ReadonlyArray<MemberLocation>,
+  familyWhole: string,
+): { pageId: string } | { issue: string } {
+  if (owners.length === 0) return { issue: `"${id}" is not a member of this page, and is not defined on any group page either.` };
+  if (owners.length > 1) {
+    return { issue: `"${id}" is defined as a member on more than one page (${owners.map((o) => o.pageId).join(', ')}).` };
+  }
+  const [owner] = owners;
+  if (!owner.isGroupPage) return { issue: `"${id}" is a member of "${owner.pageId}", which is not a group page.` };
+  if (owner.parent !== familyWhole) {
+    return { issue: `"${id}"'s parent on "${owner.pageId}" ("${owner.parent ?? 'none'}") does not equal this family's whole "${familyWhole}".` };
+  }
+  return { pageId: owner.pageId };
 }
 
 function orderGroups<TId extends string>(groupIds: Map<string, TId[]>, groupOrder: string[] | undefined): NavGroup<TId>[] {
@@ -633,18 +901,87 @@ export function buildCatalogSections<TId extends string>(
 
   // Every id/alias a family page's own `members` and `aliases` use, keyed by page id — gathered up
   // front so `validateFamily` (above) can check catalog-wide uniqueness against every *other*
-  // page's ids.
+  // page's ids. #64 B5: also a tokenDefinition page's own `aliases` and each of its sections' own
+  // `aliases` (extending this same catalog-wide pool to tokenDefinition pages).
   const allPageIds = new Set(pages.map((page) => page.id));
   const familyIdsByPage = new Map<TId, Set<string>>();
   for (const page of pages) {
-    if (!page.members) continue;
+    if (!page.members && !page.tokenDefinition) continue;
     const ids = new Set<string>();
-    for (const member of page.members) {
+    for (const member of page.members ?? []) {
       ids.add(member.id);
       for (const alias of member.aliases ?? []) ids.add(alias);
     }
     for (const alias of page.aliases ?? []) ids.add(alias);
+    for (const section of page.tokenDefinition?.sections ?? []) for (const alias of section.aliases ?? []) ids.add(alias);
     familyIdsByPage.set(page.id, ids);
+  }
+
+  // #63 A5/A6: catalog-wide — where every member id lives, so each family's `inWhole` sections can
+  // tell an external part (a group-page member) from a genuinely unknown id. Built once, up front,
+  // the same way `familyIdsByPage` already is above.
+  const memberLocations = new Map<string, MemberLocation[]>();
+  for (const p of pages) {
+    const pHasMembers = p.members !== undefined && p.members.length > 0;
+    const pIsGroup = pHasMembers && p.whole === undefined && p.sections === undefined;
+    for (const member of p.members ?? []) {
+      memberLocations.set(member.id, [...(memberLocations.get(member.id) ?? []), { pageId: p.id, isGroupPage: pIsGroup, parent: member.parent }]);
+    }
+  }
+
+  // #63 A5: resolved once, per valid family, before the per-page pass below assembles any section
+  // — never by mutating an already-built section a second time (per the controller's own decision).
+  // `outlineByFamily` is this same pre-pass's own `numberFor` call, including a synthetic stub
+  // (`parent: page.whole`) per resolved external id so `numberFor`'s existing authored-order scan
+  // (which already walks each `inWhole` section's own `members` list) numbers it exactly like an
+  // own part, with no change to `numberFor` itself.
+  const externalIssues: string[] = [];
+  const externalPartsByFamily = new Map<TId, Map<string, { pageId: TId; title: string; fidelity?: CatalogMember['fidelity'] }>>();
+  const partOfByMemberId = new Map<string, { pageId: TId; title: string; number: string }>();
+  const outlineByFamily = new Map<TId, Map<string, { number: string; level: number }>>();
+  for (const page of pages) {
+    const pHasMembers = page.members !== undefined && page.members.length > 0;
+    if (!pHasMembers || page.whole === undefined || page.sections === undefined) continue; // not a valid family.
+    const byIdThisPage = new Set(page.members!.map((m) => m.id));
+    const externalResolutions = new Map<string, { pageId: TId }>();
+    for (const section of page.sections) {
+      if (!section.inWhole) continue;
+      for (const id of section.members) {
+        if (byIdThisPage.has(id) || externalResolutions.has(id)) continue;
+        const owners = memberLocations.get(id);
+        if (!owners) continue; // genuinely unknown — `validateFamily`'s own "not a member" error covers it.
+        const resolution = resolveExternalPart(id, owners, page.whole);
+        if ('issue' in resolution) externalIssues.push(`Family "${page.id}": ${resolution.issue}`);
+        else externalResolutions.set(id, { pageId: resolution.pageId as TId });
+      }
+    }
+    const membersForNumbering = [...page.members!, ...[...externalResolutions.keys()].map((id) => ({ id, parent: page.whole }))];
+    const outline = numberFor({ ...page, members: membersForNumbering });
+    outlineByFamily.set(page.id, outline);
+    if (externalResolutions.size === 0) continue;
+    const familyTitle = String(page.title ?? page.id);
+    const externalMap = new Map<string, { pageId: TId; title: string; fidelity?: CatalogMember['fidelity'] }>();
+    for (const [id, resolution] of externalResolutions) {
+      const ownerPage = pages.find((p) => p.id === resolution.pageId);
+      externalMap.set(id, {
+        pageId: resolution.pageId,
+        title: String(ownerPage?.title ?? resolution.pageId),
+        fidelity: ownerPage?.members?.find((m) => m.id === id)?.fidelity,
+      });
+      const number = outline.get(id)?.number;
+      if (number) partOfByMemberId.set(id, { pageId: page.id, title: familyTitle, number });
+    }
+    externalPartsByFamily.set(page.id, externalMap);
+  }
+  if ((globalThis as { __DEV__?: boolean }).__DEV__) {
+    for (const issueMsg of externalIssues) console.error(`[Catalog] ${issueMsg}`);
+  }
+
+  // #64 B4: every page whose `tokenDefinition.kind` matches another page's — one page per kind.
+  const tokenKindPages = new Map<TokenKind, TId[]>();
+  for (const page of pages) {
+    if (!page.tokenDefinition) continue;
+    tokenKindPages.set(page.tokenDefinition.kind, [...(tokenKindPages.get(page.tokenDefinition.kind) ?? []), page.id]);
   }
 
   // Design §4 "duplicate-page-id" rule's viewer-side equivalent — this is the one place in the
@@ -670,9 +1007,36 @@ export function buildCatalogSections<TId extends string>(
           console.warn(`[Catalog] ${page.id}.${member.id}: ${issue}`);
         }
       }
+      if (page.tokenDefinition) {
+        // #64 B4: one page per kind — mirrors `cli/doctor.ts`'s `token-definition-duplicate-kind`.
+        const samekind = (tokenKindPages.get(page.tokenDefinition.kind) ?? []).filter((id) => id !== page.id);
+        if (samekind.length > 0) {
+          console.error(`[Catalog] ${page.id}: tokenDefinition kind "${page.tokenDefinition.kind}" is also used by ${samekind.join(', ')}.`);
+        }
+        // #64 B5: a tokenDefinition page's own page-level/section aliases join the same
+        // catalog-wide "one owner" pool a family's own ids/aliases already check against —
+        // mirrors `cli/doctor.ts`'s own `checkTokenDefinitionAliases` (rule id `family-invalid`).
+        const otherPageIdsForTokenDef = new Set<string>([...allPageIds].filter((id) => id !== page.id));
+        const otherIdsForTokenDef = new Set<string>();
+        for (const [id, ids] of familyIdsByPage) if (id !== page.id) for (const x of ids) otherIdsForTokenDef.add(x);
+        const seenAliases = new Set<string>();
+        const checkTokenDefAlias = (alias: string) => {
+          if (seenAliases.has(alias)) console.error(`[Catalog] Page "${page.id}": id "${alias}" is used more than once on this page.`);
+          seenAliases.add(alias);
+          if (otherPageIdsForTokenDef.has(alias)) console.error(`[Catalog] Page "${page.id}": id "${alias}" collides with another page's id.`);
+          if (otherIdsForTokenDef.has(alias)) console.error(`[Catalog] Page "${page.id}": id "${alias}" collides with another member or alias elsewhere in the catalog.`);
+        };
+        for (const alias of page.aliases ?? []) checkTokenDefAlias(alias);
+        for (const section of page.tokenDefinition.sections) for (const alias of section.aliases ?? []) checkTokenDefAlias(alias);
+      }
     }
-    const isFamily = page.members !== undefined && page.members.length > 0;
-    const componentName = isFamily ? undefined : (page.component ?? page.id);
+    const hasMembers = page.members !== undefined && page.members.length > 0;
+    // #63 A1: a page with neither `whole` nor `sections` is a group, not a family; a page with
+    // exactly one of the two stays the same family-shape error `validateFamily` already reports,
+    // via `isFamily` (unchanged from before this field existed).
+    const isGroup = hasMembers && page.whole === undefined && page.sections === undefined;
+    const isFamily = hasMembers && !isGroup;
+    const componentName = hasMembers ? undefined : (page.component ?? page.id);
     const component = componentName ? componentByName.get(componentName) : undefined;
     addToGroup(page.group, page.id);
 
@@ -687,7 +1051,8 @@ export function buildCatalogSections<TId extends string>(
         ...member,
         hasSpecimens: Boolean(member.variants?.items?.length || member.states?.items?.length || member.comparison),
       }));
-      const issues = validateFamily({ ...page, members, anatomy: page.anatomy, relatedPages: page.relatedPages }, otherPageIds, otherMemberIds);
+      const externalPartIds = new Set(externalPartsByFamily.get(page.id)?.keys() ?? []);
+      const issues = validateFamily({ ...page, members, anatomy: page.anatomy, relatedPages: page.relatedPages }, otherPageIds, otherMemberIds, externalPartIds);
       if ((globalThis as { __DEV__?: boolean }).__DEV__) {
         for (const issue of issues) console.error(`[Catalog] ${issue}`);
       }
@@ -698,12 +1063,16 @@ export function buildCatalogSections<TId extends string>(
       family = {
         whole: page.whole!,
         sections: page.sections!,
-        outline: numberFor(page),
+        // #63 A5: the pre-pass above already ran `numberFor` with every valid external part's
+        // synthetic stub included; the "exactly one of whole/sections" invalid shape never reaches
+        // that pre-pass, so it falls back to the same plain `numberFor(page)` call this always was.
+        outline: outlineByFamily.get(page.id) ?? numberFor(page),
         notShown: page.notShown,
         aliases: page.aliases,
         apiLabel: page.apiLabel,
         anatomy: page.anatomy,
         relatedPages: page.relatedPages,
+        externalParts: externalPartsByFamily.get(page.id),
         members: page.members!.map((member) => {
           const memberComponent = member.component ? componentByName.get(member.component) : undefined;
           // Dedupe by `component`, keeping the first role: page-level and whole-member `composedOf`
@@ -716,6 +1085,51 @@ export function buildCatalogSections<TId extends string>(
             props: memberComponent ? mergePropNotes(memberComponent, undefined) : undefined,
             path: memberComponent?.file ?? member.source,
             alsoUsedBy,
+          };
+        }),
+      };
+    } else if (isGroup) {
+      const otherPageIds = new Set([...allPageIds].filter((id) => id !== page.id));
+      const otherMemberIds = new Set<string>();
+      for (const [id, ids] of familyIdsByPage) if (id !== page.id) for (const memberId of ids) otherMemberIds.add(memberId);
+      const groupMembers = page.members!.map((member) => ({
+        ...member,
+        hasSpecimens: Boolean(member.variants?.items?.length || member.states?.items?.length || member.comparison),
+      }));
+      const groupIssues = validateGroup({ id: page.id, members: groupMembers, aliases: page.aliases, anatomy: page.anatomy, relatedPages: page.relatedPages }, otherPageIds, otherMemberIds);
+      if ((globalThis as { __DEV__?: boolean }).__DEV__) {
+        for (const issue of groupIssues) console.error(`[Catalog] ${issue}`);
+      }
+      // #63 A4: one top-level member is any member with no parent, or whose parent isn't one of
+      // this page's own members (A3's cross-page case) — its own parts are numbered independently
+      // of every other top-level member's (`numberForGroupMember`), then merged into one outline
+      // map the same shape a family's own `outline` already has.
+      const byIdThisPage = new Set(page.members!.map((m) => m.id));
+      const groupOutline = new Map<string, { number: string; level: number }>();
+      for (const m of page.members!) {
+        if (m.parent !== undefined && byIdThisPage.has(m.parent)) continue; // not top-level.
+        for (const [id, entry] of numberForGroupMember(m.id, page.members!)) groupOutline.set(id, entry);
+      }
+      const pageMemberIds = new Set(page.members!.map((m) => m.id));
+      family = {
+        kind: 'group',
+        whole: undefined,
+        sections: [],
+        outline: groupOutline,
+        notShown: page.notShown,
+        aliases: page.aliases,
+        apiLabel: page.apiLabel,
+        relatedPages: page.relatedPages,
+        members: page.members!.map((member) => {
+          const memberComponent = member.component ? componentByName.get(member.component) : undefined;
+          const alsoUsedBy = dedupeAlsoUsedBy(usedByTarget.get(member.id) ?? [], pageMemberIds);
+          const partOf = partOfByMemberId.get(member.id);
+          return {
+            ...member,
+            props: memberComponent ? mergePropNotes(memberComponent, undefined) : undefined,
+            path: memberComponent?.file ?? member.source,
+            alsoUsedBy,
+            ...(partOf ? { partOf } : {}),
           };
         }),
       };
@@ -735,6 +1149,7 @@ export function buildCatalogSections<TId extends string>(
       whenToUse: page.whenToUse,
       props: component ? mergePropNotes(component, page.propNotes) : undefined,
       a11y: page.a11y,
+      notes: page.notes,
       variants: page.variants,
       states: page.states,
       render: page.render,
@@ -744,6 +1159,8 @@ export function buildCatalogSections<TId extends string>(
       // #61: the real entry data `SectionBlock.tsx` renders instead of the placeholder sections
       // above, when set — see `SectionDef.tokenDefinition`'s own doc comment.
       tokenDefinition: page.tokenDefinition,
+      // #64 B5: extends `page.aliases` to a tokenDefinition page too (see `SectionDef.tokenDefinitionAliases`).
+      tokenDefinitionAliases: page.tokenDefinition ? page.aliases : undefined,
       tokenColumns: page.tokenColumns,
       fullWidthLabel: page.fullWidthLabel,
       comparison: page.comparison,
@@ -757,13 +1174,13 @@ export function buildCatalogSections<TId extends string>(
       intentionalStaticPreview: page.intentionalStaticPreview,
       family,
       navigation: page.navigation,
-      // Family pages carry their own component binding per member (`FamilyDef.members[].component`
-      // isn't a field — a member names its binding via `CatalogMember.component` itself); only a
-      // normal page's own single binding is surfaced here.
-      component: isFamily ? undefined : component?.name,
-      // #60: see `SectionDef.alsoUsedBy` (rendered by `ReferenceDetails`'s `AlsoUsedByFact`) — a family page's "also
-      // used by" lives per member instead (`family.members[].alsoUsedBy`, above).
-      alsoUsedBy: isFamily ? undefined : dedupeAlsoUsedBy(usedByTarget.get(page.id) ?? [], new Set([page.id])),
+      // Family and group pages alike carry their own component binding per member
+      // (`FamilyDef.members[].component` isn't a field — a member names its binding via
+      // `CatalogMember.component` itself); only a normal page's own single binding is surfaced here.
+      component: hasMembers ? undefined : component?.name,
+      // #60: see `SectionDef.alsoUsedBy` (rendered by `ReferenceDetails`'s `AlsoUsedByFact`) — a family or group
+      // page's "also used by" lives per member instead (`family.members[].alsoUsedBy`, above).
+      alsoUsedBy: hasMembers ? undefined : dedupeAlsoUsedBy(usedByTarget.get(page.id) ?? [], new Set([page.id])),
     };
   });
 

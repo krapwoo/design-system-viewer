@@ -216,6 +216,18 @@ export interface StaticPage {
    *  same reasoning as `hasWhenToUse`) — used by `cli/doctor.ts`'s conflict rule regardless of
    *  whether the definition itself turned out to be literal-readable below. */
   hasTokenDefinition?: boolean;
+  /** #63 A1/A10: whether the page object has its own `anatomy` property at all (presence only) —
+   *  forbidden on a group page (`members` with no `whole`/`sections`); `cli/doctor.ts` uses this
+   *  presence check alone, never the value, the same reasoning `hasWhenToUse` already uses. A
+   *  family page's own page-level `anatomy` is unaffected — this field only drives the new
+   *  group-shape rule. */
+  hasAnatomy?: boolean;
+  /** Review F9: whether the page object authored a `whole` / `sections` property at all, whatever
+   *  its value. `whole`/`sections` themselves stay unset when not a literal (the page is then not
+   *  `checkable`), so only presence can tell a family page with a non-literal `whole` from a group
+   *  page (`members` with neither) — `cli/doctor.ts` classifies by presence. */
+  hasWhole?: boolean;
+  hasSections?: boolean;
   /** #61: `CatalogPageInput.tokenDefinition`, read down to `kind`/section `id`/`title`/`desc`/
    *  `wide` and each entry's own literal `id` (for duplicate detection) — never the entry's real
    *  value, which stays an opaque runtime import (design R4: "no blanket uncheckability of
@@ -267,6 +279,13 @@ export interface StaticMember {
    *  or `comparison` (item count, not mere presence of the key; see `readFamilyMembers`) —
    *  `doctor`'s per-member `component-no-examples` fires on `false`. */
   hasExamples: boolean;
+  /** #63 A4/A10: this member's own `anatomy` (only meaningful on a group page's top-level member),
+   *  read down to just the literal `member` ids its items name — never `other`/`description`/
+   *  `picture`, which `doctor`'s "names a non-descendant" rule never needs. `undefined` both when
+   *  the member has no `anatomy` at all, and when it authored one non-literally — the same "never
+   *  a partial read" leniency `relatedPages` already gets, so a non-literal `anatomy` never costs
+   *  the member its other checks. */
+  anatomy?: { memberIds: string[] };
 }
 
 const TRANSPILE_OPTIONS: ts.TranspileOptions = {
@@ -471,12 +490,14 @@ function readStaticPage(file: string): StaticPage {
     else page.members = members;
   }
   const wholeProp = findProp(pageObject, 'whole');
+  page.hasWhole = wholeProp !== undefined;
   if (wholeProp) {
     const whole = stringLiteral(resolve(wholeProp.initializer, consts, new Set()));
     if (whole === undefined) page.checkable = false;
     else page.whole = whole;
   }
   const sectionsProp = findProp(pageObject, 'sections');
+  page.hasSections = sectionsProp !== undefined;
   if (sectionsProp) {
     const sectionsRead = readSections(sectionsProp.initializer, consts);
     if (!sectionsRead) page.checkable = false;
@@ -490,6 +511,7 @@ function readStaticPage(file: string): StaticPage {
   }
   const relatedPagesProp = findProp(pageObject, 'relatedPages');
   if (relatedPagesProp) page.relatedPages = readRelatedPages(relatedPagesProp.initializer, consts);
+  page.hasAnatomy = findProp(pageObject, 'anatomy') !== undefined;
 
   const navigationProp = findProp(pageObject, 'navigation');
   if (navigationProp) {
@@ -524,8 +546,10 @@ function readStaticPage(file: string): StaticPage {
 }
 
 /** A literal array of string literals (or same-file `const` references to one) — undefined for
- *  anything else, including an array containing even one non-literal element. */
-function readStringLiteralArray(node: ts.Expression, consts: Map<string, ts.Expression>): string[] | undefined {
+ *  anything else, including an array containing even one non-literal element. Exported for
+ *  `cli/tokenDefinition.ts`'s own static read of a tokenDefinition section's `aliases` (#64 B5),
+ *  the same leniency every other string-literal-array field here already gets. */
+export function readStringLiteralArray(node: ts.Expression, consts: Map<string, ts.Expression>): string[] | undefined {
   const resolved = resolve(node, consts, new Set());
   if (!ts.isArrayLiteralExpression(resolved)) return undefined;
   const items: string[] = [];
@@ -579,6 +603,8 @@ function readFamilyMembers(
       comparison = readComparison(comparisonProp.initializer, consts, gridNames);
       if (!comparison) return undefined;
     }
+    const anatomyProp = findProp(resolvedElement, 'anatomy');
+    const memberIds = anatomyProp ? readAnatomyMemberIds(anatomyProp.initializer, consts) : undefined;
     members.push({
       id,
       component,
@@ -588,6 +614,7 @@ function readFamilyMembers(
       hasWhenToUse: findProp(resolvedElement, 'whenToUse') !== undefined,
       hasA11y: findProp(resolvedElement, 'a11y') !== undefined,
       hasExamples: Boolean(variants.items?.length) || Boolean(states.items?.length) || Boolean(comparison),
+      anatomy: memberIds ? { memberIds } : undefined,
     });
   }
   return members;
@@ -638,6 +665,39 @@ function readComposedOf(node: ts.Expression, consts: Map<string, ts.Expression>)
     entries.push({ component });
   }
   return entries;
+}
+
+/** #63 A4/A10: `CatalogMember.anatomy`/`CatalogPageInput.anatomy`'s own `groups[].items[]`, read
+ *  down to just the literal `member` ids a `{ member: string }` item names — an `{ other: string }`
+ *  item is skipped (it never names a descendant), and `description`/`picture` are never read (design
+ *  parity with `readComposedOf`/`readRelatedPages`: `doctor`'s own rule never needs them). Undefined
+ *  — never a partial read — for anything that isn't itself a literal `{ groups: [...] }` object with
+ *  a literal `groups` array of literal `{ items: [...] }` objects whose own `items` array is itself
+ *  literal; an `other`/`description`-shaped item still reads fine even though its own `member` (if
+ *  any) is simply absent from the result. */
+function readAnatomyMemberIds(node: ts.Expression, consts: Map<string, ts.Expression>): string[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isObjectLiteralExpression(resolved)) return undefined;
+  const groupsProp = findProp(resolved, 'groups');
+  if (!groupsProp) return undefined;
+  const groupsResolved = resolve(groupsProp.initializer, consts, new Set());
+  if (!ts.isArrayLiteralExpression(groupsResolved)) return undefined;
+  const memberIds: string[] = [];
+  for (const groupElement of groupsResolved.elements) {
+    const group = resolve(groupElement, consts, new Set());
+    if (!ts.isObjectLiteralExpression(group)) return undefined;
+    const itemsProp = findProp(group, 'items');
+    if (!itemsProp) return undefined;
+    const itemsResolved = resolve(itemsProp.initializer, consts, new Set());
+    if (!ts.isArrayLiteralExpression(itemsResolved)) return undefined;
+    for (const itemElement of itemsResolved.elements) {
+      const item = resolve(itemElement, consts, new Set());
+      if (!ts.isObjectLiteralExpression(item)) return undefined;
+      const member = propertyStringLiteral(item, 'member', consts);
+      if (member !== undefined) memberIds.push(member);
+    }
+  }
+  return memberIds;
 }
 
 /** A literal array of `RelatedPage`-shaped object literals, read down to just `page` (design

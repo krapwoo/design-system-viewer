@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatalogSections, defineCatalogPage, numberFor, validateComposedOf, validateFamily } from '../pageApi.ts';
+import { buildCatalogSections, defineCatalogPage, numberFor, numberForGroupMember, resolveExternalPart, validateComposedOf, validateFamily, validateGroup } from '../pageApi.ts';
 import { alsoUsedBySegments } from '../familyModel.ts';
 import { validateTokenDefinition, validateTokenDefinitionUsage } from '../tokenDefinition.ts';
 import type { TokenDefinition } from '../tokenDefinition.ts';
@@ -688,8 +688,9 @@ test('buildCatalogSections: the section\'s family carries the outline and the au
 // V2c item 13: a full-object comparison, not just "family is undefined" — a page without
 // `members` must produce exactly the section buildCatalogSections has always produced for it.
 // #60 updated this exact list to add its own three additive fields (`navigation`, `component`,
-// `alsoUsedBy`); #61 adds its own one more (`tokenDefinition`) — every other field's expected
-// value is unchanged from before this task.
+// `alsoUsedBy`); #61 adds its own one more (`tokenDefinition`); #64 B5 adds `tokenDefinitionAliases`
+// (undefined for every page without a `tokenDefinition`) — every other field's expected value is
+// unchanged from before this task.
 test('buildCatalogSections: a page without members gives a byte-identical section to today\'s', () => {
   const pages = [defineCatalogPage({ id: 'Button', group: 'Components', description: 'Press it.' })];
   const { sections } = buildCatalogSections(pages, [components[0]]);
@@ -708,6 +709,7 @@ test('buildCatalogSections: a page without members gives a byte-identical sectio
     tokenGallery: undefined,
     tokenSections: undefined,
     tokenDefinition: undefined,
+    tokenDefinitionAliases: undefined,
     tokenColumns: undefined,
     fullWidthLabel: undefined,
     comparison: undefined,
@@ -721,6 +723,7 @@ test('buildCatalogSections: a page without members gives a byte-identical sectio
     intentionalStaticPreview: undefined,
     family: undefined,
     navigation: undefined,
+    notes: undefined,
     component: 'Button',
     alsoUsedBy: [],
   });
@@ -864,6 +867,77 @@ test('buildCatalogSections: a page without tokenDefinition is unaffected (omissi
   assert.equal(page?.tokenGallery, true);
   assert.equal(page?.tokenSections, undefined);
   assert.equal(page?.tokenDefinition, undefined);
+});
+
+// #64 B4: one page per kind — the dev-console mirror of `cli/doctor.ts`'s own
+// `token-definition-duplicate-kind` rule.
+test('buildCatalogSections: two pages sharing a tokenDefinition kind each reach console.error naming the other', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const a = defineCatalogPage({ id: 'colors-a', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixtureColorsDefinition() });
+    const b = defineCatalogPage({ id: 'colors-b', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixtureColorsDefinition() });
+    buildCatalogSections([a, b], []);
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+  assert.ok(errors.some((e) => e === '[Catalog] colors-a: tokenDefinition kind "colors" is also used by colors-b.'));
+  assert.ok(errors.some((e) => e === '[Catalog] colors-b: tokenDefinition kind "colors" is also used by colors-a.'));
+});
+
+test('buildCatalogSections: a single tokenDefinition page never reaches console.error about its own kind', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const a = defineCatalogPage({ id: 'colors-only', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixtureColorsDefinition() });
+    buildCatalogSections([a], []);
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+  assert.equal(errors.some((e) => e.includes('is also used by')), false);
+});
+
+// #64 B5: a tokenDefinition page's aliases join the catalog-wide "one owner" pool — the dev-console
+// mirror of `cli/doctor.ts`'s own `family-invalid` reuse.
+test('buildCatalogSections: a tokenDefinition page\'s own alias colliding with another page\'s id reaches console.error', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const withAlias = defineCatalogPage({ id: 'colors', group: 'Tokens', description: 'Fixture.', aliases: ['Button'], tokenDefinition: fixtureColorsDefinition() });
+    const other = defineCatalogPage({ id: 'Button', group: 'Components', description: 'Fixture.' });
+    buildCatalogSections([withAlias, other], []);
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+  assert.ok(errors.some((e) => e === '[Catalog] Page "colors": id "Button" collides with another page\'s id.'));
+});
+
+test('buildCatalogSections: a tokenDefinition page\'s own alias never reaches console.error when nothing else claims it', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const withAlias = defineCatalogPage({ id: 'colors', group: 'Tokens', description: 'Fixture.', aliases: ['OldColors'], tokenDefinition: fixtureColorsDefinition() });
+    buildCatalogSections([withAlias], []);
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+  assert.equal(errors.some((e) => e.includes('OldColors')), false);
 });
 
 // Slice D1 item 1: `anatomy` passes through to `FamilyDef.anatomy` unchanged.
@@ -1025,8 +1099,23 @@ test('validateFamily is a no-op for a page without members', () => {
   assert.deepEqual(validateFamily({ id: 'Button' }, new Set(), new Set()), []);
 });
 
-test('validateFamily: members requires both whole and sections', () => {
-  const issues = validateFamily({ id: 'X', members: [{ id: 'X' }] }, new Set(), new Set());
+// #63 A1: the single permitted rewrite of this test (controller decision) — a page with `members`
+// and neither `whole` nor `sections` is now a valid *group* page (a), not a family error; a page
+// with exactly one of the two stays the same family-shape error as before (b, c).
+test('validateFamily: members with neither whole nor sections is not a family error — see validateGroup', () => {
+  assert.deepEqual(validateFamily({ id: 'X', members: [{ id: 'X' }] }, new Set(), new Set()), []);
+});
+
+test('validateFamily: members with a whole but no sections is still an error', () => {
+  const issues = validateFamily({ id: 'X', whole: 'X', members: [{ id: 'X' }] }, new Set(), new Set());
+  assert.ok(issues.some((issue) => issue.includes('requires both "whole" and "sections"')));
+});
+
+test('validateFamily: members with sections but no whole is still an error', () => {
+  const issues = validateFamily(
+    { id: 'X', sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: [] }], members: [{ id: 'X' }] },
+    new Set(), new Set(),
+  );
   assert.ok(issues.some((issue) => issue.includes('requires both "whole" and "sections"')));
 });
 
@@ -1571,4 +1660,365 @@ test('buildCatalogSections: an undocumented-component stub also gets alsoUsedBy'
   });
   const { sections } = buildCatalogSections([dock], [components[1]]); // Badge, no page of its own
   assert.deepEqual(sections.find((s) => s.id === 'Badge')?.alsoUsedBy, [{ component: 'Dock', role: 'Status' }]);
+});
+
+// ---------------------------------------------------------------------------------------------
+// #63 group pages (A1, A3, A4, A5, A6)
+// ---------------------------------------------------------------------------------------------
+
+test('validateGroup is a no-op for a page without members', () => {
+  assert.deepEqual(validateGroup({ id: 'G' }, new Set(), new Set()), []);
+});
+
+test('validateGroup: a member id or member alias equal to its own page id is reported (it could never be addressed)', () => {
+  const byId = validateGroup({ id: 'Widgets', members: [{ id: 'Widgets' }, { id: 'Other' }] }, new Set(), new Set());
+  assert.ok(byId.some((i) => i.includes('"Widgets" collides with this group page\'s own id')), byId.join('\n'));
+  const byAlias = validateGroup({ id: 'Widgets', members: [{ id: 'Other', aliases: ['Widgets'] }] }, new Set(), new Set());
+  assert.ok(byAlias.some((i) => i.includes('"Widgets" collides with this group page\'s own id')), byAlias.join('\n'));
+  assert.deepEqual(validateGroup({ id: 'Widgets', members: [{ id: 'WidgetsComponent' }] }, new Set(), new Set()), []);
+});
+
+test('validateGroup: a non-empty relatedPages is reported as unused (a group page renders no Related list); an empty one is fine', () => {
+  const issues = validateGroup({ id: 'G', members: [{ id: 'Only' }], relatedPages: [{ page: 'Elsewhere' }] }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('"relatedPages" is not used on a group page')), issues.join('\n'));
+  assert.deepEqual(validateGroup({ id: 'G', members: [{ id: 'Only' }], relatedPages: [] }, new Set(), new Set()), []);
+});
+
+test('validateGroup: a single member with no parent is a valid minimal group', () => {
+  const issues = validateGroup({ id: 'G', members: [{ id: 'Only' }] }, new Set(), new Set());
+  assert.deepEqual(issues, []);
+});
+
+test('validateGroup: a parent unknown both on this page and catalog-wide is reported', () => {
+  const issues = validateGroup({ id: 'G', members: [{ id: 'A', parent: 'Nope' }] }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('member "A" has an unknown parent "Nope"')));
+});
+
+// A3: a member whose parent names a member on a *different* page (known catalog-wide) is
+// top-level, not an error — the cross-page case this rule must allow.
+test('validateGroup: a parent known catalog-wide but not on this page is accepted (cross-page top-level)', () => {
+  const issues = validateGroup({ id: 'G', members: [{ id: 'A', parent: 'FamilyWhole' }] }, new Set(), new Set(['FamilyWhole']));
+  assert.deepEqual(issues, []);
+});
+
+test('validateGroup: a same-page parent cycle is reported', () => {
+  const issues = validateGroup({ id: 'G', members: [{ id: 'A', parent: 'B' }, { id: 'B', parent: 'A' }] }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('parent cycle')));
+});
+
+// A6: no privileged "whole" exemption — every id, including a top-level member's own, is checked.
+test('validateGroup: member and alias ids must be unique catalog-wide, with no whole exemption', () => {
+  const collidesWithPage = validateGroup({ id: 'G', members: [{ id: 'A' }] }, new Set(['A']), new Set());
+  assert.ok(collidesWithPage.some((i) => i.includes('id "A" collides with another page\'s id')));
+
+  const collidesWithMember = validateGroup({ id: 'G', members: [{ id: 'A' }] }, new Set(), new Set(['A']));
+  assert.ok(collidesWithMember.some((i) => i.includes('id "A" collides with another member or alias')));
+
+  const duplicateOnPage = validateGroup({ id: 'G', members: [{ id: 'A' }, { id: 'B', aliases: ['A'] }] }, new Set(), new Set());
+  assert.ok(duplicateOnPage.some((i) => i.includes('id "A" is used more than once on this page')));
+});
+
+test('validateGroup: page-level anatomy is reported', () => {
+  const issues = validateGroup({ id: 'G', members: [{ id: 'A' }], anatomy: { groups: [] } }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('page-level "anatomy" is not used on a group page')));
+});
+
+test('validateGroup: anatomy on a non-top-level member is reported', () => {
+  const issues = validateGroup({
+    id: 'G',
+    members: [{ id: 'Top' }, { id: 'Part', parent: 'Top', anatomy: { groups: [] } }],
+  }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('member "Part" has "anatomy", but anatomy is only used on a top-level member')));
+});
+
+test('validateGroup: a top-level member\'s anatomy item naming a non-descendant is reported', () => {
+  const issues = validateGroup({
+    id: 'G',
+    members: [
+      { id: 'Top', anatomy: { groups: [{ label: 'X', items: [{ member: 'Other', description: 'd' }] }] } },
+      { id: 'Part', parent: 'Top' },
+      { id: 'Other' },
+    ],
+  }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('anatomy item "Other" is not one of its descendants')));
+});
+
+test('validateGroup: a top-level member\'s anatomy item naming itself is reported', () => {
+  const issues = validateGroup({
+    id: 'G',
+    members: [{ id: 'Top', anatomy: { groups: [{ label: 'X', items: [{ member: 'Top', description: 'd' }] }] } }],
+  }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('anatomy item "Top" names itself')));
+});
+
+test('validateGroup: a top-level member\'s anatomy naming a real descendant (including a grandchild) is valid', () => {
+  const issues = validateGroup({
+    id: 'G',
+    members: [
+      { id: 'Top', anatomy: { groups: [{ label: 'X', items: [{ member: 'Part', description: 'd' }, { member: 'Grand', description: 'g' }] }] } },
+      { id: 'Part', parent: 'Top' },
+      { id: 'Grand', parent: 'Part' },
+    ],
+  }, new Set(), new Set());
+  assert.deepEqual(issues, []);
+});
+
+test('validateGroup: an anatomy item listing the same descendant twice is reported', () => {
+  const issues = validateGroup({
+    id: 'G',
+    members: [
+      { id: 'Top', anatomy: { groups: [{ label: 'X', items: [{ member: 'Part', description: 'd' }, { member: 'Part', description: 'd2' }] }] } },
+      { id: 'Part', parent: 'Top' },
+    ],
+  }, new Set(), new Set());
+  assert.ok(issues.some((i) => i.includes('anatomy lists member "Part" more than once')));
+});
+
+// A4: the same numbering algorithm `numberFor` uses for a family's own whole, re-anchored on one
+// top-level group member.
+test('numberForGroupMember: authored order, nested children, and no number for the top-level member itself', () => {
+  const members = [
+    { id: 'Top' },
+    { id: 'P1', parent: 'Top' },
+    { id: 'P2', parent: 'Top' },
+    { id: 'C1', parent: 'P2' },
+  ];
+  const outline = numberForGroupMember('Top', members);
+  assert.equal(outline.get('P1')?.number, '1');
+  assert.equal(outline.get('P2')?.number, '2');
+  assert.equal(outline.get('C1')?.number, '2.1');
+  assert.equal(outline.has('Top'), false);
+});
+
+test('numberForGroupMember: a parent cycle does not throw and leaves the rest of the outline intact', () => {
+  const members = [{ id: 'Top' }, { id: 'P1', parent: 'Top' }, { id: 'A', parent: 'B' }, { id: 'B', parent: 'A' }];
+  const outline = numberForGroupMember('Top', members);
+  assert.equal(outline.get('P1')?.number, '1');
+  assert.equal(outline.has('A'), false);
+  assert.equal(outline.has('B'), false);
+});
+
+test('resolveExternalPart: zero owners is reported', () => {
+  const result = resolveExternalPart('X', [], 'Whole');
+  assert.ok('issue' in result && result.issue.includes('is not defined on any group page'));
+});
+
+test('resolveExternalPart: more than one owner is reported', () => {
+  const result = resolveExternalPart('X', [{ pageId: 'G1', isGroupPage: true, parent: 'Whole' }, { pageId: 'G2', isGroupPage: true, parent: 'Whole' }], 'Whole');
+  assert.ok('issue' in result && result.issue.includes('more than one page'));
+});
+
+test('resolveExternalPart: an owner that is not a group page is reported', () => {
+  const result = resolveExternalPart('X', [{ pageId: 'OrdinaryPage', isGroupPage: false, parent: 'Whole' }], 'Whole');
+  assert.ok('issue' in result && result.issue.includes('is not a group page'));
+});
+
+test('resolveExternalPart: a parent that does not equal the family\'s whole is reported', () => {
+  const result = resolveExternalPart('X', [{ pageId: 'G1', isGroupPage: true, parent: 'SomeoneElse' }], 'Whole');
+  assert.ok('issue' in result && result.issue.includes('does not equal'));
+});
+
+test('resolveExternalPart: exactly one group-page owner with a matching parent resolves', () => {
+  const result = resolveExternalPart('X', [{ pageId: 'G1', isGroupPage: true, parent: 'Whole' }], 'Whole');
+  assert.deepEqual(result, { pageId: 'G1' });
+});
+
+function groupPage(overrides: Partial<Parameters<typeof defineCatalogPage>[0]> = {}) {
+  return defineCatalogPage({
+    id: 'Widgets', group: 'Components', description: 'A group of widgets.',
+    members: [
+      { id: 'WidgetA', source: 'a.swift:1', fidelity: 'documentation-only' as const, relationship: 'Top-level', description: 'A.' },
+      { id: 'WidgetB', source: 'b.swift:1', fidelity: 'documentation-only' as const, relationship: 'Top-level', description: 'B.' },
+    ],
+    ...overrides,
+  });
+}
+
+test('buildCatalogSections: a group page\'s family has whole undefined, kind "group", and no sections', () => {
+  const { sections } = buildCatalogSections([groupPage()], []);
+  const family = sections.find((s) => s.id === 'Widgets')?.family;
+  assert.equal(family?.whole, undefined);
+  assert.equal(family?.kind, 'group');
+  assert.deepEqual(family?.sections, []);
+});
+
+test('buildCatalogSections: a group\'s outline numbers each top-level member\'s own parts independently', () => {
+  const page = groupPage({
+    members: [
+      { id: 'Top1', source: 'a.swift:1', fidelity: 'documentation-only' as const, relationship: 'Top', description: 'd' },
+      { id: 'Top1Part', source: 'a.swift:2', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'Top1', description: 'd' },
+      { id: 'Top2', source: 'b.swift:1', fidelity: 'documentation-only' as const, relationship: 'Top', description: 'd' },
+      { id: 'Top2Part', source: 'b.swift:2', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'Top2', description: 'd' },
+    ],
+  });
+  const { sections } = buildCatalogSections([page], []);
+  const family = sections.find((s) => s.id === 'Widgets')?.family;
+  assert.equal(family?.outline.get('Top1Part')?.number, '1');
+  assert.equal(family?.outline.get('Top2Part')?.number, '1');
+  assert.equal(family?.outline.has('Top1'), false);
+  assert.equal(family?.outline.has('Top2'), false);
+});
+
+test('buildCatalogSections: a group page\'s members are searchable via alsoUsedBy/component resolution like a family\'s', () => {
+  const dock = defineCatalogPage({
+    id: 'Dock', group: 'Components', description: 'd',
+    composedOf: [{ component: 'WidgetA', role: 'Primary', relationship: 'built-in' as const }],
+  });
+  const { sections } = buildCatalogSections([groupPage(), dock], []);
+  const family = sections.find((s) => s.id === 'Widgets')?.family;
+  assert.deepEqual(family?.members.find((m) => m.id === 'WidgetA')?.alsoUsedBy, [{ component: 'Dock', role: 'Primary' }]);
+});
+
+test('buildCatalogSections: an invalid group reaches console.error in development', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const page = groupPage({ members: [{ id: 'A', parent: 'Nope', source: 'a:1', fidelity: 'documentation-only' as const, relationship: 'X', description: 'd' }] });
+    buildCatalogSections([page], []);
+    assert.ok(errors.some((e) => e.includes('unknown parent "Nope"')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+// A5/A6: a family's `inWhole` section lists an id defined on a group page, whose own `parent`
+// equals the family's whole — the external-part happy path, on both sides.
+function familyWithExternalPart(groupMemberOverrides: Record<string, unknown> = {}) {
+  const family = defineCatalogPage({
+    id: 'BotAvatarView', group: 'Components', description: 'd', whole: 'BotAvatarView',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['BotAnimatedFaceView', 'ExternalEyes'] }],
+    members: [
+      { id: 'BotAvatarView', source: 'w.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' },
+      { id: 'BotAnimatedFaceView', source: 'f.swift:1', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'BotAvatarView', description: 'd' },
+    ],
+  });
+  const group = defineCatalogPage({
+    id: 'EyesGroup', group: 'Components', description: 'd',
+    members: [
+      { id: 'ExternalEyes', source: 'e.swift:1', fidelity: 'documentation-only' as const, relationship: 'Top', parent: 'BotAvatarView', description: 'd', ...groupMemberOverrides },
+    ],
+  });
+  return { family, group };
+}
+
+test('buildCatalogSections: a valid external part gets a normal number in the family\'s outline, with no "not a member" issue', () => {
+  const { family: familyPage, group } = familyWithExternalPart();
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const { sections } = buildCatalogSections([familyPage, group], []);
+    const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+    assert.equal(family?.outline.get('ExternalEyes')?.number, '2');
+    assert.deepEqual(family?.externalParts?.get('ExternalEyes'), { pageId: 'EyesGroup', title: 'EyesGroup', fidelity: 'documentation-only' });
+    assert.ok(!errors.some((e) => e.includes('is not a member of this page')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+test('buildCatalogSections: the external part\'s own group member gets partOf with the family\'s page id/title/number', () => {
+  const { family: familyPage, group } = familyWithExternalPart();
+  const { sections } = buildCatalogSections([familyPage, group], []);
+  const groupFamily = sections.find((s) => s.id === 'EyesGroup')?.family;
+  assert.deepEqual(groupFamily?.members.find((m) => m.id === 'ExternalEyes')?.partOf, {
+    pageId: 'BotAvatarView', title: 'BotAvatarView', number: '2',
+  });
+});
+
+test('buildCatalogSections: an external part whose owner\'s parent does not match the family\'s whole reaches console.error, and is still reported as not a member', () => {
+  const { family: familyPage, group } = familyWithExternalPart({ parent: 'SomeoneElse' });
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const { sections } = buildCatalogSections([familyPage, group], []);
+    const family = sections.find((s) => s.id === 'BotAvatarView')?.family;
+    assert.equal(family?.externalParts?.get('ExternalEyes'), undefined);
+    assert.ok(errors.some((e) => e.includes('does not equal')), errors.join('\n'));
+    assert.ok(errors.some((e) => e.includes('"ExternalEyes", which is not a member of this page')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+test('buildCatalogSections: an external part owned by more than one page reaches console.error naming both', () => {
+  const { family: familyPage, group } = familyWithExternalPart();
+  const secondGroup = defineCatalogPage({
+    id: 'OtherGroup', group: 'Components', description: 'd',
+    members: [{ id: 'ExternalEyes', source: 'e2.swift:1', fidelity: 'documentation-only' as const, relationship: 'Top', parent: 'BotAvatarView', description: 'd' }],
+  });
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    buildCatalogSections([familyPage, group, secondGroup], []);
+    assert.ok(errors.some((e) => e.includes('more than one page') && e.includes('EyesGroup') && e.includes('OtherGroup')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+test('validateFamily: an external part listed in two sections, or twice in one, is reported as in more than one section', () => {
+  const base = { id: 'Card', whole: 'Card', members: [{ id: 'Card' }, { id: 'OwnPart', parent: 'Card' }] };
+  const external = new Set(['ExternalPart']);
+  const twoSections = { ...base, sections: [
+    { label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['OwnPart', 'ExternalPart'] },
+    { label: 'More', kind: 'blocks' as const, inWhole: true, members: ['ExternalPart'] },
+  ] };
+  const twiceInOne = { ...base, sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['OwnPart', 'ExternalPart', 'ExternalPart'] }] };
+  const once = { ...base, sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['OwnPart', 'ExternalPart'] }] };
+  for (const page of [twoSections, twiceInOne]) {
+    const issues = validateFamily(page as never, new Set(['Card']), new Set(), external);
+    assert.ok(issues.some((i) => i.includes('"ExternalPart" is in more than one section')), issues.join('\n'));
+  }
+  assert.deepEqual(validateFamily(once as never, new Set(['Card']), new Set(), external), []);
+});
+
+test('buildCatalogSections: an external part named twice reaches console.error as in more than one section', () => {
+  const { family, group } = familyWithExternalPart();
+  const twice = defineCatalogPage({
+    ...family,
+    sections: [
+      { label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['BotAnimatedFaceView', 'ExternalEyes'] },
+      { label: 'More', kind: 'blocks' as const, inWhole: true, members: ['ExternalEyes'] },
+    ],
+  } as never);
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    buildCatalogSections([twice, group], []);
+    assert.ok(errors.some((e) => e.includes('"ExternalEyes" is in more than one section')), errors.join('\n'));
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+test('validateFamily: an anatomy item naming a resolved external part is valid, like the section listing it', () => {
+  const page = {
+    id: 'Card', whole: 'Card',
+    members: [{ id: 'Card' }, { id: 'OwnPart', parent: 'Card' }],
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['OwnPart', 'ExternalPart'] }],
+    anatomy: { groups: [{ label: 'Shown', items: [{ member: 'OwnPart', description: 'd' }, { member: 'ExternalPart', description: 'd' }] }] },
+  };
+  assert.deepEqual(validateFamily(page as never, new Set(['Card']), new Set(), new Set(['ExternalPart'])), []);
+  // Still reported when the id is not a resolved external part.
+  assert.ok(validateFamily(page as never, new Set(['Card']), new Set(), new Set()).some((i) => i.includes('anatomy item "ExternalPart" is not a member of this page')));
 });

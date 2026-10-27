@@ -1126,6 +1126,27 @@ test('runtime-only tokenDefinition entries are reported in the summary, never as
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+// #64 B1: a group's own runtime-imported entries are reported in the summary too, the same
+// informational way a section's own runtime-imported entries already are.
+test('a tokenDefinition group with runtime-only entries is reported in the summary', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    import { DS_COLOR } from '../../tokens';
+    const GROUP_ENTRIES = Object.entries(DS_COLOR).map(([id, color]) => ({ id, name: id, kind: 'colors' as const, value: { provenance: 'named' as const, resolution: { status: 'resolved' as const, value: { color } } } }));
+    export default defineCatalogPage({
+      id: 'tokens-colors', group: 'Tokens', description: 'x',
+      tokenDefinition: { kind: 'colors', sections: [
+        { id: 'palette', title: 'Palette', entries: [{ id: 'brand', name: 'Brand', kind: 'colors', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#123456' } } } }], groups: [{ id: 'extra', title: 'Extra', entries: GROUP_ENTRIES }] },
+      ] },
+    });
+  `);
+  try {
+    const result = runDoctor(configFor(dir));
+    assert.equal(result.issues.some((i) => i.id.startsWith('token-definition')), false, JSON.stringify(result.issues));
+    assert.deepEqual(result.summary.runtimeOnlyTokenSections, [{ page: 'tokens-colors', sections: ['palette'] }]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('a fully literal tokenDefinition adds nothing to the summary or its human line', () => {
   const dir = makeProject(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';
@@ -1202,4 +1223,101 @@ test('every token-definition rule is already error severity, independent of stri
   const plain = withExtraIssues(base, extra, false);
   const strict = withExtraIssues(base, extra, true);
   assert.deepEqual([plain.summary.errors, plain.exitCode], [strict.summary.errors, strict.exitCode]);
+});
+
+// #64 B1: groups inside a category.
+test('token-definition-duplicate-id fires for a duplicate group id within a section, and for a duplicate entry id within one group, but never across groups or the section\'s own entries', () => {
+  const duplicateGroups = tokenDefPage({
+    tokenDefinition: {
+      kind: 'colors',
+      sections: [{
+        id: 'palette', title: 'Palette', entryIds: [], entriesOpaque: false,
+        groups: [{ id: 'brand', title: 'Brand', entryIds: [], entriesOpaque: false }, { id: 'brand', title: 'Brand again', entryIds: [], entriesOpaque: false }],
+      }],
+    },
+  });
+  const groupIssues = collectIssues([duplicateGroups], []).filter((i) => i.id === 'token-definition-duplicate-id');
+  assert.equal(groupIssues.length, 1);
+  assert.match(groupIssues[0].message, /section "palette" has more than one group with id "brand"/);
+
+  const duplicateEntryInGroup = tokenDefPage({
+    tokenDefinition: {
+      kind: 'colors',
+      sections: [{
+        id: 'palette', title: 'Palette', entryIds: ['dup'], entriesOpaque: false,
+        groups: [
+          { id: 'g1', title: 'G1', entryIds: ['dup', 'dup'], entriesOpaque: false },
+          { id: 'g2', title: 'G2', entryIds: ['dup'], entriesOpaque: false },
+        ],
+      }],
+    },
+  });
+  const entryIssues = collectIssues([duplicateEntryInGroup], []).filter((i) => i.id === 'token-definition-duplicate-id');
+  assert.equal(entryIssues.length, 1, 'only the duplicate inside g1 itself, never across groups or the section\'s own entries');
+  assert.match(entryIssues[0].message, /section "palette" group "g1" has more than one entry with id "dup"/);
+});
+
+test('token-definition-duplicate-id never fires for a well-formed section with groups', () => {
+  const clean = tokenDefPage({
+    tokenDefinition: {
+      kind: 'colors',
+      sections: [{
+        id: 'palette', title: 'Palette', entryIds: ['brand'], entriesOpaque: false,
+        groups: [{ id: 'extra', title: 'Extra', entryIds: ['accent'], entriesOpaque: false }],
+      }],
+    },
+  });
+  assert.deepEqual(collectIssues([clean], []).filter((i) => i.id === 'token-definition-duplicate-id'), []);
+});
+
+// #64 B4: one page per kind.
+test('token-definition-duplicate-kind fires once per extra page sharing a literal kind, naming the other page(s)', () => {
+  const a = tokenDefPage({ id: 'colors-a', file: '/a.catalog.tsx' });
+  const b = tokenDefPage({ id: 'colors-b', file: '/b.catalog.tsx' });
+  const issues = collectIssues([a, b], []).filter((i) => i.id === 'token-definition-duplicate-kind');
+  assert.equal(issues.length, 2);
+  assert.ok(issues.some((i) => i.page === 'colors-a' && i.message.includes('also used by colors-b')));
+  assert.ok(issues.some((i) => i.page === 'colors-b' && i.message.includes('also used by colors-a')));
+  assert.ok(issues.every((i) => i.severity === 'error'));
+});
+
+test('token-definition-duplicate-kind never fires for a single page, or for a page without tokenDefinition at all', () => {
+  const single = tokenDefPage({ id: 'colors-only' });
+  assert.deepEqual(collectIssues([single], []).filter((i) => i.id === 'token-definition-duplicate-kind'), []);
+  const plain = page({ id: 'plain', group: 'Tokens' });
+  assert.deepEqual(collectIssues([tokenDefPage({ id: 'colors-only-2' }), plain], []).filter((i) => i.id === 'token-definition-duplicate-kind'), []);
+});
+
+test('token-definition-duplicate-kind never fires between a tokenDefinition page and a legacy (non-tokenDefinition) page', () => {
+  const structured = tokenDefPage({ id: 'structured' });
+  const legacy = page({ id: 'legacy', group: 'Tokens', tokenGallery: true });
+  assert.deepEqual(collectIssues([structured, legacy], []).filter((i) => i.id === 'token-definition-duplicate-kind'), []);
+});
+
+// #64 B5: aliases — page-level and section-level, reusing the existing family-invalid rule id.
+test('family-invalid fires when a tokenDefinition page\'s own alias collides with another page\'s id', () => {
+  const withAlias = tokenDefPage({ id: 'colors', aliases: ['Button'] });
+  const other = page({ id: 'Button', group: 'Components' });
+  const issues = collectIssues([withAlias, other], []).filter((i) => i.id === 'family-invalid');
+  assert.ok(issues.some((i) => i.page === 'colors' && i.message.includes('"Button" collides with another page\'s id')));
+});
+
+test('family-invalid fires when a tokenDefinition section\'s own alias collides with a family member elsewhere in the catalog', () => {
+  const withSectionAlias = tokenDefPage({
+    id: 'colors',
+    tokenDefinition: { kind: 'colors', sections: [{ id: 'palette', title: 'Palette', entryIds: [], entriesOpaque: false, aliases: ['ToastBanner'] }] },
+  });
+  const issues = collectIssues([withSectionAlias, familyPage()], [component({ name: 'Banner' })]).filter((i) => i.id === 'family-invalid');
+  assert.ok(issues.some((i) => i.page === 'colors' && i.message.includes('"ToastBanner" collides with another member or alias elsewhere in the catalog')));
+});
+
+test('family-invalid never fires for a tokenDefinition page\'s own aliases when nothing else claims them', () => {
+  const withAlias = tokenDefPage({ id: 'colors', aliases: ['OldColors'] });
+  assert.deepEqual(collectIssues([withAlias], []).filter((i) => i.id === 'family-invalid'), []);
+});
+
+test('family-invalid never considers aliases on a plain page without tokenDefinition or members — accepted but unused, unchanged', () => {
+  const plainWithAlias = page({ id: 'Plain', group: 'Components', aliases: ['OldPlain'] });
+  const other = page({ id: 'OldPlain', group: 'Components' });
+  assert.deepEqual(collectIssues([plainWithAlias, other], []).filter((i) => i.id === 'family-invalid'), []);
 });

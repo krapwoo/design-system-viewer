@@ -411,3 +411,35 @@ test('without heights, the counts say which row width they assume', () => {
   assert.match(result!.placement!.reason, /462px instead, which can fit fewer columns/);
   rmSync(dir, { recursive: true, force: true });
 });
+
+// #63 A10: `explain <group page>` prints title, each top-level member with its qualifier, nested
+// parts with numbers — net-new output (a group page's real content never reaches `blocks`).
+test('explainPage prints a group page\'s outline: top-level members with their qualifier, and nested numbered parts', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Widgets', group: 'Components', description: 'A group.',
+      members: [
+        { id: 'Top1', component: 'Widget', source: 'a.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd' },
+        { id: 'Top1Part', source: 'a.swift:2', fidelity: 'documentation-only', relationship: 'Part', parent: 'Top1', description: 'd' },
+        { id: 'Top1Grand', source: 'a.swift:3', fidelity: 'documentation-only', relationship: 'Grand', parent: 'Top1Part', description: 'd' },
+        { id: 'Top2', source: 'b.swift:1', fidelity: 'documentation-only', relationship: 'Top', description: 'd' },
+      ],
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Widgets');
+  assert.equal(result?.pageId, 'Widgets');
+  assert.deepEqual(result?.blocks, []);
+  assert.deepEqual(result?.group?.topLevel.find((t) => t.id === 'Top1'), {
+    id: 'Top1', qualifier: 'Widget',
+    parts: [{ number: '1', id: 'Top1Part' }, { number: '1.1', id: 'Top1Grand' }],
+  });
+  assert.deepEqual(result?.group?.topLevel.find((t) => t.id === 'Top2'), { id: 'Top2', qualifier: 'documentation-only', parts: [] });
+  const text = formatExplain(result!);
+  assert.match(text, /Widgets/);
+  assert.match(text, /Top1 \(Widget\)/);
+  assert.match(text, /^\s*1\. Top1Part$/m);
+  assert.match(text, /^\s*1\.1\. Top1Grand$/m);
+  assert.match(text, /Top2 \(documentation-only\)/);
+  rmSync(dir, { recursive: true, force: true });
+});

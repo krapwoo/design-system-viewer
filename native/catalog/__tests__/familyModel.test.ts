@@ -233,6 +233,13 @@ test('resolveWhole: the whole member when it resolves, undefined for bad data', 
   assert.equal(resolveWhole(members, 'NoSuchMember'), undefined);
 });
 
+// #63: a group page's own `FamilyDef.whole` is `undefined` — `resolveWhole` must degrade to
+// `undefined` the same way it does for bad data, never throw trying to look up an undefined key.
+test('resolveWhole: undefined for a group page\'s own whole (undefined)', () => {
+  const members = new Map([['WidgetA', { id: 'WidgetA' }]]);
+  assert.equal(resolveWhole(members, undefined), undefined);
+});
+
 // Slice D1 item 2: `numberFor` replaces outline numbering with the anatomy-first rule — top-level
 // parts are inWhole members whose parent is the whole, or who have no parent at all, numbered
 // 1, 2, 3… in authored order; a child takes its parent's number plus `.1`, `.2`, …; members outside
@@ -309,6 +316,12 @@ test('anatomyPinFor: undefined for an unknown member, or one with no number', ()
   assert.equal(anatomyPinFor('NoSuchMember', members, outline), undefined);
   const noNumber = new Map([['BotRoomMemberAvatar', { fidelity: 'replicated' as const }]]);
   assert.equal(anatomyPinFor('BotRoomMemberAvatar', noNumber, new Map()), undefined);
+});
+
+test('anatomyPinFor: an external part (numbered in the outline, documented on a group page) keeps its number', () => {
+  const members = new Map([['BotPendingRequestCard', { fidelity: 'replicated' as const }]]);
+  const outline = new Map([['BotPendingRequestCard', { number: '' }], ['BotQuestionRequestBody', { number: '1' }]]);
+  assert.deepEqual(anatomyPinFor('BotQuestionRequestBody', members, outline), { number: '1', dashed: false });
 });
 
 // Slice D1 item 5: the legend goes below the picture in up to three columns, balancing item

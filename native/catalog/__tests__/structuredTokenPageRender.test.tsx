@@ -406,6 +406,139 @@ test('a long color token name stays fully readable instead of being clipped to o
   } finally { cleanup(); }
 });
 
+// #64 B1: groups inside a category.
+function fixtureGroupsDefinition(): TokenDefinition {
+  return {
+    kind: 'opacity',
+    sections: [{
+      id: 'scale', title: 'Scale (fixture)',
+      entries: [{ id: 'base', name: 'Base (fixture)', kind: 'opacity', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.5 } } } }],
+      groups: [{
+        id: 'extra', title: 'Extra group (fixture)', desc: 'A sub-group of the Scale section.',
+        entries: [{ id: 'faint', name: 'Faint (fixture)', kind: 'opacity', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.1 } } } }],
+      }],
+    }],
+  };
+}
+
+test('mounted SectionBlock renders a group\'s own sub-heading and its entries, after the section\'s own entries', async () => {
+  const pages = [defineCatalogPage({ id: 'tokens-groups', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixtureGroupsDefinition() })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-groups.catalog.tsx' })), []);
+  const def = sections.find((s) => s.id === 'tokens-groups')!;
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def } as never));
+  try {
+    await settleLayout();
+    assert.ok(plainTextPresent(container, 'Base (fixture)'), 'the section\'s own entry must still render');
+    assert.ok(plainTextPresent(container, 'Extra group (fixture)'), 'expected the group\'s own sub-heading');
+    assert.ok(plainTextPresent(container, 'A sub-group of the Scale section.'), 'expected the group\'s own desc');
+    assert.ok(plainTextPresent(container, 'Faint (fixture)'), 'expected the group\'s own entry');
+  } finally { cleanup(); }
+});
+
+// #64 B2: category jump row.
+test('mounted SectionBlock shows a jump row chip per section, with counts including group entries, only when there is more than one section', async () => {
+  const twoSections: TokenDefinition = {
+    kind: 'opacity',
+    sections: [
+      { id: 'attention', title: 'Attention (fixture)', entries: [{ id: 'a', name: 'A', kind: 'opacity', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.1 } } } }] },
+      {
+        id: 'palette', title: 'Palette (fixture)',
+        entries: [{ id: 'b', name: 'B', kind: 'opacity', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.2 } } } }],
+        groups: [{ id: 'g', title: 'G', entries: [{ id: 'c', name: 'C', kind: 'opacity', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.3 } } } }] }],
+      },
+    ],
+  };
+  const pages = [defineCatalogPage({ id: 'tokens-jump', group: 'Tokens', description: 'Fixture.', tokenDefinition: twoSections })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-jump.catalog.tsx' })), []);
+  const def = sections.find((s) => s.id === 'tokens-jump')!;
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def } as never));
+  try {
+    await settleLayout();
+    const chips = [...container.querySelectorAll('[role="button"]')];
+    const attentionChip = chips.find((b) => b.getAttribute('aria-label') === 'Attention (fixture), 1 value');
+    const paletteChip = chips.find((b) => b.getAttribute('aria-label') === 'Palette (fixture), 2 values');
+    assert.ok(attentionChip, 'expected a jump chip naming the Attention section with its own entry count');
+    assert.ok(paletteChip, 'expected a jump chip for Palette whose count includes its group\'s entry');
+  } finally { cleanup(); }
+});
+
+test('a section alias arrival scrolls to its section once the sections have measured and mounted', async () => {
+  const twoSections: TokenDefinition = {
+    kind: 'opacity',
+    sections: [
+      { id: 'attention', title: 'Attention (fixture)', entries: [{ id: 'a', name: 'A', kind: 'opacity', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.1 } } } }] },
+      { id: 'palette', title: 'Palette (fixture)', entries: [{ id: 'b', name: 'B', kind: 'opacity', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.2 } } } }] },
+    ],
+  };
+  const pages = [defineCatalogPage({ id: 'tokens-arrival', group: 'Tokens', description: 'Fixture.', tokenDefinition: twoSections })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-arrival.catalog.tsx' })), []);
+  const def = sections.find((s) => s.id === 'tokens-arrival')!;
+  // The arrival is set on the very first render — before `TokenSections` has a width, so no
+  // section node exists yet (the real browser order: route first, layout later).
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def, focusSectionId: 'palette', focusNonce: 1 } as never));
+  const scrolled: string[] = [];
+  (window as unknown as { HTMLElement: { prototype: Record<string, unknown> } }).HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+    scrolled.push((this.textContent || '').trim());
+  };
+  try {
+    await settleLayout();
+    assert.ok(plainTextPresent(container, 'Palette (fixture)'), 'expected the sections to have mounted after layout');
+    assert.equal(scrolled.length, 1, 'expected exactly one scroll, once the arrival section mounted');
+    assert.ok(scrolled[0]!.startsWith('Palette (fixture)'), `expected the Palette section to scroll into view, got "${scrolled[0]}"`);
+  } finally { cleanup(); }
+});
+
+test('mounted SectionBlock shows no jump row when the page has only one section', async () => {
+  const pages = [defineCatalogPage({ id: 'tokens-one-section', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixtureGroupsDefinition() })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-one-section.catalog.tsx' })), []);
+  const def = sections.find((s) => s.id === 'tokens-one-section')!;
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def } as never));
+  try {
+    await settleLayout();
+    const chips = [...container.querySelectorAll('[role="button"]')].filter((b) => (b.getAttribute('aria-label') || '').includes('value'));
+    assert.equal(chips.length, 0, 'a single-section page must show no jump row');
+  } finally { cleanup(); }
+});
+
+// #64 B3: light/dark pairing.
+function fixturePairingDefinition(): TokenDefinition {
+  return {
+    kind: 'colors',
+    sections: [{
+      id: 'paired', title: 'Paired (fixture)',
+      entries: [
+        { id: 'accentLight', name: 'Accent (fixture)', kind: 'colors', appearance: 'light', value: { provenance: 'inline', resolution: { status: 'resolved', value: { color: '#111111' } } } },
+        { id: 'accentDark', name: 'Accent (fixture)', kind: 'colors', appearance: 'dark', value: { provenance: 'inline', resolution: { status: 'resolved', value: { color: '#eeeeee' } } } },
+        { id: 'soloDark', name: 'Solo (fixture)', kind: 'colors', appearance: 'dark', value: { provenance: 'inline', resolution: { status: 'resolved', value: { color: '#222222' } } } },
+      ],
+    }],
+  };
+}
+
+test('mounted SectionBlock renders a light/dark pair as one swatch: the bare name once, and both values on one line', async () => {
+  const pages = [defineCatalogPage({ id: 'tokens-paired', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixturePairingDefinition() })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-paired.catalog.tsx' })), []);
+  const def = sections.find((s) => s.id === 'tokens-paired')!;
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def } as never));
+  try {
+    await settleLayout();
+    assert.equal(plainTextOccurrences(container, 'Accent (fixture)'), 1, 'the pair\'s bare name must render exactly once, never "(light)"/"(dark)"');
+    assert.ok(plainTextPresent(container, '#111111 · #eeeeee'), 'expected the combined light · dark value line');
+  } finally { cleanup(); }
+});
+
+test('mounted SectionBlock still renders an unpaired dark entry exactly as today', async () => {
+  const pages = [defineCatalogPage({ id: 'tokens-paired-2', group: 'Tokens', description: 'Fixture.', tokenDefinition: fixturePairingDefinition() })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-paired-2.catalog.tsx' })), []);
+  const def = sections.find((s) => s.id === 'tokens-paired-2')!;
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def } as never));
+  try {
+    await settleLayout();
+    assert.ok(plainTextPresent(container, 'Solo (fixture) (dark)'), 'an unpaired dark entry must still show its own "(dark)" suffix, unchanged');
+    assert.ok(plainTextPresent(container, '#222222'), 'its own real value must still render');
+  } finally { cleanup(); }
+});
+
 test('a legacy tokenGallery page with no tokenDefinition is unaffected by this change', async () => {
   const pages = [defineCatalogPage({ id: 'tokens-legacy', group: 'Tokens', description: 'Legacy.', tokenGallery: true, render: () => React.createElement(React.Fragment, null, 'legacy content') })];
   const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-legacy.catalog.tsx' })), []);

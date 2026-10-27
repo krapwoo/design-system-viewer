@@ -7,8 +7,17 @@
  * stays an opaque runtime import (design R4).
  */
 import * as ts from 'typescript';
-import { findProp, propertyStringLiteral, resolve } from './staticPage.ts';
+import { findProp, propertyStringLiteral, readStringLiteralArray, resolve } from './staticPage.ts';
 import { canonicalTokenTitle, isTokenKind, type TokenKind } from '../native/catalog/tokenDefinition.ts';
+
+/** #64 B1: a section's own sub-group, read the same lenient way as the section's own entries
+ *  (see `StaticTokenDefinitionSection.entriesOpaque`'s own doc comment). */
+export interface StaticTokenDefinitionGroup {
+  id: string;
+  title: string;
+  entryIds: string[];
+  entriesOpaque: boolean;
+}
 
 export interface StaticTokenDefinitionSection {
   id: string;
@@ -26,6 +35,19 @@ export interface StaticTokenDefinitionSection {
    *  informational runtime-only summary; a fully literal section (including one genuinely authored
    *  with zero entries) is `false`. */
   entriesOpaque: boolean;
+  /** #64 B1: this section's own sub-groups, read the same way the section itself is — empty when
+   *  the section has none. Optional (defaults to `[]`) only so a hand-built fixture predating this
+   *  field still type-checks; the real reader below always sets it. */
+  groups?: StaticTokenDefinitionGroup[];
+  /** True when `groups` itself isn't a literal array, or at least one element isn't a literal
+   *  object with a literal `id`/`title` — the same informational leniency `entriesOpaque` gives the
+   *  section's own entries. Optional (defaults to `false`) for the same hand-built-fixture reason
+   *  as `groups`. */
+  groupsOpaque?: boolean;
+  /** #64 B5: this section's own literal `aliases`, when every element is a literal string.
+   *  Undefined (never a penalty) when the field is omitted, or isn't itself fully literal — the
+   *  same leniency `StaticPage.aliases` already gets at the page level. */
+  aliases?: string[];
 }
 
 export interface StaticTokenDefinition {
@@ -84,7 +106,59 @@ export function readStaticTokenDefinition(node: ts.Expression, consts: Map<strin
         entriesOpaque = true;
       }
     }
-    sections.push({ id, title, desc, wide, entryIds, entriesOpaque });
+
+    // #64 B1: this section's own sub-groups, read the same lenient way as its own entries above.
+    const groups: StaticTokenDefinitionGroup[] = [];
+    let groupsOpaque = false;
+    const groupsProp = findProp(sectionResolved, 'groups');
+    if (groupsProp) {
+      const groupsResolved = resolve(groupsProp.initializer, consts, new Set());
+      if (ts.isArrayLiteralExpression(groupsResolved)) {
+        for (const groupElement of groupsResolved.elements) {
+          const groupResolved = resolve(groupElement, consts, new Set());
+          if (!ts.isObjectLiteralExpression(groupResolved)) {
+            groupsOpaque = true;
+            continue;
+          }
+          const groupId = propertyStringLiteral(groupResolved, 'id', consts);
+          const groupTitle = propertyStringLiteral(groupResolved, 'title', consts);
+          if (groupId === undefined || groupTitle === undefined) {
+            groupsOpaque = true;
+            continue;
+          }
+          const groupEntryIds: string[] = [];
+          let groupEntriesOpaque = false;
+          const groupEntriesProp = findProp(groupResolved, 'entries');
+          if (groupEntriesProp) {
+            const groupEntriesResolved = resolve(groupEntriesProp.initializer, consts, new Set());
+            if (ts.isArrayLiteralExpression(groupEntriesResolved)) {
+              for (const entryElement of groupEntriesResolved.elements) {
+                const entryResolved = resolve(entryElement, consts, new Set());
+                if (!ts.isObjectLiteralExpression(entryResolved)) {
+                  groupEntriesOpaque = true;
+                  continue;
+                }
+                const entryId = propertyStringLiteral(entryResolved, 'id', consts);
+                if (entryId !== undefined) groupEntryIds.push(entryId);
+                else groupEntriesOpaque = true;
+              }
+            } else {
+              groupEntriesOpaque = true;
+            }
+          }
+          groups.push({ id: groupId, title: groupTitle, entryIds: groupEntryIds, entriesOpaque: groupEntriesOpaque });
+        }
+      } else {
+        groupsOpaque = true;
+      }
+    }
+
+    // #64 B5: this section's own literal `aliases`, when every element resolves as a literal
+    // string — omitted (never a penalty) otherwise.
+    const aliasesProp = findProp(sectionResolved, 'aliases');
+    const aliases = aliasesProp ? readStringLiteralArray(aliasesProp.initializer, consts) : undefined;
+
+    sections.push({ id, title, desc, wide, entryIds, entriesOpaque, groups, groupsOpaque, ...(aliases !== undefined ? { aliases } : null) });
   }
   return { kind, sections };
 }

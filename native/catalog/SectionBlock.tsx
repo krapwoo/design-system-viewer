@@ -10,7 +10,7 @@ import { SpecimenSurface } from './SpecimenSurface';
 import { SpecimenAddressProvider } from './SpecimenAddress';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
-import { tokenDefinitionSections } from './StructuredTokenPage';
+import { TokenDefinitionBlock } from './StructuredTokenPage';
 import { MATRIX_LAYOUT, PREVIEW_CARD_CHROME, blockMinWidth, choosePlacement, presentationBlocks, type PlacementBlock, type PresentationBlock } from './comparison';
 import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
 
@@ -166,7 +166,18 @@ function TablePreview({ render, widths, surface }: { render: () => React.ReactNo
   );
 }
 
-function BlockContent<TId extends string>({ block, def, surface }: { block: PresentationBlock; def: SectionDef<TId>; surface: SpecimenSurfaceKind }) {
+function BlockContent<TId extends string>({
+  block, def, surface, focusSectionId, focusNonce,
+}: {
+  block: PresentationBlock;
+  def: SectionDef<TId>;
+  surface: SpecimenSurfaceKind;
+  /** #64 B5: a tokenDefinition page's own section to scroll into view on arrival (a section-alias
+   *  route) — only ever consumed by the 'tokenSections' case below; every other block kind ignores
+   *  it. */
+  focusSectionId?: string;
+  focusNonce?: number;
+}) {
   switch (block.kind) {
     case 'grid':
       return <ComparisonGrid def={block.comparison} size={block.size} sectionId={def.id} surface={surface} />;
@@ -188,9 +199,13 @@ function BlockContent<TId extends string>({ block, def, surface }: { block: Pres
       // #61: a page's own `tokenDefinition` (when set) carries the real entry data —
       // `buildCatalogSections` only ever derives `block.sections` from it as placeholder geometry
       // (`render: () => null`), so the real rendering happens here instead, at this file's own
-      // existing JSX boundary.
-      const sections = def.tokenDefinition ? tokenDefinitionSections(def.tokenDefinition) : block.sections;
-      return <TokenSections sections={sections} columns={block.columns} label={def.id} />;
+      // existing JSX boundary. #64 B2/B5: `TokenDefinitionBlock` additionally renders the jump row
+      // and consumes a pending section arrival; a legacy `tokenSections` page (no `tokenDefinition`)
+      // keeps the plain `TokenSections` rendering, unchanged.
+      if (def.tokenDefinition) {
+        return <TokenDefinitionBlock definition={def.tokenDefinition} columns={block.columns} label={def.id} focusSectionId={focusSectionId} focusNonce={focusNonce} />;
+      }
+      return <TokenSections sections={block.sections} columns={block.columns} label={def.id} />;
     }
     default:
       return (
@@ -237,6 +252,8 @@ export function Blocks<TId extends string>({
   surface,
   showLabels = true,
   trimOuterMargin = false,
+  focusSectionId,
+  focusNonce,
 }: {
   blocks: PresentationBlock[];
   def: SectionDef<TId>;
@@ -250,6 +267,10 @@ export function Blocks<TId extends string>({
    *  two never double-stack. A page's own `SectionBlock` keeps the margin (the default,
    *  unchanged). */
   trimOuterMargin?: boolean;
+  /** #64 B5: forwarded to `BlockContent`'s own 'tokenSections' case only — every other block kind
+   *  ignores it. */
+  focusSectionId?: string;
+  focusNonce?: number;
 }) {
   const [available, setAvailable] = useState(0);
   const [heights, setHeights] = useState<number[]>([]);
@@ -305,7 +326,7 @@ export function Blocks<TId extends string>({
               carrying one shows its (already informative) title on a family page, which otherwise
               hides every generic block label via `showLabels={false}`. */}
           {(showLabels && block.title) || ('axis' in block && block.axis) ? <Text style={styles.blockLabel}>{('axis' in block && block.axis) || block.title}</Text> : null}
-          <BlockContent block={block} def={def} surface={surface} />
+          <BlockContent block={block} def={def} surface={surface} focusSectionId={focusSectionId} focusNonce={focusNonce} />
         </View>
       ))}
     </View>
@@ -328,6 +349,8 @@ export function SectionBlock<TId extends string>({
   headingLevel = 1,
   defaultPreviewWidths,
   navigation,
+  focusSectionId,
+  focusNonce,
 }: {
   def: SectionDef<TId>;
   groupLabel?: string;
@@ -345,6 +368,13 @@ export function SectionBlock<TId extends string>({
    *  a standalone-mounted `SectionBlock` (this framework's own catalog demo included), which then
    *  keeps its prior, unlinked rendering — see `ReferenceDetails`'s own doc comment. */
   navigation?: ReferenceNavigation<TId>;
+  /** #64 B5: a tokenDefinition page's own section to scroll into view on arrival — set by
+   *  `CatalogShell` from `resolveRoute`'s own `sectionId` (a section-alias route). Omitted for a
+   *  standalone-mounted `SectionBlock`, which then never auto-scrolls to a section. */
+  focusSectionId?: string;
+  /** Bumped by `CatalogShell` on every activation, even a repeat one — the same
+   *  `focusMemberId`/`focusNonce` convention `FamilyPage` already uses. */
+  focusNonce?: number;
 }) {
   checkCompleteness(def);
   // Memoized so Blocks' placement effect runs on real changes, not on every render.
@@ -375,7 +405,7 @@ export function SectionBlock<TId extends string>({
         {pager && <SectionPagerRow pager={pager} />}
       </View>
 
-      {blocks.length > 0 && <Blocks blocks={blocks} def={def} surface={surface} />}
+      {blocks.length > 0 && <Blocks blocks={blocks} def={def} surface={surface} focusSectionId={focusSectionId} focusNonce={focusNonce} />}
 
       <ReferenceDetails def={def} navigation={navigation} />
     </View>
