@@ -19,6 +19,10 @@ export interface DsViewerConfig {
   /** Sidebar groups whose pages are patterns: example screens built from components. `doctor`
    *  never treats a pattern page as the whole a component is a part of. @default ['Patterns'] */
   patternGroups?: string[];
+  /** Sidebar groups whose pages are components. Only a component counts as a part: a page built
+   *  from something documented in another group (a style, a layout, a behavior) lists it in its
+   *  side panel but gives it no Parts card and no part number. Absent: every group counts. */
+  partGroups?: string[];
   /** Path (relative to the project root) to a JSON file your project generates, saying where each
    *  component is used (usage file format v1 — see the README). Adds an "Appears in" block to
    *  every page with usage. Absent: the catalog is unchanged. */

@@ -6,6 +6,8 @@ import {
   ANATOMY_STAGE_PADDING,
   anatomyColumns,
   anatomyLayout,
+  ANATOMY_PIN_GUTTER,
+  anatomyPreviewWidth,
   anatomyPinFor,
   ariaLevelFor,
   buildPartTree,
@@ -433,4 +435,43 @@ test('anatomyLayout: an unmeasured width (0) falls back to the original item-cou
   // A measured card with no picture measurement yet (or vice versa) is just as unmeasured.
   assert.deepEqual(anatomyLayout(4, WIDE_CARD, 0), { stacked: false, legendColumns: 3 });
   assert.deepEqual(anatomyLayout(4, 0, PICTURE_WIDTH), { stacked: false, legendColumns: 3 });
+});
+
+// The picture is laid out at the page's preview width, and beside the legend it gets half the box.
+test('anatomyPreviewWidth: the first numeric previewWidths entry; none, empty or \'full\' means unset', () => {
+  assert.equal(anatomyPreviewWidth([402, 320]), 402);
+  assert.equal(anatomyPreviewWidth([320]), 320);
+  assert.equal(anatomyPreviewWidth(undefined), undefined);
+  assert.equal(anatomyPreviewWidth([]), undefined);
+  assert.equal(anatomyPreviewWidth('full'), undefined);
+});
+
+test('anatomyLayout with a preview width: 50/50 beside the legend while half the box holds the picture, its pin margin and its padding', () => {
+  const half = 402 + 2 * ANATOMY_PIN_GUTTER + 2 * ANATOMY_STAGE_PADDING;
+  assert.deepEqual(anatomyLayout(4, 2 * half, 0, 402), { stacked: false, legendColumns: 1 });
+  assert.equal(anatomyLayout(4, 2 * half - 2, 0, 402).stacked, true, 'half the box is now narrower than the picture needs');
+});
+
+test('anatomyLayout with a preview width: stacks when half the box is narrower than the preview width, however wide the legend', () => {
+  assert.equal(anatomyLayout(2, 2 * 402 - 2, 0, 402).stacked, true);
+  assert.equal(anatomyLayout(2, 700, 266, 402).stacked, true, 'the measured (narrow) picture no longer decides');
+});
+
+test('anatomyLayout without a preview width is unchanged', () => {
+  assert.deepEqual(anatomyLayout(4, 700, 266), { stacked: false, legendColumns: 1 });
+  assert.deepEqual(anatomyLayout(4, 700, 266, undefined), anatomyLayout(4, 700, 266));
+  assert.deepEqual(anatomyLayout(4, 440, 266), { stacked: true, legendColumns: 1 });
+});
+
+test('anatomyLayout with a preview width: more than six items, and an unmeasured card, keep their old rules', () => {
+  assert.equal(anatomyLayout(7, 2000, 0, 402).stacked, true);
+  assert.deepEqual(anatomyLayout(4, 0, 0, 402), { stacked: false, legendColumns: 3 });
+  assert.deepEqual(anatomyLayout(7, 0, 0, 402), { stacked: true, legendColumns: 3 });
+});
+
+test('anatomyLayout with a preview width: half the card must hold the width, its pin margin and padding', () => {
+  // 402 + 2 * 30 (pin margins) + 2 * 24 (stage padding) = 510, so the card needs 1020.
+  assert.deepEqual(anatomyLayout(4, 1020, 0, 402), { stacked: false, legendColumns: 1 });
+  assert.equal(anatomyLayout(4, 1019, 0, 402).stacked, true);
+  assert.equal(ANATOMY_PIN_GUTTER, 30);
 });

@@ -817,3 +817,18 @@ test('following a link inside the panel closes the panel first, then navigates (
     assert.ok(panelEl() === null, 'the panel is closed after following the link');
   } finally { cleanup(); }
 });
+
+test('a family page lays its anatomy picture out at the whole member\'s first preview width when the page declares none', () => {
+  const def = familyWithPinlessLegendRow();
+  const members = def.family.members.map((m) => (m.id === 'Whole' ? { ...m, previewWidths: [402, 390, 320] } : m));
+  const { container, cleanup } = renderCatalog(
+    React.createElement(FamilyPage as never, { def: { ...def, family: { ...def.family, members } } } as never),
+  );
+  try {
+    const picture = container.querySelector('[data-testid="anatomy-picture-measure"]') as HTMLElement | null;
+    assert.ok(picture, 'expected the anatomy picture wrapper');
+    assert.equal(picture!.style.width, '462px', 'the picture must use the whole member\'s first preview width (plus the pin margin)');
+  } finally {
+    cleanup();
+  }
+});

@@ -5,7 +5,7 @@ import { defineConfig, type DsViewerConfig } from '../config/index.ts';
 import type { ResolvedConfig } from './types.ts';
 
 const KNOWN_FIELDS = new Set<keyof DsViewerConfig>([
-  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'patternGroups', 'usage', 'starterKit', 'updateCheck', 'doctor',
+  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'patternGroups', 'partGroups', 'usage', 'starterKit', 'updateCheck', 'doctor',
 ]);
 
 export interface LoadConfigResult {
@@ -57,6 +57,12 @@ export function loadConfig(configPath: string): LoadConfigResult {
     else warnings.push('"patternGroups" must be an array of group names; using the default [\'Patterns\'].');
   }
 
+  let partGroups: string[] | undefined;
+  if (raw.partGroups !== undefined) {
+    if (Array.isArray(raw.partGroups) && raw.partGroups.every((name) => typeof name === 'string')) partGroups = raw.partGroups;
+    else warnings.push('"partGroups" must be an array of group names; every group counts as parts.');
+  }
+
   let usage: string | undefined;
   if (raw.usage !== undefined) {
     if (typeof raw.usage === 'string' && raw.usage.trim() !== '') usage = raw.usage;
@@ -72,6 +78,7 @@ export function loadConfig(configPath: string): LoadConfigResult {
     pages: raw.pages ?? [],
     groupOrder: raw.groupOrder ?? [],
     patternGroups,
+    partGroups,
     usage,
     starterKit: raw.starterKit,
     updateCheck: raw.updateCheck ?? true,

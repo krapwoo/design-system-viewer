@@ -101,6 +101,26 @@ test('buildCatalogSections warns in development when two pages resolve to the sa
   }
 });
 
+test('buildCatalogSections warns in development when a standalone page\'s anatomy names a member, not for an other item', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const anatomy = {
+      picture: null,
+      groups: [{ label: 'In', items: [{ member: 'Ghost', description: 'a' }, { other: 'Chip', description: 'b' }] }],
+    };
+    buildCatalogSections([defineCatalogPage({ id: 'Lone', group: 'Components', description: 'x', anatomy })], []);
+    assert.equal(warnings.filter((w) => w.includes('Lone') && w.includes('anatomy item "Ghost"')).length, 1);
+    assert.ok(!warnings.some((w) => w.includes('"Chip"')));
+  } finally {
+    console.warn = originalWarn;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
 test('validateComposedOf reports unknown component names deterministically, in declaration order', () => {
   const known = new Set(['Button', 'Icon']);
   assert.deepEqual(validateComposedOf(undefined, known), []);

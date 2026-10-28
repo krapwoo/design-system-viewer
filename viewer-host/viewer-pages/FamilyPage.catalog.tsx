@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, View, StyleSheet } from 'react-native';
-import { defineCatalogPage, SectionBlock, FamilyPage, AnatomyPin, CATALOG_COLOR, CATALOG_SPACE, CATALOG_TEXT, type SectionDef, type SectionPager } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, SectionBlock, FamilyPage, AnatomyPin, AnatomySpecimen, CATALOG_COLOR, CATALOG_SPACE, CATALOG_TEXT, type SectionDef, type SectionPager } from '@krapwoo/ds-viewer';
 
 const demo = StyleSheet.create({
   frame: { borderWidth: 1, borderColor: CATALOG_COLOR.border, backgroundColor: CATALOG_COLOR.pageBackground, padding: CATALOG_SPACE.xl, alignSelf: 'stretch', width: '100%' },
@@ -161,7 +161,7 @@ export default defineCatalogPage({
   sections: [
     {
       label: 'Rendering pieces', kind: 'blocks', inWhole: true,
-      members: ['SectionPagerRow', 'PagerButton', 'AnatomyPin', 'FamilyPageHead', 'MemberPanelHost', 'FamilyPart', 'PartTreeBranch', 'AnatomyBox', 'PartOfLine'],
+      members: ['SectionPagerRow', 'PagerButton', 'AnatomyPin', 'AnatomySpecimen', 'Pin', 'FamilyPageHead', 'MemberPanelHost', 'FamilyPart', 'PartTreeBranch', 'AnatomyBox', 'PartOfLine'],
     },
     // N6: Blocks has a real specimen (the stacked-blocks demo below) — a `list` section only ever
     // renders folded rows, which never show specimens, so Blocks belongs in a `blocks` section.
@@ -220,13 +220,47 @@ export default defineCatalogPage({
       id: 'AnatomyPin',
       component: 'AnatomyPin',
       parent: 'FamilyPage',
-      source: '../native/catalog/FamilyPage.tsx:731',
+      source: '../native/catalog/Anatomy.tsx:137',
       fidelity: 'replicated',
       relationship: 'Rendering piece',
       description: "A numbered (or dashed, or ↗) pin for one member, used inside a family page's own anatomy.picture.",
       whenToUse: "Reach for AnatomyPin only inside a family page's own `anatomy.picture` — it looks up its member's number and dashed/↗ style through context, so the picture's own markup never hardcodes a number.",
       a11y: "Decorative and hidden from accessibility (aria-hidden) — the member's own name, not its pin, is what a screen reader announces, the same as every pin in the anatomy legend or a Part's own header.",
       variants: { items: [{ key: 'demo', name: 'In the anatomy picture above', node: familyDemo }] },
+    },
+    {
+      id: 'AnatomySpecimen',
+      component: 'AnatomySpecimen',
+      parent: 'FamilyPage',
+      source: '../native/catalog/Anatomy.tsx:108',
+      fidelity: 'replicated',
+      relationship: 'Rendering piece',
+      description: "Draws an anatomy picture's specimen like a variant cell does, with its pins in a column on the specimen's right edge.",
+      whenToUse: "Wrap the specimen of an `anatomy.picture` in it: at the page's preview width it centres the specimen the way the variant cells do, and its `pins` sit right beside the specimen. Outside an anatomy it adds no width.",
+      a11y: 'Adds no roles or names of its own; each pin keeps its own accessible name.',
+      variants: {
+        items: [{
+          key: 'beside',
+          name: 'A small specimen with its pin beside it',
+          node: (
+            <AnatomySpecimen pins={<View style={{ position: 'absolute', right: 0, top: 4 }}><AnatomyPin other="ExampleChip" /></View>}>
+              <View style={{ width: 72, height: 30, borderRadius: 15, backgroundColor: CATALOG_COLOR.border }} />
+            </AnatomySpecimen>
+          ),
+        }],
+      },
+    },
+    {
+      id: 'Pin',
+      component: 'Pin',
+      parent: 'FamilyPage',
+      source: '../native/catalog/Anatomy.tsx:42',
+      fidelity: 'replicated',
+      relationship: 'Rendering piece',
+      description: 'The numbered badge itself, shared by anatomy pins, legend rows, Part headers and Parts cards; a component from another page adds a small ↗.',
+      whenToUse: 'Internal to the viewer: AnatomyPin, the anatomy legend, Part headers and Parts cards draw it. Catalog pages use AnatomyPin instead.',
+      a11y: 'Takes an accessible label only where it stands alone ("Part 3, opens X"); the ↗ glyph is hidden from assistive technology.',
+      variants: { items: [{ key: 'demo', name: 'Every pin in the anatomy picture above', node: familyDemo }] },
     },
     {
       id: 'Blocks',
@@ -295,7 +329,7 @@ export default defineCatalogPage({
       id: 'AnatomyBox',
       component: 'AnatomyBox',
       parent: 'FamilyPage',
-      source: '../native/catalog/FamilyPage.tsx:1328',
+      source: '../native/catalog/Anatomy.tsx:276',
       fidelity: 'replicated',
       relationship: 'Rendering piece',
       description: "The anatomy box itself — a picture with numbered pins and its legend. GroupPage renders one instance per top-level member that has its own `anatomy`, not only once per page.",

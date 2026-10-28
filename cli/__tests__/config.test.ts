@@ -166,6 +166,23 @@ test('loadConfig reads patternGroups and rejects a value that is not a list of n
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('loadConfig reads partGroups and rejects a value that is not a list of names', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-config-'));
+  const configPath = path.join(dir, 'ds-viewer.config.ts');
+  const write = (value?: string) => writeFileSync(configPath, `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', components: [], tokens: [], ${value === undefined ? '' : `partGroups: ${value}`} } as any);\n`);
+  write();
+  assert.equal(loadConfig(configPath).config.partGroups, undefined, 'absent: every group counts');
+  write("['Components']");
+  assert.deepEqual(loadConfig(configPath).config.partGroups, ['Components']);
+  for (const bad of ["'Components'", "['Components', 3]"]) {
+    write(bad);
+    const result = loadConfig(configPath);
+    assert.equal(result.config.partGroups, undefined);
+    assert.deepEqual(result.warnings, ['"partGroups" must be an array of group names; every group counts as parts.']);
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('loadConfig reads usage as a path and rejects anything else', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-config-'));
   const configPath = path.join(dir, 'ds-viewer.config.ts');

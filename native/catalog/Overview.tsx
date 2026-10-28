@@ -16,6 +16,7 @@ import {
   type OverviewFilter,
   type OverviewPage,
   type OverviewPrefs,
+  type ThumbnailSource,
 } from './overviewModel';
 import type { PreviewWidths, SectionDef } from './types';
 import type { UsageData } from './usage';
@@ -47,40 +48,69 @@ function sameFilter(a: OverviewFilter, b: OverviewFilter): boolean {
  * and buttons, and an `<a>` may not contain either. So the thumbnail is a sibling of the title link,
  * the title link is the card's one tab stop, and a stretched, role-less overlay makes the rest of
  * the card (thumbnail included) click through to the same page. Hover and focus styling sit on the
- * box, so they show whichever part is hovered or the link is focused.
+ * box, so they show whichever part is hovered or the link is focused. The Overview and a page's
+ * Parts block (`PartsBlock`) both draw it, in the `cardGrid` list; a `source` of `undefined` keeps the thumbnail's room as an
+ * empty frame, so a card without a specimen is still the same height.
  */
-const Card = memo(function Card({ page, keepDocumentUrl, onOpen }: { page: OverviewPage; keepDocumentUrl: boolean; onOpen: (id: string) => void }) {
+export const OverviewCard = memo(function OverviewCard({ title, caption, source, href, onPress, number }: {
+  title: string;
+  caption: string;
+  source?: ThumbnailSource;
+  href: string;
+  onPress: Press;
+  /** A page's Parts block numbers its cards: the badge over the thumbnail, and in the link's name. */
+  number?: string;
+}) {
   const [overlayHovered, setOverlayHovered] = useState(false);
   const [linkHovered, setLinkHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const open = openHandler(() => onOpen(page.id), keepDocumentUrl);
   return (
     <View style={[styles.card, (overlayHovered || linkHovered) && styles.cardHover, focused && styles.focusRing]}>
       <Pressable
         accessible={false}
-        onPress={open}
+        onPress={onPress}
         onHoverIn={() => setOverlayHovered(true)}
         onHoverOut={() => setOverlayHovered(false)}
         // react-native-web ignores `focusable={false}` on a Pressable; `tabIndex` is what keeps it out of the tab order.
         {...({ tabIndex: -1 } as Record<string, unknown>)}
         style={styles.cardOverlay}
       />
-      <OverviewThumbnail source={page.source} height={CARD_THUMB_HEIGHT} />
+      {source ? (
+        <OverviewThumbnail source={source} height={CARD_THUMB_HEIGHT} />
+      ) : (
+        <View {...({ 'aria-hidden': true } as Record<string, unknown>)} style={styles.thumbEmpty} />
+      )}
+      {number !== undefined && (
+        // Over the thumbnail frame's top-left, inset past the card's ring; decorative (the link's
+        // name carries the number) and click-through, so the stretched link still takes the press.
+        <View {...({ 'aria-hidden': true } as Record<string, unknown>)} style={styles.cardBadge} testID="part-badge">
+          <View style={styles.cardBadgePin}>
+            <Text style={styles.cardBadgeText}>{number}</Text>
+          </View>
+        </View>
+      )}
       <Pressable
-        onPress={open}
+        onPress={onPress}
         onHoverIn={() => setLinkHovered(true)}
         onHoverOut={() => setLinkHovered(false)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         accessibilityRole="link"
-        {...({ href: hashForId(page.id) } as Record<string, unknown>)}
+        {...({ href, ...(number !== undefined ? { 'aria-label': `Part ${number}, ${title}, ${caption}` } : {}) } as Record<string, unknown>)}
         style={styles.cardText}
       >
-        <Text style={styles.cardTitle} numberOfLines={TITLE_LINES}>{page.title}</Text>
-        <Text style={styles.cardMeta} numberOfLines={1}>{usageLine(page)}</Text>
+        <Text style={styles.cardTitle} numberOfLines={TITLE_LINES}>{title}</Text>
+        <Text style={styles.cardMeta} numberOfLines={1}>{caption}</Text>
       </Pressable>
     </View>
   );
+});
+
+/** An Overview card for a page: opens it like a sidebar link does. Memoized so a re-render of the
+ *  grid does not re-render (and re-run) the live specimen of a card whose page did not change. */
+const PageCard = memo(function PageCard({ page, keepDocumentUrl, onOpen }: { page: OverviewPage; keepDocumentUrl: boolean; onOpen: (id: string) => void }) {
+  const open = useMemo(() => openHandler(() => onOpen(page.id), keepDocumentUrl), [onOpen, page.id, keepDocumentUrl]);
+  return <OverviewCard title={page.title} caption={usageLine(page)} source={page.source} href={hashForId(page.id)} onPress={open} />;
 });
 
 function ComponentsGrid({ pages, areaOrder, prefs, onPrefs, keepDocumentUrl, onOpen }: {
@@ -122,7 +152,7 @@ function ComponentsGrid({ pages, areaOrder, prefs, onPrefs, keepDocumentUrl, onO
             <View role="list" style={styles.grid}>
               {group.pages.map((page) => (
                 <View key={page.id} role="listitem" style={styles.gridItem}>
-                  <Card page={page} keepDocumentUrl={keepDocumentUrl} onOpen={onOpen} />
+                  <PageCard page={page} keepDocumentUrl={keepDocumentUrl} onOpen={onOpen} />
                 </View>
               ))}
             </View>
@@ -213,6 +243,11 @@ const styles = StyleSheet.create({
     padding: CATALOG_SPACE.md,
     gap: CATALOG_SPACE.md,
   },
+  thumbEmpty: { height: CARD_THUMB_HEIGHT, borderRadius: CATALOG_RADIUS.sm, backgroundColor: CATALOG_COLOR.specimenStage },
+  cardBadge: { pointerEvents: 'none', position: 'absolute', top: CATALOG_SPACE.md + CATALOG_SPACE.sm, left: CATALOG_SPACE.md + CATALOG_SPACE.sm },
+  // The anatomy pin's look (`Anatomy.tsx` `pin`): a filled accent pill.
+  cardBadgePin: { minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: CATALOG_COLOR.accent, alignItems: 'center', justifyContent: 'center' },
+  cardBadgeText: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.surface },
   cardHover: { backgroundColor: CATALOG_COLOR.surfacePressed },
   // Behind the title link (later siblings paint above it), above the thumbnail's own box.
   cardOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, cursor: 'pointer' } as object,
@@ -221,3 +256,6 @@ const styles = StyleSheet.create({
   cardMeta: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing } as object,
 });
+
+/** The wrapping list of cards and the item each sits in (the Overview's grid, reused by `PartsBlock`). */
+export const cardGrid = { list: styles.grid, item: styles.gridItem };

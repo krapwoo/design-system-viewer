@@ -5,6 +5,11 @@ import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { AppearsIn } from './AppearsIn';
+import { PartsBlock } from './PartsBlock';
+import { AnatomyBox } from './Anatomy';
+import { PartNumbersContext, usePagePartNumbering } from './partNumbersContext';
+import { anatomyPreviewWidth } from './familyModel';
+import { partEntries } from './partsModel';
 import { ReferenceDetails, ReferenceDetailsPanel } from './ReferenceDetails';
 import { findUsage, type UsageData } from './usage';
 import type { ReferenceNavigation } from './catalogReferences';
@@ -14,7 +19,7 @@ import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { TokenSections } from './TokenLayouts';
 import { TokenDefinitionBlock } from './StructuredTokenPage';
 import { MATRIX_LAYOUT, PREVIEW_CARD_CHROME, blockMinWidth, choosePlacement, presentationBlocks, type PlacementBlock, type PresentationBlock } from './comparison';
-import type { PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
+import type { CatalogMember, PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
 
 // Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
 // else (string, boolean, IconName, () => void, …) has no fixed enum to sweep and is skipped.
@@ -386,10 +391,15 @@ export function SectionBlock<TId extends string>({
   // Memoized so Blocks' placement effect runs on real changes, not on every render.
   const blocks = useMemo(() => presentationBlocks(def, { defaultPreviewWidths }), [def, defaultPreviewWidths]);
   const surface = def.specimenSurface ?? DEFAULT_SPECIMEN_SURFACE;
+  const parts = useMemo(() => partEntries([{ composedOf: def.composedOf }], (name) => name === def.id || name === def.component), [def]);
+  // A standalone page has no members, so its numbered parts are the used components only: anatomy
+  // `other` items first, then Parts-only entries, from 1.
+  const partNumbers = usePagePartNumbering(1, [def.anatomy], parts, navigation);
   // react-native-web reads `aria-level`; React Native's prop types do not declare it.
   const headingLevelProps = { 'aria-level': headingLevel } as Record<string, unknown>;
 
   return (
+    <PartNumbersContext.Provider value={partNumbers}>
     <View>
       {groupLabel && (
         <Text style={styles.breadcrumb}>{breadcrumbRoot ? `${breadcrumbRoot} / ${groupLabel}` : groupLabel}</Text>
@@ -411,7 +421,12 @@ export function SectionBlock<TId extends string>({
         {pager && <SectionPagerRow pager={pager} />}
       </View>
 
+      {/* The first box after the page head, as on a family page: the same anatomy box and legend. */}
+      {def.anatomy && <AnatomyBox anatomy={def.anatomy} byId={NO_MEMBERS} outline={NO_OUTLINE} resolvesAddress={NEVER_RESOLVES} navigation={navigation} previewWidth={anatomyPreviewWidth(def.previewWidths ?? defaultPreviewWidths)} />}
+
       {blocks.length > 0 && <Blocks blocks={blocks} def={def} surface={surface} focusSectionId={focusSectionId} focusNonce={focusNonce} />}
+
+      <PartsBlock parts={parts} navigation={navigation} />
 
       <AppearsIn entry={findUsage(usage, [def.id, def.component])} />
 
@@ -419,8 +434,15 @@ export function SectionBlock<TId extends string>({
           details live in the side panel behind "Notes and API". */}
       {def.tokenGallery ? <ReferenceDetails def={def} navigation={navigation} /> : <ReferenceDetailsPanel def={def} navigation={navigation} />}
     </View>
+    </PartNumbersContext.Provider>
   );
 }
+
+// A standalone page's anatomy has no members of its own: nothing to look up, and a name links only
+// through `navigation`.
+const NO_MEMBERS = new Map<string, Pick<CatalogMember, 'fidelity'>>();
+const NO_OUTLINE = new Map<string, { number: string; level: number }>();
+const NEVER_RESOLVES = () => false;
 
 const styles = StyleSheet.create({
   breadcrumb: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },

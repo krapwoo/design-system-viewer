@@ -4,7 +4,7 @@
  * building, disclosure content, and link/pin lookups. Outline numbering (`numberFor`) and family
  * validation (`validateFamily`) live in `pageApi.ts` instead — see that file's own comments.
  */
-import type { AlsoUsedByEntry, CatalogMember, CatalogMemberSection, PropDef } from './types.ts';
+import type { AlsoUsedByEntry, CatalogMember, CatalogMemberSection, PreviewWidths, PropDef } from './types.ts';
 
 /** One node of a `blocks` section's own Part tree (Slice D1 item 7 "Tree line"). */
 export interface PartTreeEntry {
@@ -75,6 +75,10 @@ export const ANATOMY_STAGE_PADDING = 24;
  *  or (when there's no room even for one column beside the stage) the whole card stacks instead. */
 export const ANATOMY_LEGEND_MIN_COLUMN_WIDTH = 280;
 
+/** With `previewWidths`, the picture's frame is the preview width plus this margin on each side:
+ *  the specimen is drawn at the full preview width, centred, and its pins sit in the right margin. */
+export const ANATOMY_PIN_GUTTER = 30;
+
 /** How many columns a stacked legend uses at a given measured card width, up to 3 — the same
  *  minimum-column-width budget a side-by-side legend's own single column keeps. */
 function anatomyLegendColumns(cardWidth: number): 1 | 2 | 3 {
@@ -95,12 +99,31 @@ function anatomyLegendColumns(cardWidth: number): 1 | 2 | 3 {
  *  or a platform that never measures at all) falls back to the original item-count-only decision,
  *  the same one this whole page used before width ever mattered — that decision never oscillates,
  *  being a pure function of its own inputs. */
-export function anatomyLayout(totalItems: number, cardWidth: number, pictureWidth: number): { stacked: boolean; legendColumns: 1 | 2 | 3 } {
+export function anatomyLayout(totalItems: number, cardWidth: number, pictureWidth: number, previewWidth?: number): { stacked: boolean; legendColumns: 1 | 2 | 3 } {
+  if (previewWidth !== undefined && previewWidth > 0) {
+    // The picture is laid out at its preview width (not measured), and beside the legend it gets
+    // exactly half the box: stack as soon as half the box cannot hold that width plus the stage's
+    // padding (and never leave the legend less than one readable column).
+    if (cardWidth <= 0) return { stacked: totalItems > 6, legendColumns: 3 };
+    if (totalItems > 6) return { stacked: true, legendColumns: anatomyLegendColumns(cardWidth) };
+    const half = cardWidth / 2;
+    if (half >= previewWidth + 2 * ANATOMY_PIN_GUTTER + 2 * ANATOMY_STAGE_PADDING && half >= ANATOMY_LEGEND_MIN_COLUMN_WIDTH) return { stacked: false, legendColumns: 1 };
+    return { stacked: true, legendColumns: anatomyLegendColumns(cardWidth) };
+  }
   if (cardWidth <= 0 || pictureWidth <= 0) return { stacked: totalItems > 6, legendColumns: 3 };
   if (totalItems > 6) return { stacked: true, legendColumns: anatomyLegendColumns(cardWidth) };
   const sideBySideWidth = pictureWidth + 2 * ANATOMY_STAGE_PADDING + ANATOMY_LEGEND_MIN_COLUMN_WIDTH;
   if (cardWidth >= sideBySideWidth) return { stacked: false, legendColumns: 1 };
   return { stacked: true, legendColumns: anatomyLegendColumns(cardWidth) };
+}
+
+/** The width an anatomy picture is laid out at: the first numeric entry of the page's (or, for a
+ *  member's own anatomy, the member's) `previewWidths` — the width its specimens use. `undefined`
+ *  for none, or `'full'`: the picture keeps its own measured width, as before. */
+export function anatomyPreviewWidth(previewWidths: PreviewWidths | undefined): number | undefined {
+  if (previewWidths === undefined || previewWidths === 'full') return undefined;
+  const first = previewWidths[0];
+  return typeof first === 'number' && first > 0 ? first : undefined;
 }
 
 /** Distributes a legend's groups into up to `maxColumns` columns so the columns end as close to

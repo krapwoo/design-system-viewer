@@ -68,18 +68,17 @@ export function SpecimenSurface({
   );
 }
 
-/** Wraps one example inside its cell: full cell width (so a percentage-width example resolves
- *  against the cell). `fill` changes whether the example itself also stretches to that width
- *  (default) or keeps its own content size — a non-`fill` specimen centers by default; a `fill`
- *  one stretches by default instead, preserving an auto-sized full-width child (see
- *  `specimenContentAlignItems`). `align` always overrides that default explicitly.
- *
- *  A non-`fill` specimen uses a row main axis (`specimenContentBoundedStyle`) so `justifyContent`
- *  positions it horizontally — a column + `alignItems` left the specimen's own root `alignSelf`
- *  (e.g. Badge's `alignSelf: 'flex-start'`) free to override that positioning outright, since
- *  `alignItems` only sets a child's *default* `alignSelf`. `fill` keeps the existing column +
- *  `alignItems` stretch behavior, unchanged. */
+/** An anatomy specimen's pin column (`AnatomySpecimen`'s `pins`): never part of the specimen's own
+ *  painted extent, so pins neither move the centring nor count as overflow. */
+export const ANATOMY_PIN_LAYER_TEST_ID = 'anatomy-pin-layer';
+
+/** The wrapper `AnatomySpecimen` puts around its children when it has pins: transparent to the
+ *  centring measurement, which reads the specimen's own root through it (a `fill` wrapper always
+ *  stretches, so measuring it would hide a genuinely narrow root). */
+export const ANATOMY_PINS_WRAPPER_TEST_ID = 'anatomy-specimen-pins';
+
 type MeasurableNode = {
+  getAttribute?: (name: string) => string | null;
   getBoundingClientRect: () => { left: number; right: number; width: number };
   children: ArrayLike<MeasurableNode>;
   childElementCount: number;
@@ -99,7 +98,11 @@ function readTree(root: MeasurableNode, browser: Browser): LayoutBox {
       budget -= 1;
       const child = children[i];
       if (child.getBoundingClientRect().width < 1) continue;
-      kids.push(read(child));
+      const testId = child.getAttribute?.('data-testid');
+      if (testId === ANATOMY_PIN_LAYER_TEST_ID) continue;
+      const box = read(child);
+      if (testId === ANATOMY_PINS_WRAPPER_TEST_ID) kids.push(...box.children);
+      else kids.push(box);
     }
     return {
       left: rect.left,
@@ -115,6 +118,17 @@ function readTree(root: MeasurableNode, browser: Browser): LayoutBox {
   return read(root);
 }
 
+/** Wraps one example inside its cell: full cell width (so a percentage-width example resolves
+ *  against the cell). `fill` changes whether the example itself also stretches to that width
+ *  (default) or keeps its own content size — a non-`fill` specimen centers by default; a `fill`
+ *  one stretches by default instead, preserving an auto-sized full-width child (see
+ *  `specimenContentAlignItems`). `align` always overrides that default explicitly.
+ *
+ *  A non-`fill` specimen uses a row main axis (`specimenContentBoundedStyle`) so `justifyContent`
+ *  positions it horizontally — a column + `alignItems` left the specimen's own root `alignSelf`
+ *  (e.g. Badge's `alignSelf: 'flex-start'`) free to override that positioning outright, since
+ *  `alignItems` only sets a child's *default* `alignSelf`. `fill` keeps the existing column +
+ *  `alignItems` stretch behavior, unchanged. */
 export function SpecimenContent({ fill, align, capped = true, children }: { fill?: boolean; align?: SpecimenAlign; /** Phone-width cap for a filled example; off for page-width cells. */ capped?: boolean; children: React.ReactNode }) {
   // After layout (browser only): a genuinely narrow `fill` root (a fixed-width skeleton) is
   // centred. Narrow text/icons inside a full-width layout do not collapse that layout's root.

@@ -89,8 +89,10 @@ export interface CatalogPageInput<TId extends string = string> {
    *  item 15: only takes effect on a page with `members` — unused on a normal page. */
   apiLabel?: string;
   /** Slice D1 item 1: the anatomy box `FamilyPage` renders first, right after the page head —
-   *  a picture of the whole with numbered pins and a legend. Only takes effect on a page with
-   *  `members`. */
+   *  a picture of the whole with numbered pins and a legend. Drawn on a family page and on a
+   *  standalone page (one without `members`); a group page takes it on a top-level member instead.
+   *  A standalone page has no members, so only its `other` items make sense there — a `member` item
+   *  renders as an unpinned plain row (and warns in development). */
   anatomy?: CatalogAnatomy;
   /** Other catalog pages worth naming at the bottom of this page, under the "Related" heading,
    *  rendered after any deprecated non-`inWhole` sections — a component merely related to the
@@ -1004,6 +1006,13 @@ export function buildCatalogSections<TId extends string>(
     seenIds.add(page.id);
     if ((globalThis as { __DEV__?: boolean }).__DEV__) {
       for (const issue of validateComposedOf(page.composedOf, knownComposedOfNames)) console.warn(`[Catalog] ${page.id}: ${issue}`);
+      if (page.anatomy && !(page.members && page.members.length > 0)) {
+        for (const group of page.anatomy.groups) {
+          for (const anatomyItem of group.items) {
+            if ('member' in anatomyItem) console.warn(`[Catalog] ${page.id}: anatomy item "${anatomyItem.member}" names a member, but this page has no members, so it shows as a plain row without a pin. Use "other" for a component documented elsewhere.`);
+          }
+        }
+      }
       // V2d item 4: the same validation, per family member's own `composedOf`.
       for (const member of page.members ?? []) {
         for (const issue of validateComposedOf(member.composedOf, knownComposedOfNames)) {
@@ -1173,6 +1182,7 @@ export function buildCatalogSections<TId extends string>(
       previewLayout: page.previewLayout,
       hide: component ? page.hide : { ...page.hide, props: true },
       composedOf: page.composedOf,
+      ...(page.anatomy && !hasMembers ? { anatomy: page.anatomy } : {}),
       internalProps: page.internalProps,
       intentionalStaticPreview: page.intentionalStaticPreview,
       family,
