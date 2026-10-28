@@ -7,6 +7,7 @@
  */
 import type { SectionDef } from './types.ts';
 import type { AliasTarget } from './catalogNavigation.ts';
+import type { ThumbnailSource } from './overviewModel.ts';
 
 /** True once any page in the catalog opts into the `'reference'` layer — the controller's trigger
  *  for showing the separate Source reference affordance at all. A catalog with no such page keeps
@@ -161,6 +162,13 @@ export interface ReferenceNavigation<TId extends string = string> {
    *  part itself rather than just the page. Omitted (a page-level reference, e.g. `relatedPages` or
    *  an anatomy "other page" entry): the origin is the page alone. */
   open(pageId: TId, memberId?: string, sourceMemberId?: string): void;
+  /** Whether `pageId` is a component page, so what it documents counts as a part (the shell's
+   *  `partGroups`). Optional: without it every page does. */
+  isPart?(pageId: TId): boolean;
+  /** What a card for `pageId` shows: the page's title and its first specimen (`source` is absent
+   *  when the page has none, e.g. a token page). Optional: without it a Parts card falls back to
+   *  the name it was declared with and an empty thumbnail frame. */
+  page?(pageId: TId): { title: string; source?: ThumbnailSource } | undefined;
 }
 
 /** `name`'s resolved activation — its real target address plus the activation handler — or

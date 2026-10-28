@@ -281,6 +281,10 @@ export interface SectionDef<TId extends string = string> {
    *  Quick reference. See `ComposedOfEntry`. Omit when the component has no meaningful composition
    *  to disclose (most leaf components). */
   composedOf?: ComposedOfEntry[];
+  /** A single-component page's anatomy box, drawn first after the page head like a family page's.
+   *  With no members, its parts are only `other` items (components documented on their own pages),
+   *  numbered 1, 2, 3… Not set on a family or group page (a family's lives on `family.anatomy`). */
+  anatomy?: CatalogAnatomy;
   /** Explicit author declaration (guided intelligence design §3) that this page's examples are
    *  intentionally static despite the documented component having a controlled state/event pair —
    *  suppresses `cli/doctor.ts`'s `missing-working-preview` advisory. `reason` is a short, bounded

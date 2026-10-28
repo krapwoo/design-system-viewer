@@ -59,6 +59,7 @@ function entryTsx(
   logoRequirePath: string | undefined,
   updateEndpoint: { baseUrl: string; secret: string } | undefined,
   hasUsage = false,
+  partGroups?: string[],
 ): string {
   const safeAreaImport = hasSafeArea ? "import { SafeAreaProvider } from 'react-native-safe-area-context';\n" : '';
   // A literal `require(...)` with a path computed at generation time: Metro resolves every import
@@ -75,7 +76,7 @@ function entryTsx(
   // (no reserved words in either key) — the same reasoning the existing `logoRequirePath` baking
   // already relies on, extended to a whole object instead of one string.
   const endpointConst = `const updateEndpoint = ${updateEndpoint ? JSON.stringify(updateEndpoint) : 'undefined'};\n`;
-  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} update={updateNotice} versionStatus={versionStatus} updateEndpoint={updateEndpoint}${hasUsage ? ' usage={usage}' : ''} />`;
+  const viewer = `<CatalogShell appName={${JSON.stringify(name)}} title="Component Catalog" groups={groups} sections={sections}${logoProp} update={updateNotice} versionStatus={versionStatus} updateEndpoint={updateEndpoint}${hasUsage ? ' usage={usage}' : ''}${partGroups ? ` partGroups={${JSON.stringify(partGroups)}}` : ''} />`;
   const root = hasSafeArea ? `<SafeAreaProvider>${viewer}</SafeAreaProvider>` : viewer;
   return `import { registerRootComponent } from 'expo';
 import { CatalogShell, buildCatalogSections } from '@krapwoo/ds-viewer';
@@ -271,6 +272,6 @@ export function writeWorkspace(config: ResolvedConfig, updateEndpoint?: { baseUr
   const logoRequirePath = config.logo
     ? path.relative(workspace, path.resolve(config.projectRoot, config.logo)).split(path.sep).join('/')
     : undefined;
-  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? [], logoRequirePath, updateEndpoint, Boolean(config.usage)));
+  writeFileSync(path.join(workspace, 'entry.tsx'), entryTsx(config.name, hasSafeArea, config.groupOrder ?? [], logoRequirePath, updateEndpoint, Boolean(config.usage), config.partGroups));
   return workspace;
 }

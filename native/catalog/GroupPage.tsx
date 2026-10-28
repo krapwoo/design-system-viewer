@@ -8,8 +8,11 @@ import { JumpRow, type JumpItem } from './JumpRow';
 import { AppearsIn } from './AppearsIn';
 import { UsageContext } from './usageContext';
 import { pageLevelUsage, type UsageData } from './usage';
-import { AnatomyBox, FamilyPageHead, FamilyPart, MemberPanelHost, PartOfLine, PartTreeBranch, scrollAndFocusMember, type FamilyMember } from './FamilyPage';
-import { buildPartTree } from './familyModel';
+import { AnatomyBox } from './Anatomy';
+import { PartNumbersContext, usePagePartNumbering } from './partNumbersContext';
+import { nextTopLevelNumber, type PartEntry } from './partsModel';
+import { FamilyPageHead, FamilyPart, MemberPanelHost, PartOfLine, PartTreeBranch, scrollAndFocusMember, type FamilyMember } from './FamilyPage';
+import { anatomyPreviewWidth, buildPartTree } from './familyModel';
 import type { CatalogAnatomy, FamilyDef, PreviewWidths, SectionDef } from './types';
 
 /** #63 R2: the same "resolve, then build a real link" `FamilyPage.tsx`'s own module-private
@@ -55,6 +58,8 @@ function GroupTopLevelMember({
 }) {
   const pinNodesRef = useRef<Map<string, View | null>>(new Map());
   const tree = useMemo(() => buildPartTree(descendantIds, outline), [descendantIds, outline]);
+  // This member's own anatomy numbers its `other` items after the member's own parts.
+  const partNumbers = usePagePartNumbering(nextTopLevelNumber(outline, descendantIds), [member.anatomy], NO_PARTS, navigation);
   return (
     <View>
       <FamilyPart
@@ -69,7 +74,11 @@ function GroupTopLevelMember({
         registerNode={registerNode}
         afterNameRow={member.partOf ? <PartOfLine partOf={member.partOf} resolvesAddress={resolvesAddress} navigation={navigation} /> : undefined}
       />
-      {member.anatomy && <AnatomyBox anatomy={member.anatomy} byId={byId} outline={outline} resolvesAddress={resolvesAddress} navigation={navigation} />}
+      {member.anatomy && (
+        <PartNumbersContext.Provider value={partNumbers}>
+          <AnatomyBox anatomy={member.anatomy} byId={byId} outline={outline} resolvesAddress={resolvesAddress} navigation={navigation} previewWidth={anatomyPreviewWidth(member.previewWidths ?? defaultPreviewWidths)} />
+        </PartNumbersContext.Provider>
+      )}
       {tree.length > 0 && (
         <View style={styles.subparts}>
           {tree.map((node) => (
@@ -231,6 +240,7 @@ export function GroupPage<TId extends string>({
 }
 
 const MEMBER_GAP = 64;
+const NO_PARTS: readonly PartEntry[] = [];
 const PIN_GUTTER = 52;
 
 const styles = StyleSheet.create({

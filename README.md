@@ -132,7 +132,7 @@ identified.
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
-and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `usage` (optional — a path to a usage data file, see
+and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `partGroups`, `usage` (optional — a path to a usage data file, see
 [Usage data](#usage-data)), `starterKit` (new-project only —
 records the kit's version), `updateCheck`, `doctor` — see `config/index.ts`'s `DsViewerConfig` for
 each field's exact meaning. Write a page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same
@@ -584,6 +584,44 @@ the same page. An old `#ds-viewer-overview/usage` bookmark (from when the page h
 still opens the Overview. Thumbnails are decoration: hidden from assistive technology, never
 focusable or clickable, and on the web mounted only when near the visible part of the page. Nothing animates.
 
+### Parts
+
+A page built from other components shows them on the page itself, as a **Parts** block, while those
+components keep their own pages. The block lists the page's `composedOf` entries whose `relationship`
+is `built-in` or `slot` (`related` entries stay in the side panel's Composition list only), in the
+order declared. It sits after the specimens and before **Appears in**. A page with no such entry
+shows no block.
+
+An entry that resolves to another page (by page id, component, member id or alias, the same way the
+Composition links resolve) is a card like the Overview's: a live, non-interactive thumbnail of that
+page's first specimen, the page's title, and the entry's `role` as its one-line caption. Activating
+it opens that page as the Composition link does (Back returns; for a family member it opens at that
+member). All cards in a block are the same height and wrap to the width. An entry that does not
+resolve is a plain row with its name and `role`, so nothing declared is hidden. The side panel's
+Composition list is unchanged.
+
+Each card shows a number badge over the top-left of its thumbnail, in the style of an anatomy pin,
+and the card's accessible name starts with it (“Part 3, …”). It is the number the component has in
+the page's anatomy, if the anatomy names it as an `other` item, so the pin, the legend row and the
+card agree; a component only the Parts block mentions takes the next number after the anatomy's.
+Numbering is described under `anatomy` in “Family pages”. A plain row, which has no page to open,
+has no number.
+
+On a family page the block follows the members and adds the whole's `composedOf` entries
+(duplicates dropped; the first declaration wins), leaving out any entry that is already a member of
+the page. Because the page already has a **Parts** section for its members, the block is titled
+**Uses these components** there (a family with no Parts section keeps **Parts**). The block is a
+labelled region with a heading, each card has one tab stop, and nothing animates.
+
+**Only components are parts.** A style, layout or behavior a page applies (say a hit-target
+modifier) is not a part of it. Set `partGroups` in `ds-viewer.config.ts` to the sidebar groups whose
+pages are components (e.g. `partGroups: ['Components']`, compared case-insensitively). An entry that
+resolves to a page in any other group is then left out of the Parts block and gets no number; an
+entry that resolves to no page stays a plain row; the side panel's Composition list still lists
+every entry. An anatomy `other` item naming a page outside those groups keeps its pin and legend
+row, unnumbered (the dashed ↗ pin), so nothing authored disappears. `partGroups` must be an array
+of group names, otherwise a warning is printed and it is ignored. Absent, every group counts.
+
 ### Family pages
 
 A page can document a family of related declarations — a view and its internal parts, or a
@@ -650,12 +688,48 @@ knows its parts are separate components, unlike variants.
   of this page's own members (not the whole); it shows that member's Part number, or no pin at all
   when the member sits outside every `inWhole` section — such a row reserves no gutter for the pin
   it doesn't have, its name starting flush at the row's own left edge; an `other` item names a
-  component documented elsewhere, shows an unnumbered ↗ pin, and links only when the name
-  resolves to a real catalog address. With six items or fewer the legend sits beside `picture`;
-  with more it goes below it in up to three columns, each group placed in the currently shortest
-  column so the columns end nearly level (a group never splits). Mark `picture` with
-  `<AnatomyPin member="ThatMemberId" />` (its number and style come from the page, so `picture`
-  never hardcodes one) or `<AnatomyPin other="ThatComponent" />`.
+  component documented elsewhere, is numbered like a part (below), shows a small ↗ on its pin, and
+  links only when the name resolves to a real catalog address. With six items or fewer the legend
+  sits beside `picture`; with more it goes below it in up to three columns, each group placed in
+  the currently shortest column so the columns end nearly level (a group never splits). Mark
+  `picture` with `<AnatomyPin member="ThatMemberId" />` (its number and style come from the page,
+  so `picture` never hardcodes one) or `<AnatomyPin other="ThatComponent" />`.
+
+  **Numbering used components.** A component that has its own page and that this page uses is shown
+  as a part: it takes the next number after the page's own top-level parts, and the same number
+  appears on its anatomy pin (with a small ↗, marking that it opens its own page), on its legend
+  row and on its card in the Parts block. The numbers continue the top-level sequence in this
+  order: the page's own parts (unchanged — `1`, `2`, `3`…), then the `other` items in the order
+  they first appear in the legend groups, then the components that appear only in the Parts block,
+  in Parts-block order. A name has one number however it is written: an `other` item and a Parts
+  entry that name the same component — by page id, `component`, member id or alias — share it. A
+  page with no `other` items and no Parts block numbers exactly as before. With `partGroups` set, a
+  page outside those groups is not numbered and keeps the plain unnumbered ↗ marker, as before, and
+  so does an `other` name that resolves to no page at all: no number and no link. A pin's accessible name
+  says what it does and names the destination page by its title, e.g. “Part 3, opens Bot request
+  header”; a numbered legend name link is announced as “Part 3, BotRequestHeader”.
+
+  **Width** (web only; native keeps the measured picture). The picture is laid out at the width the
+  page's specimens use: the first entry of the page's `previewWidths`, else of the catalog's
+  `defaultPreviewWidths` (for a family, the whole member's first; for a group member's own
+  `anatomy`, that member's). The frame adds a 30px margin on each side, so the specimen sits
+  centred, as in the variant cells. Wrap the specimen in `AnatomySpecimen`: it takes the preview width and the
+  variant cells' own centring (pass the same `fill`/`align` the matching variant item uses). Pass
+  the pins as its `pins`: they go in a 30px column on the specimen's own right edge, right beside
+  a small specimen and in the right margin for a full-width one. Inside that column, place each
+  pin as before (`position: 'absolute', right: 0, top: y`, with `top` from the specimen's top).
+
+  Beside the legend, the picture takes half the box, centred vertically, and the legend the other
+  half. When half the box is narrower than the preview width plus 108px (the two 30px margins and the
+  stage's 24px padding on each side), the legend goes below instead, so the picture keeps its real width. In a window narrower than the picture, the picture
+  scrolls inside its own box, never the page. Without a preview width (none on the page and no catalog default) the picture
+  keeps its measured width and the layout above.
+
+  A single-component page can set `anatomy` too: it is drawn as the first box after the page head,
+  as on a family page. With no members, its parts are only the `other` items, numbered `1`, `2`,
+  `3`…
+  A group page shows no Parts block: its members' `composedOf` stays in each member's side panel,
+  and only a member's own `anatomy` numbers the components it uses.
 - **`axis`** on a `variants` or `states` slot names the one property that grid varies (e.g.
   `'Expression'`) and shows as the grid's label. Family pages hide the generic block labels, so
   give each grid an `axis` there.

@@ -80,6 +80,8 @@ export default defineCatalogPage({
     { component: 'TokenSections', role: "A token page's titled cards.", relationship: 'built-in' },
     { component: 'ReferenceDetails', role: "The reference cards, inline on a token page.", relationship: 'built-in' },
     { component: 'ReferenceDetailsPanel', role: "The \"Notes and API\" control and side panel holding the reference cards on every other page.", relationship: 'built-in' },
+    { component: 'AnatomyBox', role: "The anatomy box, first after the page head, when a standalone page has an anatomy.", relationship: 'built-in' },
+    { component: 'PartsBlock', role: "The components the page is built from, as cards, between the examples and Appears in.", relationship: 'built-in' },
     { component: 'AppearsIn', role: "Where the component is used, between the examples and the reference cards, when the project has usage data.", relationship: 'built-in' },
     // True and previously undeclared: `SectionBlock.tsx:361` renders `<SectionPagerRow />`, while
     // `SectionPagerRow` is documented as a member of the FamilyPage family. Declaring it here is

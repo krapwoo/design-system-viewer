@@ -534,6 +534,16 @@ test('a repair without an endpoint writes no record at all', () => {
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
+test('entry.tsx passes partGroups to the shell only when configured', () => {
+  const projectRoot = copyFixture();
+  const without = readFileSync(path.join(writeWorkspace(baseConfig(projectRoot)), 'entry.tsx'), 'utf8');
+  assert.doesNotMatch(without, /partGroups/);
+  const withGroups = readFileSync(path.join(writeWorkspace({ ...baseConfig(projectRoot), partGroups: ['Components', 'My "Group"'] }), 'entry.tsx'), 'utf8');
+  assert.match(withGroups, /<CatalogShell [^\n]* partGroups=\{\["Components","My \\"Group\\""\]\} \/>/);
+  assert.equal(withGroups.replace(/ partGroups=\{.*\} \/>/, ' />'), without);
+  rmSync(projectRoot, { recursive: true, force: true });
+});
+
 test('entry.tsx imports usage and passes it to the shell only when a usage path is configured', () => {
   const projectRoot = copyFixture();
   const without = readFileSync(path.join(writeWorkspace(baseConfig(projectRoot)), 'entry.tsx'), 'utf8');

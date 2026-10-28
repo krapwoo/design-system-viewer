@@ -8,7 +8,7 @@ import { FamilyPage } from './FamilyPage';
 import { GroupPage } from './GroupPage';
 import { UpdatePanel } from './UpdatePanel';
 import { Overview } from './Overview';
-import { DEFAULT_OVERVIEW_PREFS, tokenGroupIds, type OverviewPrefs } from './overviewModel';
+import { DEFAULT_OVERVIEW_PREFS, thumbnailSource, tokenGroupIds, type OverviewPrefs } from './overviewModel';
 import { ScrollRootContext } from './scrollRootContext';
 import { SourceReferencePicker } from './SourceReferencePicker';
 import {
@@ -220,6 +220,7 @@ export function CatalogShell<TId extends string>({
   versionStatus,
   updateEndpoint,
   usage,
+  partGroups,
   embedded = false,
   initialPage,
 }: {
@@ -258,6 +259,10 @@ export function CatalogShell<TId extends string>({
   /** Where each component is used (usage file format v1), validated by `sync` and written to
    *  `.ds-viewer/generated/usage.json`. `null`/absent: no "Appears in" blocks anywhere. */
   usage?: UsageData | null;
+  /** The sidebar groups whose pages are components (config `partGroups`): only those count as a
+   *  page's parts — a page in another group gets no Parts card and no part number. Compared
+   *  case-insensitively. Absent: every group counts. */
+  partGroups?: readonly string[];
 }) {
   // A `BoundedOverlayViewport`'s own child document (design §5): render ONLY the one authored
   // node this document's URL addresses, with no sidebar/breadcrumb/title/pager — never the whole
@@ -468,6 +473,12 @@ export function CatalogShell<TId extends string>({
   // to every active page's own renderer below, independent of `hasReference` (plan: "CatalogShell
   // supplies optional reference-navigation behavior to its own ordinary/family renderers,
   // independent of whether reference-only navigation metadata exists").
+  // The pages in a part group; `undefined` (no `partGroups`) means every page counts.
+  const partPageIds = useMemo(() => {
+    if (!partGroups) return undefined;
+    const names = new Set(partGroups.map((name) => name.trim().toLowerCase()));
+    return new Set<string>(groups.filter((group) => names.has(group.label.trim().toLowerCase())).flatMap((group) => group.ids));
+  }, [partGroups, groups]);
   const referenceNavigation: ReferenceNavigation<TId> = useMemo(
     () => ({
       resolve: (name) => {
@@ -490,8 +501,13 @@ export function CatalogShell<TId extends string>({
         const validHint = sourceMemberId !== undefined && ownerFamily?.members.some((member) => member.id === sourceMemberId) ? sourceMemberId : undefined;
         openReference(pageId, memberId, { pageId: current, memberId: validHint });
       },
+      isPart: (pageId) => partPageIds === undefined || partPageIds.has(pageId),
+      page: (pageId) => {
+        const def = sectionsById.get(pageId);
+        return def && { title: def.title ?? def.id, source: thumbnailSource(def, { inTokenGroup: tokenIds.has(def.id), defaultPreviewWidths }) };
+      },
     }),
-    [fullRouteIds, aliasMap, referenceEntries, active, sectionsById, openReference],
+    [fullRouteIds, aliasMap, referenceEntries, active, sectionsById, openReference, tokenIds, defaultPreviewWidths, partPageIds],
   );
 
   // Back/forward, manual fragment edits, and our own hash assignments below (which also fire
