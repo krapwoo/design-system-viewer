@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.19.0
+
+- The Overview drops its sort control and the "Shared across areas" tag and filter (cards stay grouped by area, alphabetical, and equal height), "Appears in" lists only the files that use a component, and `doctor`'s `nothing-to-show` now also flags a family or group page whose page and every member have no specimens.
+
 ## 0.18.0
 
 - The Overview shows only the Components grid (the Usage tab is gone, and an old `#ds-viewer-overview/usage` link still opens the Overview), and every card is now the same height.
