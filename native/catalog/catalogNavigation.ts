@@ -111,20 +111,15 @@ export function idFromHash<TId extends string>(hash: string, order: readonly TId
  *  it as an unknown fragment and fall back to the first real page. */
 export const UPDATE_PAGE_ID = 'ds-viewer-update';
 
-/** The Overview page (shown only when the catalog has usage data) is reserved the same way. It has
- *  two tabs, addressed `#ds-viewer-overview` (Components) and `#ds-viewer-overview/usage`. */
+/** The Overview page (shown only when the catalog has usage data) is reserved the same way. It is
+ *  addressed `#ds-viewer-overview`; the retired `#ds-viewer-overview/usage` (from when it had a Usage
+ *  tab) still opens it. */
 export const OVERVIEW_PAGE_ID = 'ds-viewer-overview';
-export type OverviewTab = 'components' | 'usage';
+export const OVERVIEW_HASH = `#${OVERVIEW_PAGE_ID}`;
 
-export function overviewHash(tab: OverviewTab): string {
-  return tab === 'usage' ? `#${OVERVIEW_PAGE_ID}/usage` : `#${OVERVIEW_PAGE_ID}`;
-}
-
-/** The tab a decoded fragment names, or undefined when it is not an Overview address. */
-export function overviewTabFromFragment(decoded: string): OverviewTab | undefined {
-  if (decoded === OVERVIEW_PAGE_ID) return 'components';
-  if (decoded === `${OVERVIEW_PAGE_ID}/usage`) return 'usage';
-  return undefined;
+/** True when a decoded fragment is an Overview address (the current one or the retired Usage one). */
+export function isOverviewFragment(decoded: string): boolean {
+  return decoded === OVERVIEW_PAGE_ID || decoded === `${OVERVIEW_PAGE_ID}/usage`;
 }
 
 /** The request header both the local endpoint (Task 12, which checks it) and the panel's own
@@ -223,8 +218,8 @@ export type Route<TId extends string> =
   | { kind: 'page'; id: TId; sectionId?: string }
   | { kind: 'member'; pageId: TId; memberId: string }
   | { kind: 'update' }
-  /** The Overview page (only resolved when the catalog has usage data), on one of its two tabs. */
-  | { kind: 'overview'; tab: OverviewTab }
+  /** The Overview page (only resolved when the catalog has usage data). */
+  | { kind: 'overview' }
   | { kind: 'notFound'; raw: string }
   | { kind: 'empty' };
 
@@ -245,8 +240,7 @@ export function resolveRoute<TId extends string>(
     return { kind: 'notFound', raw };
   }
   if (decoded === UPDATE_PAGE_ID) return { kind: 'update' };
-  const overviewTab = overviewEnabled ? overviewTabFromFragment(decoded) : undefined;
-  if (overviewTab) return { kind: 'overview', tab: overviewTab };
+  if (overviewEnabled && isOverviewFragment(decoded)) return { kind: 'overview' };
   if ((order as readonly string[]).includes(decoded)) return { kind: 'page', id: decoded as TId };
   const target = aliases.get(decoded);
   if (target) {

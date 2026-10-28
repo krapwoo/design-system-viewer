@@ -1,31 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  HEAT_OPACITIES,
   OVERVIEW_OTHER,
-  blend,
   buildOverviewPages,
   chipAreas,
-  contrastRatio,
   filterPages,
   groupByHome,
-  heatOpacity,
-  heatStyle,
-  homeLine,
   orderAreas,
   qualifiesForOverview,
   sortByUses,
   thumbnailScale,
-  tableAreas,
   thumbnailSource,
   tokenGroupIds,
   usageLine,
-  usageRows,
   type OverviewPage,
 } from '../overviewModel.ts';
-import { OVERVIEW_PAGE_ID, overviewHash, overviewTabFromFragment, resolveRoute } from '../catalogNavigation.ts';
+import { OVERVIEW_HASH, OVERVIEW_PAGE_ID, isOverviewFragment, resolveRoute } from '../catalogNavigation.ts';
 import { countUsesByArea, findUsage, usageByArea } from '../usage.ts';
-import { CATALOG_COLOR } from '../tokens.ts';
 import type { SectionDef } from '../types.ts';
 import type { UsageData, UsageUse } from '../usage.ts';
 
@@ -99,7 +90,6 @@ test('a real area named "Other" keeps its own group, apart from the home-less on
   const order = orderAreas(undefined, pages);
   assert.deepEqual(order, ['Other'], 'the real area stays in the order');
   assert.deepEqual(chipAreas(pages, order), ['Other']);
-  assert.deepEqual(tableAreas(usageRows(pages, 'shared'), order), ['Other']);
   const groups = groupByHome(pages, order);
   assert.deepEqual(groups.map((g) => [g.area, g.fallback ?? false, g.pages.map((p) => p.id)]), [['Other', false, ['A']], [OVERVIEW_OTHER, true, ['B']]]);
 });
@@ -199,74 +189,28 @@ test('filters: all, one home area, and shared across areas; chips list only area
   assert.deepEqual(chipAreas(pages, ['Chat', 'Bots', 'Unused', 'Settings', 'Zeta']), ['Chat', 'Bots', 'Settings', 'Zeta']);
 });
 
-test('sorts: most used is flat and descending; the table sorts by areas or by uses', () => {
+test('sorts: most used is flat and descending', () => {
   const pages = build();
   assert.deepEqual(sortByUses(pages).map((p) => p.id), ['Card', 'Chip', 'Banner', 'Grid', 'Gallery']);
-  assert.deepEqual(usageRows(pages, 'shared').map((p) => p.id), ['Chip', 'Card', 'Banner', 'Grid'], 'two areas first, then by uses; no uses, no row');
-  assert.deepEqual(usageRows(pages, 'used').map((p) => p.id), ['Card', 'Chip', 'Banner', 'Grid']);
-  assert.deepEqual(tableAreas(usageRows(pages, 'used'), ['Chat', 'Bots', 'Settings', 'Zeta', 'Nobody']), ['Chat', 'Bots', 'Settings']);
 });
 
-test('copy: usage line and home line', () => {
+test('copy: usage line', () => {
   assert.equal(usageLine({ hasUsage: true, uses: 17, byArea: Array.from({ length: 7 }, (_, i) => ({ area: `A${i}`, count: 1 })) }), '17 uses · 7 areas');
   assert.equal(usageLine({ hasUsage: true, uses: 52, byArea: [{ area: 'Settings', count: 52 }] }), '52 uses · Settings only');
   assert.equal(usageLine({ hasUsage: true, uses: 1, byArea: [{ area: 'Chat', count: 1 }] }), '1 use · Chat only');
   assert.equal(usageLine({ hasUsage: true, uses: 0, byArea: [] }), 'No uses yet');
   assert.equal(usageLine({ hasUsage: false, uses: 0, byArea: [] }), 'No usage recorded');
-  assert.equal(homeLine({ uses: 52, home: 'Chat' }), '52 uses · home: Chat');
-  assert.equal(homeLine({ uses: 1, home: undefined }), '1 use');
 });
 
-test('heat: the biggest count is the darkest step, steps never decrease, zero has none', () => {
-  assert.equal(heatOpacity(0, 10), 0);
-  assert.equal(heatOpacity(10, 10), HEAT_OPACITIES.at(-1));
-  assert.equal(heatOpacity(1, 100), HEAT_OPACITIES[0]);
-  let last = 0;
-  for (let count = 1; count <= 40; count += 1) {
-    const opacity = heatOpacity(count, 40);
-    assert.ok(opacity >= last, `non-decreasing at ${count}`);
-    last = opacity;
-  }
-});
-
-test('heat: a hovered row (surfacePressed) behind the cell still leaves every step at 4.5:1', () => {
-  // The chip's background is the accent at an opacity, so on a hovered row it blends over
-  // `surfacePressed` rather than white; the text colour is still picked against white, so check it.
-  const hovered = { ...CATALOG_COLOR, surface: CATALOG_COLOR.surfacePressed };
-  for (const opacity of HEAT_OPACITIES) {
-    const style = heatStyle(Math.round(opacity * 1000), 1000, hovered);
-    assert.ok(style.contrast >= 4.5, `opacity ${opacity} over surfacePressed: ${style.contrast.toFixed(2)}:1`);
-  }
-});
-
-test('heat: every step keeps its text at 4.5:1 or better', () => {
-  for (const opacity of HEAT_OPACITIES) {
-    const count = Math.round(opacity * 1000);
-    const style = heatStyle(count, 1000, CATALOG_COLOR);
-    assert.equal(style.opacity, opacity);
-    assert.ok(style.contrast >= 4.5, `opacity ${opacity}: ${style.contrast.toFixed(2)}:1`);
-  }
-  for (const max of [1, 2, 3, 7, 40, 500]) {
-    for (let count = 1; count <= max; count += 1) assert.ok(heatStyle(count, max, CATALOG_COLOR).contrast >= 4.5, `${count}/${max}`);
-  }
-  // The contrast number really is the text on the blended background, not a constant.
-  const style = heatStyle(1, 1, CATALOG_COLOR);
-  const textRgb = style.color === '#ffffff' ? [255, 255, 255] as const : [24, 24, 24] as const;
-  assert.ok(Math.abs(contrastRatio(textRgb, blend([23, 77, 198], style.opacity, [255, 255, 255])) - style.contrast) < 1e-9);
-  assert.equal(heatStyle(1, 1000, CATALOG_COLOR).color, '#181818', 'light cells take dark text');
-  assert.equal(heatStyle(1000, 1000, CATALOG_COLOR).color, '#ffffff', 'the darkest cell takes white text');
-});
-
-test('addresses: the two tabs, and the route only resolves with usage data', () => {
-  assert.equal(overviewHash('components'), `#${OVERVIEW_PAGE_ID}`);
-  assert.equal(overviewHash('usage'), `#${OVERVIEW_PAGE_ID}/usage`);
-  assert.equal(overviewTabFromFragment('ds-viewer-overview'), 'components');
-  assert.equal(overviewTabFromFragment('ds-viewer-overview/usage'), 'usage');
-  assert.equal(overviewTabFromFragment('ds-viewer-overview/other'), undefined);
+test('addresses: one Overview address, the retired Usage one still opens it, and it only resolves with usage data', () => {
+  assert.equal(OVERVIEW_HASH, `#${OVERVIEW_PAGE_ID}`);
+  assert.equal(isOverviewFragment('ds-viewer-overview'), true);
+  assert.equal(isOverviewFragment('ds-viewer-overview/usage'), true, 'an old bookmark');
+  assert.equal(isOverviewFragment('ds-viewer-overview/other'), false);
   const none = new Map();
-  assert.deepEqual(resolveRoute('#ds-viewer-overview/usage', ['A'], none, true), { kind: 'overview', tab: 'usage' });
-  assert.deepEqual(resolveRoute('#ds-viewer-overview%2Fusage', ['A'], none, true), { kind: 'overview', tab: 'usage' });
-  assert.deepEqual(resolveRoute('#ds-viewer-overview', ['A'], none, true), { kind: 'overview', tab: 'components' });
+  assert.deepEqual(resolveRoute('#ds-viewer-overview/usage', ['A'], none, true), { kind: 'overview' });
+  assert.deepEqual(resolveRoute('#ds-viewer-overview%2Fusage', ['A'], none, true), { kind: 'overview' });
+  assert.deepEqual(resolveRoute('#ds-viewer-overview', ['A'], none, true), { kind: 'overview' });
   assert.deepEqual(resolveRoute('#ds-viewer-overview', ['A'], none), { kind: 'notFound', raw: 'ds-viewer-overview' });
   assert.deepEqual(resolveRoute('#ds-viewer-overview/usage', ['A'], none, false), { kind: 'notFound', raw: 'ds-viewer-overview/usage' });
 });
