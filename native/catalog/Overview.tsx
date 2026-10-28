@@ -12,7 +12,6 @@ import {
   filterPages,
   groupByHome,
   orderAreas,
-  sortByUses,
   usageLine,
   type OverviewFilter,
   type OverviewPage,
@@ -24,14 +23,11 @@ import type { UsageData } from './usage';
 type Press = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => void;
 
 const CARD_THUMB_HEIGHT = 132;
-const TAG_PADDING_VERTICAL = 2;
-/** A card's title may take two lines, and the "Shared across areas" tag row is always there, so
- *  every card is the same height. Both come from the text roles' own line heights, not a pixel
- *  guess, and are `minHeight`s: the content (at most two title lines, one tag line) never exceeds
- *  them, so nothing clips at any font size. */
+/** A card's title may take two lines, so its room is always reserved and every card is the same
+ *  height. It comes from the text role's own line height, not a pixel guess, and is a `minHeight`:
+ *  the content (at most two title lines) never exceeds it, so nothing clips at any font size. */
 const TITLE_LINES = 2;
 export const CARD_TITLE_MIN_HEIGHT = CATALOG_TEXT.bodyStrong.lineHeight * TITLE_LINES;
-export const CARD_TAG_ROW_MIN_HEIGHT = CATALOG_SPACE.xs + CATALOG_TEXT.captionStrong.lineHeight + 2 * TAG_PADDING_VERTICAL;
 
 function openHandler(onOpen: () => void, keepDocumentUrl: boolean, stop = false): Press {
   return (event) => {
@@ -44,20 +40,6 @@ function openHandler(onOpen: () => void, keepDocumentUrl: boolean, stop = false)
 
 function sameFilter(a: OverviewFilter, b: OverviewFilter): boolean {
   return a.kind === b.kind && (a.kind !== 'area' || a.area === (b as { area: string }).area);
-}
-
-/** The tag row is rendered on every card, empty when the card is not shared, so its height is
- *  always reserved. */
-function SharedTagRow({ shared }: { shared: boolean }) {
-  return (
-    <View style={styles.tagRow}>
-      {shared && (
-        <View style={styles.tag}>
-          <Text style={styles.tagText} numberOfLines={1}>Shared across areas</Text>
-        </View>
-      )}
-    </View>
-  );
 }
 
 /**
@@ -96,7 +78,6 @@ const Card = memo(function Card({ page, keepDocumentUrl, onOpen }: { page: Overv
       >
         <Text style={styles.cardTitle} numberOfLines={TITLE_LINES}>{page.title}</Text>
         <Text style={styles.cardMeta} numberOfLines={1}>{usageLine(page)}</Text>
-        <SharedTagRow shared={page.shared} />
       </Pressable>
     </View>
   );
@@ -111,46 +92,26 @@ function ComponentsGrid({ pages, areaOrder, prefs, onPrefs, keepDocumentUrl, onO
   onOpen: (id: string) => void;
 }) {
   const areas = useMemo(() => chipAreas(pages, areaOrder), [pages, areaOrder]);
-  const hasShared = useMemo(() => pages.some((page) => page.shared), [pages]);
   // A remembered choice can name an area this catalog no longer has: show everything then.
   const filter: OverviewFilter = prefs.filter.kind === 'area' && !areas.includes(prefs.filter.area) ? { kind: 'all' } : prefs.filter;
   const visible = useMemo(() => filterPages(pages, filter), [pages, filter]);
-  const groups = useMemo(() => (prefs.componentsSort === 'area' ? groupByHome(visible, areaOrder) : []), [visible, areaOrder, prefs.componentsSort]);
-  const flat = useMemo(() => (prefs.componentsSort === 'used' ? sortByUses(visible) : []), [visible, prefs.componentsSort]);
+  const groups = useMemo(() => groupByHome(visible, areaOrder), [visible, areaOrder]);
 
   const chips: Array<{ key: string; label: string; value: OverviewFilter }> = [
     { key: 'all', label: 'All areas', value: { kind: 'all' } },
     ...areas.map((area) => ({ key: `area:${area}`, label: area, value: { kind: 'area', area } as OverviewFilter })),
-    ...(hasShared ? [{ key: 'shared', label: 'Shared across areas', value: { kind: 'shared' } as OverviewFilter }] : []),
   ];
-  const grid = (list: readonly OverviewPage[]) => (
-    <View role="list" style={styles.grid}>
-      {list.map((page) => (
-        <View key={page.id} role="listitem" style={styles.gridItem}>
-          <Card page={page} keepDocumentUrl={keepDocumentUrl} onOpen={onOpen} />
-        </View>
-      ))}
-    </View>
-  );
 
   return (
     <View>
-      <View style={styles.controls}>
-        <View role="group" aria-label="Filter by area" style={styles.chipRow}>
-          {chips.map((chip) => (
-            <JumpChip key={chip.key} title={chip.label} selected={sameFilter(filter, chip.value)} onPress={() => onPrefs({ ...prefs, filter: chip.value })} />
-          ))}
-        </View>
-        <View role="group" aria-label="Sort components" style={styles.chipRow}>
-          <JumpChip title="By area" selected={prefs.componentsSort === 'area'} onPress={() => onPrefs({ ...prefs, componentsSort: 'area' })} />
-          <JumpChip title="Most used" selected={prefs.componentsSort === 'used'} onPress={() => onPrefs({ ...prefs, componentsSort: 'used' })} />
-        </View>
+      <View role="group" aria-label="Filter by area" style={styles.chipRow}>
+        {chips.map((chip) => (
+          <JumpChip key={chip.key} title={chip.label} selected={sameFilter(filter, chip.value)} onPress={() => onPrefs({ ...prefs, filter: chip.value })} />
+        ))}
       </View>
       <Text role="status" style={styles.count}>{`${visible.length} ${visible.length === 1 ? 'component' : 'components'}`}</Text>
       {visible.length === 0 ? (
         <Text style={styles.empty}>No components match this filter.</Text>
-      ) : prefs.componentsSort === 'used' ? (
-        grid(flat)
       ) : (
         groups.map((group) => (
           <View key={group.fallback ? 'no-home' : `area:${group.area}`} style={styles.group}>
@@ -158,7 +119,13 @@ function ComponentsGrid({ pages, areaOrder, prefs, onPrefs, keepDocumentUrl, onO
               <Text role="heading" {...({ 'aria-level': 2 } as Record<string, unknown>)} style={styles.groupTitle}>{group.area}</Text>
               <Text style={styles.groupCount}>{group.pages.length}</Text>
             </View>
-            {grid(group.pages)}
+            <View role="list" style={styles.grid}>
+              {group.pages.map((page) => (
+                <View key={page.id} role="listitem" style={styles.gridItem}>
+                  <Card page={page} keepDocumentUrl={keepDocumentUrl} onOpen={onOpen} />
+                </View>
+              ))}
+            </View>
           </View>
         ))
       )}
@@ -168,8 +135,7 @@ function ComponentsGrid({ pages, areaOrder, prefs, onPrefs, keepDocumentUrl, onO
 
 /**
  * The Overview page (contract O), shown only when the catalog has usage data: every page that has a
- * specimen as a card with a live thumbnail, grouped by home area, with area filter chips and a "By
- * area" / "Most used" sort. A card opens its page like a sidebar link does, and every card is the
+ * specimen as a card with a live thumbnail, grouped by home area, with area filter chips. A card opens its page like a sidebar link does, and every card is the
  * same height. The choices can be controlled (`CatalogShell` keeps them so Back returns to the same
  * view); without `prefs` it keeps its own.
  */
@@ -228,8 +194,7 @@ const styles = StyleSheet.create({
   headingTarget: { alignSelf: 'flex-start', marginBottom: 6 },
   title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text },
   desc: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, marginBottom: CATALOG_SPACE.lg },
-  controls: { gap: CATALOG_SPACE.md, marginBottom: CATALOG_SPACE.md },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.sm },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.sm, marginBottom: CATALOG_SPACE.md },
   count: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, marginBottom: CATALOG_SPACE.md },
   empty: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted },
   group: { marginBottom: CATALOG_LAYOUT.blockGap },
@@ -254,8 +219,5 @@ const styles = StyleSheet.create({
   cardText: { gap: 2, alignItems: 'flex-start', borderRadius: CATALOG_RADIUS.sm },
   cardTitle: { ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.text, minHeight: CARD_TITLE_MIN_HEIGHT },
   cardMeta: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
-  tagRow: { minHeight: CARD_TAG_ROW_MIN_HEIGHT, paddingTop: CATALOG_SPACE.xs, alignItems: 'flex-start' },
-  tag: { paddingHorizontal: CATALOG_SPACE.sm, paddingVertical: TAG_PADDING_VERTICAL, borderRadius: CATALOG_RADIUS.control, backgroundColor: CATALOG_COLOR.accentSubtle },
-  tagText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.accent },
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing } as object,
 });

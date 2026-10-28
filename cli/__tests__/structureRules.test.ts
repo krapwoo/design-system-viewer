@@ -179,8 +179,34 @@ test('nothing-to-show exempts token pages', () => {
   assert.equal(run([page({ id: 'Tokens', tokenSectionTitles: ['Colors'] })], 'nothing-to-show').length, 0);
 });
 
-test('nothing-to-show exempts a family page, even one whose parts show nothing themselves', () => {
-  const family = page({ id: 'Family', members: [memberOf('Inner')], hasMembers: true, whole: 'Family' });
+const bareMember = (id: string): StaticMember => ({ ...memberOf(id), hasExamples: false });
+
+test('nothing-to-show reports a family page whose page and every member show nothing', () => {
+  const family = page({ id: 'Family', members: [bareMember('Inner'), bareMember('Other')], hasMembers: true, whole: 'Family' });
+  const found = run([family], 'nothing-to-show');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].page, 'Family');
+  assert.match(found[0].message, /`Family` shows no specimens/);
+});
+
+test('nothing-to-show is silent for a family where one member or the page itself has a specimen', () => {
+  const members = [bareMember('Inner'), memberOf('Shown')];
+  assert.equal(run([page({ id: 'Family', members, hasMembers: true, whole: 'Family' })], 'nothing-to-show').length, 0, 'one member has a specimen');
+  assert.equal(run([page({ id: 'Family', members: [bareMember('Inner')], hasMembers: true, variantsItems: SPECIMEN })], 'nothing-to-show').length, 0, 'the page has a variant');
+  assert.equal(run([page({ id: 'Family', members: [bareMember('Inner')], hasMembers: true, hasRender: true })], 'nothing-to-show').length, 0, 'the page has a render');
+});
+
+test('nothing-to-show treats a group page (members, no whole) the same way', () => {
+  assert.equal(run([page({ id: 'Group', members: [bareMember('A'), bareMember('B')], hasMembers: true })], 'nothing-to-show').length, 1);
+  assert.equal(run([page({ id: 'Group', members: [bareMember('A'), memberOf('B')], hasMembers: true })], 'nothing-to-show').length, 0);
+});
+
+test('nothing-to-show leaves a family whose members were not read in full alone', () => {
+  assert.equal(run([page({ id: 'Family', hasMembers: true, checkable: false })], 'nothing-to-show').length, 0);
+});
+
+test('nothing-to-show honours a standalone reason on a family page', () => {
+  const family = page({ id: 'Family', members: [bareMember('Inner')], hasMembers: true, standalone: 'Documentation only.' });
   assert.equal(run([family], 'nothing-to-show').length, 0);
 });
 

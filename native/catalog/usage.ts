@@ -60,10 +60,6 @@ export function countUsesByArea(uses: readonly UsageUse[]): UsageAreaCount[] {
   return [...counts].map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count || a.area.localeCompare(b.area));
 }
 
-export function usageByArea(entry: UsageEntry): UsageAreaCount[] {
-  return countUsesByArea(entry.uses);
-}
-
 /** `file:line`, or just `file` when the use has no line. */
 export function formatUseLocation(use: UsageUse): string {
   return use.line === undefined ? use.file : `${use.file}:${use.line}`;
@@ -71,8 +67,3 @@ export function formatUseLocation(use: UsageUse): string {
 
 /** The "Files that use it" list collapses to this many entries until expanded. */
 export const USAGE_FILES_COLLAPSED = 8;
-
-/** The accessible name of one per-area row, e.g. "Chat, 5 uses". */
-export function usageRowLabel(area: string, count: number): string {
-  return `${area}, ${count} ${count === 1 ? 'use' : 'uses'}`;
-}

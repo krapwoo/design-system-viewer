@@ -32,7 +32,7 @@ export default defineCatalogPage({
   source: '../native/catalog/Overview.tsx',
   specimenSize: 'page',
   hide: { props: true },
-  description: 'A map of the catalog for designers: every page with something to show as a card with a live, scaled-down thumbnail of its first specimen, grouped by the area it lives in, with area filter chips and a "By area" / "Most used" sort. A card opens the page like a sidebar link. Every card is the same height: a title takes up to two lines (Banner\'s does) and the room for the "Shared across areas" tag is always kept. The pages, areas and numbers here are fixture data; "Divider" has no usage, so it sits in the final "Other" group.',
+  description: 'A map of the catalog for designers: every page with something to show as a card with a live, scaled-down thumbnail of its first specimen, grouped by the area it lives in, alphabetical within each group, with area filter chips. A card opens the page like a sidebar link. Every card is the same height: a title takes up to two lines (Banner\'s does). The pages, areas and numbers here are fixture data; "Divider" has no usage, so it sits in the final "Other" group.',
   a11y: 'The chips report whether they are pressed; each card has one tab stop, its title link, and the full title stays the link\'s name when it is cut to two lines; thumbnails are hidden from assistive technology and cannot be focused or clicked.',
   variants: {
     itemsFill: true,

@@ -8,7 +8,6 @@ import {
   groupByHome,
   orderAreas,
   qualifiesForOverview,
-  sortByUses,
   thumbnailScale,
   thumbnailSource,
   tokenGroupIds,
@@ -16,7 +15,7 @@ import {
   type OverviewPage,
 } from '../overviewModel.ts';
 import { OVERVIEW_HASH, OVERVIEW_PAGE_ID, isOverviewFragment, resolveRoute } from '../catalogNavigation.ts';
-import { countUsesByArea, findUsage, usageByArea } from '../usage.ts';
+import { countUsesByArea, findUsage } from '../usage.ts';
 import type { SectionDef } from '../types.ts';
 import type { UsageData, UsageUse } from '../usage.ts';
 
@@ -94,10 +93,10 @@ test('a real area named "Other" keeps its own group, apart from the home-less on
   assert.deepEqual(groups.map((g) => [g.area, g.fallback ?? false, g.pages.map((p) => p.id)]), [['Other', false, ['A']], [OVERVIEW_OTHER, true, ['B']]]);
 });
 
-test('tied areas are ordered the same way in an Overview card and in the Appears-in block', () => {
+test('tied areas are ordered by count, then name, in an Overview card', () => {
   const uses = [...usesIn('émile', 2), ...usesIn('Zeta', 2), ...usesIn('alpha', 2), ...usesIn('Zebra', 2)];
   const pages = buildOverviewPages([page('T', { variants: { items: [item('a')] } })], { version: 1, components: { T: { area: 'x', uses } } }, HELPERS);
-  assert.deepEqual(pages[0].byArea, usageByArea({ uses }), 'one comparator for both');
+  assert.deepEqual(pages[0].byArea, countUsesByArea(uses));
 });
 
 test('the thumbnail is the first variant, else first state, else first cell, else render(); a family uses its first member with a specimen', () => {
@@ -125,23 +124,19 @@ function build(): OverviewPage[] {
   return buildOverviewPages(SECTIONS, DATA, HELPERS, { tokenIds: new Set(['Colors']) });
 }
 
-test('pages carry home area, counts by area and the shared flag', () => {
+test('pages carry home area and counts by area', () => {
   const pages = new Map(build().map((entry) => [entry.id, entry]));
   assert.deepEqual([...pages.keys()], ['Chip', 'Banner', 'Grid', 'Gallery', 'Card']);
   const chip = pages.get('Chip')!;
   assert.equal(chip.home, 'Chat');
   assert.equal(chip.uses, 5);
   assert.deepEqual(chip.byArea, [{ area: 'Chat', count: 3 }, { area: 'Bots', count: 2 }]);
-  assert.equal(chip.shared, true);
-  assert.equal(pages.get('Banner')!.shared, false, 'used only in its home area');
-  assert.equal(pages.get('Grid')!.shared, true, 'a home area of its own, used elsewhere');
   const card = pages.get('Card')!;
   assert.equal(card.home, 'Settings', 'a family takes usage from its members');
   assert.equal(card.uses, 9);
   const gallery = pages.get('Gallery')!;
   assert.equal(gallery.hasUsage, false);
   assert.equal(gallery.home, undefined);
-  assert.equal(gallery.shared, false);
 });
 
 test('a page matches usage by its component name, and a key shared by page and member counts once', () => {
@@ -181,17 +176,11 @@ test('grouping: areas in order, alphabetical within, pages without a home in a f
   assert.deepEqual(groupByHome(crowded, ['A'])[0].pages.map((p) => p.id), ['alpha', 'Zed'], 'case-insensitive title order');
 });
 
-test('filters: all, one home area, and shared across areas; chips list only areas that are a home', () => {
+test('filters: all and one home area; chips list only areas that are a home', () => {
   const pages = build();
   assert.equal(filterPages(pages, { kind: 'all' }).length, 5);
   assert.deepEqual(filterPages(pages, { kind: 'area', area: 'Chat' }).map((p) => p.id), ['Chip']);
-  assert.deepEqual(filterPages(pages, { kind: 'shared' }).map((p) => p.id), ['Chip', 'Grid']);
   assert.deepEqual(chipAreas(pages, ['Chat', 'Bots', 'Unused', 'Settings', 'Zeta']), ['Chat', 'Bots', 'Settings', 'Zeta']);
-});
-
-test('sorts: most used is flat and descending', () => {
-  const pages = build();
-  assert.deepEqual(sortByUses(pages).map((p) => p.id), ['Card', 'Chip', 'Banner', 'Grid', 'Gallery']);
 });
 
 test('copy: usage line', () => {

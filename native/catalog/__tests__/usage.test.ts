@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findUsage, formatUseLocation, pageLevelUsage, usageByArea, usageRowLabel, type UsageData } from '../usage.ts';
+import { findUsage, formatUseLocation, pageLevelUsage, countUsesByArea, type UsageData } from '../usage.ts';
 
 const DATA: UsageData = {
   version: 1,
@@ -22,20 +22,15 @@ test('findUsage is absent without data and ignores inherited object keys', () =>
   assert.equal(findUsage({ version: 1, components: {} }, ['toString', 'hasOwnProperty']), undefined);
 });
 
-test('usageByArea counts per area, highest first, ties by name', () => {
-  assert.deepEqual(usageByArea(DATA.components.ChatBubble), [{ area: 'Bots', count: 2 }, { area: 'Chat', count: 1 }]);
-  const tied = usageByArea({ uses: [{ area: 'Zed', file: 'z' }, { area: 'Alpha', file: 'a' }] });
+test('countUsesByArea counts per area, highest first, ties by name', () => {
+  assert.deepEqual(countUsesByArea(DATA.components.ChatBubble.uses), [{ area: 'Bots', count: 2 }, { area: 'Chat', count: 1 }]);
+  const tied = countUsesByArea([{ area: 'Zed', file: 'z' }, { area: 'Alpha', file: 'a' }]);
   assert.deepEqual(tied.map((r) => r.area), ['Alpha', 'Zed']);
 });
 
 test('formatUseLocation is file:line, or the file alone without a line', () => {
   assert.equal(formatUseLocation({ area: 'A', file: 'BotRoomView.swift', line: 152 }), 'BotRoomView.swift:152');
   assert.equal(formatUseLocation({ area: 'A', file: 'BotRoomView.swift' }), 'BotRoomView.swift');
-});
-
-test('usageRowLabel reads "Chat, 5 uses" and uses the singular for one', () => {
-  assert.equal(usageRowLabel('Chat', 5), 'Chat, 5 uses');
-  assert.equal(usageRowLabel('Chat', 1), 'Chat, 1 use');
 });
 
 test('pageLevelUsage gives a family page its own entry, unless one of its members already shows it', () => {
