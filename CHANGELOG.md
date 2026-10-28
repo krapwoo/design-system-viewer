@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.18.0
+
+- The Overview shows only the Components grid (the Usage tab is gone, and an old `#ds-viewer-overview/usage` link still opens the Overview), and every card is now the same height.
+
 ## 0.17.0
 
 - A catalog with usage data now has an **Overview** page, first in the sidebar, with a Components tab (a card with a live thumbnail for every page, grouped by area, filterable and sortable) and a Usage tab (a components-by-area table shaded by use count).
