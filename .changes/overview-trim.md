@@ -1,0 +1,1 @@
+The Overview drops its sort control and the "Shared across areas" tag and filter (cards stay grouped by area, alphabetical, and equal height), "Appears in" lists only the files that use a component, and `doctor`'s `nothing-to-show` now also flags a family or group page whose page and every member have no specimens.

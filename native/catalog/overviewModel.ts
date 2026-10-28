@@ -1,5 +1,5 @@
 /** The Overview page's data (contract O): which pages qualify, what each card says, and how cards are
- *  grouped, filtered and sorted. Node-safe and React-free — only React *types* — so the whole model runs under Node's test runner. */
+ *  grouped and filtered. Node-safe and React-free — only React *types* — so the whole model runs under Node's test runner. */
 import type { ReactNode } from 'react';
 import type { UsageAreaCount, UsageData, UsageEntry, UsageUse } from './usage.ts';
 import type { NavGroup, PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types.ts';
@@ -11,16 +11,14 @@ import type { NavGroup, PreviewWidths, SectionDef, SpecimenSurfaceKind } from '.
 /** The final group of cards that have no home area. */
 export const OVERVIEW_OTHER = 'Other';
 
-export type OverviewFilter = { kind: 'all' } | { kind: 'shared' } | { kind: 'area'; area: string };
-export type ComponentsSort = 'area' | 'used';
+export type OverviewFilter = { kind: 'all' } | { kind: 'area'; area: string };
 
 /** The Overview's own choices, kept by the shell so Back from a card returns to the same view. */
 export interface OverviewPrefs {
   filter: OverviewFilter;
-  componentsSort: ComponentsSort;
 }
 
-export const DEFAULT_OVERVIEW_PREFS: OverviewPrefs = { filter: { kind: 'all' }, componentsSort: 'area' };
+export const DEFAULT_OVERVIEW_PREFS: OverviewPrefs = { filter: { kind: 'all' } };
 
 /** What a card's thumbnail renders: one authored node, or a page's `render()` (called inside the
  *  thumbnail so its hooks run in a component, as they do in `Preview`). */
@@ -46,8 +44,6 @@ export interface OverviewPage {
   uses: number;
   /** Use counts by area, most first. */
   byArea: ReadonlyArray<{ area: string; count: number }>;
-  /** Used in at least one area other than its home area. */
-  shared: boolean;
 }
 
 const TITLE_COLLATOR = new Intl.Collator('en', { sensitivity: 'accent' });
@@ -173,7 +169,6 @@ export function buildOverviewPages(
       hasUsage: entries.length > 0,
       uses: uses.length,
       byArea: countByArea(uses),
-      shared: home !== undefined && uses.some((use) => use.area !== home),
     });
   }
   return pages;
@@ -203,7 +198,6 @@ export function compareByTitle(a: OverviewPage, b: OverviewPage): number {
 }
 
 export function filterPages(pages: readonly OverviewPage[], filter: OverviewFilter): OverviewPage[] {
-  if (filter.kind === 'shared') return pages.filter((page) => page.shared);
   if (filter.kind === 'area') return pages.filter((page) => page.home === filter.area);
   return pages.slice();
 }
@@ -240,11 +234,6 @@ export function groupByHome(pages: readonly OverviewPage[], areaOrder: readonly 
   const homeless = byHome.get(undefined);
   if (homeless) groups.push({ area: OVERVIEW_OTHER, fallback: true, pages: homeless.sort(compareByTitle) });
   return groups;
-}
-
-/** "Most used": a flat list, most uses first, then by title. */
-export function sortByUses(pages: readonly OverviewPage[]): OverviewPage[] {
-  return pages.slice().sort((a, b) => b.uses - a.uses || compareByTitle(a, b));
 }
 
 /** "17 uses · 7 areas", "52 uses · Settings only", "1 use · Chat only"; "No usage recorded" without

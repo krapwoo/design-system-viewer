@@ -11,6 +11,7 @@ export default defineCatalogPage({
   title: 'Group page fixture family',
   description: 'A made-up family, just to show an external part (defined on GroupPage, the group page demo) linking back here — swap for your own members/whole/sections.',
   source: 'your/components/GroupPageFixtureFamily.tsx',
+  standalone: 'A test fixture with no specimens by design: the GroupPage demo needs a real family for its external part to link back to.',
   whole: 'GroupPageFixtureFamily',
   sections: [
     { label: 'Parts', kind: 'blocks', inWhole: true, members: ['FixtureOwnPart', 'FixtureExternalPart'] },

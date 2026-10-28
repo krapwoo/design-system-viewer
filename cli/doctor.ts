@@ -557,7 +557,7 @@ function hasStandaloneReason(page: StaticPage): boolean {
   return page.standalone !== undefined && page.standalone.trim() !== '';
 }
 
-/** #66: the pages the two structure rules consider — readable, plain (no members, not a token page),
+/** #66: the pages `part-own-page` considers — readable, plain (no members, not a token page),
  *  browse-listed, and without a recorded `standalone` reason. */
 function isStructureCandidate(page: StaticPage): boolean {
   return page.checkable && !hasMembers(page) && !isTokenPage(page) && page.navigation !== 'reference' && !hasStandaloneReason(page);
@@ -653,14 +653,24 @@ function checkPartOwnPage(pages: StaticPage[], patternGroups: readonly string[])
   return issues;
 }
 
-/** #66 `nothing-to-show`: a candidate page with no variants, states, comparison or `render`. A page
- *  this reader could not fully read is never a candidate (`checkable`), so "nothing" is only claimed
- *  about a page that was read in full. `previewWidths` alone is not content: it only sizes `render`. */
+/** #66: the pages `nothing-to-show` considers — readable, not a token page, browse-listed and without
+ *  a recorded `standalone` reason. Unlike the other structure rule, a family or group page (`members`)
+ *  is a candidate too. */
+function isNothingToShowCandidate(page: StaticPage): boolean {
+  return page.checkable && !isTokenPage(page) && page.navigation !== 'reference' && !hasStandaloneReason(page);
+}
+
+/** #66 `nothing-to-show`: a candidate page with no variants, states, comparison or `render`. A family
+ *  or group page is flagged only when it AND every member show nothing (a member's own `variants`,
+ *  `states` or `comparison`; members have no `render`). A page this reader could not fully read —
+ *  members included — is never a candidate (`checkable`), so "nothing" is only claimed about a page
+ *  that was read in full. `previewWidths` alone is not content: it only sizes `render`. */
 function checkNothingToShow(pages: StaticPage[], patternGroups: readonly string[]): DoctorIssue[] {
   const issues: DoctorIssue[] = [];
   for (const page of pages) {
-    if (!isStructureCandidate(page)) continue;
-    const hasSpecimens = Boolean(page.comparison) || Boolean(page.variantsItems?.length) || Boolean(page.statesItems?.length) || page.hasRender === true;
+    if (!isNothingToShowCandidate(page)) continue;
+    const hasSpecimens = Boolean(page.comparison) || Boolean(page.variantsItems?.length) || Boolean(page.statesItems?.length) || page.hasRender === true
+      || Boolean(page.members?.some((member) => member.hasExamples));
     if (hasSpecimens) continue;
     const id = resolvePageId(page, page.file);
     const hosts = usesOf(pages, page, pageNames(page)).map((use) => use.host);

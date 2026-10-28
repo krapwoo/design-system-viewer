@@ -21,7 +21,7 @@ const { renderCatalog } = await import('../../../test/renderCatalog.tsx');
 const { CatalogShell } = await import('../CatalogShell.tsx');
 const { OverviewThumbnail } = await import('../OverviewThumbnail.tsx');
 const { ScrollRootContext } = await import('../scrollRootContext.ts');
-const { CARD_TAG_ROW_MIN_HEIGHT, CARD_TITLE_MIN_HEIGHT } = await import('../Overview.tsx');
+const { CARD_TITLE_MIN_HEIGHT } = await import('../Overview.tsx');
 const { CATALOG_SPACE, CATALOG_TEXT } = await import('../tokens.ts');
 
 function click(el: Element) {
@@ -181,7 +181,8 @@ test('the Overview has no tablist or tabpanel: it is the Components grid alone',
   const { container, cleanup } = mount('#ds-viewer-overview');
   assert.equal(pageHeading(), 'Overview');
   assert.equal(container.querySelector('[role="tablist"], [role="tab"], [role="tabpanel"], [role="table"]'), null);
-  assert.deepEqual(chipLabels(container, 'Sort components'), ['By area', 'Most used']);
+  assert.equal(container.querySelector('[aria-label="Sort components"]'), null, 'no sort control');
+  assert.deepEqual(chipLabels(container, 'Filter by area'), ['All areas', 'Chat', 'Bots', 'Settings']);
   assert.equal(titles(container).length, 5);
   cleanup();
 });
@@ -220,9 +221,9 @@ test('a page with nothing to show and a token page get no card', () => {
   cleanup();
 });
 
-test('each filter chip narrows the cards; "Shared across areas" appears only on shared cards', () => {
+test('each filter chip narrows the cards; there is no "Shared across areas" chip or tag', () => {
   const { container, cleanup } = mount('#ds-viewer-overview');
-  assert.deepEqual(chipLabels(container, 'Filter by area'), ['All areas', 'Chat', 'Bots', 'Settings', 'Shared across areas']);
+  assert.deepEqual(chipLabels(container, 'Filter by area'), ['All areas', 'Chat', 'Bots', 'Settings']);
   assert.deepEqual(pressed(container, 'Filter by area'), ['All areas']);
 
   click(chipNamed(container, 'Chat'));
@@ -233,26 +234,9 @@ test('each filter chip narrows the cards; "Shared across areas" appears only on 
   click(chipNamed(container, 'Settings'));
   assert.deepEqual(titles(container), ['Card']);
 
-  click(chipNamed(container, 'Shared across areas'));
-  assert.deepEqual(titles(container), ['Chip']);
-  assert.deepEqual(groupHeadings(container), ['Chat']);
-
   click(chipNamed(container, 'All areas'));
   assert.equal(titles(container).length, 5);
-  const tagged = cards(container).filter((card) => (card.textContent || '').includes('Shared across areas')).map(titleOf);
-  assert.deepEqual(tagged, ['Chip'], 'only a component used outside its home area carries the tag');
-  cleanup();
-});
-
-test('"Most used" is one flat list, most uses first; "By area" restores the groups', () => {
-  const { container, cleanup } = mount('#ds-viewer-overview');
-  assert.deepEqual(pressed(container, 'Sort components'), ['By area']);
-  click(chipNamed(container, 'Most used'));
-  assert.deepEqual(pressed(container, 'Sort components'), ['Most used']);
-  assert.deepEqual(groupHeadings(container), []);
-  assert.deepEqual(titles(container), ['Card', 'Chip', 'Banner', 'Toggle', 'Gallery']);
-  click(chipNamed(container, 'By area'));
-  assert.equal(groupHeadings(container).length, 4);
+  assert.doesNotMatch(container.textContent || '', /Shared across areas/);
   cleanup();
 });
 
@@ -294,10 +278,9 @@ test('a card is valid HTML around an interactive specimen: no nested links, one 
   cleanup();
 });
 
-test('activating a card opens its page, and Back returns to the same filter and sort', () => {
+test('activating a card opens its page, and Back returns to the same filter', () => {
   const { container, cleanup } = mount('#ds-viewer-overview');
   click(chipNamed(container, 'Bots'));
-  click(chipNamed(container, 'Most used'));
   const banner = cards(container).find((card) => titleOf(card) === 'Banner')!;
   click(banner);
   assert.equal(pageHeading(), 'Banner');
@@ -306,7 +289,6 @@ test('activating a card opens its page, and Back returns to the same filter and 
   goTo('#ds-viewer-overview'); // Back
   assert.equal(pageHeading(), 'Overview');
   assert.deepEqual(pressed(container, 'Filter by area'), ['Bots']);
-  assert.deepEqual(pressed(container, 'Sort components'), ['Most used']);
   assert.deepEqual(titles(container), ['Banner']);
   cleanup();
 });
@@ -482,7 +464,7 @@ test('a real area named "Other" keeps its chip and group; a tokenGallery screen 
   cleanup();
 });
 
-test('every card reserves a two-line title and the tag row, so a long shared card and a short plain one are the same height', () => {
+test('every card reserves a two-line title, so a long-titled card and a short one are the same height', () => {
   const LONG = 'A remarkably long component title that has to wrap onto a second line inside a narrow card';
   const v = (id: string, title: string) => ({ ...base(id), title, variants: { items: [item(id)] } });
   const sections = [v('Long', LONG), v('Short', 'Short')] as SectionDef<string>[];
@@ -490,23 +472,19 @@ test('every card reserves a two-line title and the tag row, so a long shared car
   const usage: UsageData = { version: 1, areas: ['Chat', 'Bots'], components: { Long: { area: 'Chat', uses: [...usesIn('Chat', 2), ...usesIn('Bots', 1)] } } };
   const { container, cleanup } = mount('#ds-viewer-overview', usage, sections, groups);
   const [long, short] = ['Long', 'Short'].map((title) => cards(container).find((card) => (card.textContent || '').includes(title === 'Long' ? LONG : 'Short'))!);
-  assert.match(long.textContent || '', /Shared across areas/);
-  assert.doesNotMatch(short.textContent || '', /Shared across areas/);
 
   // jsdom has no layout, so compare what decides the height: the reserved min-heights, which come
   // from the text roles' line heights rather than a pixel guess.
   const reserved = (link: HTMLElement) => {
-    assert.equal(link.children.length, 3, 'title, usage line, and the tag row even when empty');
-    const [title, , tagRow] = [...link.children] as HTMLElement[];
-    return { title: cssOf(title, 'min-height'), tagRow: cssOf(tagRow, 'min-height'), clamp: cssOf(title, '-webkit-line-clamp') };
+    assert.equal(link.children.length, 2, 'title and usage line only');
+    const [title] = [...link.children] as HTMLElement[];
+    return { title: cssOf(title, 'min-height'), clamp: cssOf(title, '-webkit-line-clamp') };
   };
-  const expected = { title: `${CATALOG_TEXT.bodyStrong.lineHeight * 2}px`, tagRow: `${CATALOG_SPACE.xs + CATALOG_TEXT.captionStrong.lineHeight + 4}px` };
+  const expected = { title: `${CATALOG_TEXT.bodyStrong.lineHeight * 2}px` };
   assert.equal(CARD_TITLE_MIN_HEIGHT, CATALOG_TEXT.bodyStrong.lineHeight * 2);
-  assert.equal(CARD_TAG_ROW_MIN_HEIGHT, CATALOG_SPACE.xs + CATALOG_TEXT.captionStrong.lineHeight + 4);
   const a = reserved(long);
   const b = reserved(short);
   assert.equal(a.title, expected.title);
-  assert.equal(a.tagRow, expected.tagRow);
   assert.deepEqual(a, b, 'identical height styles');
   assert.equal(a.clamp, '2', 'a title takes at most two lines');
   assert.equal(long.getAttribute('href'), '#Long');

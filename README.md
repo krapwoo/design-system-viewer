@@ -501,8 +501,9 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   page (`part-own-page`) and about a page that shows nothing (`nothing-to-show`); see the rule list
   under `doctor`. To keep such a page on purpose, set `standalone: '<why>'`, for example
   `standalone: 'Not a part of GitFileCard; it draws its own counts.'`. The reason must be non-blank
-  and is only a note in the source — the viewer ignores it. Family and group pages, token pages and
-  `navigation: 'reference'` pages are never checked. Both checks count `composedOf` written on a
+  and is only a note in the source — the viewer ignores it. Token pages and
+  `navigation: 'reference'` pages are never checked, and family and group pages are never checked
+  for `part-own-page` (`nothing-to-show` does check them, see below). Both checks count `composedOf` written on a
   family or group member as well as on a page.
 - **Coverage only counts the component's own options.** `doctor`'s `option-not-covered` checks
   string-literal unions declared in the component's own folder or a token folder. A union
@@ -522,10 +523,8 @@ export default defineConfig({
 });
 ```
 
-The block lists the areas the component is used in, most uses first, each with a proportional bar
-(decorative) and a count that is read out as, for example, "Chat, 5 uses". Below it,
-**Files that use it · N** lists each use as `file:line`; past eight files the list collapses behind
-**Show all N**. A page without usage shows no block, and a project without a `usage` field is
+The block reads **Files that use it · N** and lists each use as `file:line`; past eight files the
+list collapses behind **Show all N**. A page without usage shows no block, and a project without a `usage` field is
 unchanged.
 
 **File format, version 1:**
@@ -567,21 +566,20 @@ unchanged.
 The page is a grid with a card for every page that has something to show: a live,
 scaled-down copy of its first specimen (the first variant, else the first state, comparison cell
 or `render()` output; for a family or group page, its first part with a specimen), its title, a
-usage line such as "17 uses · 7 areas" or "52 uses · Settings only", and a **Shared across
-areas** tag when it is used outside its home area. Cards are grouped by home area (the usage
-entry's `area`; `areas` order first, then alphabetical), and a page with no usage goes to a final
-**Other** group. The chips filter by home area or **Shared across areas**; **By area** and
-**Most used** sort. Token pages, pages with nothing to show and reference-only pages get no card.
+usage line such as "17 uses · 7 areas" or "52 uses · Settings only". Cards are grouped by home
+area (the usage entry's `area`; `areas` order first, then alphabetical, and alphabetical by title
+within a group), and a page with no usage goes to a final **Other** group. The chips filter by
+home area. Token pages, pages with nothing to show and reference-only pages get no card.
 A token page is one defined with `tokenDefinition` or `tokenSections`, or a `tokenGallery` page in
 a sidebar group labelled **Tokens**; a `tokenGallery` page anywhere else (a full-width pattern
 screen, say) gets its card. A thumbnail lays the specimen out at its page's first
 `previewWidths` entry and on the surface the page gives it, so it looks as it does on the page.
-Every card is the same height, in every group, filter and sort: a title takes up to two lines
-(then ends in an ellipsis; the full title is still the link's name) and the room for the tag is
-always kept, so a card without the tag is no shorter.
+Every card is the same height, in every group and filter: a title takes up to two lines (then
+ends in an ellipsis; the full title is still the link's name) and the room for both is always
+kept, so a card with a short title is no shorter.
 
 Activating a card opens that page like a sidebar link; Back returns to the Overview with its
-filter and sort. A card has one tab stop, its title link; clicking anywhere else on the card opens
+area filter. A card has one tab stop, its title link; clicking anywhere else on the card opens
 the same page. An old `#ds-viewer-overview/usage` bookmark (from when the page had a Usage tab)
 still opens the Overview. Thumbnails are decoration: hidden from assistive technology, never
 focusable or clickable, and on the web mounted only when near the visible part of the page. Nothing animates.
@@ -998,8 +996,10 @@ Button
     group (example screens built from components) never count as the whole: by default the group
     named `Patterns`; set `patternGroups` in `ds-viewer.config.ts` to name your own (e.g.
     `patternGroups: ['Screens']`).
-  - `nothing-to-show` — a plain page with no variants, states, `render` or comparison, and no
-    members or token content (`previewWidths` alone doesn't count; it only sizes `render`). The
+  - `nothing-to-show` — a page with no variants, states, `render` or comparison and no token
+    content (`previewWidths` alone doesn't count; it only sizes `render`). A family or group page
+    (`members`) is flagged only when the page and every member have none; one member with a
+    specimen is enough to clear it. The
     message names the pages that list it in `composedOf` — on the page or on one of its members —
     or says only pattern pages use it, or that nothing does. Add a specimen, list it as a
     documentation-only part of a page that uses it, or remove the page (record why in your own

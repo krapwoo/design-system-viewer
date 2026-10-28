@@ -24,44 +24,14 @@ const { buildCatalogSections, defineCatalogPage } = await import('../pageApi.ts'
 type UsageEntry = import('../usage.ts').UsageEntry;
 type UsageData = import('../usage.ts').UsageData;
 
-/** react-native-web turns each style into atomic classes and injects their rules once, into the window
- *  that was current when it was first imported (the warmup window above) — read a property back there. */
-function cssOf(el: Element, property: string): string {
-  const classes = new Set((el.getAttribute('class') || '').split(/\s+/).filter(Boolean));
-  for (const sheet of [...warmup.window.document.styleSheets]) {
-    for (const rule of [...sheet.cssRules]) {
-      const match = /^\.([\w-]+)\s*\{(.*)\}$/s.exec(rule.cssText);
-      if (!match || !classes.has(match[1])) continue;
-      const declaration = new RegExp(`(?:^|;|\\s)${property}:\\s*([^;]+)`).exec(match[2]);
-      if (declaration) return declaration[1].trim();
-    }
-  }
-  return '';
-}
-
 function usesIn(area: string, count: number, prefix = area): UsageEntry['uses'] {
   return Array.from({ length: count }, (_, index) => ({ area, file: `${prefix}${index + 1}.swift`, line: index + 1 }));
 }
 
 const ENTRY: UsageEntry = { area: 'Chat', uses: [...usesIn('Bots', 2), ...usesIn('Chat', 5), ...usesIn('Settings', 1)] };
 
-/** What a screen reader reads: the text of an element, skipping anything `aria-hidden`. */
-function accessibleText(el: Element): string {
-  if (el.getAttribute('aria-hidden') === 'true') return '';
-  return [...el.childNodes].map((node) => (node.nodeType === 3 ? node.textContent || '' : accessibleText(node as Element))).join('');
-}
-
-/** The per-area rows: the list items that hold a (decorative) bar. */
-function areaRows(container: HTMLElement): Element[] {
-  return [...container.querySelectorAll('[role="listitem"]')].filter((el) => el.querySelector('[aria-hidden="true"]'));
-}
-
-function rowLabels(container: HTMLElement): string[] {
-  return areaRows(container).map((el) => accessibleText(el).trim());
-}
-
 function fileLines(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('[role="listitem"]')].filter((el) => !el.querySelector('[aria-hidden="true"]')).map((el) => (el.textContent || '').trim());
+  return [...container.querySelectorAll('[role="listitem"]')].map((el) => (el.textContent || '').trim()).filter((text) => /\.swift(:\d+)?$/.test(text));
 }
 
 function buttonNamed(container: HTMLElement, text: string): HTMLElement | undefined {
@@ -72,35 +42,16 @@ function click(el: HTMLElement): void {
   act(() => { el.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
 }
 
-test('AppearsIn lists one row per area, most uses first, with the count', () => {
+test('AppearsIn shows only the heading, the file count and one list of files: no per-area rows, bars or counts', () => {
   const { container, cleanup } = renderCatalog(<AppearsIn entry={ENTRY} />);
-  assert.match(container.textContent || '', /Appears in/);
-  assert.deepEqual(rowLabels(container), ['Chat, 5 uses', 'Bots, 2 uses', 'Settings, 1 use']);
-  const rows = areaRows(container);
-  assert.deepEqual(rows.map((row) => (row.textContent || '').replace(/\s+/g, '')), ['Chat5Chat,5uses', 'Bots2Bots,2uses', 'Settings1Settings,1use'], 'visible name and count, plus the one spoken label');
-  cleanup();
-});
-
-test('AppearsIn hides the visible columns and speaks one label per row, as text rather than an aria-label', () => {
-  const { container, cleanup } = renderCatalog(<AppearsIn entry={ENTRY} />);
-  const rows = areaRows(container);
-  assert.equal(rows.length, 3);
-  for (const row of rows) {
-    assert.equal(row.hasAttribute('aria-label'), false, 'screen readers in browse mode ignore a list item\'s aria-label');
-    const hidden = [...row.querySelectorAll('[aria-hidden="true"]')];
-    assert.equal(hidden.length, 3, 'the area name, the bar track and the count are hidden');
-    assert.equal(hidden.filter((el) => (el.textContent || '').trim() === '').length, 1, 'the bar carries no text');
-  }
-  assert.deepEqual(rows.map((row) => accessibleText(row).trim()), ['Chat, 5 uses', 'Bots, 2 uses', 'Settings, 1 use'], 'what is read: one label each, no doubled name or count');
-  assert.equal(container.querySelectorAll('[role="list"]').length, 2, 'area rows and file lines are lists');
-  cleanup();
-});
-
-test('AppearsIn caps each bar track at 240px so it does not stretch across the card', () => {
-  const { container, cleanup } = renderCatalog(<AppearsIn entry={ENTRY} />);
-  const tracks = areaRows(container).map((row) => [...row.querySelectorAll('[aria-hidden="true"]')].find((el) => (el.textContent || '').trim() === '')!);
-  assert.equal(tracks.length, 3);
-  for (const track of tracks) assert.equal(cssOf(track, 'max-width'), '240px');
+  const text = container.textContent || '';
+  assert.match(text, /Appears in/);
+  assert.equal((text.match(/Files that use it · 8/g) ?? []).length, 1, 'the count is read once');
+  assert.equal(container.querySelectorAll('[role="list"]').length, 1, 'one list, of files');
+  assert.equal(container.querySelectorAll('[role="listitem"]').length, 8, 'one item per file');
+  assert.equal(container.querySelectorAll('[aria-hidden="true"]').length, 0, 'no decorative bars or hidden columns');
+  assert.doesNotMatch(text, /\b\d+ uses?\b/, 'no per-area counts');
+  assert.deepEqual(fileLines(container), ['Bots1.swift:1', 'Bots2.swift:2', 'Chat1.swift:1', 'Chat2.swift:2', 'Chat3.swift:3', 'Chat4.swift:4', 'Chat5.swift:5', 'Settings1.swift:1']);
   cleanup();
 });
 
@@ -163,7 +114,7 @@ test('a standalone page shows "Appears in" after its specimens, only when it has
   const withUsage = renderCatalog(<SectionBlock def={def} usage={usage} />);
   const text = withUsage.container.textContent || '';
   assert.ok(text.indexOf('Chip specimen') > -1 && text.indexOf('Appears in') > text.indexOf('Chip specimen'), 'after the specimen');
-  assert.deepEqual(rowLabels(withUsage.container), ['Chat, 5 uses', 'Bots, 2 uses', 'Settings, 1 use']);
+  assert.equal(fileLines(withUsage.container).length, 8);
   withUsage.cleanup();
 
   for (const props of [{}, { usage: null }, { usage: { version: 1, components: {} } as UsageData }]) {
@@ -177,7 +128,7 @@ test('a standalone page matches usage by its component name as well as its id', 
   const page = defineCatalogPage({ id: 'ChipPage', component: 'Chip', group: 'Components', description: 'A chip.', variants: { items: [{ key: 'v', name: 'Default', node: <div>x</div> }] } });
   const def = buildCatalogSections([page], [{ name: 'Chip', file: 'Chip.tsx', props: [], inheritedFrom: [] }], []).sections[0];
   const { container, cleanup } = renderCatalog(<SectionBlock def={def} usage={{ version: 1, components: { Chip: ENTRY } }} />);
-  assert.deepEqual(rowLabels(container), ['Chat, 5 uses', 'Bots, 2 uses', 'Settings, 1 use']);
+  assert.equal(fileLines(container).length, 8);
   cleanup();
 });
 
@@ -196,8 +147,7 @@ test('a family member gets its own "Appears in" block, matched by member id', ()
   const def = buildCatalogSections([page], [], []).sections[0];
   const usage: UsageData = { version: 1, components: { CardHeader: { uses: usesIn('Chat', 2, 'H') } } };
   const { container, cleanup } = renderCatalog(<FamilyPage def={def} usage={usage} />);
-  assert.equal(areaRows(container).length, 1);
-  assert.deepEqual(rowLabels(container), ['Chat, 2 uses']);
+  assert.deepEqual(fileLines(container), ['H1.swift:1', 'H2.swift:2']);
   const text = container.textContent || '';
   assert.ok(text.indexOf('Appears in') > text.indexOf('Header specimen'), 'after the member specimen');
   cleanup();
@@ -221,13 +171,14 @@ test('a key naming the family page itself shows once, after its parts, and not a
   } as never);
   const def = buildCatalogSections([page], [], []).sections[0];
   const own = renderCatalog(<FamilyPage def={def} usage={{ version: 1, components: { Card: { uses: usesIn('Chat', 3) } } }} />);
-  assert.deepEqual(rowLabels(own.container), ['Chat, 3 uses']);
+  assert.equal(fileLines(own.container).length, 3);
   const ownText = own.container.textContent || '';
   assert.ok(ownText.indexOf('Header specimen') > -1 && ownText.indexOf('Appears in') > ownText.indexOf('Header specimen'), 'after the specimens, not under the page head');
   own.cleanup();
 
   const shared = renderCatalog(<FamilyPage def={def} usage={{ version: 1, components: { Card: { uses: usesIn('Chat', 3) }, CardWhole: { uses: usesIn('Bots', 2) } } }} />);
-  assert.deepEqual(rowLabels(shared.container).sort(), ['Bots, 2 uses', 'Chat, 3 uses'], 'the page entry and the whole entry differ, so both show');
+  assert.equal(((shared.container.textContent || '').match(/Files that use it/g) ?? []).length, 2, 'the page entry and the whole entry differ, so both show');
+  assert.equal(fileLines(shared.container).length, 5);
   shared.cleanup();
 });
 
@@ -243,7 +194,7 @@ test('a key naming the group page itself shows after its members, not above the 
   } as never);
   const def = buildCatalogSections([page], [], []).sections[0];
   const { container, cleanup } = renderCatalog(<GroupPage def={def} usage={{ version: 1, components: { Widgets: { uses: usesIn('Chat', 2) } } }} />);
-  assert.deepEqual(rowLabels(container), ['Chat, 2 uses']);
+  assert.equal(fileLines(container).length, 2);
   const text = container.textContent || '';
   assert.ok(text.indexOf('Plain specimen') > -1 && text.indexOf('Appears in') > text.indexOf('Plain specimen'), 'after the member\'s specimen');
   cleanup();

@@ -348,7 +348,7 @@ export function CatalogShell<TId extends string>({
     if (route.kind === 'member') return route.pageId;
     return undefined; // notFound
   });
-  // The Overview's filter and sort are kept here so Back from a card returns to the same view.
+  // The Overview's area filter is kept here so Back from a card returns to the same view.
   const [overviewPrefs, setOverviewPrefs] = useState<OverviewPrefs>(DEFAULT_OVERVIEW_PREFS);
   const [pendingMemberId, setPendingMemberId] = useState<string | undefined>(() => {
     if (embedded || !isWeb()) return undefined;
