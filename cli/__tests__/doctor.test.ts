@@ -617,6 +617,121 @@ test('degenerate-grid-axis never runs against a not-checkable page — never a p
   assert.equal(issues.filter((i) => i.id === 'degenerate-grid-axis').length, 0);
 });
 
+// `comparison-hides-variants`: a grid replaces the Variants list, and keeps `variants.axis` as its
+// heading only when it names a grid axis. Any other axis leaves the variants hidden with nothing
+// saying so.
+const GRID_2X2 = {
+  rowLabel: 'Shape',
+  columnLabel: 'Pose',
+  rows: { items: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }] },
+  columns: { items: [{ key: 'c', label: 'C' }, { key: 'd', label: 'D' }] },
+};
+const hidesVariants = (pages: StaticPage[]) => collectIssues(pages, []).filter((i) => i.id === 'comparison-hides-variants');
+
+test('comparison-hides-variants warns when the variants axis is neither grid axis', () => {
+  const found = hidesVariants([page({ comparison: GRID_2X2, variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: 'Expression' })]);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].severity, 'warning');
+  assert.match(found[0].message, /variants \(Expression\) are not shown on the page: its comparison grid replaces them and covers Shape × Pose/);
+  assert.ok(found[0].fix.length > 0);
+});
+
+test('comparison-hides-variants also warns when the variants have no axis at all', () => {
+  const found = hidesVariants([page({ comparison: GRID_2X2, variantsItems: [{ key: 'v', name: 'V' }] })]);
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /variants are not shown/);
+});
+
+test('comparison-hides-variants stays quiet when the axis names a grid axis, however it is cased', () => {
+  for (const axis of ['Shape', 'pose', ' Pose ']) {
+    assert.equal(hidesVariants([page({ comparison: GRID_2X2, variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: axis })]).length, 0, axis);
+  }
+});
+
+test('comparison-hides-variants stays quiet with no variants, no comparison, or anything it could not read', () => {
+  assert.equal(hidesVariants([page({ comparison: GRID_2X2, variantsAxis: 'Expression' })]).length, 0, 'no variant items');
+  assert.equal(hidesVariants([page({ variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: 'Expression' })]).length, 0, 'no comparison');
+  assert.equal(hidesVariants([page({ comparison: GRID_2X2, variantsItems: [{ key: 'v', name: 'V' }], variantsAxisUnreadable: true })]).length, 0, 'non-literal axis');
+  assert.equal(hidesVariants([page({ comparison: { ...GRID_2X2, columnLabel: undefined }, variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: 'Expression' })]).length, 0, 'non-literal grid label');
+  assert.equal(hidesVariants([page({ checkable: false, comparison: GRID_2X2, variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: 'Expression' })]).length, 0, 'not checkable');
+});
+
+test('comparison-hides-variants stays quiet for a page that hides its variants (no grid or variants is shown)', () => {
+  const hidden = page({ comparison: GRID_2X2, variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: 'Expression', hideVariants: true });
+  assert.equal(hidesVariants([hidden]).length, 0);
+  assert.equal(hidesVariants([{ ...hidden, hideVariants: false }]).length, 1, 'the same page without hide.variants still warns');
+});
+
+test('comparison-hides-variants says the variants are off the page, and offers removing them', () => {
+  const [found] = hidesVariants([page({ comparison: GRID_2X2, variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: 'Expression' })]);
+  assert.match(found.message, /not shown on the page/);
+  assert.match(found.message, /first is still the Overview thumbnail/);
+  assert.match(found.fix, /remove them if they are only there for the thumbnail/);
+});
+
+test('comparison-hides-variants checks family members too', () => {
+  const member = { id: 'Face', component: 'Face', hasWhenToUse: true, hasA11y: true, hasExamples: true, variantsItems: [{ key: 'v', name: 'V' }], variantsAxis: 'Expression', comparison: GRID_2X2 };
+  const found = hidesVariants([page({ members: [member] })]);
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /Member "Face"'s variants \(Expression\)/);
+  assert.equal(hidesVariants([page({ members: [{ ...member, variantsAxis: 'Pose' }] })]).length, 0);
+});
+
+test('the static reader records variants.axis and the member grid labels', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-axis-'));
+  try {
+    const file = path.join(dir, 'Face.catalog.tsx');
+    writeFileSync(file, `import { defineCatalogPage } from '@krapwoo/ds-viewer';
+export default defineCatalogPage({
+  id: 'Face', description: 'd', group: 'Components',
+  variants: { axis: 'Expression', items: [{ key: 'v', name: 'V', node: null }] },
+  comparison: { rowLabel: 'Shape', columnLabel: 'Pose', rows: [{ key: 'a', label: 'A' }], columns: [{ key: 'c', label: 'C' }], cells: [] },
+});
+`);
+    const [read] = readStaticPages([file]);
+    assert.equal(read.variantsAxis, 'Expression');
+    assert.equal(read.comparison?.rowLabel, 'Shape');
+    assert.equal(hidesVariants([read]).length, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the static reader records each member\'s own axis, unreadable axis and grid from source, and doctor follows', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-member-axis-'));
+  try {
+    const file = path.join(dir, 'Faces.catalog.tsx');
+    writeFileSync(file, `import { defineCatalogPage } from '@krapwoo/ds-viewer';
+export default defineCatalogPage({
+  id: 'Faces', description: 'd', group: 'Components',
+  members: [
+    { id: 'Literal', source: 'a.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd',
+      variants: { axis: 'Expression', items: [{ key: 'v', name: 'V', node: null }] },
+      comparison: { rowLabel: 'Shape', columnLabel: 'Pose', rows: [{ key: 'a', label: 'A' }], columns: [{ key: 'c', label: 'C' }], cells: [] } },
+    { id: 'Dynamic', source: 'b.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd',
+      variants: { axis: pickAxis(), items: [{ key: 'v', name: 'V', node: null }] },
+      comparison: { rowLabel: 'Shape', columnLabel: 'Pose', rows: [{ key: 'a', label: 'A' }], columns: [{ key: 'c', label: 'C' }], cells: [] } },
+    { id: 'Covered', source: 'c.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd',
+      variants: { axis: 'pose', items: [{ key: 'v', name: 'V', node: null }] },
+      comparison: { rowLabel: 'Shape', columnLabel: 'Pose', rows: [{ key: 'a', label: 'A' }], columns: [{ key: 'c', label: 'C' }], cells: [] } },
+  ],
+});
+`);
+    const [read] = readStaticPages([file]);
+    assert.equal(read.checkable, true);
+    const [literal, dynamic, covered] = read.members!;
+    assert.equal(literal.variantsAxis, 'Expression');
+    assert.equal(literal.variantsAxisUnreadable, undefined);
+    assert.equal(literal.comparison?.rowLabel, 'Shape');
+    assert.equal(literal.comparison?.columnLabel, 'Pose');
+    assert.equal(dynamic.variantsAxis, undefined);
+    assert.equal(dynamic.variantsAxisUnreadable, true);
+    assert.equal(dynamic.comparison?.rowLabel, 'Shape');
+    assert.equal(covered.variantsAxis, 'pose');
+    const found = hidesVariants([read]);
+    assert.equal(found.length, 1, 'only the member whose literal axis the grid does not cover');
+    assert.match(found[0].message, /Member "Literal"'s variants \(Expression\)/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 // Guided intelligence design §3 / plan Task 3 — `missing-working-preview`: advisory, never fatal,
 // and fired only when a documented component has a controlled state/event pair (e.g.
 // `selected`/`onSelectedChange`) AND every direct-component example confidently demonstrates a

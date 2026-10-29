@@ -235,10 +235,23 @@ function isGeometry(value: unknown): boolean {
     && Number.isInteger(geometry.fillers) && (geometry.fillers as number) >= 0;
 }
 
+function isBlockSnapshot(entryBlock: unknown): boolean {
+  if (!entryBlock || typeof entryBlock !== 'object') return false;
+  const block = entryBlock as Record<string, unknown>;
+  if (typeof block.title !== 'string' || !['grid', 'grouped', 'list', 'preview', 'tokenSections', 'empty'].includes(String(block.kind))) return false;
+  if (!(block.minWidth === null || isFiniteNumber(block.minWidth))) return false;
+  if (block.items !== undefined && (!Number.isInteger(block.items) || (block.items as number) < 0)) return false;
+  if (block.size !== undefined && typeof block.size !== 'string') return false;
+  if (block.full !== undefined && !isGeometry(block.full)) return false;
+  if (block.half !== undefined && !isGeometry(block.half)) return false;
+  return true;
+}
+
 function isLayoutSnapshot(value: unknown): value is LayoutSnapshot {
   if (!value || typeof value !== 'object') return false;
   const snapshot = value as Record<string, unknown>;
   if (typeof snapshot.version !== 'string' || !isFiniteNumber(snapshot.width) || snapshot.width <= 0 || !Array.isArray(snapshot.pages)) return false;
+  if (snapshot.membersRecorded !== undefined && snapshot.membersRecorded !== true) return false;
   const ids = new Set<string>();
   for (const entry of snapshot.pages) {
     if (!entry || typeof entry !== 'object') return false;
@@ -247,15 +260,10 @@ function isLayoutSnapshot(value: unknown): value is LayoutSnapshot {
     ids.add(page.page);
     if (page.sideEligible !== undefined && typeof page.sideEligible !== 'boolean') return false;
     if (page.notCheckable !== undefined && page.notCheckable !== true) return false;
-    for (const entryBlock of page.blocks) {
-      if (!entryBlock || typeof entryBlock !== 'object') return false;
-      const block = entryBlock as Record<string, unknown>;
-      if (typeof block.title !== 'string' || !['grid', 'grouped', 'list', 'preview', 'tokenSections', 'empty'].includes(String(block.kind))) return false;
-      if (!(block.minWidth === null || isFiniteNumber(block.minWidth))) return false;
-      if (block.items !== undefined && (!Number.isInteger(block.items) || (block.items as number) < 0)) return false;
-      if (block.size !== undefined && typeof block.size !== 'string') return false;
-      if (block.full !== undefined && !isGeometry(block.full)) return false;
-      if (block.half !== undefined && !isGeometry(block.half)) return false;
+    if (!Array.isArray(page.blocks) || !page.blocks.every(isBlockSnapshot)) return false;
+    if (page.members !== undefined) {
+      if (!page.members || typeof page.members !== 'object' || Array.isArray(page.members)) return false;
+      if (!Object.values(page.members as Record<string, unknown>).every((blocks) => Array.isArray(blocks) && blocks.every(isBlockSnapshot))) return false;
     }
   }
   return true;

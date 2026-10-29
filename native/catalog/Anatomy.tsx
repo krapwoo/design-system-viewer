@@ -98,7 +98,9 @@ const AnatomyPreviewWidthContext = createContext<number | undefined>(undefined);
 /** Draws an anatomy picture's specimen the way a variant cell draws it: at the page's preview
  *  width (the anatomy's own), through the same `SpecimenContent` centring — a small or narrow
  *  specimen sits centred, a full-width one fills. `fill`/`align` mean what they mean on a variant
- *  item; pass the same values the matching variant uses. Without a preview width it adds no width.
+ *  item; pass the same values the matching variant uses. Without a preview width it adds no width,
+ *  except on web with `pins`, where it adds the pin gutter on both sides (so the pins sit inside
+ *  the measured picture column, not over the legend beside it). Native keeps the measured picture.
  *
  *  `pins`: the picture's pins, drawn in a `ANATOMY_PIN_GUTTER`-wide column that rides on the
  *  specimen's own right edge — right beside a small specimen, in the frame's right margin for a
@@ -108,7 +110,12 @@ const AnatomyPreviewWidthContext = createContext<number | undefined>(undefined);
 export function AnatomySpecimen({ fill, align, pins, children }: { fill?: boolean; align?: SpecimenAlign; pins?: React.ReactNode; children: React.ReactNode }) {
   const width = useContext(AnatomyPreviewWidthContext);
   return (
-    <View style={width !== undefined ? { width } : undefined} testID="anatomy-specimen">
+    // On web without a preview width the picture keeps its own measured width, and the pin column
+    // hangs `ANATOMY_PIN_GUTTER` past the specimen's right edge: reserve that space here, on both
+    // sides so the specimen stays centred, so the pins sit inside the measured picture column
+    // instead of overflowing into the legend beside it (and the side-by-side decision counts them).
+    // Native, and any preview width, are unchanged.
+    <View style={width !== undefined ? { width } : pins !== undefined && Platform.OS === 'web' ? { paddingHorizontal: ANATOMY_PIN_GUTTER } : undefined} testID="anatomy-specimen">
       <SpecimenContent fill={fill} align={align}>
         {pins === undefined ? children : (
           <View style={styles.specimenWithPins} testID={ANATOMY_PINS_WRAPPER_TEST_ID}>

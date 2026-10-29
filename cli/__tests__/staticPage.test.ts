@@ -756,12 +756,18 @@ test('reads members/whole/sections/aliases literally, flattening every section\'
     { label: 'Parts', kind: 'blocks', members: ['ToastBanner'], inWhole: true },
     { label: 'Related', kind: 'blocks', members: ['ToastStandalone'], inWhole: false },
   ]);
+  // The layout fields `explain` and `doctor`'s `comparison-hides-variants` read per member: all unset
+  // for a member that authors none of them.
+  const noLayout = {
+    variantsItems: undefined, variantsItemsFill: undefined, variantsMaxColumns: undefined, variantsAxis: undefined, variantsAxisUnreadable: undefined,
+    statesItems: undefined, statesItemsFill: undefined, statesMaxColumns: undefined, statesAxis: undefined, comparison: undefined, previewWidths: undefined, specimenSize: undefined,
+  };
   assert.deepEqual(page.members, [
-    { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
+    { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined, ...noLayout },
     // V2c item 5: `variants: { items: [] }` has no real specimen — `hasExamples` must be false,
     // not just "the variants key is present".
-    { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasComposedOf: false, hasWhenToUse: true, hasA11y: true, hasExamples: false, anatomy: undefined },
-    { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined },
+    { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasComposedOf: false, hasWhenToUse: true, hasA11y: true, hasExamples: false, anatomy: undefined, ...noLayout, variantsItems: [] },
+    { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined, ...noLayout },
   ]);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });

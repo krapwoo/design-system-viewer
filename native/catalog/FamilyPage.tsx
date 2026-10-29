@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, findNodeHandle, type LayoutChangeEvent } from 'react-native';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, findNodeHandle, type LayoutChangeEvent, type TextStyle } from 'react-native';
 import { AppearsIn } from './AppearsIn';
 import { PartsBlock } from './PartsBlock';
 import { partEntries, nextTopLevelNumber } from './partsModel';
@@ -1305,9 +1305,13 @@ const styles = StyleSheet.create({
   breadcrumb: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
   pageHead: { paddingBottom: CATALOG_SPACE.xl, marginBottom: CATALOG_SPACE['2xl'], borderBottomWidth: 1, borderBottomColor: CATALOG_COLOR.borderStrong },
   titlebar: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: CATALOG_SPACE.xl, marginTop: 14 },
-  titleText: { flex: 1 },
+  // `minWidth: 0` is a guard: react-native-web's base View already sets it, but the title column
+  // must stay shrinkable for the wrapping title to fit beside the pager.
+  titleText: { flex: 1, minWidth: 0 },
   headingTarget: { alignSelf: 'flex-start' },
-  title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text, marginBottom: 5 },
+  // Same as `SectionBlock`'s title: an unbroken component id has no space to wrap at, so without
+  // `wordBreak` it keeps its full width and runs underneath the pager instead of wrapping.
+  title: { ...CATALOG_TEXT.pageTitle, color: CATALOG_COLOR.text, marginBottom: 5, wordBreak: 'break-word' } as TextStyle,
   desc: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   notShown: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, maxWidth: 700, marginTop: CATALOG_SPACE.sm },
   kindNote: { maxWidth: 700, marginTop: CATALOG_SPACE.sm, borderLeftWidth: 2, borderLeftColor: CATALOG_COLOR.borderStrong, paddingLeft: CATALOG_SPACE.md, paddingVertical: 2 },

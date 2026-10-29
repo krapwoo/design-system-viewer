@@ -140,6 +140,10 @@ export interface StaticPage {
   propNoteKeys?: string[];
   comparison?: StaticComparison;
   variantsItems?: StaticListItem[];
+  /** Literal `variants.axis`. `variantsAxisUnreadable` is set when the slot authors an `axis` that
+   *  isn't a string literal, so `doctor` can tell "no axis" from "an axis it couldn't read". */
+  variantsAxis?: string;
+  variantsAxisUnreadable?: boolean;
   statesItems?: StaticListItem[];
   /** None of the first four fields below are in design §4's original literal-checkable list, so a
    *  non-literal value is simply left unset here. `maxColumns` is the exception: it changes the
@@ -293,6 +297,24 @@ export interface StaticMember {
    *  or `comparison` (item count, not mere presence of the key; see `readFamilyMembers`) —
    *  `doctor`'s per-member `component-no-examples` fires on `false`. */
   hasExamples: boolean;
+  /** This member's own specimen layout data, read with the same helpers (and the same "never a
+   *  partial read" rule) as the page-level fields of the same names — `explain` builds each
+   *  member's blocks from these, and `doctor`'s `comparison-hides-variants` reads `variantsAxis`.
+   *  `previewWidths`/`specimenSize` are literal-only and simply left unset otherwise, like the
+   *  page-level ones. */
+  variantsItems?: StaticListItem[];
+  variantsItemsFill?: boolean;
+  variantsMaxColumns?: 1 | 2 | 3 | 4 | 5;
+  variantsAxis?: string;
+  variantsAxisUnreadable?: boolean;
+  statesItems?: StaticListItem[];
+  statesItemsFill?: boolean;
+  statesMaxColumns?: 1 | 2 | 3 | 4 | 5;
+  /** Literal `states.axis`, read like `variantsAxis`, so `explain` titles the block as the viewer does. */
+  statesAxis?: string;
+  comparison?: StaticComparison;
+  previewWidths?: readonly number[] | 'full';
+  specimenSize?: string;
   /** #63 A4/A10: this member's own `anatomy` (only meaningful on a group page's top-level member),
    *  read down to just the literal `member` ids its items name — never `other`/`description`/
    *  `picture`, which `doctor`'s "names a non-descendant" rule never needs. `undefined` both when
@@ -409,17 +431,9 @@ function readStaticPage(file: string): StaticPage {
     page.hideStates = literalBool('states');
   }
 
-  const previewWidthsProp = findProp(pageObject, 'previewWidths');
-  if (previewWidthsProp) {
-    const resolved = resolve(previewWidthsProp.initializer, consts, new Set());
-    if (ts.isStringLiteral(resolved) && resolved.text === 'full') {
-      page.previewWidths = 'full';
-    } else if (ts.isArrayLiteralExpression(resolved) && resolved.elements.every(ts.isNumericLiteral)) {
-      page.previewWidths = resolved.elements.map((element) => Number((element as ts.NumericLiteral).text));
-    }
-    // Anything else (a function call, a non-literal expression) is simply left unset — `previewWidths`
-    // isn't in design §4's literal-checkable list, so it's never a reason to flip `checkable`.
-  }
+  // A non-literal `previewWidths` is simply left unset — it isn't in design §4's literal-checkable
+  // list, so it's never a reason to flip `checkable`.
+  page.previewWidths = readPreviewWidths(findProp(pageObject, 'previewWidths'), consts);
   const previewLayoutProp = findProp(pageObject, 'previewLayout');
   if (previewLayoutProp) {
     // Unlike `previewWidths`, an unread value here is not harmless: the two card shapes have
@@ -456,6 +470,8 @@ function readStaticPage(file: string): StaticPage {
   if (!variants.checkable) page.checkable = false;
   else {
     page.variantsItems = variants.items;
+    page.variantsAxis = variants.axis;
+    page.variantsAxisUnreadable = variants.axisUnreadable;
     page.variantsItemsFill = variants.itemsFill;
     page.variantsMaxColumns = variants.maxColumns;
   }
@@ -632,10 +648,33 @@ function readFamilyMembers(
       hasWhenToUse: findProp(resolvedElement, 'whenToUse') !== undefined,
       hasA11y: findProp(resolvedElement, 'a11y') !== undefined,
       hasExamples: Boolean(variants.items?.length) || Boolean(states.items?.length) || Boolean(comparison),
+      variantsItems: variants.items,
+      variantsItemsFill: variants.itemsFill,
+      variantsMaxColumns: variants.maxColumns,
+      variantsAxis: variants.axis,
+      variantsAxisUnreadable: variants.axisUnreadable,
+      statesItems: states.items,
+      statesItemsFill: states.itemsFill,
+      statesMaxColumns: states.maxColumns,
+      statesAxis: states.axis,
+      comparison,
+      previewWidths: readPreviewWidths(findProp(resolvedElement, 'previewWidths'), consts),
+      specimenSize: propertyStringLiteral(resolvedElement, 'specimenSize', consts),
       anatomy: memberIds ? { memberIds } : undefined,
     });
   }
   return members;
+}
+
+/** A literal `previewWidths` (`'full'` or an array of numbers); undefined for anything else. */
+function readPreviewWidths(prop: ts.PropertyAssignment | undefined, consts: Map<string, ts.Expression>): readonly number[] | 'full' | undefined {
+  if (!prop) return undefined;
+  const resolved = resolve(prop.initializer, consts, new Set());
+  if (ts.isStringLiteral(resolved) && resolved.text === 'full') return 'full';
+  if (ts.isArrayLiteralExpression(resolved) && resolved.elements.every(ts.isNumericLiteral)) {
+    return resolved.elements.map((element) => Number((element as ts.NumericLiteral).text));
+  }
+  return undefined;
 }
 
 /** Plan V3 / N3: `CatalogPageInput.sections`, read down to `label`/`kind`/`members` — undefined
@@ -1128,7 +1167,7 @@ function readSlotItems(
   consts: Map<string, ts.Expression>,
   componentName: string | undefined,
   sourceFile: ts.SourceFile,
-): { items?: StaticListItem[]; itemsFill?: boolean; maxColumns?: 1 | 2 | 3 | 4 | 5; checkable: boolean } {
+): { items?: StaticListItem[]; itemsFill?: boolean; maxColumns?: 1 | 2 | 3 | 4 | 5; axis?: string; axisUnreadable?: boolean; checkable: boolean } {
   if (!prop) return { checkable: true };
   const resolved = resolve(prop.initializer, consts, new Set());
   const itemsProp = ts.isObjectLiteralExpression(resolved) ? findProp(resolved, 'items') : undefined;
@@ -1146,5 +1185,8 @@ function readSlotItems(
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) return { checkable: false };
     maxColumns = parsed as 1 | 2 | 3 | 4 | 5;
   }
-  return { items, itemsFill, maxColumns, checkable: true };
+  // Presence of `axis` never costs checkability — a non-literal one is only flagged as unreadable.
+  const axisProp = ts.isObjectLiteralExpression(resolved) ? findProp(resolved, 'axis') : undefined;
+  const axis = axisProp ? stringLiteral(resolve(axisProp.initializer, consts, new Set())) : undefined;
+  return { items, itemsFill, maxColumns, axis, axisUnreadable: axisProp !== undefined && axis === undefined ? true : undefined, checkable: true };
 }

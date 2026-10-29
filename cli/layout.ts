@@ -14,7 +14,7 @@ import {
 } from '../native/catalog/comparison.ts';
 import { CATALOG_LAYOUT } from '../native/catalog/tokens.ts';
 import { sectionColumns } from '../native/catalog/tokenLayout.ts';
-import { toSectionDef } from './explain.ts';
+import { memberBlocks, toSectionDef } from './explain.ts';
 import type { ResolvedConfig } from './types.ts';
 
 /** One block's geometry at a given width: what the reader actually sees laid out. */
@@ -41,6 +41,10 @@ export interface BlockSnapshot {
 export interface PageSnapshot {
   page: string;
   blocks: BlockSnapshot[];
+  /** A family or group page's members, each member id to its own blocks (at the full row width,
+   *  like `blocks`). Absent on a page with no members and on a snapshot written before this field
+   *  existed; `diffLayouts` compares members only when both snapshots carry `membersRecorded`. */
+  members?: Record<string, BlockSnapshot[]>;
   /** For a two-block page: whether both blocks keep their minimum width and still fit one row at
    *  half width. These are the gates `choosePlacement` can decide without measured height. The
    *  decision itself also weighs a single tall specimen and the height actually saved, neither of
@@ -58,6 +62,10 @@ export interface LayoutSnapshot {
    *  taken at one width cannot be compared with one taken at another, and recording it makes that
    *  checkable rather than silent. */
   width: number;
+  /** Set by a version that records `members`. A page with no `members` in a marked snapshot has no
+   *  members, so `diffLayouts` reads it as `{}` and reports a page that gains or loses its members;
+   *  an unmarked (older) snapshot never recorded them, so members are not compared against it. */
+  membersRecorded?: true;
   pages: PageSnapshot[];
 }
 
@@ -99,6 +107,20 @@ function snapshotMinWidth(block: PresentationBlock): number | null {
   return Number.isFinite(width) ? width : null;
 }
 
+function blockSnapshot(block: PresentationBlock, full: number, half: number): BlockSnapshot {
+  const fullGeometry = geometryFor(block, full);
+  const halfGeometry = geometryFor(block, half);
+  return {
+    title: block.kind === 'tokenSections' ? 'Token sections' : block.title,
+    kind: block.kind,
+    ...(block.kind === 'list' ? { size: block.size, items: block.items.length } : {}),
+    ...(block.kind === 'tokenSections' ? { items: block.sections.length } : {}),
+    minWidth: snapshotMinWidth(block),
+    ...(fullGeometry ? { full: fullGeometry } : {}),
+    ...(halfGeometry ? { half: halfGeometry } : {}),
+  };
+}
+
 /** One page's geometry, from the same static read `explain` uses. */
 export function pageSnapshot(page: Parameters<typeof toSectionDef>[0], pageId: string): PageSnapshot {
   if (!page.checkable) return { page: pageId, blocks: [], notCheckable: true };
@@ -108,19 +130,10 @@ export function pageSnapshot(page: Parameters<typeof toSectionDef>[0], pageId: s
 
   const snapshot: PageSnapshot = {
     page: pageId,
-    blocks: blocks.map((block) => {
-      const fullGeometry = geometryFor(block, full);
-      const halfGeometry = geometryFor(block, half);
-      return {
-        title: block.kind === 'tokenSections' ? 'Token sections' : block.title,
-        kind: block.kind,
-        ...(block.kind === 'list' ? { size: block.size, items: block.items.length } : {}),
-        ...(block.kind === 'tokenSections' ? { items: block.sections.length } : {}),
-        minWidth: snapshotMinWidth(block),
-        ...(fullGeometry ? { full: fullGeometry } : {}),
-        ...(halfGeometry ? { half: halfGeometry } : {}),
-      };
-    }),
+    blocks: blocks.map((block) => blockSnapshot(block, full, half)),
+    ...(page.members !== undefined && page.members.length > 0
+      ? { members: Object.fromEntries(page.members.map((member) => [member.id, memberBlocks(member).map((block) => blockSnapshot(block, full, half))])) }
+      : {}),
   };
   if (blocks.length === 2) {
     const [first, second] = blocks;
@@ -152,7 +165,7 @@ export function layoutSnapshot(config: ResolvedConfig, version: string): LayoutS
     // Code-point order is stable across machines; localeCompare can produce different snapshot text
     // under different host locales, defeating a committed artifact's textual review.
     .sort((a, b) => (a.page < b.page ? -1 : a.page > b.page ? 1 : 0));
-  return { version, width: MATRIX_LAYOUT.laptopContentWidth, pages };
+  return { version, width: MATRIX_LAYOUT.laptopContentWidth, membersRecorded: true, pages };
 }
 
 export interface LayoutChange {
@@ -185,6 +198,87 @@ function blockKeys(blocks: readonly BlockSnapshot[]): { key: string; label: stri
   });
 }
 
+/** What changed between two lists of one page's (or one member's) blocks. `prefix` leads every
+ *  detail, naming the member when it is one. */
+function diffBlocks(pageId: string, wasBlocks: readonly BlockSnapshot[], nowBlocks: readonly BlockSnapshot[], prefix: string): LayoutChange[] {
+  const changes: LayoutChange[] = [];
+  // Title is a block's identity here. Two blocks on one page sharing a title would be
+  // indistinguishable, so those fall back to their position *within that title* — which keeps a
+  // page with two "Variants" blocks comparing like for like instead of silently dropping one.
+  const index = (blocks: readonly BlockSnapshot[]) => {
+    const map = new Map<string, BlockSnapshot[]>();
+    for (const block of blocks) {
+      const list = map.get(block.title) ?? [];
+      list.push(block);
+      map.set(block.title, list);
+    }
+    return map;
+  };
+  const oldBlocks = index(wasBlocks);
+  const newBlocks = index(nowBlocks);
+
+  for (const [title, list] of oldBlocks) {
+    const now = newBlocks.get(title) ?? [];
+    for (let i = now.length; i < list.length; i += 1) {
+      changes.push({ page: pageId, kind: 'blocks', detail: `${prefix}"${title}" is gone` });
+    }
+  }
+  for (const [title, list] of newBlocks) {
+    const before_ = oldBlocks.get(title) ?? [];
+    for (const [i, block] of list.entries()) {
+      const old = before_[i];
+      if (!old) {
+        changes.push({ page: pageId, kind: 'blocks', detail: `${prefix}"${title}" is new` });
+        continue;
+      }
+      if (old.kind !== block.kind) {
+        changes.push({ page: pageId, kind: 'blocks', detail: `${prefix}"${block.title}" is a ${block.kind} block, was ${old.kind}` });
+        continue;
+      }
+      if (old.minWidth !== block.minWidth) {
+        changes.push({
+          page: pageId,
+          kind: 'geometry',
+          detail: `${prefix}"${block.title}" needs ${describeMinWidth(block.minWidth)}, was ${describeMinWidth(old.minWidth)}`,
+        });
+      }
+      for (const width of ['full', 'half'] as const) {
+        const a = old[width];
+        const b = block[width];
+        if (describeGeometry(a) !== describeGeometry(b)) {
+          changes.push({
+            page: pageId, kind: 'geometry',
+            detail: `${prefix}"${block.title}" at ${width} width: ${describeGeometry(a)} → ${describeGeometry(b)}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Compare relative order among blocks that exist on both sides. Inserting a new block at the
+  // front does not falsely say every existing block moved, but swapping two existing blocks does
+  // remain visible rather than disappearing behind title-based identity.
+  const oldKeyed = blockKeys(wasBlocks);
+  const newKeyed = blockKeys(nowBlocks);
+  const oldSet = new Set(oldKeyed.map(({ key }) => key));
+  const newSet = new Set(newKeyed.map(({ key }) => key));
+  const oldCommon = oldKeyed.filter(({ key }) => newSet.has(key));
+  const newCommon = newKeyed.filter(({ key }) => oldSet.has(key));
+  const oldPositions = new Map(oldCommon.map(({ key }, index) => [key, index]));
+  for (const [index, { key, label }] of newCommon.entries()) {
+    const oldIndex = oldPositions.get(key);
+    if (oldIndex !== undefined && oldIndex !== index) {
+      changes.push({
+        page: pageId,
+        kind: 'blocks',
+        detail: `${prefix}"${label}" moved from block ${oldIndex + 1} to ${index + 1}`,
+      });
+    }
+  }
+
+  return changes;
+}
+
 /** What changed between two snapshots. Pure, so it is the part worth testing.
  *
  *  Blocks are matched by title, not by position. Comparing by index means a block inserted at the
@@ -214,77 +308,24 @@ export function diffLayouts(before: LayoutSnapshot, after: LayoutSnapshot): Layo
       continue;
     }
 
-    // Title is a block's identity here. Two blocks on one page sharing a title would be
-    // indistinguishable, so those fall back to their position *within that title* — which keeps a
-    // page with two "Variants" blocks comparing like for like instead of silently dropping one.
-    const index = (blocks: readonly BlockSnapshot[]) => {
-      const map = new Map<string, BlockSnapshot[]>();
-      for (const block of blocks) {
-        const list = map.get(block.title) ?? [];
-        list.push(block);
-        map.set(block.title, list);
-      }
-      return map;
-    };
-    const oldBlocks = index(was.blocks);
-    const newBlocks = index(page.blocks);
+    changes.push(...diffBlocks(page.page, was.blocks, page.blocks, ''));
 
-    for (const [title, list] of oldBlocks) {
-      const now = newBlocks.get(title) ?? [];
-      for (let i = now.length; i < list.length; i += 1) {
-        changes.push({ page: page.page, kind: 'blocks', detail: `"${title}" is gone` });
+    // A member's blocks are compared only when both snapshots recorded members: one written before
+    // members were captured has none, and reading that as "every member is new" would invent changes.
+    // In a marked snapshot a page without `members` has none, so it compares as `{}`.
+    if (before.membersRecorded && after.membersRecorded) {
+      const wasMembers = was.members ?? {};
+      const nowMembers = page.members ?? {};
+      for (const id of Object.keys(wasMembers)) {
+        if (!(id in nowMembers)) changes.push({ page: page.page, kind: 'blocks', detail: `member "${id}" is gone` });
       }
-    }
-    for (const [title, list] of newBlocks) {
-      const before_ = oldBlocks.get(title) ?? [];
-      for (const [i, block] of list.entries()) {
-        const old = before_[i];
+      for (const [id, blocks] of Object.entries(nowMembers)) {
+        const old = wasMembers[id];
         if (!old) {
-          changes.push({ page: page.page, kind: 'blocks', detail: `"${title}" is new` });
+          changes.push({ page: page.page, kind: 'blocks', detail: `member "${id}" is new` });
           continue;
         }
-        if (old.kind !== block.kind) {
-          changes.push({ page: page.page, kind: 'blocks', detail: `"${block.title}" is a ${block.kind} block, was ${old.kind}` });
-          continue;
-        }
-        if (old.minWidth !== block.minWidth) {
-          changes.push({
-            page: page.page,
-            kind: 'geometry',
-            detail: `"${block.title}" needs ${describeMinWidth(block.minWidth)}, was ${describeMinWidth(old.minWidth)}`,
-          });
-        }
-        for (const width of ['full', 'half'] as const) {
-          const a = old[width];
-          const b = block[width];
-          if (describeGeometry(a) !== describeGeometry(b)) {
-            changes.push({
-              page: page.page, kind: 'geometry',
-              detail: `"${block.title}" at ${width} width: ${describeGeometry(a)} → ${describeGeometry(b)}`,
-            });
-          }
-        }
-      }
-    }
-
-    // Compare relative order among blocks that exist on both sides. Inserting a new block at the
-    // front does not falsely say every existing block moved, but swapping two existing blocks does
-    // remain visible rather than disappearing behind title-based identity.
-    const oldKeyed = blockKeys(was.blocks);
-    const newKeyed = blockKeys(page.blocks);
-    const oldSet = new Set(oldKeyed.map(({ key }) => key));
-    const newSet = new Set(newKeyed.map(({ key }) => key));
-    const oldCommon = oldKeyed.filter(({ key }) => newSet.has(key));
-    const newCommon = newKeyed.filter(({ key }) => oldSet.has(key));
-    const oldPositions = new Map(oldCommon.map(({ key }, index) => [key, index]));
-    for (const [index, { key, label }] of newCommon.entries()) {
-      const oldIndex = oldPositions.get(key);
-      if (oldIndex !== undefined && oldIndex !== index) {
-        changes.push({
-          page: page.page,
-          kind: 'blocks',
-          detail: `"${label}" moved from block ${oldIndex + 1} to ${index + 1}`,
-        });
+        changes.push(...diffBlocks(page.page, old, blocks, `member "${id}": `));
       }
     }
 
