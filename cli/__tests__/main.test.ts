@@ -296,6 +296,52 @@ test('runExplainCommand prints "No page named" and exits 1 for an unknown page, 
   rmSync(dir, { recursive: true, force: true });
 });
 
+// A group page whose members hold the specimens: `explain --json`, the human output and `--all` all
+// have to show them, not report the page as empty.
+function groupProject(): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-explain-members-'));
+  mkdirSync(path.join(dir, 'components', 'Widget'), { recursive: true });
+  writeFileSync(path.join(dir, 'components', 'Widget', 'index.ts'), 'export function Widget() { return null; }\n');
+  writeFileSync(
+    path.join(dir, 'ds-viewer.config.ts'),
+    "import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'Fixture', components: ['components/*/index.ts'], tokens: [] });\n",
+  );
+  writeFileSync(path.join(dir, 'components', 'Widget', 'Widgets.catalog.tsx'), `
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Widgets', group: 'Components', description: 'A group.',
+      members: [
+        { id: 'Gallery', source: 'a.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd', specimenSize: 'compact',
+          states: { items: [{ key: 'a', name: 'A', node: null }, { key: 'b', name: 'B', node: null }, { key: 'c', name: 'C', node: null }] } },
+      ],
+    });
+  `);
+  return dir;
+}
+
+test('runExplainCommand --json and the human output both include a group page\'s member blocks', () => {
+  const dir = groupProject();
+  const json = runExplainCommand(dir, 'Widgets', ['--json']);
+  assert.equal(json.exitCode, 0);
+  assert.match(JSON.parse(json.output).members.Gallery[0].reason, /3 items \(compact\)/);
+  const human = runExplainCommand(dir, 'Widgets', []);
+  assert.match(human.output, /^Members$/m);
+  assert.match(human.output, /3 items \(compact\)/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('runExplainCommand --all reports a group page\'s member blocks rather than an empty page', () => {
+  const dir = groupProject();
+  const result = runExplainCommand(dir, '--all', []);
+  assert.equal(result.exitCode, 0);
+  const snapshot = JSON.parse(result.output);
+  assert.equal(snapshot.membersRecorded, true, 'the snapshot says it recorded members, so layout-diff can compare them');
+  const page = snapshot.pages.find((p: { page: string }) => p.page === 'Widgets');
+  assert.equal(page.members.Gallery[0].items, 3);
+  assert.equal(page.members.Gallery[0].full.columns, 3);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('runExplainCommand with a malformed --heights value exits 1 with a clear message', () => {
   const result = runExplainCommand('/irrelevant', 'Widget', ['--heights', 'nope']);
   assert.match(result.output, /--heights must be two comma-separated numbers/);

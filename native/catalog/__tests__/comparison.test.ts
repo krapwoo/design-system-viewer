@@ -313,15 +313,26 @@ test('presentationBlocks carries variants.axis onto a grouped block, not only li
   assert.equal('axis' in plain, false, 'no axis key at all when unset');
 });
 
-test('presentationBlocks carries variants.axis onto a grid block, not only list', () => {
+test('presentationBlocks carries variants.axis onto a grid block when it names a grid axis', () => {
   const base = { id: 'X', path: 'p', description: 'd' };
-  const variants = { axis: 'Shape', items: [{ key: 'a', name: 'A', node: 'a' }] };
-  const [grid] = presentationBlocks({ ...base, variants, comparison: valid });
-  assert.equal(grid.kind, 'grid');
-  assert.equal(grid.axis, 'Shape');
+  for (const axis of ['Variant', 'State', ' variant ', 'STATE']) {
+    const variants = { axis, items: [{ key: 'a', name: 'A', node: 'a' }] };
+    const [grid] = presentationBlocks({ ...base, variants, comparison: valid });
+    assert.equal(grid.kind, 'grid');
+    assert.equal(grid.axis, axis, `"${axis}" names the Variant or State axis`);
+  }
 
   const plain = presentationBlocks({ ...base, comparison: valid })[0];
   assert.equal('axis' in plain, false, 'no axis key at all when unset');
+});
+
+test('presentationBlocks never heads a grid with a variants axis that is not one of its axes', () => {
+  const base = { id: 'X', path: 'p', description: 'd' };
+  const variants = { axis: 'Expression', items: [{ key: 'a', name: 'A', node: 'a' }] };
+  const [grid] = presentationBlocks({ ...base, variants, comparison: valid });
+  assert.equal(grid.kind, 'grid');
+  assert.equal('axis' in grid, false, 'a Variant × State grid is not headed "Expression"');
+  assert.equal(grid.title, 'Variant × State', 'it keeps its own rowLabel × columnLabel title');
 });
 
 test('choosePlacement splits the row in two and keeps the shorter arrangement', () => {

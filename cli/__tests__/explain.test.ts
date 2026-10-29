@@ -443,3 +443,132 @@ test('explainPage prints a group page\'s outline: top-level members with their q
   assert.match(text, /Top2 \(documentation-only\)/);
   rmSync(dir, { recursive: true, force: true });
 });
+
+// `explain` covers a family or group page's members: each member's own blocks, keyed by member id,
+// in the same shape as a page's blocks — so a layout audit sees their specimen grids.
+const GROUP_WITH_SPECIMENS = `
+  import { defineCatalogPage } from '@krapwoo/ds-viewer';
+  export default defineCatalogPage({
+    id: 'Widgets', group: 'Components', description: 'A group.',
+    members: [
+      {
+        id: 'Gallery', component: 'Widget', source: 'a.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd', specimenSize: 'compact',
+        states: { items: [
+          { key: 'a', name: 'A', node: null }, { key: 'b', name: 'B', node: null },
+          { key: 'c', name: 'C', node: null }, { key: 'd', name: 'D', node: null },
+        ] },
+      },
+      {
+        id: 'Matrix', source: 'b.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd',
+        comparison: {
+          rowLabel: 'Shape', columnLabel: 'Pose',
+          rows: [{ key: 'r1', label: 'R1' }, { key: 'r2', label: 'R2' }],
+          columns: [{ key: 'c1', label: 'C1' }, { key: 'c2', label: 'C2' }, { key: 'c3', label: 'C3' }],
+          cells: [],
+        },
+      },
+      { id: 'Bare', source: 'c.swift:1', fidelity: 'documentation-only', relationship: 'Top', description: 'd' },
+    ],
+  });
+`;
+
+test('explainPage reports each group member\'s own blocks, keyed by member id', () => {
+  const dir = makeProject(GROUP_WITH_SPECIMENS);
+  const result = explainPage(configFor(dir), 'Widgets');
+  assert.deepEqual(result?.blocks, [], 'the page-level blocks stay as they were');
+  assert.ok(result?.group, 'the group outline stays as it was');
+  assert.deepEqual(Object.keys(result!.members!), ['Gallery', 'Matrix', 'Bare']);
+  const gallery = result!.members!.Gallery;
+  assert.equal(gallery[0].kind, 'list');
+  assert.match(gallery[0].reason, /4 items \(compact\) → 4 columns × 1 row\./);
+  const matrix = result!.members!.Matrix;
+  assert.equal(matrix[0].kind, 'grid');
+  assert.match(matrix[0].reason, /2 rows × 3 columns \(regular\); 3 of 3 max regular columns used — fits/);
+  assert.deepEqual(result!.members!.Bare, [], 'a member with no specimens has no blocks');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('explainPage reports a family page\'s members too, and leaves its page-level fields alone', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Family', group: 'Components', description: 'A family.', whole: 'Whole',
+      members: [
+        { id: 'Whole', component: 'Widget', source: 'a.swift:1', fidelity: 'replicated', relationship: 'Whole', description: 'd',
+          variants: { items: [{ key: 'a', name: 'A', node: null }, { key: 'b', name: 'B', node: null }] } },
+        { id: 'Part', source: 'a.swift:2', fidelity: 'replicated', relationship: 'Part', parent: 'Whole', description: 'd',
+          states: { items: [{ key: 's', name: 'S', node: null }] } },
+      ],
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['Part'] }],
+    });
+  `);
+  const result = explainPage(configFor(dir), 'Family');
+  assert.deepEqual(Object.keys(result!.members!), ['Whole', 'Part']);
+  assert.match(result!.members!.Whole[0].reason, /2 items/);
+  assert.match(result!.members!.Part[0].reason, /1 items \(regular\)/);
+  assert.equal(result!.blocks[0].kind, 'empty', 'the page-level blocks are what they were: a family page has no page-level specimens');
+  // JSON keeps member ids as keys, in order.
+  assert.deepEqual(Object.keys(JSON.parse(JSON.stringify(result)).members), ['Whole', 'Part']);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('a page without members has no members field at all', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x', states: { items: [{ key: 'a', name: 'A', node: null }] } });
+  `);
+  assert.equal('members' in explainPage(configFor(dir), 'Widget')!, false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('formatExplain lists each member\'s blocks under a Members heading, for a group and a family page', () => {
+  const dir = makeProject(GROUP_WITH_SPECIMENS);
+  const text = formatExplain(explainPage(configFor(dir), 'Widgets')!);
+  assert.match(text, /^Gallery \(Widget\)$/m, 'the group outline is still printed');
+  assert.match(text, /^Members$/m);
+  assert.match(text, /^ {2}Gallery\n {4}States \/ configurations\n {6}4 items \(compact\) → 4 columns × 1 row\./m);
+  assert.match(text, /^ {2}Matrix\n {4}Shape × Pose\n {6}2 rows × 3 columns/m);
+  assert.match(text, /^ {2}Bare\n {4}No specimens\.$/m);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// A member with both a variants and a states list: the viewer's `Blocks` may put the two side by
+// side at runtime (half the row each), so its full-row counts are not stated as fact.
+const GROUP_WITH_TWO_BLOCK_MEMBER = `
+  import { defineCatalogPage } from '@krapwoo/ds-viewer';
+  export default defineCatalogPage({
+    id: 'Widgets', group: 'Components', description: 'A group.',
+    members: [
+      {
+        id: 'Both', source: 'a.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd', specimenSize: 'compact',
+        variants: { axis: 'Size', items: [{ key: 's', name: 'S', node: null }, { key: 'm', name: 'M', node: null }] },
+        states: { axis: 'Tone', items: [{ key: 'a', name: 'A', node: null }, { key: 'b', name: 'B', node: null }] },
+      },
+      {
+        id: 'One', source: 'b.swift:1', fidelity: 'replicated', relationship: 'Top', description: 'd', specimenSize: 'compact',
+        states: { items: [{ key: 'a', name: 'A', node: null }] },
+      },
+    ],
+  });
+`;
+
+test('explainPage flags a two-block member as decided in the viewer, and only that member', () => {
+  const dir = makeProject(GROUP_WITH_TWO_BLOCK_MEMBER);
+  const result = explainPage(configFor(dir), 'Widgets');
+  assert.deepEqual(Object.keys(result!.memberPlacement!), ['Both']);
+  assert.equal(result!.memberPlacement!.Both.decision, 'decided-in-viewer');
+  assert.match(result!.memberPlacement!.Both.reason, /full 952px row; side by side each block gets 462px/);
+  assert.equal(result!.members!.Both.length, 2, 'the members shape itself is unchanged');
+  const human = formatExplain(result!);
+  assert.match(human, /^ {4}Placement: Side-by-side placement depends/m);
+  assert.equal(human.match(/Placement:/g)?.length, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('explainPage titles a member\'s blocks by their axis, as the viewer does', () => {
+  const dir = makeProject(GROUP_WITH_TWO_BLOCK_MEMBER);
+  const result = explainPage(configFor(dir), 'Widgets');
+  assert.deepEqual(result!.members!.Both.map((b) => b.title), ['Size', 'Tone']);
+  assert.deepEqual(result!.members!.One.map((b) => b.title), ['States / configurations']);
+  rmSync(dir, { recursive: true, force: true });
+});

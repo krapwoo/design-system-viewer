@@ -101,6 +101,16 @@ export function grid(
   };
 }
 
+/** Whether `axis` (a variants slot's axis label) names one of the grid's own two axes. Labels are
+ *  compared trimmed and case-insensitively, the way `doctor` compares group names. A grid carries
+ *  its page's `variants.axis` as its heading only when this holds; any other axis would mislabel
+ *  the grid (a Shape × Pose grid headed "Expression"). */
+export function isGridAxisLabel(axis: string | undefined, rowLabel: string | undefined, columnLabel: string | undefined): boolean {
+  if (axis === undefined) return false;
+  const norm = (label: string) => label.trim().toLowerCase();
+  return [rowLabel, columnLabel].some((label) => label !== undefined && norm(label) === norm(axis));
+}
+
 /** How many grid columns fit beside the row header on a 1280px laptop without scrolling. */
 export function gridColumnLimit(size: SpecimenSize): number {
   return Math.floor((MATRIX_LAYOUT.laptopContentWidth - MATRIX_LAYOUT.rowHeaderWidth) / COLUMN_MIN_WIDTH[size]);
@@ -342,7 +352,9 @@ export function presentationBlocks<TId extends string>(def: SectionDef<TId>, opt
         comparison: def.comparison,
         // A3: `comparison` replaces the Variants list, but `def.variants.axis` (if still set) is
         // the only axis label a grid has to carry onto a family page, which hides generic titles.
-        ...(def.variants?.axis ? { axis: def.variants.axis } : {}),
+        // Only when it names one of the grid's own axes — otherwise the grid would be headed with
+        // an axis it doesn't show, and keeps its own `rowLabel × columnLabel` title.
+        ...(isGridAxisLabel(def.variants?.axis, def.comparison.rowLabel, def.comparison.columnLabel) ? { axis: def.variants!.axis } : {}),
       });
     } else if (grouped && def.variants) {
       // Grouped rows place several cells beside a row header, so full-width (itemsFill) slots do

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readStaticPages, type StaticListItem, type StaticPage } from './staticPage.ts';
+import { readStaticPages, type StaticComparison, type StaticListItem, type StaticMember, type StaticPage } from './staticPage.ts';
 import { discoverAllPageFiles, resolvePageId } from './pageIndex.ts';
 import { resolveGlob } from './glob.ts';
 import {
@@ -42,6 +42,15 @@ export interface ExplainResult {
    *  members, which `blocks` above never reads at all). `blocks`/`placement` are left empty/absent
    *  for a group page; this is its own outline instead. */
   group?: ExplainGroupResult;
+  /** Each member's own blocks, keyed by member id — set only for a family or group page (a page
+   *  with `members`). Same shape as `blocks`, from the same layout functions, at the full row
+   *  width; a member with no specimens has an empty list, as the viewer shows nothing for it. A
+   *  family or group page's `blocks`/`group` above are unchanged. */
+  members?: Record<string, ExplainBlockResult[]>;
+  /** Set, per member id, for a member whose two blocks the viewer may place side by side at
+   *  runtime (the page-level `placement` condition): its counts in `members` are for the full row
+   *  and may be halved there. Absent for a member with fewer than two blocks. */
+  memberPlacement?: Record<string, { decision: 'decided-in-viewer'; reason: string }>;
 }
 
 export interface ExplainGroupPart {
@@ -94,27 +103,32 @@ function cellOverrideNote(cells: { surface?: SpecimenSurfaceKind; align?: Specim
   return overrideNote(cells, 'surface', 'surface', 'cell') + overrideNote(cells, 'align', 'alignment', 'cell');
 }
 
+/** A throwaway `ComparisonDef` from a read `comparison`: present `cells` only for a direct
+ *  object-literal `comparison` (never a `grid()` call, whose `cell` callback is unevaluated) whose
+ *  `cells` array was itself literal — see `StaticComparison.cells`. `node: null` the same way every
+ *  other placeholder specimen here is never evaluated. */
+function toComparisonDef(source: StaticComparison): ComparisonDef {
+  return {
+    rowLabel: source.rowLabel ?? '',
+    columnLabel: source.columnLabel ?? '',
+    rows: source.rows.prop !== undefined ? { prop: source.rows.prop, items: source.rows.items } : source.rows.items,
+    columns:
+      source.columns.prop !== undefined ? { prop: source.columns.prop, items: source.columns.items } : source.columns.items,
+    cells: (source.cells ?? []).map((cell) => ({
+      rowKey: cell.rowKey, columnKey: cell.columnKey, node: null,
+      fill: cell.fill, surface: cell.surface as SpecimenSurfaceKind | undefined, align: cell.align as SpecimenAlign | undefined,
+    })),
+    size: source.size as SpecimenSize | undefined,
+  };
+}
+
 /** A throwaway `SectionDef` built from a `StaticPage` (Task 3) — every specimen's `node` is `null`
  *  (design §4: specimen nodes are never evaluated), since none of the layout functions below ever
  *  look at it; only the counts/keys/sizes they do look at are carried over. Every field Task 3
  *  reads is carried through here, including `previewWidths`/`fullWidthLabel`/`hide`/`itemsFill`/
  *  `maxColumns` — dropping any of them makes `explain` report different geometry than the viewer. */
 export function toSectionDef(page: StaticPage): SectionDef {
-  const comparison: ComparisonDef | undefined = page.comparison && {
-    rowLabel: page.comparison.rowLabel ?? '',
-    columnLabel: page.comparison.columnLabel ?? '',
-    rows: page.comparison.rows.prop !== undefined ? { prop: page.comparison.rows.prop, items: page.comparison.rows.items } : page.comparison.rows.items,
-    columns:
-      page.comparison.columns.prop !== undefined ? { prop: page.comparison.columns.prop, items: page.comparison.columns.items } : page.comparison.columns.items,
-    // Present only for a direct object-literal `comparison` (never a `grid()` call, whose `cell`
-    // callback is unevaluated) whose `cells` array was itself literal — see `StaticComparison.cells`.
-    // `node: null` the same way every other placeholder specimen here is never evaluated.
-    cells: (page.comparison.cells ?? []).map((cell) => ({
-      rowKey: cell.rowKey, columnKey: cell.columnKey, node: null,
-      fill: cell.fill, surface: cell.surface as SpecimenSurfaceKind | undefined, align: cell.align as SpecimenAlign | undefined,
-    })),
-    size: page.comparison.size as SpecimenSize | undefined,
-  };
+  const comparison = page.comparison && toComparisonDef(page.comparison);
   return {
     id: resolvePageId(page, page.file),
     description: '',
@@ -134,6 +148,27 @@ export function toSectionDef(page: StaticPage): SectionDef {
     tokenColumns: page.tokenColumns === 2 || page.tokenColumns === 3 ? page.tokenColumns : undefined,
     hide: (page.hideVariants || page.hideStates) ? { variants: page.hideVariants, states: page.hideStates } : undefined,
   };
+}
+
+/** A family or group member's own `SectionDef`, with the fields `FamilyPage.tsx`'s
+ *  `memberAsSectionDef` hands `presentationBlocks` (a member has no `render`, token sections or
+ *  `hide` of those slots), so a member's blocks are the ones the viewer shows for it. */
+export function memberToSectionDef(member: StaticMember): SectionDef {
+  return {
+    id: member.id,
+    description: '',
+    path: member.id,
+    specimenSize: member.specimenSize as SpecimenSize | undefined,
+    previewWidths: member.previewWidths,
+    variants: member.variantsItems ? { axis: member.variantsAxis, itemsFill: member.variantsItemsFill, maxColumns: member.variantsMaxColumns, items: member.variantsItems.map(placeholderItem) } : undefined,
+    states: member.statesItems ? { axis: member.statesAxis, itemsFill: member.statesItemsFill, maxColumns: member.statesMaxColumns, items: member.statesItems.map(placeholderItem) } : undefined,
+    comparison: member.comparison && toComparisonDef(member.comparison),
+  };
+}
+
+/** The presentation blocks of one member, as the viewer shows them: an empty block is dropped. */
+export function memberBlocks(member: StaticMember): PresentationBlock[] {
+  return presentationBlocks(memberToSectionDef(member), { defaultPreviewWidths: [402] }).filter((block) => block.kind !== 'empty');
 }
 
 function explainBlock(block: PresentationBlock, availableWidth: number): ExplainBlockResult {
@@ -209,6 +244,27 @@ export function discoverStaticPages(config: ResolvedConfig): StaticPage[] {
   return readStaticPages(pageFiles);
 }
 
+/** Each member's blocks at the full row, plus a `decided-in-viewer` placement for every member
+ *  with two blocks — the viewer's `Blocks` may put those side by side, at half the row each. */
+function explainMembers(members: readonly StaticMember[]): Pick<ExplainResult, 'members' | 'memberPlacement'> {
+  const full = MATRIX_LAYOUT.laptopContentWidth;
+  const half = Math.floor((full - CATALOG_LAYOUT.blockGap) / 2);
+  const explained: Record<string, ExplainBlockResult[]> = {};
+  const placement: NonNullable<ExplainResult['memberPlacement']> = {};
+  for (const member of members) {
+    const blocks = memberBlocks(member);
+    explained[member.id] = blocks.map((block) => explainBlock(block, full));
+    if (blocks.length === 2) {
+      placement[member.id] = {
+        decision: 'decided-in-viewer',
+        reason: "Side-by-side placement depends on each block's measured height — decided in the viewer at runtime. " +
+          `The counts above are for the full ${full}px row; side by side each block gets ${half}px instead, which can fit fewer columns.`,
+      };
+    }
+  }
+  return { members: explained, ...(Object.keys(placement).length > 0 ? { memberPlacement: placement } : {}) };
+}
+
 /** Finds `pageId` among every page `cli/doctor.ts`'s own `discoverAllPageFiles` would find, builds
  *  its throwaway `SectionDef`, and asks the viewer's own pure layout functions for each block's
  *  decision — undefined when no page resolves to that id. */
@@ -232,7 +288,7 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
       qualifier: m.component ? m.component : 'documentation-only',
       parts: [...numberForGroupMember(m.id, members).entries()].map(([id, entry]) => ({ number: entry.number, id })),
     }));
-    return { pageId, blocks: [], group: { topLevel } };
+    return { pageId, blocks: [], group: { topLevel }, ...explainMembers(members) };
   }
 
   const def = toSectionDef(page);
@@ -272,7 +328,26 @@ export function explainPage(config: ResolvedConfig, pageId: string, options: Exp
   }
   const explained = blocks.map((block) => explainBlock(block, blockWidth));
 
-  return { pageId, blocks: explained, placement, intentionalStaticPreviewReason: page.intentionalStaticPreviewReason };
+  return {
+    pageId, blocks: explained, placement, intentionalStaticPreviewReason: page.intentionalStaticPreviewReason,
+    ...(page.members !== undefined && page.members.length > 0 ? explainMembers(page.members) : {}),
+  };
+}
+
+/** The "Members" section of the human output: each member's blocks, indented under its id. */
+function formatMembers(members: ExplainResult['members'], memberPlacement: ExplainResult['memberPlacement']): string[] {
+  if (!members) return [];
+  const lines = ['Members'];
+  for (const [id, blocks] of Object.entries(members)) {
+    lines.push(`  ${id}`);
+    if (blocks.length === 0) lines.push('    No specimens.');
+    for (const block of blocks) {
+      lines.push(`    ${block.title}`);
+      lines.push(`      ${block.reason}`);
+    }
+    if (memberPlacement?.[id]) lines.push(`    Placement: ${memberPlacement[id].reason}`);
+  }
+  return lines;
 }
 
 export function formatExplain(result: ExplainResult): string {
@@ -287,6 +362,7 @@ export function formatExplain(result: ExplainResult): string {
       lines.push(`${top.id} (${top.qualifier})`);
       for (const part of top.parts) lines.push(`  ${part.number}. ${part.id}`);
     }
+    if (result.members) lines.push('', ...formatMembers(result.members, result.memberPlacement));
     return lines.join('\n').replace(/\n+$/, '');
   }
   const lines = [result.pageId, ''];
@@ -303,7 +379,9 @@ export function formatExplain(result: ExplainResult): string {
   if (result.intentionalStaticPreviewReason) {
     lines.push('Intentionally static preview');
     lines.push(`  ${result.intentionalStaticPreviewReason}`);
+    lines.push('');
   }
+  lines.push(...formatMembers(result.members, result.memberPlacement));
   return lines.join('\n').replace(/\n+$/, '');
 }
 

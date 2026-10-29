@@ -8,7 +8,7 @@ import { readHostTsconfigOptions } from './props.ts';
 import { importedNames, readStaticPages } from './staticPage.ts';
 import { resolveGlob } from './glob.ts';
 import { sync } from './sync.ts';
-import { gridColumnLimit } from '../native/catalog/comparison.ts';
+import { gridColumnLimit, isGridAxisLabel } from '../native/catalog/comparison.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
 import {
   resolveExternalPart, validateComposedOf, validateFamily, validateGroupIssues,
@@ -498,6 +498,44 @@ function checkDegenerateGridAxis(pages: StaticPage[]): DoctorIssue[] {
           fix: `If this axis genuinely only ever has one value, consider a Variants/States list instead; otherwise add more items to it.`,
         }));
       }
+    }
+  }
+  return issues;
+}
+
+/** `comparison-hides-variants`: a `comparison` grid replaces the page's (or member's) Variants
+ *  list, and only keeps `variants.axis` as its heading when that names one of the grid's own axes.
+ *  A page that authors both with an axis the grid doesn't cover loses those variants from the page
+ *  with nothing saying so (the first is still the Overview thumbnail). A warning, since the author
+ *  may simply have left the variants behind, or kept them for the thumbnail. Skipped when either
+ *  side couldn't be read literally — never a partial read — and for a page with `hide.variants`,
+ *  which shows neither the grid nor the variants (a member has no `hide`). */
+function checkComparisonHidesVariants(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  const check = (
+    ref: { page: string; file: string },
+    owner: string,
+    hasVariants: boolean,
+    axis: string | undefined,
+    axisUnreadable: boolean | undefined,
+    labels: { rowLabel?: string; columnLabel?: string } | undefined,
+  ) => {
+    if (!hasVariants || !labels || axisUnreadable) return;
+    const { rowLabel, columnLabel } = labels;
+    if (rowLabel === undefined || columnLabel === undefined) return;
+    if (isGridAxisLabel(axis, rowLabel, columnLabel)) return;
+    issues.push(issue({
+      id: 'comparison-hides-variants', severity: 'warning', ...ref,
+      message: `${owner}'s variants${axis ? ` (${axis})` : ''} are not shown on the page: its comparison grid replaces them and covers ${rowLabel} × ${columnLabel}. The first is still the Overview thumbnail.`,
+      fix: `Fold the variants into the grid, move them to a member of their own, set variants.axis to "${rowLabel}" or "${columnLabel}" if they are one of the grid's axes, or remove them if they are only there for the thumbnail.`,
+    }));
+  };
+  for (const page of pages) {
+    if (!page.checkable) continue; // never a partial read — see checkGridAxisKeys's own note.
+    const ref = pageRef(page);
+    if (!page.hideVariants) check(ref, `"${ref.page}"`, Boolean(page.variantsItems?.length), page.variantsAxis, page.variantsAxisUnreadable, page.comparison);
+    for (const member of page.members ?? []) {
+      check(ref, `Member "${member.id}"`, Boolean(member.variantsItems?.length), member.variantsAxis, member.variantsAxisUnreadable, member.comparison);
     }
   }
   return issues;
@@ -1199,6 +1237,7 @@ export function collectIssues(
     ...checkGridAxisKeys(pages),
     ...checkGridColumnLimit(pages),
     ...checkDegenerateGridAxis(pages),
+    ...checkComparisonHidesVariants(pages),
     ...checkComponentPages(pages, components),
     ...checkMissingComposition(pages, components),
     ...checkStandaloneReason(pages),

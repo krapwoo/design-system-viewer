@@ -718,6 +718,9 @@ knows its parts are separate components, unlike variants.
   the pins as its `pins`: they go in a 30px column on the specimen's own right edge, right beside
   a small specimen and in the right margin for a full-width one. Inside that column, place each
   pin as before (`position: 'absolute', right: 0, top: y`, with `top` from the specimen's top).
+  With no preview width (neither the page nor the catalog sets one) the picture keeps its measured
+  width, and on web `AnatomySpecimen` adds that same 30px gutter on both sides of the specimen when
+  it has pins, so the pins stay inside the picture column instead of overlapping the legend.
 
   Beside the legend, the picture takes half the box, centred vertically, and the legend the other
   half. When half the box is narrower than the preview width plus 108px (the two 30px margins and the
@@ -1048,6 +1051,14 @@ Button
   - `degenerate-grid-axis` — an authored `comparison` grid's row or column axis has exactly one
     item, so it reads as a one-axis list rather than a real two-axis matrix. Never rewrites the
     grid; an intentional single-value axis is left exactly as authored.
+  - `comparison-hides-variants` — a page (or family/group member) authors both `variants` and a
+    `comparison` grid, and the variants' `axis` is neither of the grid's axes (`rowLabel` /
+    `columnLabel`, compared trimmed and case-insensitively). The grid replaces the Variants list, so
+    those variants are not shown on the page (only the first is still used as the Overview
+    thumbnail); the grid only borrows `variants.axis` as its heading when it names one of its own
+    axes, and otherwise keeps its `rowLabel × columnLabel` title. Fold the variants into the grid,
+    move them to a member of their own, set the axis to one the grid has, or remove them if they
+    are only there for the thumbnail. A page with `hide: { variants: true }` is not checked.
   - `missing-working-preview` — a component has a controlled value/change pair (`value`/`onChange`,
     or `x`/`onXChange`) but every example that renders it passes a fixed value with no working
     callback. Add `intentionalStaticPreview: { reason: '...' }` to the page to suppress it when the
@@ -1189,6 +1200,21 @@ Side-by-side placement depends on a real measured height, so by default `explain
 "decided in the viewer." Pass `--heights <firstBlockPx>,<secondBlockPx>` to check that decision here
 too, assuming a 1280px laptop (952px content width) the same way `doctor`'s own column-limit check
 does. `--json` is available on `explain` as well.
+
+On a family or group page the specimens live on the members, so `explain` also prints a **Members**
+section with each member's own blocks (a member with no specimens says so), and `--json` carries
+the same under `members`, keyed by member id, in the same shape as `blocks`. Member counts are for
+the full 1280px row. A member with two blocks may be placed side by side in the viewer (half the
+row each), so `explain` lists it under `memberPlacement` as "decided in the viewer" and prints that
+under the member; nested numbered parts are also indented in the viewer, so treat a member's counts
+as an upper bound. The page's own `blocks` and `group` outline are unchanged.
+
+`explain --all` records the same per-member blocks under each page's `members`, and `layout-diff`
+compares them (`member "Gallery": "States / configurations" at full width: 4×1 → 2×2`). The
+snapshot carries `membersRecorded: true`; members are compared only when both snapshots do, and a
+page without `members` in a marked snapshot counts as having none (so a page that loses or gains
+all its members is reported). A snapshot written before members were recorded is not marked, so a
+diff against it skips members instead of reporting every member as new.
 
 ### The `AGENTS.md` section and GitHub Action
 

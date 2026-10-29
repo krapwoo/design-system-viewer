@@ -454,7 +454,9 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: CATALOG_SPACE.xl,
   },
-  titleText: { flex: 1 },
+  // `minWidth: 0` is a guard: react-native-web's base View already sets it, but the title column
+  // must stay shrinkable for the wrapping title to fit beside the pager.
+  titleText: { flex: 1, minWidth: 0 },
   headingTarget: { alignSelf: 'flex-start' },
   osBadge: {
     alignSelf: 'flex-start',

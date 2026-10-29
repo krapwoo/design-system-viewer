@@ -201,6 +201,7 @@ test('layout-diff refuses a file that is not a snapshot instead of reporting eve
     'missing-blocks.json': JSON.stringify({ version: 'a', width: 952, pages: [{ page: 'X' }] }),
     'null-page.json': JSON.stringify({ version: 'a', width: 952, pages: [null] }),
     'missing-width.json': JSON.stringify({ version: 'a', pages: [] }),
+    'bad-marker.json': JSON.stringify({ version: 'a', width: 952, membersRecorded: false, pages: [] }),
     'duplicate-pages.json': JSON.stringify({ version: 'a', width: 952, pages: [
       { page: 'X', blocks: [] }, { page: 'X', blocks: [] },
     ] }),
@@ -224,7 +225,7 @@ test('layout-diff refuses a file that is not a snapshot instead of reporting eve
   assert.equal(wrong.exitCode, 1);
   assert.match(wrong.output, /is not a layout snapshot/);
 
-  for (const file of ['missing-blocks.json', 'null-page.json', 'missing-width.json', 'duplicate-pages.json']) {
+  for (const file of ['missing-blocks.json', 'null-page.json', 'missing-width.json', 'bad-marker.json', 'duplicate-pages.json']) {
     const malformed = runLayoutDiffCommand([file, 'good.json'], { readFile: read });
     assert.equal(malformed.exitCode, 1, `${file} must be rejected rather than crash or fabricate a diff`);
     assert.match(malformed.output, /is not a layout snapshot/);
@@ -237,4 +238,64 @@ test('layout-diff refuses a file that is not a snapshot instead of reporting eve
   assert.equal(ok.exitCode, 0);
   assert.match(ok.output, /No page changes layout\./);
   assert.equal(JSON.parse(runLayoutDiffCommand(['good.json', 'good.json', '--json'], { readFile: read }).output).length, 0);
+});
+
+// Members: `explain --all` records a family or group page's members' blocks too, and `layout-diff`
+// compares them — but only when both snapshots recorded members, so an older snapshot still diffs.
+const member = (columns: number) => ({ title: 'States / configurations', kind: 'list' as const, size: 'compact', items: 4, minWidth: 200, full: { columns, rows: Math.ceil(4 / columns), fillers: 0 }, half: { columns: 1, rows: 4, fillers: 0 } });
+const marked = (version: string, pages: LayoutSnapshot['pages']): LayoutSnapshot => ({ ...snapshot(version, pages), membersRecorded: true });
+const groupPage = (members?: Record<string, ReturnType<typeof member>[]>) => ({ page: 'Widgets', blocks: [], ...(members ? { members } : {}) });
+
+test('pageSnapshot records every member\'s blocks for a family or group page', () => {
+  const page: StaticPage = {
+    file: '/x/Widgets.catalog.tsx', checkable: true, id: 'Widgets',
+    members: [
+      { id: 'Gallery', hasWhenToUse: false, hasA11y: false, hasExamples: true, specimenSize: 'compact', statesItems: ['a', 'b', 'c', 'd'].map((key) => ({ key, name: key })) },
+      { id: 'Bare', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+    ],
+  };
+  const snap = pageSnapshot(page, 'Widgets');
+  assert.deepEqual(snap.blocks.map((b) => b.kind), ['empty'], 'the page-level blocks are what they were: nothing documented on the page itself');
+  assert.deepEqual(Object.keys(snap.members!), ['Gallery', 'Bare']);
+  assert.equal(snap.members!.Gallery[0].items, 4);
+  assert.equal(snap.members!.Gallery[0].full?.columns, 4);
+  assert.deepEqual(snap.members!.Bare, []);
+});
+
+test('layout-diff reports a member whose column count moved, naming the member', () => {
+  const changes = diffLayouts(
+    marked('0.20.0', [groupPage({ Gallery: [member(4)] })]),
+    marked('0.20.1', [groupPage({ Gallery: [member(2)] })]),
+  );
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].kind, 'geometry');
+  assert.match(changes[0].detail, /^member "Gallery": "States \/ configurations" at full width: 4×1 → 2×2$/);
+});
+
+test('layout-diff reports members that appear or disappear', () => {
+  const changes = diffLayouts(
+    marked('a', [groupPage({ Old: [member(4)] })]),
+    marked('b', [groupPage({ New: [member(4)] })]),
+  );
+  assert.deepEqual(changes.map((c) => c.detail).sort(), ['member "New" is new', 'member "Old" is gone']);
+});
+
+test('layout-diff against a snapshot written before members were recorded invents no changes', () => {
+  assert.deepEqual(diffLayouts(snapshot('0.20.0', [groupPage()]), snapshot('0.20.1', [groupPage({ Gallery: [member(4)] })])), []);
+  assert.deepEqual(diffLayouts(snapshot('0.20.1', [groupPage({ Gallery: [member(4)] })]), snapshot('0.20.0', [groupPage()])), []);
+});
+
+test('layout-diff between marked snapshots reports a page that loses or gains all its members', () => {
+  const lost = diffLayouts(marked('a', [groupPage({ Gallery: [member(4)] })]), marked('b', [groupPage()]));
+  assert.deepEqual(lost.map((c) => c.detail), ['member "Gallery" is gone']);
+  const gained = diffLayouts(marked('a', [groupPage()]), marked('b', [groupPage({ Gallery: [member(4)] })]));
+  assert.deepEqual(gained.map((c) => c.detail), ['member "Gallery" is new']);
+});
+
+test('layout-diff stays silent about members when either snapshot is unmarked', () => {
+  const withMembers = marked('b', [groupPage({ Gallery: [member(4)] })]);
+  assert.deepEqual(diffLayouts(snapshot('a', [groupPage()]), withMembers), []);
+  assert.deepEqual(diffLayouts(withMembers, snapshot('a', [groupPage()])), []);
+  // Even an unmarked snapshot that happens to carry members is not compared.
+  assert.deepEqual(diffLayouts(snapshot('a', [groupPage({ Gallery: [member(2)] })]), withMembers), []);
 });
