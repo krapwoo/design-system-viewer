@@ -5,6 +5,7 @@ import { TokenGrid, TokenTile, TokenSections } from './TokenLayouts';
 import { TokenRow, TokenRowGroup } from './TokenRow';
 import { Swatch } from './Swatch';
 import { MotionSpecimen } from './MotionSpecimen';
+import { TokenDetails } from './TokenDetails';
 import { JumpRow, type JumpItem } from './JumpRow';
 import {
   consolidatedProvenanceCaption,
@@ -32,19 +33,93 @@ import {
 } from './tokenDefinition';
 import type { TokenSection } from './types';
 
-/** `role`/`note`/`source` consolidated into one plain-text caption — the same single-line
- *  "usage · citation" convention `token-contract.md`'s own consumer references already use
- *  (`describeUsage(rows)` + a compact citation). Never a status badge (design R2: "no repetitive
- *  new status badges"); `undefined` when the entry authored none of the three. */
-function entryNote(entry: Pick<TokenEntryBase, 'role' | 'note' | 'source'>): string | undefined {
-  const parts = [entry.note ?? entry.role, entry.source].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+/** A token's own `note` — "when to use this", about the value itself, so it stays on the tile.
+ *  Its `source` and `role` (usage) move into the token's `TokenDetails` panel instead. */
+function entryNote(entry: Pick<TokenEntryBase, 'note'>): string | undefined {
+  return entry.note || undefined;
 }
 
-/** Correction C1: a value's own provenance/named line, plain muted caption text — never truncated
- *  (no `numberOfLines`), so a long expression/reason always wraps. */
-function ProvenanceLine({ value }: { value: Pick<TokenValueInfo<unknown>, 'provenance' | 'named'> }) {
-  return <Text style={styles.provenanceLine}>{tokenProvenanceCaption(value)}</Text>;
+/** What kind of token a panel is about, shown above its heading. */
+const KIND_LABELS: Record<TokenKind, string> = {
+  colors: 'Color',
+  typography: 'Typography',
+  spacing: 'Spacing',
+  radius: 'Corner radius',
+  dimensions: 'Dimension',
+  opacity: 'Opacity',
+  shadows: 'Shadow',
+  motion: 'Motion',
+};
+
+/** Correction C1, moved into the panel: a token's provenance (`showProvenance` only — a section
+ *  whose entries all share one shows it once above them instead), `source` and `role` (as the usage
+ *  text) leave the tile for its "Details ›" panel. `null` when there is nothing to put in it, so a
+ *  token with no provenance to show, no source and no role has no link. `dark` is a light/dark
+ *  pair's other side: the panel covers both, and says so wherever the two differ. */
+function entryDetails(
+  kind: TokenKind,
+  entry: TokenEntryBase & { value: TokenValueInfo<unknown> },
+  showProvenance: boolean,
+  options: { title?: string; kicker?: string; dark?: TokenEntryBase & { value: TokenValueInfo<unknown> } } = {},
+): React.ReactNode {
+  const { dark } = options;
+  const source = entry.source ?? dark?.source;
+  const sourcesDiffer = dark !== undefined && entry.source !== undefined && dark.source !== undefined && entry.source !== dark.source;
+  const rolesDiffer = dark !== undefined && entry.role !== undefined && dark.role !== undefined && entry.role !== dark.role;
+  const role = entry.role ?? dark?.role;
+  const expressionsDiffer = dark !== undefined && entry.expression !== undefined && dark.expression !== undefined && entry.expression !== dark.expression;
+  const expression = entry.expression ?? dark?.expression;
+  // A pair's two sides are used at different sites: the panel lists both, each site once.
+  const usages = [...new Set([...(entry.usages ?? []), ...(dark?.usages ?? [])])];
+  const lightProvenance = tokenProvenanceCaption(entry.value);
+  const darkProvenance = dark ? tokenProvenanceCaption(dark.value) : lightProvenance;
+  if (!showProvenance && !source && !role && !expression && usages.length === 0) return null;
+  return (
+    <TokenDetails
+      title={options.title ?? entry.name}
+      kicker={options.kicker ?? KIND_LABELS[kind]}
+      expression={expressionsDiffer ? undefined : expression}
+      source={sourcesDiffer ? undefined : source}
+      usages={usages}
+      usageSummary={rolesDiffer ? undefined : role}
+    >
+      {expressionsDiffer ? (
+        <>
+          <PanelFact label="Expression (light)" value={entry.expression!} />
+          <PanelFact label="Expression (dark)" value={dark!.expression!} />
+        </>
+      ) : null}
+      {sourcesDiffer ? (
+        <>
+          <PanelFact label="Source (light)" value={entry.source!} />
+          <PanelFact label="Source (dark)" value={dark!.source!} />
+        </>
+      ) : null}
+      {rolesDiffer ? (
+        <>
+          <PanelFact label="Usage (light)" value={entry.role!} mono={false} />
+          <PanelFact label="Usage (dark)" value={dark!.role!} mono={false} />
+        </>
+      ) : null}
+      {showProvenance ? (
+        <PanelFact
+          label="Provenance"
+          value={lightProvenance === darkProvenance ? lightProvenance : `Light: ${lightProvenance} · Dark: ${darkProvenance}`}
+          mono={false}
+        />
+      ) : null}
+    </TokenDetails>
+  );
+}
+
+/** A labelled line in a `TokenDetails` panel's extra content, in the panel's own label/value style. */
+function PanelFact({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <View style={styles.panelFact}>
+      <Text style={styles.panelFactLabel}>{label}</Text>
+      <Text style={mono ? styles.panelFactMono : styles.panelFactText}>{value}</Text>
+    </View>
+  );
 }
 
 /** Correction C1: an unresolved value's real `reason`, and its real `expression` when one exists
@@ -59,23 +134,18 @@ function UnresolvedCaption({ resolution }: { resolution: { reason: string; expre
   );
 }
 
-/** Correction C1 for the four kinds built on `TokenTile` (spacing/radius/dimensions/opacity/
- *  shadows): `TokenTile` only has one `note` slot, so this composes `role`/`note`/`source`, the
- *  provenance/named line (when not already shown once at the section level) and — for an
- *  unresolved value — its real `expression` (monospace) into that one slot, newline-separated.
- *  `undefined` (never an empty node) when there is nothing to show, so `TokenTile`'s own `{note ?
- *  ... : null}` check still works unchanged. */
-function tileProvenanceNote(entry: TokenEntryBase, value: TokenValueInfo<unknown>, showProvenance: boolean): React.ReactNode {
-  const parts: string[] = [];
+/** The note slot of the kinds built on `TokenTile` (spacing/radius/dimensions/opacity/shadows):
+ *  the token's own `note` and — for an unresolved value — its real `expression` (monospace), which
+ *  is the value it has to show. `undefined` (never an empty node) when there is nothing to show, so
+ *  `TokenTile`'s own `{note ? ... : null}` check still works unchanged. */
+function tileNote(entry: TokenEntryBase, value: TokenValueInfo<unknown>): React.ReactNode {
   const base = entryNote(entry);
-  if (base) parts.push(base);
-  if (showProvenance) parts.push(tokenProvenanceCaption(value));
   const expression = value.resolution.status === 'unresolved' ? value.resolution.expression : undefined;
-  if (parts.length === 0 && !expression) return undefined;
+  if (!base && !expression) return undefined;
   return (
     <>
-      {parts.join('\n')}
-      {expression ? <Text style={styles.monoNote}>{parts.length > 0 ? `\n${expression}` : expression}</Text> : null}
+      {base}
+      {expression ? <Text style={styles.monoNote}>{base ? `\n${expression}` : expression}</Text> : null}
     </>
   );
 }
@@ -109,17 +179,17 @@ function ColorEntryCell({ entry, showProvenance }: { entry: ColorTokenEntry; sho
       <View style={styles.colorFallback}>
         <View style={styles.noSamplePreview}><Text style={styles.noSampleText}>No sample</Text></View>
         <Text style={styles.fallbackName}>{name}</Text>
-        {showProvenance ? <ProvenanceLine value={entry.value} /> : null}
         <UnresolvedCaption resolution={entry.value.resolution} />
         {note ? <Text style={styles.fallbackNote}>{note}</Text> : null}
+        {entryDetails('colors', entry, showProvenance, { title: name })}
       </View>
     );
   }
   return (
     <View style={styles.colorCell}>
       <Swatch name={name} value={entry.value.resolution.value.color} width={COLOR_CELL_WIDTH} wrapName />
-      {showProvenance ? <ProvenanceLine value={entry.value} /> : null}
       {note ? <Text style={styles.swatchNote}>{note}</Text> : null}
+      {entryDetails('colors', entry, showProvenance, { title: name })}
     </View>
   );
 }
@@ -135,8 +205,8 @@ function PairedColorCell({ name, light, dark, showProvenance }: { name: string; 
   return (
     <View style={styles.colorCell}>
       <Swatch name={name} value={lightColor} splitValue={darkColor} valueLabel={`${lightColor} · ${darkColor}`} width={COLOR_CELL_WIDTH} wrapName />
-      {showProvenance ? <ProvenanceLine value={light.value} /> : null}
       {note ? <Text style={styles.swatchNote}>{note}</Text> : null}
+      {entryDetails('colors', light, showProvenance, { title: name, kicker: 'Color · light and dark', dark })}
     </View>
   );
 }
@@ -166,10 +236,10 @@ function ColorEntries({ entries, showProvenance }: { entries: ColorTokenEntry[];
 
 function TypographyRow({ entry, last, showProvenance }: { entry: TypographyTokenEntry; last: boolean; showProvenance: boolean }) {
   const base = entryNote(entry) ?? entry.name;
-  const provenanceSuffix = showProvenance ? ` · ${tokenProvenanceCaption(entry.value)}` : '';
+  const details = entryDetails('typography', entry, showProvenance);
   if (entry.value.resolution.status === 'unresolved') {
     return (
-      <TokenRow use={`${base}${provenanceSuffix}`} last={last} notePlacement="right">
+      <TokenRow use={base} last={last} notePlacement="right" action={details}>
         <View style={styles.unresolvedStack}>
           <Text style={styles.unresolvedText}>{entry.value.resolution.reason}</Text>
           {entry.value.resolution.expression ? <Text style={styles.unresolvedExpression}>{entry.value.resolution.expression}</Text> : null}
@@ -185,7 +255,7 @@ function TypographyRow({ entry, last, showProvenance }: { entry: TypographyToken
   // authored weight such as a numeric 600.
   const { fontSizeUnit: _unit, ...authoredTextStyle } = value;
   return (
-    <TokenRow use={`${base} · ${meta}${provenanceSuffix}`} last={last} notePlacement="right">
+    <TokenRow use={`${base} · ${meta}`} last={last} notePlacement="right" action={details}>
       <Text
         style={[styles.typographySample, authoredTextStyle as TextStyle]}
         numberOfLines={1}
@@ -209,10 +279,11 @@ function TypographyEntries({ entries, showProvenance }: { entries: TypographyTok
 type DimensionLikeEntry = SpacingTokenEntry | RadiusTokenEntry | DimensionsTokenEntry;
 
 function DimensionTile({ kind, entry, showProvenance }: { kind: 'spacing' | 'radius' | 'dimensions'; entry: DimensionLikeEntry; showProvenance: boolean }) {
-  const note = tileProvenanceNote(entry, entry.value, showProvenance);
+  const note = tileNote(entry, entry.value);
+  const action = entryDetails(kind, entry, showProvenance);
   if (entry.value.resolution.status === 'unresolved') {
     return (
-      <TokenTile name={entry.name} value={entry.value.resolution.reason} note={note}>
+      <TokenTile name={entry.name} value={entry.value.resolution.reason} note={note} action={action}>
         <Text style={styles.dash}>—</Text>
       </TokenTile>
     );
@@ -220,13 +291,13 @@ function DimensionTile({ kind, entry, showProvenance }: { kind: 'spacing' | 'rad
   const { amount, unit } = entry.value.resolution.value;
   if (kind === 'radius') {
     return (
-      <TokenTile name={entry.name} value={`${amount}${unit}`} note={note}>
+      <TokenTile name={entry.name} value={`${amount}${unit}`} note={note} action={action}>
         <View style={[styles.radiusSample, { borderRadius: Math.min(Math.max(amount, 0), 28) }]} />
       </TokenTile>
     );
   }
   return (
-    <TokenTile name={entry.name} value={`${amount}${unit}`} note={note}>
+    <TokenTile name={entry.name} value={`${amount}${unit}`} note={note} action={action}>
       <View style={[styles.spacingBar, { width: Math.min(Math.max(amount, 1), 120) }]} />
     </TokenTile>
   );
@@ -237,17 +308,18 @@ function DimensionEntries({ kind, entries, showProvenance }: { kind: 'spacing' |
 }
 
 function OpacityTile({ entry, showProvenance }: { entry: OpacityTokenEntry; showProvenance: boolean }) {
-  const note = tileProvenanceNote(entry, entry.value, showProvenance);
+  const note = tileNote(entry, entry.value);
+  const action = entryDetails('opacity', entry, showProvenance);
   if (entry.value.resolution.status === 'unresolved') {
     return (
-      <TokenTile name={entry.name} value={entry.value.resolution.reason} note={note}>
+      <TokenTile name={entry.name} value={entry.value.resolution.reason} note={note} action={action}>
         <Text style={styles.dash}>—</Text>
       </TokenTile>
     );
   }
   const { amount } = entry.value.resolution.value;
   return (
-    <TokenTile name={entry.name} value={`${Math.round(amount * 100)}%`} note={note}>
+    <TokenTile name={entry.name} value={`${Math.round(amount * 100)}%`} note={note} action={action}>
       <View style={styles.opacityBase}>
         <View style={[styles.opacityFill, { opacity: amount }]} />
       </View>
@@ -262,10 +334,11 @@ function OpacityEntries({ entries, showProvenance }: { entries: OpacityTokenEntr
 /** Same literal `.shadow(color:radius:x:y:)` preview `token-contract.md`'s own Shadow consumer
  *  reference already draws — a real box at the entry's own radius/offset/opacity. */
 function ShadowTile({ entry, showProvenance }: { entry: ShadowTokenEntry; showProvenance: boolean }) {
-  const note = tileProvenanceNote(entry, entry.value, showProvenance);
+  const note = tileNote(entry, entry.value);
+  const action = entryDetails('shadows', entry, showProvenance);
   if (entry.value.resolution.status === 'unresolved') {
     return (
-      <TokenTile name={entry.name} value={entry.value.resolution.reason} note={note}>
+      <TokenTile name={entry.name} value={entry.value.resolution.reason} note={note} action={action}>
         <Text style={styles.dash}>—</Text>
       </TokenTile>
     );
@@ -276,6 +349,7 @@ function ShadowTile({ entry, showProvenance }: { entry: ShadowTokenEntry; showPr
       name={entry.name}
       value={`y ${y}${x !== 0 ? ` · x ${x}` : ''} · ${Math.round(opacity * 100)}% ${color}`}
       note={note}
+      action={action}
     >
       <View
         style={[
@@ -299,12 +373,13 @@ function ShadowEntries({ entries, showProvenance }: { entries: ShadowTokenEntry[
  *  only its real provenance/reason/expression, never an invented category). */
 function MotionCell({ entry, showProvenance }: { entry: MotionTokenEntry; showProvenance: boolean }) {
   const note = entryNote(entry);
+  const details = entryDetails('motion', entry, showProvenance);
   if (entry.value.resolution.status === 'unresolved') {
     return (
       <View style={styles.motionCell}>
-        {showProvenance ? <ProvenanceLine value={entry.value} /> : null}
         <UnresolvedCaption resolution={entry.value.resolution} />
         {note ? <Text style={styles.motionNote}>{note}</Text> : null}
+        {details}
       </View>
     );
   }
@@ -313,8 +388,8 @@ function MotionCell({ entry, showProvenance }: { entry: MotionTokenEntry; showPr
     return (
       <View style={styles.motionCell}>
         <MotionSpecimen kind="timing" duration={value.durationMs} label={`${value.sourceValue}${value.sourceUnit}`} />
-        {showProvenance ? <ProvenanceLine value={entry.value} /> : null}
         {note ? <Text style={styles.motionNote}>{note}</Text> : null}
+        {details}
       </View>
     );
   }
@@ -327,8 +402,8 @@ function MotionCell({ entry, showProvenance }: { entry: MotionTokenEntry; showPr
           valueRange={value.valueRange}
           label={entry.name}
         />
-        {showProvenance ? <ProvenanceLine value={entry.value} /> : null}
         {note ? <Text style={styles.motionNote}>{note}</Text> : null}
+        {details}
       </View>
     );
   }
@@ -337,8 +412,8 @@ function MotionCell({ entry, showProvenance }: { entry: MotionTokenEntry; showPr
       <Text style={styles.motionLabel}>native expression (not replayable as physics)</Text>
       <Text style={styles.motionDetail}>{value.expression}</Text>
       {value.detail ? <Text style={styles.motionDetail}>{value.detail}</Text> : null}
-      {showProvenance ? <ProvenanceLine value={entry.value} /> : null}
       {note ? <Text style={styles.motionNote}>{note}</Text> : null}
+      {details}
     </View>
   );
 }
@@ -548,14 +623,17 @@ const styles = StyleSheet.create({
   fallbackDetail: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
   fallbackNote: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
 
-  // Correction C1: a value's own provenance/named line — plain muted caption text, never a badge.
-  provenanceLine: { ...CATALOG_TEXT.micro, color: CATALOG_COLOR.textMuted },
   // Correction C1: the section-level consolidated provenance line, shown once above every entry's
   // own body when every entry in the section shares the same provenance+named pair.
   sectionProvenance: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, marginBottom: CATALOG_SPACE.sm },
   // Correction C1: an unresolved value's real source `expression`, monospace — the same
   // `CATALOG_TEXT.codeMicro` mono role `ReferenceDetails.tsx`'s own `mono` style already uses.
   monoNote: { ...CATALOG_TEXT.codeMicro, color: CATALOG_COLOR.textMuted },
+  // The extra lines inside a `TokenDetails` panel, matching the lines the panel draws itself.
+  panelFact: { gap: CATALOG_SPACE.xs },
+  panelFactLabel: { ...CATALOG_TEXT.microLabel, color: CATALOG_COLOR.textMuted },
+  panelFactMono: { ...CATALOG_TEXT.codeSmall, color: CATALOG_COLOR.text, wordBreak: 'break-word' } as TextStyle,
+  panelFactText: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.text },
 
   typographySample: { color: CATALOG_COLOR.text },
   unresolvedStack: { gap: CATALOG_SPACE.xs },

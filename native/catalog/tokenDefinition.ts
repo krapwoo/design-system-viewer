@@ -100,6 +100,12 @@ export interface TokenEntryBase {
   /** A literal pointer to where the real value lives (e.g. `'DS_SPACING.800'`, a file:line) — never
    *  evaluated, purely for a human/AI to cross-reference. */
   source?: string;
+  /** The token's source expression (e.g. `Color(red: 0.2, green: 0.4, blue: 0.9)`), shown in
+   *  monospace in the token's Details panel. Authored only — never inferred from `value`. */
+  expression?: string;
+  /** Every place the token is used, one `path:line` each, listed in full in the Details panel under
+   *  "Used at N sites". Authored only — never inferred or counted by the viewer. */
+  usages?: readonly string[];
   /** Authored usage role, when one is known — never invented from a category or number. */
   role?: string;
   /** Short "when to use this" prose, when known. */
