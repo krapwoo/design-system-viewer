@@ -3,6 +3,16 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.20.1
+
+- Catalog and CLI fixes for long page titles, comparison grids, anatomy pins and family members:
+  - A long page title with no spaces (a component id such as `KanbanBoardManagementView`) now wraps inside its own column on family and group pages too, instead of running underneath the ← → pager on a narrow window.
+  - A comparison grid takes its page's `variants.axis` as its heading only when that names one of the grid's own axes, so a Shape × Pose grid is no longer headed "Expression".
+  - `doctor` has a new `comparison-hides-variants` warning for a page or member whose `variants` are replaced by a grid that doesn't cover their axis.
+  - On web, when neither the page nor the catalog sets `previewWidths`, an anatomy picture keeps its pins inside the picture column instead of overlapping the legend beside it.
+  - `explain <Page>` (human and `--json`) and `explain --all` report each family or group member's own blocks under `members`, and flag a member whose two blocks may sit side by side under `memberPlacement`.
+  - `layout-diff` compares those members too; an older snapshot without them still diffs without inventing changes.
+
 ## 0.20.0
 
 - A page built from other components now shows them in a "Parts" block (cards for the ones that have pages, plain rows for the rest) between its specimens and "Appears in", and numbers them as parts: an anatomy's `other` items and the block's cards share numbers that continue after the page's own parts (which keep theirs), the pins carry a small ↗, a single-component page's `anatomy` is now drawn, and the anatomy picture is laid out at the width the page's specimens use (its first `previewWidths` entry, else the catalog default) with a 30px pin margin on each side, half the box beside the legend, stacking when half is narrower than that width plus 108px. Only components with a page of their own are numbered (an `other` name that resolves nowhere stays an unnumbered ↗ pin), a pin names its destination page, and a Parts entry that resolves to the page itself is left out. New exports: `AnatomySpecimen` draws a specimen at the anatomy width with the variant cells' centring and a `pins` prop that puts the pins in a 30px column on its right edge, plus `PartsBlock`, `OverviewCard` and the `PartEntry`/`ReferenceNavigation` types. A new `partGroups` config field names the sidebar groups whose pages are components: only those count as parts, so an entry that resolves to a page in another group (a style, layout or behavior) is left out of the Parts block and gets no number, and an anatomy `other` item naming such a page keeps its pin and legend row, unnumbered. Absent, every group counts, as before.
