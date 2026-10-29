@@ -4,8 +4,9 @@ import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_SPACE, CATALOG_TEXT } from './to
 
 const ARIA_HIDDEN = { 'aria-hidden': true } as Record<string, unknown>;
 
-/** The link-style trigger ("Notes and API ›") that opens a `SidePanel`. */
-export function SidePanelTrigger({ label, open, onPress }: { label: string; open: boolean; onPress: () => void }) {
+/** The link-style trigger ("Notes and API ›") that opens a `SidePanel`. Pass `accessibilityLabel`
+ *  when the visible label alone doesn't say what it opens (a page of many "Details" links). */
+export function SidePanelTrigger({ label, open, onPress, accessibilityLabel }: { label: string; open: boolean; onPress: () => void; accessibilityLabel?: string }) {
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
@@ -13,6 +14,7 @@ export function SidePanelTrigger({ label, open, onPress }: { label: string; open
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ expanded: open }}
       {...({ 'aria-expanded': open, 'aria-haspopup': 'dialog' } as Record<string, unknown>)}
       style={[styles.toggle, focused && styles.focusRing]}

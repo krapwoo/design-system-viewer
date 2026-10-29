@@ -85,13 +85,14 @@ export function TokenGrid({ children, minTileWidth = 140, maxColumns }: { childr
  * One token in a `TokenGrid`: its preview, then its name and value, then its role. `note` says
  * where or why the token is used (from its comments or real usages) — omit it when there is none.
  */
-export function TokenTile({ name, value, note, children }: { name: string; value?: string; note?: React.ReactNode; children: React.ReactNode }) {
+export function TokenTile({ name, value, note, action, children }: { name: string; value?: string; note?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <View style={styles.tile}>
       <View style={styles.tilePreview}>{children}</View>
       <Text style={styles.tileName}>{name}</Text>
       {value ? <Text style={styles.tileValue}>{value}</Text> : null}
       {note ? <Text style={styles.tileNote}>{note}</Text> : null}
+      {action}
     </View>
   );
 }

@@ -48,9 +48,12 @@ export function TokenRow({
   last = false,
   notePlacement = 'below',
   sampleWidth = 280,
+  action,
 }: {
   children: React.ReactNode;
   use: string;
+  /** A control after the note, e.g. a `TokenDetails` link. */
+  action?: React.ReactNode;
   last?: boolean;
   /** `'right'` puts the note beside the sample (font weights, spacing, type sizes) so each token is
    *  one line. Inside a `TokenRowGroup` the sample column is measured from the widest sample in the
@@ -83,6 +86,7 @@ export function TokenRow({
           <View style={onLayout ? styles.natural : undefined} onLayout={onLayout}>{children}</View>
         </View>
         {use ? <Text style={[styles.use, styles.useRight]}>{use}</Text> : null}
+        {action}
       </View>
     );
   }
@@ -90,6 +94,7 @@ export function TokenRow({
     <View style={[styles.item, !last && styles.itemDivider]}>
       {children}
       {use ? <Text style={styles.use}>{use}</Text> : null}
+      {action}
     </View>
   );
 }

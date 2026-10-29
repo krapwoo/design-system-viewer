@@ -895,6 +895,42 @@ shape:
   ```tsx
   <MotionSpecimen kind="spring" spring={UNIT_SPRING_CONFIG} valueRange="unit" />
   ```
+  A spring can also be written the way SwiftUI source writes it, so a SwiftUI token needs no
+  hand conversion. `spring` takes `{ response, dampingFraction }` (`.spring(response:dampingFraction:)`)
+  or `{ duration, bounce? }` (`.spring(duration:bounce:)`, `bounce` defaults to `0`) in place of
+  stiffness/damping/mass; the stiffness/damping/mass form is unchanged. Both are converted to the
+  stiffness/damping physics with a mass of 1: `stiffness = (2π / response)²` and
+  `damping = 4π · dampingFraction / response`, where `duration/bounce` means `response = duration`
+  and `dampingFraction = 1 − bounce` (`1 / (1 + bounce)` for a negative `bounce`). The curve
+  matches SwiftUI's spring model; the moment `Animated.spring` decides it has settled may differ
+  slightly from SwiftUI's. A `response`/`duration` of 0 or less, a negative `dampingFraction`, or a
+  `bounce` outside −1 (exclusive) to 1 throws a `RangeError` rather than animating something the
+  source can't mean. This is checked while rendering, so a bad value throws (reaching an error
+  boundary) whatever the reduce-motion setting. Other fields in the object, such as
+  `overshootClamping` or the rest thresholds, are passed on to `Animated.spring` as written. A
+  `dampingFraction` of `0` (`bounce: 1`) is converted as written (`damping: 0`), but
+  `Animated.spring` on web refuses a damping of 0 ("Damping value must be greater than 0"); a
+  value just above 0 is accepted and oscillates for a very long time. So the specimen cuts any
+  spring play off after 5 seconds (`MOTION_SPRING_MAX_MS`) and places the dot at the end:
+  ```tsx
+  <MotionSpecimen kind="spring" spring={{ response: 0.5, dampingFraction: 0.7 }} />
+  <MotionSpecimen kind="spring" spring={{ duration: 0.5, bounce: 0.3 }} />
+  ```
+- **`TokenDetails`** keeps a token's source and usage text off its tile. It renders a
+  **Details ›** link and, when pressed, the same side panel **Notes and API ›** uses. Give it the
+  token's `title` (the panel heading, and the link's accessible name: "Details for 8pt") and
+  whichever of these you know: `kicker` (e.g. "Corner radius"), `expression` (the token's source
+  expression), `source` (one `path:line`), `usages` (every `path:line` or file name — listed in
+  full under "Used at N sites", never cut to "+N more"; a long list scrolls inside the panel),
+  `usageSummary` (text for when only an aggregate is known), and `children` for anything extra,
+  shown last. Only one token's panel is open at a time, and nothing in a panel is mounted until it
+  opens. The built-in `tokenDefinition` pages add it for you:
+  ```tsx
+  <TokenRow use="Card corners" notePlacement="right" action={<TokenDetails title="8pt" kicker="Corner radius" source="Radius.swift:12" usages={sites} />}>
+    <View style={{ width: 56, height: 36, borderRadius: 8, backgroundColor: DS_COLOR.accent }} />
+  </TokenRow>
+  ```
+  `TokenTile` and `TokenRow` both take an `action` slot after their note for it.
 
 ### `tokenDefinition`
 
@@ -942,6 +978,20 @@ export default defineCatalogPage({ group: 'Tokens', description: 'Semantic and p
   `'named'`/`'inline'` provenance, which already say so by themselves. When every entry in a
   section shares the same provenance/named pair, it's shown once for the whole section instead of
   repeating on every entry.
+- **`expression` and `usages` on an entry.** Both are optional and authored only, never inferred:
+  `expression` is the token's source expression (shown in monospace under "Expression"), and
+  `usages` is every call site as `path:line` (listed in full under "Used at N sites", never cut to
+  "+N more"). For a light/dark pair, an expression that is the same on both sides is shown once,
+  one that differs is shown as "Expression (light)" and "Expression (dark)", and the two sides'
+  `usages` are listed together, each site once.
+- **A tile shows only its value; the rest is behind "Details ›".** An entry's provenance (when it
+  isn't already shown once for the section), `source`, `expression`, `usages` and `role` (the usage text) are not printed
+  under its tile or row. They open from a **Details ›** link on that entry, named "Details for
+  `<name>`", in the same side panel as **Notes and API ›** (see `TokenDetails`, above). An
+  entry's `note`, an unresolved value's `reason` and `expression`, and a motion entry's native
+  expression are about the value itself and stay on the tile. An entry with nothing to put in the
+  panel (no `source`, `expression`, `usages` or `role`, and provenance already shown for the section) has no link. A
+  light/dark pair has one link, named by the shared name, whose panel covers both sides.
 - **Appearances and scoped ids.** A color entry's `appearance: 'light' | 'dark'` renders an
   independent sample — not a global color-scheme context; omit it for a color with one appearance.
   An entry's `id` only needs to be unique *within its own section* — the same id may recur in a
@@ -966,7 +1016,9 @@ export default defineCatalogPage({ group: 'Tokens', description: 'Semantic and p
 - **Motion's `native-expression` kind is a real limit, not a gap:** a SwiftUI
   `.spring(duration:bounce:)`/`.spring(response:dampingFraction:)` (or any other conditional/
   symbolic value) is shown as its own real text, never converted into a guessed
-  stiffness/damping/mass spring — that conversion genuinely isn't supported.
+  stiffness/damping/mass spring — a `tokenDefinition` entry carries the expression as text, not
+  its numbers. To replay a SwiftUI spring, give `MotionSpecimen` the numbers themselves
+  (`{ response, dampingFraction }` or `{ duration, bounce }`, above).
 - **Conflicts.** `tokenDefinition` replaces, and so conflicts with, an explicit `render`,
   `tokenGallery`, `tokenSections`, or `members` (a family page) on the same page — remove one of
   them. These, and an explicit `title` that disagrees with the kind's canonical title, are always

@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { motionReplayLabel, motionTranslatesDirectly, motionValueTarget, type MotionValueRange } from './motionValueDomain';
+import { isSwiftUISpring, swiftUISpringPhysics, type SwiftUISpring } from './swiftUISpring';
 
 /** `Animated.spring`'s physics fields — the same shape as a design system's own spring-config
  *  token (e.g. `DS_MOTION_SPRING`), kept local here rather than imported from any app's tokens so
@@ -29,7 +30,11 @@ export type MotionSpecimenProps =
     }
   | {
       kind: 'spring';
-      spring: MotionSpecimenSpringConfig;
+      /** Either `Animated.spring`'s own physics (stiffness/damping/mass), or a SwiftUI spring as the
+       *  source writes it: `{ response, dampingFraction }` or `{ duration, bounce? }`. The SwiftUI
+       *  forms are converted to physics with mass 1 (see `swiftUISpring.ts`); the curve matches
+       *  SwiftUI's spring model, while the moment it counts as settled may differ slightly. */
+      spring: MotionSpecimenSpringConfig | SwiftUISpring;
       /** Which domain `spring`'s rest thresholds are scaled for (see `motionValueDomain.ts`):
        *  `'distance'` (default) for a config tuned for pixel-space points, e.g. a `BottomSheet`'s
        *  snap-point spring; `'unit'` for a config tuned for a normalized 0-to-1 progress/blend
@@ -43,13 +48,26 @@ export type MotionSpecimenProps =
 
 const DOT_SIZE = 20;
 const DEFAULT_DISTANCE = 160;
+/** A spring play is cut off after this long and the dot placed at the end, so a spring that never
+ *  settles (`dampingFraction: 0`, `bounce: 1`) can't keep animating for as long as the page is open.
+ *  A timing play is bounded by its own `duration`; this is the spring's equivalent. */
+export const MOTION_SPRING_MAX_MS = 5000;
+
+/** The physics `Animated.spring` gets: a SwiftUI spring converted to stiffness/damping/mass, with any
+ *  other field (`overshootClamping`, the rest thresholds) kept as written. */
+function springPhysics(spring: MotionSpecimenSpringConfig | SwiftUISpring): MotionSpecimenSpringConfig {
+  if (!isSwiftUISpring(spring)) return spring;
+  const { response, dampingFraction, duration, bounce, ...rest } = spring as SwiftUISpring & { response?: number; dampingFraction?: number; duration?: number; bounce?: number };
+  return { ...rest, ...swiftUISpringPhysics(spring) };
+}
 
 /**
  * A reusable, bounded start-to-end motion demo for a duration/easing or spring token: a dot slides
  * once across a fixed track when the specimen mounts, and a "Replay" button plays it again on
  * demand. Respects the platform's reduce-motion preference — when enabled, every play (including
  * the initial one) jumps straight to the end state instead of animating, exactly as the real
- * product components built on these tokens should. Uses only `Animated`/`AccessibilityInfo` from
+ * product components built on these tokens should. A spring play is cut off after
+ * `MOTION_SPRING_MAX_MS`. Uses only `Animated`/`AccessibilityInfo` from
  * `react-native`, already a peer dependency — no new runtime dependency.
  */
 export function MotionSpecimen(props: MotionSpecimenProps) {
@@ -58,11 +76,24 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
   const target = motionValueTarget(valueRange, distance);
   const progress = useRef(new Animated.Value(0)).current;
   const activeAnim = useRef<Animated.CompositeAnimation | null>(null);
+  const springTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
+  // Converted while rendering, so an out-of-range SwiftUI spring throws here (reaching an error
+  // boundary) whatever the reduce-motion setting, not later inside an effect or event handler.
+  const springConfig = useMemo(
+    () => (props.kind === 'spring' ? springPhysics(props.spring) : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [props.kind, props.kind === 'spring' ? props.spring : undefined],
+  );
+  const clearSpringTimer = () => {
+    if (springTimer.current !== null) clearTimeout(springTimer.current);
+    springTimer.current = null;
+  };
 
   const play = useCallback(
     (instant: boolean) => {
       activeAnim.current?.stop();
+      clearSpringTimer();
       progress.setValue(0);
       if (instant) {
         progress.setValue(target);
@@ -71,14 +102,25 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
       const anim =
         props.kind === 'timing'
           ? Animated.timing(progress, { toValue: target, duration: props.duration, easing: props.easing, useNativeDriver: true })
-          : Animated.spring(progress, { toValue: target, useNativeDriver: true, ...props.spring });
+          : Animated.spring(progress, {
+              toValue: target,
+              useNativeDriver: true,
+              ...springConfig,
+            });
       activeAnim.current = anim;
-      anim.start();
+      if (props.kind === 'spring') {
+        springTimer.current = setTimeout(() => {
+          springTimer.current = null;
+          anim.stop();
+          progress.setValue(target);
+        }, MOTION_SPRING_MAX_MS);
+      }
+      anim.start(() => { if (activeAnim.current === anim) clearSpringTimer(); });
     },
     // `props` covers every field `play` reads (duration/easing/spring differ per kind); `target`
     // is derived from `props` (distance, kind, valueRange), not independent state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [progress, props, target],
+    [progress, props, springConfig, target],
   );
 
   useEffect(() => {
@@ -93,6 +135,7 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
       mounted = false;
       subscription.remove();
       activeAnim.current?.stop();
+      clearSpringTimer();
     };
     // Plays exactly once on mount; `play` only needs to be re-created, never re-run, when props change.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -29,6 +29,8 @@ const warmup = new JSDOM('<!doctype html><html><body></body></html>', { pretendT
 (globalThis as Record<string, unknown>).document = warmup.window.document;
 Object.defineProperty(globalThis, 'navigator', { value: warmup.window.navigator, configurable: true });
 (globalThis as Record<string, unknown>).ShadowRoot = warmup.window.ShadowRoot;
+// The side panel's `Modal` focus trap reads the global `Node` (see `notesPanelRender.test.tsx`).
+Object.defineProperty(globalThis, 'Node', { configurable: true, get: () => window.Node });
 // `react-native-web`'s own `AccessibilityInfo` (`MotionSpecimen.tsx`'s reduce-motion contract)
 // decides `prefersReducedMotionMedia` once, at ITS OWN first import, from `window.matchMedia` —
 // jsdom has no `matchMedia` at all, which would otherwise cache that as `null` forever for this
@@ -121,6 +123,25 @@ function plainTextOccurrences(container: HTMLElement, text: string): number {
   return [...container.querySelectorAll('*')].filter((e) => e.children.length === 0 && (e.textContent || '').includes(text)).length;
 }
 
+function press(el: Element) {
+  act(() => { el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); });
+}
+
+/** Every "Details ›" link on the page, by its accessible name ("Details for <token>"). */
+function detailsLinks(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('[aria-haspopup="dialog"]')].map((el) => el.getAttribute('aria-label') || '');
+}
+
+/** Opens one token's "Details ›" panel and returns its text. The caller closes it (or the cleanup does). */
+function openDetails(container: HTMLElement, token: string): string {
+  const link = container.querySelector(`[aria-label="Details for ${token}"]`);
+  assert.ok(link, `expected a "Details for ${token}" link`);
+  press(link);
+  const panel = document.querySelector('[role="dialog"][aria-modal="true"]');
+  assert.ok(panel, `expected "Details for ${token}" to open the side panel`);
+  return (panel.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
 function pageHeading(): string {
   return (document.querySelector('[role="heading"][aria-level="1"]')?.textContent || '').trim();
 }
@@ -196,7 +217,9 @@ test('producer-to-renderer: a real buildCatalogSections + mounted SectionBlock d
     assert.ok(plainTextPresent(container, '#4d9bff'), 'the independent dark-appearance entry must show its own real value');
     assert.ok(plainTextPresent(container, 'Accent B'), 'a scoped duplicate id in a different section must still render under its own name');
     assert.ok(plainTextPresent(container, 'Provided by the platform at runtime.'), 'a named token whose value is platform-provided must show its real reason, not a fabricated sample');
-    assert.ok(plainTextPresent(container, 'AgentRunLiveActivityWidget.swift:42'), 'an unresolved finding with a real drawable literal must still show its citation');
+    assert.ok(plainTextPresent(container, 'UIColor.systemBackground'), 'an unresolved value\'s real expression stays on its tile');
+    assert.equal(plainTextPresent(container, 'AgentRunLiveActivityWidget.swift:42'), false, 'a source citation is not on the tile — it is in the token\'s Details panel');
+    assert.equal(plainTextPresent(container, 'Screen background'), false, 'usage text is not on the tile either');
     assert.ok(plainTextPresent(container, 'AccentColor.colorset has no defined value.'), 'a truly unresolved value must show its real reason');
     // Correction C2: the invented "not drawable" classification must never appear; a neutral
     // placeholder stands in its place.
@@ -208,10 +231,17 @@ test('producer-to-renderer: a real buildCatalogSections + mounted SectionBlock d
     // its entries shows its own line instead.
     // surfaceA's two entries share one caption, consolidated to a single section-level line;
     // surfaceB mixes provenance, so its own "accent" entry (also "named") shows its own line too —
-    // 2 total, never 4 (one per surfaceA entry would be the bug this guards against).
-    assert.equal(plainTextOccurrences(container, 'Named token'), 2, 'surfaceA\'s consolidated line, plus surfaceB\'s own non-consolidated "accent" entry — never once per surfaceA entry');
-    assert.ok(plainTextPresent(container, 'Platform-provided · named token'), 'a platform-provided value that is also exposed through a named token shows both, never a badge');
-    assert.equal(plainTextOccurrences(container, 'Unresolved finding'), 2, 'surfaceB\'s two unresolved-finding entries each show their own provenance line');
+    // The consolidated line is the only provenance left on the page itself; surfaceB's per-entry
+    // provenance is in each token's Details panel, one link per surfaceB entry (surfaceA's entries,
+    // with no source or usage text and a line already above them, have none).
+    assert.equal(plainTextOccurrences(container, 'Named token'), 1, 'surfaceA\'s consolidated line only — never once per surfaceA entry, and surfaceB\'s per-entry provenance is not on the page');
+    assert.equal(plainTextPresent(container, 'Platform-provided'), false, 'per-entry provenance is not printed under the token');
+    assert.equal(plainTextPresent(container, 'Unresolved finding'), false, 'per-entry provenance is not printed under the token');
+    assert.deepEqual(detailsLinks(container), ['Details for Accent B', 'Details for Background', 'Details for Live Activity tint', 'Details for AccentColor']);
+    assert.ok(openDetails(container, 'Background').includes('Platform-provided · named token'), 'a platform-provided value that is also exposed through a named token shows both, never a badge');
+    assert.ok(openDetails(container, 'Background').includes('Screen background'), 'the usage text is in the panel');
+    assert.ok(openDetails(container, 'Live Activity tint').includes('AgentRunLiveActivityWidget.swift:42'), 'an unresolved finding with a real drawable literal still gets its citation, in the panel');
+    assert.ok(openDetails(container, 'Live Activity tint').includes('Unresolved finding'));
   } finally { cleanup(); }
 });
 
@@ -231,9 +261,13 @@ test('mounted SectionBlock renders real motion entries: a replayable timing spec
     // Correction C2: "symbolic / conditional" was a fabricated classification — never shown now.
     assert.equal(plainTextPresent(container, 'symbolic / conditional'), false, 'the fabricated "symbolic / conditional" classification must never appear');
     // Correction C1: "base" is "named", the other two are "inline" — not all three agree, so every
-    // entry shows its own provenance line rather than one consolidated at the section level.
-    assert.ok(plainTextPresent(container, 'Named token'), '"base" is a named token');
-    assert.equal(plainTextOccurrences(container, 'Inline value'), 2, '"bounceSpring" and "conditional" are both inline values, each shown on its own entry');
+    // entry carries its own provenance (in its Details panel) rather than one line for the section.
+    assert.equal(plainTextPresent(container, 'Named token'), false, 'provenance is not printed under the token');
+    assert.equal(plainTextPresent(container, 'Inline value'), false, 'provenance is not printed under the token');
+    assert.deepEqual(detailsLinks(container), ['Details for Base', 'Details for Bounce spring', 'Details for Conditional']);
+    assert.ok(openDetails(container, 'Base').includes('Named token'), '"base" is a named token');
+    assert.ok(openDetails(container, 'Bounce spring').includes('Inline value'));
+    assert.ok(openDetails(container, 'Conditional').includes('Inline value'));
   } finally { cleanup(); }
 });
 
@@ -378,8 +412,11 @@ test('mounted SectionBlock consolidates a section\'s shared provenance to one li
     // "consistent"'s 3 entries share "Named token" — consolidated, once. "mixed"'s own "namedOne"
     // entry also happens to be "named", but since "mixed" itself disagrees it shows its own line too
     // — 2 total, never 1 (fully suppressed) and never 4 (consolidation not applied at all).
-    assert.equal(plainTextOccurrences(container, 'Named token'), 2, 'one consolidated line for "consistent", plus "mixed"\'s own non-consolidated "namedOne" entry');
-    assert.equal(plainTextOccurrences(container, 'Inline value'), 1, '"mixed"\'s own "inlineOne" entry shows its own line');
+    assert.equal(plainTextOccurrences(container, 'Named token'), 1, 'one consolidated line for "consistent"; "mixed"\'s entries keep theirs in their Details panels');
+    assert.equal(plainTextPresent(container, 'Inline value'), false);
+    assert.deepEqual(detailsLinks(container), ['Details for Named one', 'Details for Inline one'], 'only "mixed"\'s entries need a link; "consistent" shares one line above its tiles');
+    assert.ok(openDetails(container, 'Named one').includes('Named token'));
+    assert.ok(openDetails(container, 'Inline one').includes('Inline value'), '"mixed"\'s own "inlineOne" entry has its own provenance');
   } finally { cleanup(); }
 });
 
@@ -547,4 +584,136 @@ test('a legacy tokenGallery page with no tokenDefinition is unaffected by this c
   try {
     assert.ok(plainTextPresent(container, 'legacy content'));
   } finally { cleanup(); }
+});
+
+// Details ›: on every token kind, a token's source and usage text leave its tile for the side panel
+// its "Details ›" link opens. One entry per section, so provenance is consolidated above it (and
+// absent from the link) and what the panel holds is exactly the entry's own `source` and `role`.
+const SOURCE = 'Sources/Theme.swift:12';
+const ROLE = 'Used for card corners (fixture)';
+const KIND_FIXTURES: Array<{ kind: TokenDefinition['kind']; entry: Record<string, unknown>; shows: string }> = [
+  { kind: 'colors', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#1a73e8' } } } }, shows: '#1a73e8' },
+  { kind: 'typography', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { fontSize: 16, fontSizeUnit: 'px', fontWeight: 400 } } } }, shows: '16px' },
+  { kind: 'spacing', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 8, unit: 'pt' } } } }, shows: '8pt' },
+  { kind: 'radius', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 12, unit: 'pt' } } } }, shows: '12pt' },
+  { kind: 'dimensions', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 44, unit: 'pt' } } } }, shows: '44pt' },
+  { kind: 'opacity', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 0.4 } } } }, shows: '40%' },
+  { kind: 'shadows', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#000000', opacity: 0.2, radius: 8, x: 0, y: 2 } } } }, shows: 'y 2' },
+  { kind: 'motion', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { kind: 'timing', durationMs: 300, sourceValue: 0.3, sourceUnit: 's' } } } }, shows: '' },
+  { kind: 'motion', entry: { value: { provenance: 'named', resolution: { status: 'resolved', value: { kind: 'native-expression', expression: '.spring(duration: 0.4)' } } } }, shows: '.spring(duration: 0.4)' },
+  { kind: 'motion', entry: { value: { provenance: 'named', resolution: { status: 'unresolved', reason: 'Depends on isPressed.', expression: 'isPressed ? 0.1 : 0.3' } } }, shows: 'isPressed ? 0.1 : 0.3' },
+];
+
+for (const [index, fixture] of KIND_FIXTURES.entries()) {
+  test(`${fixture.kind} token #${index}: source and usage text move from the tile into its Details panel`, async () => {
+    const def: TokenDefinition = {
+      kind: fixture.kind,
+      sections: [{ id: 's', title: 'Section (fixture)', entries: [{ id: 'token', name: 'Token (fixture)', kind: fixture.kind, source: SOURCE, role: ROLE, ...fixture.entry } as never] }],
+    };
+    const id = `tokens-details-${index}`;
+    const pages = [defineCatalogPage({ id, group: 'Tokens', description: 'Fixture.', tokenDefinition: def })];
+    const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: `fixtures/${id}.catalog.tsx` })), []);
+    const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def: sections.find((s) => s.id === id)! } as never));
+    try {
+      await settleLayout();
+      if (fixture.shows) assert.ok(plainTextPresent(container, fixture.shows), `the tile keeps its value/expression (${fixture.shows})`);
+      assert.equal(plainTextPresent(container, SOURCE), false, 'the source is not on the tile');
+      assert.equal(plainTextPresent(container, ROLE), false, 'the usage text is not on the tile');
+      assert.deepEqual(detailsLinks(container), ['Details for Token (fixture)'], 'one Details link for the one token');
+      const panel = openDetails(container, 'Token (fixture)');
+      assert.ok(panel.includes(SOURCE), 'the panel holds the source');
+      assert.ok(panel.includes(ROLE), 'the panel holds the usage text');
+      assert.ok(panel.includes('Source'), 'under a Source label');
+    } finally { cleanup(); }
+  });
+}
+
+test('a token with no source, no usage text and a consolidated provenance line has no Details link', async () => {
+  const def: TokenDefinition = {
+    kind: 'spacing',
+    sections: [{ id: 's', title: 'Section (fixture)', entries: [{ id: 'a', name: 'A', kind: 'spacing', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 4, unit: 'pt' } } } }] }],
+  };
+  const pages = [defineCatalogPage({ id: 'tokens-nolink', group: 'Tokens', description: 'Fixture.', tokenDefinition: def })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-nolink.catalog.tsx' })), []);
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def: sections.find((s) => s.id === 'tokens-nolink')! } as never));
+  try {
+    await settleLayout();
+    assert.ok(plainTextPresent(container, 'Named token'), 'the consolidated provenance line stays above the tiles');
+    assert.deepEqual(detailsLinks(container), []);
+  } finally { cleanup(); }
+});
+
+test('a token\'s own note stays on its tile; a light/dark pair has one Details link whose panel covers both sides', async () => {
+  const def: TokenDefinition = {
+    kind: 'colors',
+    sections: [{
+      id: 's', title: 'Section (fixture)',
+      entries: [
+        { id: 'l', name: 'Accent', kind: 'colors', appearance: 'light', source: 'Light.swift:1', role: 'Primary actions (fixture)', note: 'Pairs with dark', value: { provenance: 'named', resolution: { status: 'resolved', value: { color: '#111111' } } } },
+        { id: 'd', name: 'Accent', kind: 'colors', appearance: 'dark', source: 'Dark.swift:2', value: { provenance: 'inline', resolution: { status: 'resolved', value: { color: '#eeeeee' } } } },
+      ],
+    }],
+  };
+  const pages = [defineCatalogPage({ id: 'tokens-pair-details', group: 'Tokens', description: 'Fixture.', tokenDefinition: def })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: 'fixtures/tokens-pair-details.catalog.tsx' })), []);
+  const { container, cleanup } = renderWithResizeObserver(React.createElement(SectionBlock as never, { def: sections.find((s) => s.id === 'tokens-pair-details')! } as never));
+  try {
+    await settleLayout();
+    assert.ok(plainTextPresent(container, 'Pairs with dark'), 'a non-provenance note about the value stays on the tile');
+    assert.equal(plainTextPresent(container, 'Primary actions (fixture)'), false);
+    assert.deepEqual(detailsLinks(container), ['Details for Accent'], 'one link for the pair, named by the bare name');
+    const panel = openDetails(container, 'Accent');
+    assert.ok(panel.includes('Source (light)') && panel.includes('Light.swift:1'));
+    assert.ok(panel.includes('Source (dark)') && panel.includes('Dark.swift:2'));
+    assert.ok(panel.includes('Primary actions (fixture)'));
+    assert.ok(panel.includes('Light: Named token · Dark: Inline value'), 'the two sides\' differing provenance');
+  } finally { cleanup(); }
+});
+
+async function renderColorsDef(id: string, entries: unknown[]) {
+  const def = { kind: 'colors', sections: [{ id: 's', title: 'Section (fixture)', entries }] } as TokenDefinition;
+  const pages = [defineCatalogPage({ id, group: 'Tokens', description: 'Fixture.', tokenDefinition: def })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: `fixtures/${id}.catalog.tsx` })), []);
+  const rendered = renderWithResizeObserver(React.createElement(SectionBlock as never, { def: sections.find((s) => s.id === id)! } as never));
+  await settleLayout();
+  return rendered;
+}
+const COLOR_VALUE = (color: string) => ({ provenance: 'named', resolution: { status: 'resolved', value: { color } } });
+
+test('a colors entry with only `expression` and `usages` gets a link; its panel shows the expression and lists every site', async () => {
+  const sites = ['Views/A.swift:10', 'Views/B.swift:22', 'Views/C.swift:5'];
+  const { container, cleanup } = await renderColorsDef('tokens-expr-usages', [
+    { id: 'a', name: 'Brand', kind: 'colors', expression: 'Color("brand")', usages: sites, value: COLOR_VALUE('#123456') },
+  ]);
+  try {
+    assert.deepEqual(detailsLinks(container), ['Details for Brand'], 'expression and usages alone earn the link');
+    const panel = openDetails(container, 'Brand');
+    assert.ok(panel.includes('Expression') && panel.includes('Color("brand")'));
+    assert.ok(panel.includes('Used at 3 sites'));
+    for (const site of sites) assert.ok(panel.includes(site), `lists ${site}`);
+  } finally { cleanup(); }
+});
+
+test('a light/dark pair: equal expressions show once, differing ones show per side, and usages from both sides are listed', async () => {
+  const { container, cleanup } = await renderColorsDef('tokens-expr-pair', [
+    { id: 'l', name: 'Ink', kind: 'colors', appearance: 'light', expression: 'Color("ink")', role: 'Body text (light fixture)', usages: ['A.swift:1', 'Shared.swift:2'], value: COLOR_VALUE('#111111') },
+    { id: 'd', name: 'Ink', kind: 'colors', appearance: 'dark', expression: 'Color("ink-dark")', role: 'Body text (dark fixture)', usages: ['Shared.swift:2', 'B.swift:3'], value: COLOR_VALUE('#eeeeee') },
+  ]);
+  try {
+    const panel = openDetails(container, 'Ink');
+    assert.ok(panel.includes('Usage (light)') && panel.includes('Body text (light fixture)'), 'a differing role shows per side');
+    assert.ok(panel.includes('Usage (dark)') && panel.includes('Body text (dark fixture)'), 'the dark role is not dropped');
+    assert.ok(panel.includes('Expression (light)') && panel.includes('Color("ink")'));
+    assert.ok(panel.includes('Expression (dark)') && panel.includes('Color("ink-dark")'));
+    assert.ok(panel.includes('Used at 3 sites'), 'the shared site is listed once');
+    for (const site of ['A.swift:1', 'Shared.swift:2', 'B.swift:3']) assert.ok(panel.includes(site));
+  } finally { cleanup(); }
+  const same = await renderColorsDef('tokens-expr-pair-same', [
+    { id: 'l', name: 'Ink', kind: 'colors', appearance: 'light', expression: 'Color("ink")', value: COLOR_VALUE('#111111') },
+    { id: 'd', name: 'Ink', kind: 'colors', appearance: 'dark', expression: 'Color("ink")', value: COLOR_VALUE('#eeeeee') },
+  ]);
+  try {
+    const panel = openDetails(same.container, 'Ink');
+    assert.ok(panel.includes('Expression') && !panel.includes('Expression (light)'), 'an equal expression is one fact');
+  } finally { same.cleanup(); }
 });
