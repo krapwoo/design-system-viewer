@@ -99,7 +99,8 @@ export interface CatalogPageInput<TId extends string = string> {
    *  whole owns its own page rather than being documented inline here. Each entry's `page` must
    *  resolve to a real catalog page, never this page's own id; `validateFamily` reports both as
    *  issues, and an entry that still fails to resolve at runtime renders its name as plain text
-   *  instead of a dead link. Only takes effect on a page with `members`. */
+   *  instead of a dead link. Only takes effect on a page with `members`; on any other page
+   *  `relatedPagesUnusedMessage` reports it (`doctor`: `related-pages-unused`). */
   relatedPages?: RelatedPage[];
   /** #60 controller decision: opts this page into the "reference" browse layer instead of the
    *  default `'browse'` (omitting the field is identical to `'browse'` — no legacy page changes
@@ -636,6 +637,15 @@ export interface GroupIssue {
   message: string;
 }
 
+/** A non-empty `relatedPages` on a page without `members` renders nothing (only a family page
+ *  shows the Related list), so the author is told instead of left to wonder. Undefined when there
+ *  is nothing to report. A group page has its own message in `validateGroupIssues`. */
+export function relatedPagesUnusedMessage(page: { id: string; members?: readonly unknown[]; relatedPages?: readonly unknown[] }): string | undefined {
+  if (page.members && page.members.length > 0) return undefined;
+  if (!page.relatedPages || page.relatedPages.length === 0) return undefined;
+  return `Page "${page.id}": "relatedPages" is not used on a page without members (it renders no Related list) — make this a family page, or name the related page in "composedOf" instead.`;
+}
+
 /** Validates a group page (#63 A1/A3/A4/A6): no page-level `anatomy` and no `relatedPages` (a group page renders no Related list, so it is reported as unused); every `parent` resolves
  *  either to a same-page member (checked for cycles, the same guard `validateFamily` already
  *  lifts) or — A3's cross-page case — to a member known catalog-wide (`otherMemberIds`), never to
@@ -1013,6 +1023,8 @@ export function buildCatalogSections<TId extends string>(
           }
         }
       }
+      const unusedRelated = relatedPagesUnusedMessage(page);
+      if (unusedRelated) console.warn(`[Catalog] ${unusedRelated}`);
       // V2d item 4: the same validation, per family member's own `composedOf`.
       for (const member of page.members ?? []) {
         for (const issue of validateComposedOf(member.composedOf, knownComposedOfNames)) {

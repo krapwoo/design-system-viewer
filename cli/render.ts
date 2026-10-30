@@ -230,6 +230,86 @@ export function headOverlapIssues(ref: { id: string; file?: string }, overlaps: 
   }));
 }
 
+export interface HeadWordBreak {
+  /** The unbroken run the browser had to split, so the message names what the reader sees. */
+  word: string;
+  /** How many lines the run was spread over. */
+  lines: number;
+}
+
+/**
+ * Runs in the browser, at the narrow viewport: finds a word in the page heading that the browser
+ * had to split in the middle. A run of non-space characters wider than its column has no break
+ * opportunity, so a heading that wraps (as the viewer's does) cuts it wherever it runs out of room
+ * — `TranscriptMediaUnavailableChipFa` / `mily`. It is the same run each time, so it is measured
+ * word by word: each run's client rects over more than one line is a mid-word break. Where a
+ * browser can legitimately break is not one — after a space, hyphen, slash, dash or zero-width
+ * space, and between CJK characters — so words come from `Intl.Segmenter` (word granularity) where
+ * the browser has it, else from whitespace, and are then split at those break characters.
+ */
+export const HEAD_WORD_BREAK_SCRIPT = `(() => {
+  const doc = document;
+  const heading = doc.querySelector('[role="heading"]');
+  if (!heading) return [];
+  const out = [];
+  // A browser breaks a line between ideographs, kana and Hangul, and after a space, hyphen, slash,
+  // dash or zero-width space; only a run with none of those inside it can be split mid-word.
+  const BREAK = /[\\s\\-\\/\\u2014\\u2013\\u200B]/;
+  const CJK = /[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]/u;
+  const spans = (data) => {
+    const words = [];
+    if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+      for (const seg of new Intl.Segmenter(undefined, { granularity: 'word' }).segment(data)) {
+        if (seg.isWordLike) words.push([seg.index, seg.index + seg.segment.length]);
+      }
+    } else {
+      const re = /[^\\s]+/g;
+      let m;
+      while ((m = re.exec(data))) words.push([m.index, m.index + m[0].length]);
+    }
+    const runs = [];
+    for (const w of words) {
+      let start = -1;
+      for (let at = w[0]; at < w[1];) {
+        const ch = String.fromCodePoint(data.codePointAt(at));
+        const next = at + ch.length;
+        if (BREAK.test(ch)) { if (start >= 0) runs.push([start, at]); start = -1; }
+        else if (CJK.test(ch)) { if (start >= 0) runs.push([start, at]); runs.push([at, next]); start = -1; }
+        else if (start < 0) start = at;
+        at = next;
+      }
+      if (start >= 0) runs.push([start, w[1]]);
+    }
+    return runs;
+  };
+  const walker = doc.createTreeWalker(heading, 4);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    for (const run of spans(node.data)) {
+      const range = doc.createRange();
+      range.setStart(node, run[0]);
+      range.setEnd(node, run[1]);
+      const tops = [];
+      for (const r of range.getClientRects()) {
+        if (r.width > 0 && !tops.some((t) => Math.abs(t - r.top) < 3)) tops.push(r.top);
+      }
+      if (tops.length > 1) out.push({ word: node.data.slice(run[0], run[1]).slice(0, 60), lines: tops.length });
+    }
+  }
+  return out;
+})()`;
+
+/** A hint, not a warning: the page reads, the heading is just ugly. */
+export function headWordBreakIssues(ref: { id: string; file?: string }, breaks: HeadWordBreak[]): DoctorIssue[] {
+  return breaks.slice(0, 1).map((b) => ({
+    id: 'heading-breaks-word',
+    severity: 'hint' as const,
+    page: ref.id,
+    ...(ref.file ? { file: ref.file } : {}),
+    message: `At ${NARROW_VIEWPORT.width}px the page heading breaks inside "${b.word}" (over ${b.lines} lines).`,
+    fix: 'Give the page a human `title`.',
+  }));
+}
+
 export interface ClippedSpecimen {
   /** The cell's own caption, so the message names the example the reader is looking at. */
   name: string;
@@ -311,6 +391,144 @@ export function clippedSpecimenIssues(page: { id: string; file?: string }, clipp
     message: `${c.name ? `"${c.name}"` : 'An example'} paints ${c.overflow}px past the ${c.side} of its cell, where it is cut off rather than scrollable.`,
     fix: 'Give the page a wider specimenSize, stack the blocks so the example gets the full row, or drop `itemsFill` if the example is a small instance that should sit centered.',
   }));
+}
+
+/** How far off the stage's centre an anatomy picture's specimen may sit, in px. */
+export const ANATOMY_CENTRE_TOLERANCE = 6;
+/** How far past the specimen's right edge a pin may sit, in px — the pin column is
+ *  `ANATOMY_PIN_GUTTER` (30) wide, and a 22px pin fits inside it with room to spare. */
+export const ANATOMY_PIN_REACH = 48;
+
+export type AnatomyFinding =
+  | { kind: 'off-centre'; stage: number; offset: number }
+  | { kind: 'pin-far'; stage: number; pin: string; distance: number }
+  | { kind: 'pin-outside'; stage: number; pin: string; where: 'opposite' | 'above' | 'below' }
+  | { kind: 'pin-over-legend'; stage: number; pin: string }
+  | { kind: 'pin-cut-off'; stage: number; pin: string };
+
+/**
+ * Runs in the browser: measures each anatomy picture the way it is drawn at the default desktop
+ * width. The picture's stage is the box `AnatomyBox` gives it; the specimen is what
+ * `AnatomySpecimen` drew (its pin wrapper when it has pins, otherwise its content's own children);
+ * a pin is every `anatomy-pin` in the stage — the ones passed through `AnatomySpecimen`'s `pins`
+ * prop and the ones an author placed in the specimen's children or on an overlay of their own. The
+ * ↗ badge a pin carries is not a pin.
+ *
+ * Reported: a specimen whose horizontal centre is more than 6px off its stage's centre (an
+ * unwrapped picture, or one pushed aside by its own margins; skipped when the stage scrolls
+ * sideways, where the stage's width is not the picture's), a pin more than 48px past the
+ * specimen's pin side (the right in left-to-right text, the left in right-to-left), a pin on the
+ * other side of the specimen or whose centre is above or below it, and a pin extending past its stage's box (cut
+ * off), and a pin overlapping the legend (the side-by-side `anatomy-legend`, found from the stage
+ * through `anatomy-card`; a stacked picture has none, its clipping is the cut-off check). A picture with no `AnatomySpecimen` has no
+ * specimen to measure and is skipped here — the static `anatomy-picture-not-specimen` rule reports it.
+ */
+export const ANATOMY_PICTURE_SCRIPT = `(() => {
+  const doc = document;
+  const out = [];
+  const stages = doc.querySelectorAll('[data-testid="anatomy-stage"]');
+  for (let i = 0; i < stages.length; i++) {
+    const stage = stages[i];
+    const wrapper = stage.querySelector('[data-testid="anatomy-specimen"]');
+    if (!wrapper) continue;
+    const stageBox = stage.getBoundingClientRect();
+    const pinsWrapper = stage.querySelector('[data-testid="anatomy-specimen-pins"]');
+    const pinList = Array.from(stage.querySelectorAll('[data-testid="anatomy-pin"]'));
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    const extend = (r) => {
+      if (r.left < left) left = r.left;
+      if (r.right > right) right = r.right;
+      if (r.top < top) top = r.top;
+      if (r.bottom > bottom) bottom = r.bottom;
+    };
+    if (pinsWrapper) {
+      const box = pinsWrapper.getBoundingClientRect();
+      // The wrapper pads itself to hold a tall pin column; the pin layer is exactly the specimen.
+      const layer = pinsWrapper.querySelector('[data-testid="anatomy-pin-layer"]');
+      const lr = layer ? layer.getBoundingClientRect() : box;
+      extend({ left: box.left, right: box.right, top: lr.top, bottom: lr.bottom });
+    } else {
+      const root = wrapper.children[0];
+      for (const el of root ? root.children : []) {
+        // A pin among the specimen's children is measured against the specimen, never part of it.
+        if (pinList.indexOf(el) >= 0) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 1) continue;
+        extend(r);
+      }
+    }
+    if (!isFinite(left) || !isFinite(right)) continue;
+    const scrolls = stage.scrollWidth > stage.clientWidth + 1;
+    const offset = Math.abs((left + right) / 2 - (stageBox.left + stageBox.right) / 2);
+    if (!scrolls && offset > ${ANATOMY_CENTRE_TOLERANCE}) out.push({ kind: 'off-centre', stage: i, offset: Math.round(offset) });
+    const rtl = getComputedStyle(stage).direction === 'rtl';
+    const card = stage.closest('[data-testid="anatomy-card"]');
+    // Only the side-by-side legend: stacked, the columns sit below the stage and the cut-off check covers it.
+    const legend = card ? card.querySelector('[data-testid="anatomy-legend"]') : null;
+    const legendBox = legend ? legend.getBoundingClientRect() : null;
+    // The pins beside the specimen form a column. One taller than the specimen must overhang it, so
+    // it is judged as a whole (its centre against the specimen); a column that fits is judged per pin.
+    let colTop = Infinity, colBottom = -Infinity;
+    for (const el of pinList) {
+      const box = el.getBoundingClientRect();
+      if ((rtl ? left - box.right : box.left - right) > ${ANATOMY_PIN_REACH}) continue;
+      if (rtl ? box.left > right : box.right < left) continue;
+      if (box.top < colTop) colTop = box.top;
+      if (box.bottom > colBottom) colBottom = box.bottom;
+    }
+    const colCentre = (colTop + colBottom) / 2;
+    const tall = colBottom - colTop > bottom - top;
+    const colWhere = colBottom < top || colTop > bottom ? (colCentre < top ? 'above' : 'below') : colCentre < top - 1 ? 'above' : colCentre > bottom + 1 ? 'below' : null;
+    for (const el of pinList) {
+      const box = el.getBoundingClientRect();
+      const text = (el.textContent || '').replace('\u2197', '').trim() || '\u2197';
+      const distance = rtl ? left - box.right : box.left - right;
+      const centre = (box.top + box.bottom) / 2;
+      if (box.top < stageBox.top - 0.5 || box.bottom > stageBox.bottom + 0.5) { out.push({ kind: 'pin-cut-off', stage: i, pin: text }); continue; }
+      if (distance > ${ANATOMY_PIN_REACH}) out.push({ kind: 'pin-far', stage: i, pin: text, distance: Math.round(distance) });
+      else if (rtl ? box.left > right : box.right < left) out.push({ kind: 'pin-outside', stage: i, pin: text, where: 'opposite' });
+      else if (tall && colWhere) out.push({ kind: 'pin-outside', stage: i, pin: text, where: colWhere });
+      else if (!tall && centre < top - 1) out.push({ kind: 'pin-outside', stage: i, pin: text, where: 'above' });
+      else if (!tall && centre > bottom + 1) out.push({ kind: 'pin-outside', stage: i, pin: text, where: 'below' });
+      else if (legendBox && box.right > legendBox.left + 1 && box.left < legendBox.right - 1 && box.bottom > legendBox.top && box.top < legendBox.bottom) {
+        out.push({ kind: 'pin-over-legend', stage: i, pin: text });
+      }
+    }
+  }
+  return out;
+})()`;
+
+/** Turns the browser's findings into doctor issues. Anything that isn't a known finding is ignored. */
+export function anatomyPictureIssues(page: { id: string; file?: string }, findings: readonly unknown[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  const fix = "Draw the picture with AnatomySpecimen and pass its pins through the `pins` prop (position: 'absolute', right: 0), so it is centred like the variant cells with the pins beside it.";
+  const issues: DoctorIssue[] = [];
+  for (const f of findings as AnatomyFinding[]) {
+    if (!f || typeof f !== 'object') continue;
+    const where = `anatomy picture ${f.stage + 1}`;
+    if (f.kind === 'off-centre') {
+      issues.push({ id: 'anatomy-picture-geometry', severity: 'warning', ...ref, message: `The specimen in ${where} sits ${f.offset}px off the centre of its stage (more than ${ANATOMY_CENTRE_TOLERANCE}px).`, fix });
+    } else if (f.kind === 'pin-far') {
+      issues.push({ id: 'anatomy-picture-geometry', severity: 'warning', ...ref, message: `Pin "${f.pin}" in ${where} is ${f.distance}px from the specimen's edge (more than ${ANATOMY_PIN_REACH}px).`, fix });
+    } else if (f.kind === 'pin-outside') {
+      const side = f.where === 'opposite' ? 'on the wrong side of' : f.where === 'above' ? 'above' : 'below';
+      issues.push({ id: 'anatomy-picture-geometry', severity: 'warning', ...ref, message: `Pin "${f.pin}" in ${where} sits ${side} the specimen.`, fix });
+    } else if (f.kind === 'pin-cut-off') {
+      issues.push({ id: 'anatomy-picture-geometry', severity: 'warning', ...ref, message: `Pin "${f.pin}" in ${where} is cut off by the picture area.`, fix });
+    } else if (f.kind === 'pin-over-legend') {
+      issues.push({ id: 'anatomy-picture-geometry', severity: 'warning', ...ref, message: `Pin "${f.pin}" in ${where} overlaps the legend column.`, fix });
+    }
+  }
+  return issues;
+}
+
+/** How the headless browser is launched. On a CI runner (`CI` set) Chrome's own sandbox is turned
+ *  off: GitHub's current Ubuntu images restrict the unprivileged user namespaces that sandbox needs,
+ *  so a launch with it fails and every `--render` run would end `render-unavailable`. A developer's
+ *  machine keeps the sandbox. */
+export function launchOptions(env: Record<string, string | undefined>): { headless: boolean; args?: string[] } {
+  const ci = env.CI !== undefined && env.CI !== '' && env.CI !== '0' && env.CI.toLowerCase() !== 'false';
+  return ci ? { headless: true, args: ['--no-sandbox'] } : { headless: true };
 }
 
 /** The project's own puppeteer, or `undefined` when it isn't installed. */
@@ -501,7 +719,7 @@ export async function renderCheck(
   try {
     // The browser first: a missing browser download shouldn't start Metro for nothing.
     try {
-      browser = await puppeteer.launch({ headless: true });
+      browser = await puppeteer.launch(launchOptions(process.env));
     } catch (error) {
       return [{ ...RENDER_UNAVAILABLE, message: `Couldn't start the headless browser: ${(error as Error).message.split('\n')[0]}`, fix: 'npx puppeteer browsers install chrome' }];
     }
@@ -575,6 +793,14 @@ export async function renderCheck(
           clipped = undefined;
         }
         if (Array.isArray(clipped)) issues.push(...clippedSpecimenIssues({ id, file: options.files?.get(id) }, clipped));
+        // At the default desktop width, like the passes above, and advisory for the same reason.
+        let anatomy: unknown[] | undefined;
+        try {
+          anatomy = (await page!.evaluate(ANATOMY_PICTURE_SCRIPT)) as unknown[] | undefined;
+        } catch {
+          anatomy = undefined;
+        }
+        if (Array.isArray(anatomy)) issues.push(...anatomyPictureIssues({ id, file: options.files?.get(id) }, anatomy));
         // Last, because it is the only check that changes the viewport: the overlap it guards
         // appears only at a narrow width, and every check above is calibrated at 1280. Advisory
         // like the two passes above — a failing script must not cost this page its other findings.
@@ -587,6 +813,14 @@ export async function renderCheck(
           headOverlaps = undefined;
         }
         if (Array.isArray(headOverlaps)) issues.push(...headOverlapIssues({ id, file: options.files?.get(id) }, headOverlaps));
+        // Still at the narrow width, and separate so a failure in one script keeps the other's findings.
+        let wordBreaks: HeadWordBreak[] | undefined;
+        try {
+          wordBreaks = (await page!.evaluate(HEAD_WORD_BREAK_SCRIPT)) as HeadWordBreak[] | undefined;
+        } catch {
+          wordBreaks = undefined;
+        }
+        if (Array.isArray(wordBreaks)) issues.push(...headWordBreakIssues({ id, file: options.files?.get(id) }, wordBreaks));
         await page!.close();
       } catch (error) {
         // A stuck page's tab is closed, so it doesn't keep loading next to the remaining pages.

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { hashForId } from './catalogNavigation';
@@ -35,6 +35,12 @@ export function familyLink(
 }
 
 
+/** `doctor --render` finds every pin in a picture by this id (`ANATOMY_PICTURE_SCRIPT`): the pin
+ *  itself, never the ↗ badge a pin carries. `ANATOMY_CARD_TEST_ID` is the box that holds both the
+ *  picture's stage and its legend, so the script can find the legend from the stage. */
+export const ANATOMY_PIN_TEST_ID = 'anatomy-pin';
+export const ANATOMY_CARD_TEST_ID = 'anatomy-card';
+
 /** Slice D1 item 7: a numbered pin, a filled accent pill — used both by a Part's own header and by
  *  the anatomy legend/picture (`AnatomyPin`, which also allows the dashed, no-area-of-their-own
  *  style spec §"Pins" describes). Decorative: the member's own name (not the number) is what
@@ -45,7 +51,7 @@ export function Pin({ number, dashed, opens, label }: { number: string; dashed?:
   // stands alone in a picture, so it carries its own accessible name (otherwise it is decorative).
   const a11y = label !== undefined ? ({ role: 'img', 'aria-label': label } as Record<string, unknown>) : ARIA_HIDDEN;
   return (
-    <View style={[styles.pin, dashed && styles.pinDashed]} {...a11y}>
+    <View style={[styles.pin, dashed && styles.pinDashed]} testID={ANATOMY_PIN_TEST_ID} {...a11y}>
       <Text style={[styles.pinText, dashed && styles.pinTextDashed]}>{number}</Text>
       {opens && (
         <View style={styles.pinOpens} {...ARIA_HIDDEN}>
@@ -92,6 +98,8 @@ export function pinMembersWithExternal(byId: ReadonlyMap<string, Pick<CatalogMem
   return merged;
 }
 
+type PinRect = { top: number; bottom: number };
+
 /** The anatomy's preview width (`AnatomyBox`'s `previewWidth`), for `AnatomySpecimen`. */
 const AnatomyPreviewWidthContext = createContext<number | undefined>(undefined);
 
@@ -106,9 +114,33 @@ const AnatomyPreviewWidthContext = createContext<number | undefined>(undefined);
  *  specimen's own right edge — right beside a small specimen, in the frame's right margin for a
  *  full-width one. Position each pin inside it as before (`position: 'absolute', right: 0, top: y`,
  *  `top` measured from the specimen's top). The column is left out of the centring measurement,
- *  so pins never move the specimen. */
+ *  so pins never move the specimen. A column taller than the specimen (web) makes the specimen's
+ *  block taller to hold it, still centred on the specimen. */
 export function AnatomySpecimen({ fill, align, pins, children }: { fill?: boolean; align?: SpecimenAlign; pins?: React.ReactNode; children: React.ReactNode }) {
   const width = useContext(AnatomyPreviewWidthContext);
+  const layerRef = useRef<View>(null);
+  const [pinOverhang, setPinOverhang] = useState(0);
+  // The pins are absolutely positioned, so they add no height of their own: a column taller than
+  // the specimen would be cut off by the picture area. Web only: measure how far the pins reach
+  // past the specimen's top or bottom (the layer is exactly the specimen's height) and pad the
+  // specimen block by the larger overhang on both sides, so the column stays centred on it and
+  // the block is at least as tall as the column. Pins that fit measure 0: nothing changes.
+  const measurePins = useCallback(() => {
+    const node = layerRef.current as unknown as { getBoundingClientRect?: () => PinRect; querySelectorAll?: (selector: string) => ArrayLike<{ getBoundingClientRect: () => PinRect }> } | null;
+    if (!node?.getBoundingClientRect || !node.querySelectorAll) return;
+    const layer = node.getBoundingClientRect();
+    let overhang = 0;
+    for (const el of Array.from(node.querySelectorAll('*'))) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom - r.top < 1) continue;
+      overhang = Math.max(overhang, layer.top - r.top, r.bottom - layer.bottom);
+    }
+    const next = Math.max(0, Math.ceil(overhang));
+    setPinOverhang((previous) => (previous === next ? previous : next));
+  }, []);
+  useLayoutEffect(() => {
+    if (pins !== undefined) measurePins();
+  });
   return (
     // On web without a preview width the picture keeps its own measured width, and the pin column
     // hangs `ANATOMY_PIN_GUTTER` past the specimen's right edge: reserve that space here, on both
@@ -118,9 +150,9 @@ export function AnatomySpecimen({ fill, align, pins, children }: { fill?: boolea
     <View style={width !== undefined ? { width } : pins !== undefined && Platform.OS === 'web' ? { paddingHorizontal: ANATOMY_PIN_GUTTER } : undefined} testID="anatomy-specimen">
       <SpecimenContent fill={fill} align={align}>
         {pins === undefined ? children : (
-          <View style={styles.specimenWithPins} testID={ANATOMY_PINS_WRAPPER_TEST_ID}>
+          <View style={[styles.specimenWithPins, pinOverhang > 0 && { paddingVertical: pinOverhang }]} testID={ANATOMY_PINS_WRAPPER_TEST_ID}>
             {children}
-            <View style={styles.specimenPins} testID={ANATOMY_PIN_LAYER_TEST_ID}>{pins}</View>
+            <View ref={layerRef} onLayout={measurePins} style={[styles.specimenPins, pinOverhang > 0 && { top: pinOverhang, bottom: pinOverhang }]} testID={ANATOMY_PIN_LAYER_TEST_ID}>{pins}</View>
           </View>
         )}
       </SpecimenContent>
@@ -153,7 +185,7 @@ export function AnatomyPin({ member, other }: { member?: string; other?: string 
       return <Pin number={number} opens={opens} label={`Part ${number}, ${opens ? 'opens ' : ''}${numbers!.titleOf(other) ?? other}`} />;
     }
     return (
-      <View style={styles.extPin} {...ARIA_HIDDEN}>
+      <View style={styles.extPin} testID={ANATOMY_PIN_TEST_ID} {...ARIA_HIDDEN}>
         <Text style={styles.extPinText}>↗</Text>
       </View>
     );
@@ -382,7 +414,7 @@ export function AnatomyBox({ anatomy, byId, outline, resolvesAddress, navigation
     <AnatomyPreviewWidthContext.Provider value={fixedWidth}>
       <View style={styles.anatomy}>
         <Text style={styles.anatomyHeadText}>Anatomy</Text>
-        <View style={styles.anatomyCard}>
+        <View style={styles.anatomyCard} testID={ANATOMY_CARD_TEST_ID}>
           {anatomy.picture == null ? (
             // No picture (e.g. mutually exclusive parts that never share one frame): the legend
             // takes the card's full width instead of sitting beside an empty picture column.

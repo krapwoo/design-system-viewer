@@ -6,6 +6,7 @@ import { formatPreflightIssue, preflight } from './preflight.ts';
 import { detectComponentFolders, detectTokenFiles, type DetectedComponentFolder, type DetectedTokenFile } from './detect.ts';
 import { ensureAgentsFileSection } from './agentsFile.ts';
 import { ensureGithubAction } from './githubAction.ts';
+import { loadProjectPuppeteer } from './render.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from './types.ts';
 
@@ -147,9 +148,17 @@ export async function initExistingProject(projectRoot: string, options: InitOpti
     // including init's own drafts, which explicitly say "Needs examples" — not real coverage yet.
     `${componentFolders.length} components · ${withExamplesCount} with catalog pages`,
     'Next: npm install, then npm run ds-viewer dev',
+    ...ciMessage(projectRoot),
   ];
   return { messages, written };
 }
+
+/** Printed at the end of both init paths, only when the project doesn't already have puppeteer:
+ *  ds-viewer never installs a browser, so `--render` in CI is the project's choice. */
+function ciMessage(projectRoot: string): string[] {
+  return loadProjectPuppeteer(projectRoot) === undefined ? [CI_MESSAGE] : [];
+}
+const CI_MESSAGE = 'Recommended: npm install --save-dev puppeteer, so CI runs doctor --render --ci (without it CI runs plain doctor --ci).';
 
 /** Design §2, "Both paths then write what is missing": `ds-viewer.config.ts` is written by each
  *  path separately (its contents differ), but the package script, the devDependency entry, the
@@ -303,6 +312,7 @@ export async function initNewProject(projectRoot: string, options: NewProjectOpt
     ...(missingKitPackages.length > 0 ? [`Installed ${missingKitPackages.join(', ')}.`] : []),
     copiedKitFiles ? `Copied the starter kit into ${kitRoot}/.` : `Starter kit already present in ${kitRoot}/ — nothing copied.`,
     'Next: npm install, then npm run ds-viewer dev',
+    ...ciMessage(projectRoot),
   ];
   return { messages, written };
 }
