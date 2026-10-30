@@ -21,7 +21,9 @@ test('writes .github/workflows/ds-viewer.yml with the exact pinned-action conten
   assert.match(content, /actions\/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4\.1\.0/);
   assert.match(content, /node-version: '20'/);
   assert.match(content, /- run: npm ci\n/);
-  assert.match(content, /npx ds-viewer doctor --ci/);
+  assert.match(content, /require\.resolve\('puppeteer'\)/);
+  assert.match(content, /npx ds-viewer doctor --render --ci\n/);
+  assert.match(content, /else\n\s+echo "puppeteer is not installed[^\n]*\n\s+npx ds-viewer doctor --ci\n/);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -105,4 +107,21 @@ test('never overwrites a workflow file a user already has at that exact path', (
   assert.deepEqual(written, []);
   assert.equal(readFileSync(path.join(dir, '.github', 'workflows', 'ds-viewer.yml'), 'utf8'), 'name: Custom\n');
   rmSync(dir, { recursive: true, force: true });
+});
+
+// F13: the puppeteer probe runs through the package manager's runner, as the install step does.
+test('F13: the puppeteer probe uses the package manager runner (plain node for npm, yarn node, pnpm exec node)', () => {
+  const probe = (setup: (dir: string) => void): string => {
+    const dir = makeDir();
+    setup(dir);
+    ensureGithubAction(dir);
+    const content = readFileSync(path.join(dir, '.github', 'workflows', 'ds-viewer.yml'), 'utf8');
+    rmSync(dir, { recursive: true, force: true });
+    return content.match(/if (.*) -e "require\.resolve\('puppeteer'\)"/)?.[1] ?? '';
+  };
+  assert.equal(probe(() => {}), 'node');
+  assert.equal(probe((dir) => writeFileSync(path.join(dir, 'package-lock.json'), '{}')), 'node');
+  assert.equal(probe((dir) => writeFileSync(path.join(dir, 'pnpm-lock.yaml'), '')), 'pnpm exec node');
+  assert.equal(probe((dir) => writeFileSync(path.join(dir, 'yarn.lock'), '# yarn lockfile v1\n')), 'yarn node');
+  assert.equal(probe((dir) => writeFileSync(path.join(dir, 'yarn.lock'), '__metadata:\n  version: 8\n')), 'yarn node');
 });

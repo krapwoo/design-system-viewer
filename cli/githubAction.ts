@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { detectPackageManager } from './packageManager.ts';
+import { detectPackageManager, type PackageManager } from './packageManager.ts';
 
 // Design §4 "GitHub Action" + §5's lockfile-detection assumption. `checkout`/`setup-node` pins
 // reused verbatim from this repository's own `.github/workflows/ci.yml` (Global Constraints);
@@ -38,7 +38,20 @@ function installStep(projectRoot: string): string {
   return `${setupNode}      - run: npm ci\n`;
 }
 
+// `--render` opens every page in a headless browser, which catches what the static rules can't
+// (a long title under the pager, an example cut off by its cell). It needs the project's own
+// `puppeteer`, which ds-viewer never installs, so the step falls back to plain `doctor --ci`
+// (with a note) when `puppeteer` isn't resolvable.
+// The probe runs through the package manager's own runner, like the install step does: under Yarn
+// Berry's Plug'n'Play there is no node_modules, so a bare `node -e` could never resolve puppeteer.
+function nodeRunner(pm: PackageManager): string {
+  if (pm === 'pnpm') return 'pnpm exec node';
+  if (pm === 'yarn-classic' || pm === 'yarn-berry') return 'yarn node';
+  return 'node';
+}
+
 function workflowContent(projectRoot: string): string {
+  const probe = nodeRunner(detectPackageManager(projectRoot));
   return `name: DS Viewer
 
 on:
@@ -49,7 +62,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-${installStep(projectRoot)}      - run: npx ds-viewer doctor --ci
+${installStep(projectRoot)}      - name: doctor
+        run: |
+          if ${probe} -e "require.resolve('puppeteer')" 2>/dev/null; then
+            npx ds-viewer doctor --render --ci
+          else
+            echo "puppeteer is not installed, so doctor runs without --render (npm install --save-dev puppeteer to add it)."
+            npx ds-viewer doctor --ci
+          fi
 `;
 }
 

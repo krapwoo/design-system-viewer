@@ -67,6 +67,21 @@ npm run ds-viewer explain --all   # every page's geometry as JSON, to diff acros
 npm run ds-viewer layout-diff before.json after.json   # what an upgrade changed about your layout
 ```
 
+**In CI, run `doctor --render --ci`:**
+
+```bash
+npx ds-viewer doctor --render --ci
+```
+
+Plain `doctor` reads your page files; `--render` also opens every page in a headless browser, which
+is the only way to catch a long title painting under the ← → pager, an example cut off by its
+cell, or an anatomy picture whose pins have drifted from its specimen. `init` writes the GitHub
+Action with this step when your project has `puppeteer` (see [`doctor --render`](#doctor---render));
+without it the workflow runs plain `doctor --ci` and says so. `init` never adds `puppeteer` itself,
+since ds-viewer doesn't install a browser, but prints a one-line recommendation to
+`npm install --save-dev puppeteer` when the project lacks it. In CI (`CI` set) the browser runs
+with `--no-sandbox`.
+
 ### Seeing what an upgrade changes
 
 Layout rules live in this package and reach your catalog on `update`, while your page files never
@@ -1090,9 +1105,9 @@ Button
 0 errors, 1 warning — 38 components (37 with examples), 2 unbound examples.
 ```
 
-- `--json` prints the same report as stable, versioned data: `{ version: 1, summary: { errors, warnings, components, withExamples, unboundExamples }, update: null, issues: [{ id, severity, page?, file?, line?, message, fix }] }`. `update` is always `null` in this release (filled in starting 0.4's update check); `file` is always relative to the project root. `line` is populated for a `page-parse-error` found by typechecking a page file (see below), and always `undefined` for every other issue id — threading a real position through every rule is future work.
-- `--ci` exits 1 only when an error was found — a warning alone never fails CI, and `--ci` never makes a network call.
-- `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code.
+- `--json` prints the same report as stable, versioned data: `{ version: 1, summary: { errors, warnings, hints?, components, withExamples, unboundExamples }, update: null, issues: [{ id, severity, page?, file?, line?, message, fix }] }`. `update` is always `null` in this release (filled in starting 0.4's update check); `file` is always relative to the project root. `line` is populated for a `page-parse-error` found by typechecking a page file (see below), and always `undefined` for every other issue id — threading a real position through every rule is future work.
+- `--ci` exits 1 only when an error was found — a warning or a hint alone never fails CI, and `--ci` never makes a network call.
+- `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code. A `hint` (below) is never promoted.
 - A page whose layout data (`specimenSize`, `group`, grid `rows`/`columns`, list items' `key`/`name`/`props`/`group`, `propNotes` keys) isn't a literal — written as something other than a literal value, array, object, or a same-file `const` reference — gets one "page not statically checkable" warning. A page file that fails to parse *or typecheck* is `page-parse-error` instead: every page file is also run through the TypeScript type checker (the same way a component file already is), so a genuine syntax or type error in a page is reported with its line.
 - Three further rules are conservative source-backed *suggestions*, warnings by default
   (the existing `doctor.strict` option still promotes them), never authoritative over what a page authors:
@@ -1149,6 +1164,47 @@ Button
     page id, page `component`, family or group member id, member `component`, or detected
     component, so its usage is never shown. Rename the key or remove it.
   - `standalone-reason-empty` — `standalone` is blank, so it records no reason and opts nothing out.
+  - `style-as-part` (warning) — a member that is a style, not a part, where it would be numbered
+    as one: a family member in an `inWhole: true` section, or a group member whose `parent` is on
+    the page. It is read from `relationship` (`Style` or `Modifier`, any case), which always
+    counts, or from an id or component ending in `Style` or `Modifier`, which counts only for a
+    member with no `component` or with `fidelity: 'documentation-only'` (a real component such as
+    `QuantityModifier` is a part). A style has no area of its own: give it a page of its own and
+    name it in `relatedPages` **on a family page** (the only page that renders the Related list).
+  - `related-pages-unused` (warning) — `relatedPages` is non-empty on a page without `members`.
+    Only a family page renders the Related list, so nothing would show. Give the page `members`, or
+    name the related page in `composedOf`. A group page reports the same mistake as an error.
+  - `anatomy-no-picture` (warning) — an anatomy the viewer draws (a standalone or family page's, or a
+    top-level group member's) whose groups list at least one part a reader should be able to see, and no
+    `picture`. A part counts unless its member is `fidelity: 'documentation-only'` (the dashed "no
+    area of its own" pin); an `{ other }` item counts, and a `{ member }` the page can't resolve is
+    not counted. Draw the whole with `AnatomySpecimen` and pin the parts with `AnatomyPin`. If the
+    parts really never share one frame, write `picture: null`: an explicit `null` is a deliberate
+    opt-out and stays quiet (leaving `picture` out, or `undefined`, does not). A `picture` written
+    as a shorthand property is read through its same-file `const`; an anatomy with a spread
+    (`{ ...shared, groups }`) is skipped, as the picture may come from the spread.
+  - `anatomy-picture-not-specimen` (warning) — an anatomy `picture` (on the same anatomies) whose
+    root element is not `AnatomySpecimen`, so it is not drawn at the page's phone width, centred
+    like the variant cells, with its pins beside it. A same-file component whose own root is
+    `AnatomySpecimen` passes (otherwise the message names `<Picture> (renders <View>)`), and so
+    does a plain wrapper (`View`, a fragment) whose only drawn child is `AnatomySpecimen`: through
+    further single-child wrappers, JSX comments, a `{specimen}` const, or the `{children}` of a
+    same-file wrapper component. A root doctor can't read statically (an imported component, a call,
+    a conditional) is skipped, never guessed at.
+
+  **Hints** are a third severity, below a warning. They are printed, listed in `--json`
+  (`severity: 'hint'`) and counted on their own (`summary.hints`, present only when there are
+  some), and they never fail `--ci` and are never promoted by `doctor.strict`:
+
+  - `grid-empty-cell` — a list block with an odd item count (3, 5, …) that the default 952px
+    content width lays out two across, where `specimenSize: 'regular'` would fit it three across
+    with no new empty cell. Measured with the same list maths `explain` reports, not the browser.
+    `specimenSize` applies to the whole page or member, not to the one block. A block with an
+    explicit `maxColumns`, a page or member with exactly two blocks (the viewer may seat them side
+    by side), and a page that imports a device frame (`PhoneFrame`,
+    `OverlayDemo`, `PhoneScreen`, `BoundedOverlayViewport`, whose examples need a phone-wide cell
+    on purpose), are left alone.
+  - `heading-breaks-word` — found by [`doctor --render`](#doctor---render), not by reading the page.
 
   The catalog also warns at render time when a page under-declares the width its examples need.
   A `PhoneFrame` given a cell narrower than the 375px device scales the whole phone down, and its
@@ -1177,6 +1233,27 @@ Button
   opens over the whole catalog page on the web, but its page imports no `PhoneFrame`,
   `OverlayDemo`, `PhoneScreen` or `BoundedOverlayViewport`. Conservative: it can't see
   `import * as RN`, a re-exported `Modal`, or a Modal opened by a sub-component.
+
+### Common mistakes
+
+Each of these is caught by `doctor`. The worked example for the anatomy ones is
+[`starter-kit/pages/TripCard.catalog.tsx`](starter-kit/pages/TripCard.catalog.tsx).
+
+| Guard | What it catches | The fix |
+| --- | --- | --- |
+| `style-as-part` | A style or modifier listed as a numbered part of a family or group. | Give it its own page and name it in `relatedPages` on a family page (the TripCard page does this for `Shadow` and `Radius`). |
+| `related-pages-unused` | `relatedPages` on a page with no `members`, which renders nothing. | Make it a family page, or name the page in `composedOf`. |
+| `anatomy-no-picture` | An anatomy that lists parts to look at but has no `picture`. | Draw the whole with `AnatomySpecimen` and pin the parts with `AnatomyPin`; `picture: null` says there is deliberately none. |
+| `anatomy-picture-not-specimen` | A `picture` that isn't drawn by `AnatomySpecimen`, so it ignores the page's width and centring. | Make `AnatomySpecimen` the picture's root (a plain wrapper around it is fine). |
+| `anatomy-picture-geometry` (`--render`) | A specimen off-centre, a pin far from the specimen, a pin cut off by the picture area, or a pin over the side-by-side legend. | Pass the pins in `AnatomySpecimen`'s `pins` prop at `position: 'absolute', right: 0`, as TripCard does. |
+| `grid-empty-cell` (hint) | An odd number of items two across, leaving an empty cell. | Set `specimenSize: 'regular'`, or add or remove one item. |
+| `heading-breaks-word` (hint, `--render`) | A page heading that the browser splits in the middle of a word. | Give the page a human `title`. |
+| `page-head-overlap` (`--render`) | A heading painted under the ← → pager. | Let the heading wrap or truncate in its own column. |
+
+For a token page, keep each tile to its value and specimen and put the source and usage in
+**Details ›** (`TokenDetails`): see the [Radius page](starter-kit/pages/Radius.catalog.tsx). The
+[Motion page](starter-kit/pages/Motion.catalog.tsx) shows a SwiftUI-style spring through
+`MotionSpecimen`'s `{ response, dampingFraction }` form.
 
 ### `doctor --render`
 
@@ -1213,12 +1290,33 @@ and adds what only a real render shows:
   both directions, so a shared edge between neighbours is not a finding. Only the heading is
   checked: specimens legitimately stack text, and reporting those would bury the one overlap that
   is always a defect.
+- `anatomy-picture-geometry` (warning): measured at the default 1280 width on each anatomy
+  picture drawn with `AnatomySpecimen`: the specimen's horizontal centre more than 6px off the
+  centre of its stage (not checked when the stage scrolls sideways), or a pin more than 48px past
+  the specimen's pin side, on the wrong side of it, above or below it, or overlapping the legend
+  column. Every pin in the stage is measured, whether it came through `pins` or was placed in the
+  specimen's children (right-to-left text mirrors the pin side). Each pin is one finding: the
+  small ↗ badge a pin carries when it opens a page is not measured. Pins beside the specimen are
+  judged as a column: a column taller than the specimen is fine when its centre lines up with the
+  specimen's. A pin that extends past the stage's box is reported as cut off (`AnatomySpecimen`
+  makes its block as tall as the pin column on the web, so that only happens with a custom
+  picture). The legend check only runs when the legend sits beside the picture. A picture with no `AnatomySpecimen` has nothing to measure here;
+  `anatomy-picture-not-specimen` reports it.
+- `heading-breaks-word` (hint): measured at 800px with the heading check. The page heading breaks
+  inside a word: an unbroken run (a Swift type name, say) wider than its column, so the browser
+  splits it mid-word. A heading that wraps between words, or breaks at a hyphen, is fine. Give the
+  page a human `title`. Breaks where a browser may legitimately break (after a space, hyphen, `/`,
+  `—`, `–`, a zero-width space, and between CJK characters) are fine. It is a hint, so it never
+  fails `--ci`. A title that cannot wrap at all surfaces as `page-head-overlap`; one that wraps
+  mid-word, as this hint.
 - `render-unavailable` / `render-failed` (errors): no browser, or the catalog didn't start.
 
 It needs `puppeteer` in your project (`npm install --save-dev puppeteer`); ds-viewer doesn't
-install a browser. It takes about two minutes for 50 pages — plus a moment per page for the
+install a browser. When the `CI` environment variable is set, the browser is launched with
+`--no-sandbox` (GitHub's Ubuntu runners restrict the user namespaces Chrome's sandbox needs);
+on your own machine the sandbox stays on. It takes about two minutes for 50 pages — plus a moment per page for the
 narrow-viewport heading pass — and works with `--json` (progress
-goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci`.
+goes to stderr), `--ci` and `doctor.strict`, so CI can run `npx ds-viewer doctor --render --ci` — the step to run on every pull request, and the one the GitHub Action `init` writes runs whenever your project has `puppeteer`.
 
 It starts its own catalog on the first free port from 5181. `--port <n>` pins it instead, which
 you want when something else already holds that range — another project's catalog, or a second
@@ -1276,8 +1374,11 @@ exist — telling an AI working on the project to update a page alongside its co
 examples to props, never invent grid cells or groups, and run `doctor`/`explain` before finishing.
 It also writes `.github/workflows/ds-viewer.yml`, a SHA-pinned Action that installs dependencies
 (picking `npm ci`, `pnpm install --frozen-lockfile`, or `yarn install --immutable` from whichever
-lockfile the project has at that moment) and then runs `npx ds-viewer doctor --ci` on every pull
-request. Both are written once; re-running `init` adds
+lockfile the project has at that moment) and then runs `npx ds-viewer doctor --render --ci` on every
+pull request when `node -e "require.resolve('puppeteer')"` succeeds (run through the package
+manager's own runner, `pnpm exec node` or `yarn node`, so Yarn Plug'n'Play resolves it), and plain `npx ds-viewer doctor --ci`
+(with a one-line note) when it doesn't. `init` doesn't add `puppeteer`, since ds-viewer never installs a
+browser; it prints a one-line recommendation to `npm install --save-dev puppeteer` only when the project doesn't already have it. Both are written once; re-running `init` adds
 either one only if it's missing (an `AGENTS.md` without the start marker counts as missing the
 section, even if the file already has other content) and never touches anything outside its own
 markers or its own file.

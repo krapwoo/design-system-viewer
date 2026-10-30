@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatalogSections, defineCatalogPage, numberFor, numberForGroupMember, resolveExternalPart, validateComposedOf, validateFamily, validateGroup } from '../pageApi.ts';
+import { buildCatalogSections, defineCatalogPage, numberFor, numberForGroupMember, relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateFamily, validateGroup } from '../pageApi.ts';
 import { alsoUsedBySegments } from '../familyModel.ts';
 import { validateTokenDefinition, validateTokenDefinitionUsage } from '../tokenDefinition.ts';
 import type { TokenDefinition } from '../tokenDefinition.ts';
@@ -95,6 +95,31 @@ test('buildCatalogSections warns in development when two pages resolve to the sa
     const pageB = { ...defineCatalogPage({ id: 'Same', group: 'Components', description: 'B' }), file: 'b.catalog.tsx' };
     buildCatalogSections([pageA, pageB], []);
     assert.ok(warnings.some((w) => w.includes('Page id "Same"')));
+  } finally {
+    console.warn = originalWarn;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+// F2: `relatedPages` renders only on a family page, so anywhere else it is reported.
+test('relatedPagesUnusedMessage reports a non-empty relatedPages on a page without members, and nothing else', () => {
+  assert.match(relatedPagesUnusedMessage({ id: 'Card', relatedPages: [{ page: 'Shadow' }] }) ?? '', /^Page "Card": "relatedPages" is not used on a page without members \(it renders no Related list\)/);
+  assert.ok(relatedPagesUnusedMessage({ id: 'Card', members: [], relatedPages: [{ page: 'Shadow' }] }), 'an empty members list is no members');
+  assert.equal(relatedPagesUnusedMessage({ id: 'Card', members: [{}], relatedPages: [{ page: 'Shadow' }] }), undefined);
+  assert.equal(relatedPagesUnusedMessage({ id: 'Card', relatedPages: [] }), undefined);
+  assert.equal(relatedPagesUnusedMessage({ id: 'Card' }), undefined);
+});
+
+test('F2: buildCatalogSections warns in development about relatedPages on a page with no members', () => {
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message: string) => warnings.push(message);
+  try {
+    const page = { ...defineCatalogPage({ id: 'Card', group: 'Components', description: 'A', relatedPages: [{ page: 'Shadow' }] }), file: 'a.catalog.tsx' };
+    buildCatalogSections([page], []);
+    assert.ok(warnings.some((w) => w.includes('"relatedPages" is not used on a page without members')));
   } finally {
     console.warn = originalWarn;
     (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;

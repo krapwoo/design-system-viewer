@@ -281,3 +281,51 @@ test('copyKitIfMissing skips a symlinked entry rather than copying through it', 
   assert.ok(existsSync(path.join(destDir, 'real.txt')));
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+// ds-viewer never installs a browser: init recommends puppeteer in one line and leaves package.json alone,
+// and the generated workflow only runs --render when the project has puppeteer.
+test('init recommends puppeteer in one line and does not add it to package.json', async () => {
+  const projectRoot = copyFixture();
+  unlinkSync(path.join(projectRoot, 'ds-viewer.config.ts'));
+  const result = await initExistingProject(projectRoot, { yes: true });
+  const recommendation = result.messages.filter((m) => /puppeteer/.test(m));
+  assert.equal(recommendation.length, 1, result.messages.join('\n'));
+  assert.match(recommendation[0], /npm install --save-dev puppeteer/);
+  const packageJson = JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+  assert.equal({ ...packageJson.dependencies, ...packageJson.devDependencies }.puppeteer, undefined);
+});
+
+// F13: the recommendation is for a project that lacks puppeteer; one that has it is not told to install it.
+test('F13: init prints the puppeteer recommendation only when puppeteer is absent (existing and new project)', async () => {
+  const withPuppeteer = (dir: string) => {
+    const pkg = path.join(dir, 'node_modules', 'puppeteer');
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(path.join(pkg, 'package.json'), '{"name":"puppeteer","main":"index.js"}');
+    writeFileSync(path.join(pkg, 'index.js'), 'module.exports = {};');
+  };
+  const existing = copyFixture();
+  unlinkSync(path.join(existing, 'ds-viewer.config.ts'));
+  withPuppeteer(existing);
+  const existingResult = await initExistingProject(existing, { yes: true });
+  assert.deepEqual(existingResult.messages.filter((m) => /puppeteer/.test(m)), []);
+  rmSync(existing, { recursive: true, force: true });
+
+  const fresh = copyNewProjectFixture();
+  withPuppeteer(fresh);
+  const freshResult = await initNewProject(fresh, { installer: () => {} });
+  assert.deepEqual(freshResult.messages.filter((m) => /puppeteer/.test(m)), []);
+  rmSync(fresh, { recursive: true, force: true });
+
+  const bare = copyNewProjectFixture();
+  const bareResult = await initNewProject(bare, { installer: () => {} });
+  assert.equal(bareResult.messages.filter((m) => /npm install --save-dev puppeteer/.test(m)).length, 1);
+  rmSync(bare, { recursive: true, force: true });
+});
+
+test('the generated workflow runs doctor --render --ci only when puppeteer resolves, else plain doctor --ci with a note', async () => {
+  const projectRoot = copyFixture();
+  unlinkSync(path.join(projectRoot, 'ds-viewer.config.ts'));
+  await initExistingProject(projectRoot, { yes: true });
+  const workflow = readFileSync(path.join(projectRoot, '.github', 'workflows', 'ds-viewer.yml'), 'utf8');
+  assert.match(workflow, /if node -e "require\.resolve\('puppeteer'\)" 2>\/dev\/null; then\n\s+npx ds-viewer doctor --render --ci\n\s+else\n\s+echo "puppeteer is not installed[^\n]*\n\s+npx ds-viewer doctor --ci\n\s+fi/);
+});

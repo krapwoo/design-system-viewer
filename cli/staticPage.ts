@@ -227,6 +227,10 @@ export interface StaticPage {
    *  family page's own page-level `anatomy` is unaffected — this field only drives the new
    *  group-shape rule. */
   hasAnatomy?: boolean;
+  /** `doctor`'s anatomy-picture rules: this page's own `anatomy` read down to its literal `member`
+   *  ids, whether it has a `picture`, and what that picture's root element is. Undefined when the
+   *  page has no `anatomy` or it isn't a readable literal — never a partial read. */
+  anatomyShape?: StaticAnatomyShape;
   /** Review F9: whether the page object authored a `whole` / `sections` property at all, whatever
    *  its value. `whole`/`sections` themselves stay unset when not a literal (the page is then not
    *  `checkable`), so only presence can tell a family page with a non-literal `whole` from a group
@@ -246,6 +250,27 @@ export interface StaticPage {
    *  blank — doctor's `standalone-reason-empty` reports that); a non-literal value is left unset,
    *  never a "not checkable" penalty. */
   standalone?: string;
+}
+
+/** An anatomy read down to what the picture rules need. `memberIds` are the literal `{ member }`
+ *  items across every group; `pictureRoot` is `'specimen'` when the picture's root element is
+ *  `AnatomySpecimen` (directly, or through a same-file component whose own root is), `'other'`
+ *  when the root is readable and is something else, and `'unknown'` when it can't be read
+ *  statically (an imported component, a call, a conditional) — the rules skip `'unknown'`. */
+export interface StaticAnatomyShape {
+  memberIds: string[];
+  /** How many `{ other }` items (a component documented on its own page) the groups list. */
+  otherCount: number;
+  hasPicture: boolean;
+  /** `picture: null`: the author says this anatomy deliberately has no picture. */
+  pictureOptOut?: boolean;
+  /** Whether a picture exists can't be read (the anatomy object has a spread); both rules skip it. */
+  pictureUnknown?: boolean;
+  pictureRoot?: 'specimen' | 'other' | 'unknown';
+  /** The root element's tag, for the message (`View`, `Fragment`). */
+  pictureTag?: string;
+  /** The same-file component the picture is written as, when `pictureTag` is what it renders. */
+  pictureVia?: string;
 }
 
 /** One `composedOf` entry, read down to `component` and (when literal) `relationship`. */
@@ -322,6 +347,12 @@ export interface StaticMember {
    *  a partial read" leniency `relatedPages` already gets, so a non-literal `anatomy` never costs
    *  the member its other checks. */
   anatomy?: { memberIds: string[] };
+  /** The member's own literal `relationship` ("Style", "Modifier", …) and `fidelity`
+   *  (`'documentation-only'` marks a part with no area of its own, drawn as a dashed pin). */
+  relationship?: string;
+  fidelity?: string;
+  /** See `StaticPage.anatomyShape`. */
+  anatomyShape?: StaticAnatomyShape;
 }
 
 const TRANSPILE_OPTIONS: ts.TranspileOptions = {
@@ -541,7 +572,9 @@ function readStaticPage(file: string): StaticPage {
   }
   const relatedPagesProp = findProp(pageObject, 'relatedPages');
   if (relatedPagesProp) page.relatedPages = readRelatedPages(relatedPagesProp.initializer, consts);
-  page.hasAnatomy = findProp(pageObject, 'anatomy') !== undefined;
+  const anatomyProp = findProp(pageObject, 'anatomy');
+  page.hasAnatomy = anatomyProp !== undefined;
+  if (anatomyProp) page.anatomyShape = readAnatomyShape(anatomyProp.initializer, consts, sourceFile);
 
   const navigationProp = findProp(pageObject, 'navigation');
   if (navigationProp) {
@@ -661,6 +694,9 @@ function readFamilyMembers(
       previewWidths: readPreviewWidths(findProp(resolvedElement, 'previewWidths'), consts),
       specimenSize: propertyStringLiteral(resolvedElement, 'specimenSize', consts),
       anatomy: memberIds ? { memberIds } : undefined,
+      relationship: propertyStringLiteral(resolvedElement, 'relationship', consts),
+      fidelity: propertyStringLiteral(resolvedElement, 'fidelity', consts),
+      anatomyShape: anatomyProp ? readAnatomyShape(anatomyProp.initializer, consts, sourceFile) : undefined,
     });
   }
   return members;
@@ -756,6 +792,158 @@ function readAnatomyMemberIds(node: ts.Expression, consts: Map<string, ts.Expres
     }
   }
   return memberIds;
+}
+
+/** `readAnatomyMemberIds` plus whether the anatomy has a `picture` and what its root element is.
+ *  Undefined whenever the member ids can't be read (the same "never a partial read" rule), so a
+ *  rule built on it skips an anatomy it can't fully see. A `picture` can be written as a property,
+ *  as a shorthand (`{ picture, groups }`, resolved through same-file consts), or hidden in a spread
+ *  (`{ ...shared, groups }`): a spread makes the picture unknown, and the picture rules skip it. */
+function readAnatomyShape(node: ts.Expression, consts: Map<string, ts.Expression>, sourceFile: ts.SourceFile): StaticAnatomyShape | undefined {
+  const memberIds = readAnatomyMemberIds(node, consts);
+  if (!memberIds) return undefined;
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isObjectLiteralExpression(resolved)) return undefined;
+  let otherCount = 0;
+  for (const groupElement of (resolve(findProp(resolved, 'groups')!.initializer, consts, new Set()) as ts.ArrayLiteralExpression).elements) {
+    const group = resolve(groupElement, consts, new Set()) as ts.ObjectLiteralExpression;
+    const items = resolve(findProp(group, 'items')!.initializer, consts, new Set()) as ts.ArrayLiteralExpression;
+    for (const itemElement of items.elements) {
+      const item = resolve(itemElement, consts, new Set());
+      if (ts.isObjectLiteralExpression(item) && findProp(item, 'other') !== undefined) otherCount += 1;
+    }
+  }
+  if (resolved.properties.some((p) => ts.isSpreadAssignment(p))) {
+    return { memberIds, otherCount, hasPicture: false, pictureUnknown: true };
+  }
+  let pictureNode: ts.Expression | undefined;
+  for (const prop of resolved.properties) {
+    if (ts.isPropertyAssignment(prop) && propertyName(prop.name) === 'picture') pictureNode = prop.initializer;
+    else if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'picture') pictureNode = prop.name;
+  }
+  const picture = pictureNode ? resolve(pictureNode, consts, new Set()) : undefined;
+  // `picture: null` is a deliberate "this anatomy has no picture"; omitted or `undefined` is a miss.
+  if (picture && picture.kind === ts.SyntaxKind.NullKeyword) return { memberIds, otherCount, hasPicture: false, pictureOptOut: true };
+  const hasPicture = picture !== undefined && !(ts.isIdentifier(picture) && picture.text === 'undefined');
+  if (!hasPicture || !picture) return { memberIds, otherCount, hasPicture: false };
+  const specimenNames = localNamesFor(importedNames(sourceFile, '@krapwoo/ds-viewer'), 'AnatomySpecimen');
+  specimenNames.add('AnatomySpecimen');
+  const root = classifyPictureRoot(picture, { consts, sourceFile, specimenNames }, 0, undefined);
+  return {
+    memberIds, otherCount, hasPicture: true, pictureRoot: root.root,
+    ...(root.tag ? { pictureTag: root.tag } : {}),
+    ...(root.via ? { pictureVia: root.via } : {}),
+  };
+}
+
+type PictureRoot = { root: 'specimen' | 'other' | 'unknown'; tag?: string; via?: string };
+interface PictureContext { consts: Map<string, ts.Expression>; sourceFile: ts.SourceFile; specimenNames: Set<string> }
+/** What a same-file component's `{children}` stands for: the classification of its call site's children. */
+type ChildrenSlot = (() => PictureRoot) | undefined;
+
+/** Children that draw something: not whitespace between tags, and not a JSX comment (an empty `{}` expression). */
+function drawnChildren(children: readonly ts.JsxChild[]): ts.JsxChild[] {
+  return children.filter((child) => {
+    if (ts.isJsxText(child)) return !child.containsOnlyTriviaWhiteSpaces;
+    if (ts.isJsxExpression(child)) return child.expression !== undefined;
+    return true;
+  });
+}
+
+function isChildrenReference(expr: ts.Expression): boolean {
+  return (ts.isIdentifier(expr) && expr.text === 'children') || (ts.isPropertyAccessExpression(expr) && expr.name.text === 'children');
+}
+
+function classifyPictureRoot(node: ts.Expression | ts.JsxChild, ctx: PictureContext, depth: number, slot: ChildrenSlot): PictureRoot {
+  if (depth > 12) return { root: 'unknown' };
+  if (ts.isJsxText(node)) return { root: 'other' };
+  if (ts.isJsxExpression(node)) {
+    if (!node.expression) return { root: 'unknown' };
+    if (slot && isChildrenReference(node.expression)) return slot();
+    return classifyPictureRoot(node.expression, ctx, depth + 1, slot);
+  }
+  const resolved = resolve(node, ctx.consts, new Set());
+  if (ts.isJsxElement(resolved) || ts.isJsxSelfClosingElement(resolved)) {
+    return classifyPictureElement(resolved, ctx, depth, slot);
+  }
+  if (ts.isJsxFragment(resolved)) {
+    const children = drawnChildren(resolved.children);
+    if (children.length === 1) return classifyPictureRoot(children[0], ctx, depth + 1, slot);
+    return children.length === 0 ? { root: 'unknown' } : { root: 'other', tag: 'Fragment' };
+  }
+  return { root: 'unknown' };
+}
+
+function classifyPictureElement(element: ts.JsxElement | ts.JsxSelfClosingElement, ctx: PictureContext, depth: number, slot: ChildrenSlot): PictureRoot {
+  const tagName = ts.isJsxElement(element) ? element.openingElement.tagName : element.tagName;
+  if (!ts.isIdentifier(tagName)) return { root: 'unknown' };
+  const tag = tagName.text;
+  if (ctx.specimenNames.has(tag)) return { root: 'specimen', tag };
+  const children = ts.isJsxElement(element) ? drawnChildren(element.children) : [];
+  // A lowercase tag is an intrinsic element; a name imported from react-native is a primitive.
+  if (/^[a-z]/.test(tag) || importedNames(ctx.sourceFile, 'react-native').has(tag)) {
+    // A plain wrapper whose only drawn child (through fragments, further single-child wrappers, a
+    // `{const}` reference or the `{children}` of a same-file wrapper) is the specimen —
+    // `<View style={{ alignSelf: 'stretch' }}><AnatomySpecimen …/></View>` — still draws the
+    // specimen. Anything else under the wrapper is a different picture; a child that can't be read
+    // makes the whole picture unreadable rather than guessed at.
+    if (children.length === 1) {
+      const inner = classifyPictureRoot(children[0], ctx, depth + 1, slot);
+      if (inner.root !== 'other') return { root: inner.root, tag };
+    }
+    return { root: 'other', tag };
+  }
+  const returns = depth < 4 ? sameFileComponentReturns(tag, ctx.sourceFile) : undefined;
+  if (!returns || returns.length === 0) return { root: 'unknown' };
+  // What this component's `{children}` draws is whatever the call site put between its tags.
+  const callSlot: ChildrenSlot = () => {
+    if (children.length === 0) return { root: 'unknown' };
+    if (children.length > 1) return { root: 'other' };
+    return classifyPictureRoot(children[0], ctx, depth + 1, slot);
+  };
+  const kinds = returns.map((expr) => classifyPictureRoot(expr, ctx, depth + 1, callSlot));
+  if (kinds.every((k) => k.root === 'specimen')) return { root: 'specimen', tag };
+  if (kinds.every((k) => k.root === 'other')) return { root: 'other', tag: kinds[0].tag ?? tag, via: tag };
+  return { root: 'unknown' };
+}
+
+/** What a same-file function component (a declaration, or a `const` arrow/function) returns, or
+ *  undefined when it isn't one this reader can follow. `return null` is ignored; any other
+ *  non-JSX return makes the whole component unreadable. */
+function sameFileComponentReturns(name: string, sourceFile: ts.SourceFile): ts.Expression[] | undefined {
+  let body: ts.ConciseBody | undefined;
+  for (const statement of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) body = statement.body;
+    else if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name || !declaration.initializer) continue;
+        const init = declaration.initializer;
+        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) body = init.body;
+      }
+    }
+  }
+  if (!body) return undefined;
+  const isJsx = (expr: ts.Expression): boolean => {
+    let node = expr;
+    while (ts.isParenthesizedExpression(node)) node = node.expression;
+    return ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node);
+  };
+  if (!ts.isBlock(body)) return isJsx(body) ? [body] : undefined;
+  const returns: ts.Expression[] = [];
+  let readable = true;
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isReturnStatement(node)) {
+      const expr = node.expression;
+      if (!expr || expr.kind === ts.SyntaxKind.NullKeyword) return;
+      if (isJsx(expr)) returns.push(expr);
+      else readable = false;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(body, visit);
+  return readable ? returns : undefined;
 }
 
 /** A literal array of `RelatedPage`-shaped object literals, read down to just `page` (design

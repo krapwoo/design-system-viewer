@@ -2,23 +2,26 @@ import * as ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ComponentRecord, ResolvedConfig } from './types.ts';
-import type { StaticPage } from './staticPage.ts';
+import type { StaticAnatomyShape, StaticPage } from './staticPage.ts';
 import { discoverAllPageFiles, resolvePageId } from './pageIndex.ts';
 import { readHostTsconfigOptions } from './props.ts';
 import { importedNames, readStaticPages } from './staticPage.ts';
 import { resolveGlob } from './glob.ts';
 import { sync } from './sync.ts';
-import { gridColumnLimit, isGridAxisLabel } from '../native/catalog/comparison.ts';
+import { gridColumnLimit, isGridAxisLabel, listGeometry, MATRIX_LAYOUT, presentationBlocks } from '../native/catalog/comparison.ts';
+import { memberBlocks, toSectionDef } from './explain.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
 import {
-  resolveExternalPart, validateComposedOf, validateFamily, validateGroupIssues,
+  relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateFamily, validateGroupIssues,
   type FamilyPageLike, type GroupPageLike, type MemberLocation,
 } from '../native/catalog/pageApi.ts';
 import { canonicalTokenTitle, findDuplicateIds, isTokenKind } from '../native/catalog/tokenDefinition.ts';
 import type { StaticTokenDefinition } from './tokenDefinition.ts';
 import type { UsageData } from '../native/catalog/usage.ts';
 
-export type DoctorSeverity = 'error' | 'warning';
+/** `hint` is advisory only: printed, in `--json`, counted on its own, and never failing `--ci` or
+ *  promoted by `doctor.strict` (which promotes `warning` alone). */
+export type DoctorSeverity = 'error' | 'warning' | 'hint';
 
 export interface DoctorIssue {
   id: string;
@@ -1221,6 +1224,159 @@ function checkTokenDefinitionAliases(pages: StaticPage[]): DoctorIssue[] {
   return issues;
 }
 
+/** A family member that is a style or modifier of the whole (a `ButtonStyle`, a `Modifier`) is not
+ *  a part: it has no area of its own to number, so a numbered section is the wrong home for it.
+ *  Read from the member's literal `relationship` ("Style"/"Modifier", any case), which always
+ *  counts, or from its id or component ending in `Style`/`Modifier`, which counts only for a
+ *  member that isn't a real component of its own (no `component`, or `documentation-only`) — a
+ *  stepper component called `QuantityModifier` is a part. Checked for members in an `inWhole: true`
+ *  section of a family page, and for group members with a `parent` that resolves on the page (a
+ *  group numbers those as parts of that parent). */
+function checkStyleAsPart(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.checkable || !page.members || page.members.length === 0) continue;
+    const ids = new Set(page.members.map((m) => m.id));
+    const inWhole = new Set((page.sections ?? []).filter((s) => s.inWhole === true).flatMap((s) => s.members));
+    for (const member of page.members) {
+      const numbered = inWhole.has(member.id) || (isGroupShape(page) && member.parent !== undefined && ids.has(member.parent));
+      if (!numbered) continue;
+      const relationship = member.relationship?.trim().toLowerCase();
+      const byRelationship = relationship === 'style' || relationship === 'modifier';
+      const notAComponent = member.component === undefined || member.fidelity === 'documentation-only';
+      const byName = notAComponent && [member.id, member.component].some((name) => name !== undefined && /(Style|Modifier)$/.test(name));
+      if (!byRelationship && !byName) continue;
+      issues.push(issue({
+        id: 'style-as-part', severity: 'warning', ...pageRef(page),
+        message: `Member "${member.id}" is a style, not a part: give it its own page and name it in \`relatedPages\` on a family page.`,
+        fix: `Move "${member.id}" out of its numbered place onto a catalog page of its own, and list that page in relatedPages on a family page (relatedPages renders nowhere else). If it really is a part, set its relationship to "Part".`,
+      }));
+    }
+  }
+  return issues;
+}
+
+/** `relatedPages` renders only on a family page; on a page with no `members` it is dropped without
+ *  a word, which is the trap the `style-as-part` advice ("name it in relatedPages") would
+ *  otherwise walk an author into. A group page reports it as an error already. */
+function checkRelatedPagesUnused(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.checkable || (page.members?.length ?? 0) > 0) continue;
+    if (page.hasMembers && page.members === undefined) continue; // `members` can't be read statically: stay quiet.
+    const message = relatedPagesUnusedMessage({ id: resolvePageId(page, page.file), relatedPages: page.relatedPages });
+    if (!message) continue;
+    issues.push(issue({
+      id: 'related-pages-unused', severity: 'warning', ...pageRef(page), message,
+      fix: 'Give the page `members` (a family page renders the Related list), or name the related page in `composedOf` and drop `relatedPages`.',
+    }));
+  }
+  return issues;
+}
+
+/** The anatomies the viewer draws, with the words that name them: a standalone or family page's own
+ *  (`SectionBlock` renders `def.anatomy` for every page without group members), and each top-level
+ *  member's on a group page. A family member's own anatomy and a nested group member's are never
+ *  rendered (the last is already an error). */
+function renderedAnatomies(page: StaticPage): { shape: StaticAnatomyShape | undefined; where: string }[] {
+  if (!hasMembers(page) || !isGroupShape(page)) return [{ shape: page.anatomyShape, where: 'The anatomy' }];
+  const ids = new Set((page.members ?? []).map((m) => m.id));
+  return (page.members ?? [])
+    .filter((m) => m.parent === undefined || !ids.has(m.parent))
+    .map((m) => ({ shape: m.anatomyShape, where: `The anatomy of member "${m.id}"` }));
+}
+
+/** An anatomy that lists parts a reader should be able to see, with no `picture` to see them in.
+ *  A part counts as visible unless its member is `documentation-only` (no area of its own — the
+ *  dashed pin); an `{ other }` item is a component documented on its own page and counts. A
+ *  `{ member }` item this page can't resolve (an external part) is not counted, so the rule never
+ *  guesses. `picture: null` is the author saying the omission is deliberate, and a `picture` the
+ *  reader can't see statically (a spread) is not reported. */
+function checkAnatomyWithoutPicture(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.checkable) continue;
+    const byId = new Map((page.members ?? []).map((m) => [m.id, m]));
+    for (const { shape, where } of renderedAnatomies(page)) {
+      if (!shape || shape.hasPicture || shape.pictureOptOut || shape.pictureUnknown) continue;
+      const visibleMembers = shape.memberIds.filter((id) => {
+        const fidelity = byId.get(id)?.fidelity;
+        return fidelity !== undefined && fidelity !== 'documentation-only';
+      });
+      const visible = visibleMembers.length + shape.otherCount;
+      if (visible === 0) continue;
+      issues.push(issue({
+        id: 'anatomy-no-picture', severity: 'warning', ...pageRef(page),
+        message: `${where} lists ${visible} visible part${visible === 1 ? '' : 's'} but has no picture.`,
+        fix: 'Draw the whole with AnatomySpecimen and pin the parts with AnatomyPin; the legend alone cannot show where each part is. If the parts really never share one frame, set `picture: null` to say so.',
+      }));
+    }
+  }
+  return issues;
+}
+
+/** An anatomy `picture` whose root element is not `AnatomySpecimen` is drawn at whatever width its
+ *  own markup has, instead of the page's phone width centred like the variant cells, and its pins
+ *  float wherever the author put them. A same-file component whose own root is `AnatomySpecimen`
+ *  passes; a root that can't be read statically (an imported component, a call, a conditional) is
+ *  skipped rather than guessed at. */
+function checkAnatomyPictureRoot(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.checkable) continue;
+    for (const { shape, where } of renderedAnatomies(page)) {
+      if (!shape?.hasPicture || shape.pictureRoot !== 'other') continue;
+      const root = !shape.pictureTag ? 'not AnatomySpecimen'
+        : shape.pictureVia ? `<${shape.pictureVia}> (renders <${shape.pictureTag}>), not AnatomySpecimen`
+          : `<${shape.pictureTag}>, not AnatomySpecimen`;
+      issues.push(issue({
+        id: 'anatomy-picture-not-specimen', severity: 'warning', ...pageRef(page),
+        message: `${where} picture's root is ${root}.`,
+        fix: "Wrap the picture in AnatomySpecimen so it is drawn at the page's phone width, centred like the variant cells, with pins beside it.",
+      }));
+    }
+  }
+  return issues;
+}
+
+/** A list block with an odd item count laid out two across at the default width, where
+ *  `specimenSize: 'regular'` would fit it three across with no new empty cell. Uses the same
+ *  layout maths `explain` reports (`listGeometry` at the laptop content width), not the browser. A
+ *  block with an explicit `maxColumns` is left alone: the cap is the author's own decision, a
+ *  page or member with exactly two blocks is left alone (the viewer may seat them side by side),
+ *  and a page that imports a device frame is left alone too (see below). A hint,
+ *  never a warning, because wider cells are a taste call. */
+function checkEmptyCellInGrid(pages: StaticPage[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  const width = MATRIX_LAYOUT.laptopContentWidth;
+  for (const page of pages) {
+    // A page showing examples inside a phone needs the phone-width cell on purpose: a regular cell
+    // would scale the device down, which the viewer itself warns about.
+    if (!page.checkable || page.viewerImports?.some((name) => DEVICE_FRAME_EXPORTS.includes(name))) continue;
+    const scopes = [
+      { where: '', blocks: presentationBlocks(toSectionDef(page), { defaultPreviewWidths: [402] }) },
+      ...(page.members ?? []).map((member) => ({ where: `member "${member.id}", `, blocks: memberBlocks(member) })),
+    ];
+    for (const { where, blocks } of scopes) {
+      // The viewer may put exactly two blocks side by side at about half the row, where wide and
+      // regular are both one column; the full-row maths below would then give wrong advice.
+      if (blocks.length === 2) continue;
+      for (const block of blocks) {
+        if (block.kind !== 'list' || block.items.length % 2 === 0 || block.maxColumns !== undefined) continue;
+        const now = listGeometry(block.items.length, width, block.size);
+        const regular = listGeometry(block.items.length, width, 'regular');
+        if (now.columns !== 2 || regular.columns !== 3 || regular.fillers > now.fillers) continue;
+        issues.push(issue({
+          id: 'grid-empty-cell', severity: 'hint', ...pageRef(page),
+          message: `${block.items.length} items in a 2-wide grid leave an empty cell; consider specimenSize: 'regular' (${where}"${block.title}").`,
+          fix: "Set specimenSize: 'regular' so the items sit three across (it applies to the whole page or member, not just this block), or add or remove one item so the grid fills.",
+        }));
+      }
+    }
+  }
+  return issues;
+}
+
 /** Every page-scoped issue, from every rule above. */
 export function collectIssues(
   pages: StaticPage[],
@@ -1254,6 +1410,11 @@ export function collectIssues(
     ...checkTokenDefinition(pages),
     ...checkTokenDefinitionDuplicateKind(pages),
     ...checkTokenDefinitionAliases(pages),
+    ...checkStyleAsPart(pages),
+    ...checkRelatedPagesUnused(pages),
+    ...checkAnatomyWithoutPicture(pages),
+    ...checkAnatomyPictureRoot(pages),
+    ...checkEmptyCellInGrid(pages),
   ];
 }
 
@@ -1335,6 +1496,8 @@ export function checkPageTypeErrors(
 export interface DoctorSummary {
   errors: number;
   warnings: number;
+  /** Advisory `hint` findings; absent when there are none, so legacy output is unchanged. */
+  hints?: number;
   components: number;
   withExamples: number;
   unboundExamples: number;
@@ -1368,7 +1531,9 @@ export function withExtraIssues(result: Omit<DoctorRunResult, 'pageFiles'> & { p
   const added = strict ? extra.map((i) => (i.severity === 'warning' ? { ...i, severity: 'error' as const } : i)) : extra;
   const issues = [...result.issues, ...added];
   const errors = issues.filter((i) => i.severity === 'error').length;
-  const summary = { ...result.summary, errors, warnings: issues.length - errors };
+  const hints = issues.filter((i) => i.severity === 'hint').length;
+  const { hints: _previous, ...rest } = result.summary;
+  const summary = { ...rest, errors, warnings: issues.length - errors - hints, ...(hints > 0 ? { hints } : {}) };
   return { ...result, issues, summary, exitCode: errors > 0 ? 1 : 0 };
 }
 
@@ -1450,6 +1615,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
   const summary: DoctorSummary = {
     errors: issues.filter((i) => i.severity === 'error').length,
     warnings: issues.filter((i) => i.severity === 'warning').length,
+    ...(issues.some((i) => i.severity === 'hint') ? { hints: issues.filter((i) => i.severity === 'hint').length } : {}),
     components: components.length,
     withExamples: countWithExamples(pages, components),
     unboundExamples: countUnboundExamples(pages),
@@ -1491,14 +1657,14 @@ export function formatHuman(result: DoctorJsonResult): string {
     for (const issue of general) renderIssue(issue);
     lines.push('');
   }
-  const { errors, warnings, components, withExamples, unboundExamples, runtimeOnlyTokenSections: runtimeOnly } = result.summary;
+  const { errors, warnings, hints, components, withExamples, unboundExamples, runtimeOnlyTokenSections: runtimeOnly } = result.summary;
   if (runtimeOnly && runtimeOnly.length > 0) {
     const count = runtimeOnly.reduce((sum, entry) => sum + entry.sections.length, 0);
     const where = runtimeOnly.map((entry) => `${entry.page} (${entry.sections.join(', ')})`).join('; ');
     lines.push(`${count} token section${count === 1 ? '' : 's'} with runtime-only entries (not statically validated): ${where}.`, '');
   }
   lines.push(
-    `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'} — ` +
+    `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}${hints ? `, ${hints} hint${hints === 1 ? '' : 's'}` : ''} — ` +
       `${components} components (${withExamples} with examples), ${unboundExamples} unbound examples.`,
   );
   return lines.join('\n');

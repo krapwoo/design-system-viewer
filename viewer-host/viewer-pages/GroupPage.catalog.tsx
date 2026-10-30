@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, View, StyleSheet } from 'react-native';
-import { defineCatalogPage, GroupPage, AnatomyPin, CATALOG_COLOR, CATALOG_SPACE, CATALOG_TEXT, type SectionDef } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, GroupPage, AnatomyPin, AnatomySpecimen, CATALOG_COLOR, CATALOG_SPACE, CATALOG_TEXT, type SectionDef } from '@krapwoo/ds-viewer';
 
 const demo = StyleSheet.create({
   frame: { borderWidth: 1, borderColor: CATALOG_COLOR.border, backgroundColor: CATALOG_COLOR.pageBackground, padding: CATALOG_SPACE.xl, alignSelf: 'stretch' },
@@ -26,11 +26,16 @@ const examplePicture = (
 
 // This page's own `EmbeddedFamilyMember` carries a real `anatomy` too: a labeled fixture picture
 // (not a screenshot of a real component) with a live `AnatomyPin` for its one nested part.
+// The pin stays inline in its caption row rather than in `AnatomySpecimen`'s `pins` prop, because
+// the row is a schematic made of pin plus caption; `AnatomySpecimen` gives it the centred frame, and
+// the render check measures every `anatomy-pin` in the stage, inline ones included.
 const fixturePicture = (
-  <View style={demo.anatomyRow}>
-    <AnatomyPin member="EmbeddedFamilyPart" />
-    <Text style={demo.mockText}>Fixture picture: the nested part, pinned in its member's own anatomy.</Text>
-  </View>
+  <AnatomySpecimen>
+    <View style={demo.anatomyRow}>
+      <AnatomyPin member="EmbeddedFamilyPart" />
+      <Text style={demo.mockText}>Fixture picture: the nested part, pinned in its member's own anatomy.</Text>
+    </View>
+  </AnatomySpecimen>
 );
 
 const exampleGroup: SectionDef<ExampleId> = {

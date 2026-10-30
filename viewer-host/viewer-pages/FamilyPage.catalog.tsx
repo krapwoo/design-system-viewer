@@ -98,22 +98,29 @@ const blocksDemo = (
 
 // Slice D1 item 11: this page's own anatomy picture — a schematic of the page head's pager row,
 // the anatomy box itself, and a member's own specimen card, each pinned with a real `AnatomyPin`.
+//
+// The pins stay inline, beside the row each one labels, instead of in `AnatomySpecimen`'s `pins`
+// prop: this is a schematic whose rows are made of their pin plus a caption, so the pin is part of
+// what is drawn. `AnatomySpecimen` is here for the phone-width, centred frame; the render check
+// measures every `anatomy-pin` in the stage, so inline pins are still checked.
 const pagePicture = (
-  <View style={demo.frame}>
-    <View style={demo.anatomyRow}>
-      <AnatomyPin member="SectionPagerRow" />
-      <AnatomyPin member="PagerButton" />
-      <Text style={demo.mockText}>‹ Previous page   Next page ›</Text>
+  <AnatomySpecimen>
+    <View style={demo.frame}>
+      <View style={demo.anatomyRow}>
+        <AnatomyPin member="SectionPagerRow" />
+        <AnatomyPin member="PagerButton" />
+        <Text style={demo.mockText}>‹ Previous page   Next page ›</Text>
+      </View>
+      <View style={demo.anatomyRow}>
+        <AnatomyPin member="AnatomyPin" />
+        <Text style={demo.mockText}>Anatomy box: pins the page's own numbered parts</Text>
+      </View>
+      <View style={demo.anatomyRow}>
+        <AnatomyPin member="Blocks" />
+        <Text style={demo.mockText}>A member's own specimen card</Text>
+      </View>
     </View>
-    <View style={demo.anatomyRow}>
-      <AnatomyPin member="AnatomyPin" />
-      <Text style={demo.mockText}>Anatomy box: pins the page's own numbered parts</Text>
-    </View>
-    <View style={demo.anatomyRow}>
-      <AnatomyPin member="Blocks" />
-      <Text style={demo.mockText}>A member's own specimen card</Text>
-    </View>
-  </View>
+  </AnatomySpecimen>
 );
 
 export default defineCatalogPage({

@@ -46,6 +46,7 @@ const styles = StyleSheet.create({
   springField: { width: 210, ...DS_TYPOGRAPHY.labelSm, color: DS_SEMANTIC.text.regular },
   springCell: { flex: 1, minWidth: 130 },
   springValue: { ...DS_TYPOGRAPHY.bodyXs, color: DS_SEMANTIC.text.regular },
+  springCode: { ...DS_TYPOGRAPHY.bodyXs, color: DS_SEMANTIC.text.regular, marginBottom: DS_SPACING[400] },
   springNote: { ...DS_TYPOGRAPHY.bodyXs, color: DS_SEMANTIC.text.muted },
 });
 
@@ -53,6 +54,10 @@ const styles = StyleSheet.create({
  *  redesigning the section. */
 const SPRINGS: Record<string, typeof DS_MOTION_SPRING> = { snappy: DS_MOTION_SPRING };
 const SPRING_NOTES: Record<string, string> = { snappy: DS_MOTION_SPRING_USE };
+/** A SwiftUI spring, as a SwiftUI source writes it: `MotionSpecimen`'s `spring` takes this
+ *  `{ response, dampingFraction }` shape directly, so a token ported from `.spring(response:dampingFraction:)`
+ *  needs no conversion. Illustration only — not a token. */
+const SWIFTUI_SPRING = { response: 0.5, dampingFraction: 0.7 };
 const SPRING_FIELDS = Object.keys(DS_MOTION_SPRING) as (keyof typeof DS_MOTION_SPRING)[];
 
 function SpringTable() {
@@ -83,6 +88,15 @@ function SpringTable() {
         {cells((name) => (
           <MotionSpecimen kind="spring" spring={SPRINGS[name]} label="Animated.spring(value, DS_MOTION_SPRING)" />
         ))}
+      </View>
+      {/* The same specimen from a spring written the way SwiftUI source writes it: `response` and
+          `dampingFraction` go in as they are, with no hand conversion to stiffness and damping. */}
+      <View style={styles.springRow}>
+        <Text style={styles.springField}>SwiftUI form</Text>
+        <View style={styles.springCell}>
+          <Text style={styles.springCode}>.spring(response: {SWIFTUI_SPRING.response}, dampingFraction: {SWIFTUI_SPRING.dampingFraction})</Text>
+          <MotionSpecimen kind="spring" spring={SWIFTUI_SPRING} label={`{ response: ${SWIFTUI_SPRING.response}, dampingFraction: ${SWIFTUI_SPRING.dampingFraction} }`} />
+        </View>
       </View>
       <View style={[styles.springRow, styles.springRowLast]}>
         <Text style={styles.springField}>when to use</Text>

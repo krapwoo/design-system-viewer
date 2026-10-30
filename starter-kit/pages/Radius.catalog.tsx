@@ -1,7 +1,11 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { defineCatalogPage, TokenGrid, TokenTile } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, TokenDetails, TokenGrid, TokenTile } from '@krapwoo/ds-viewer';
 import { DS_RADIUS, DS_RADIUS_STEPS, DS_RADIUS_USE, DS_SEMANTIC } from '../tokens';
+
+// Where DS_RADIUS is declared, for each tile's "Details ›" panel: a path from the kit's root (the
+// folder `init` copies it into), with no line number, which would drift the day scales.ts changes.
+const RADIUS_SOURCE = 'tokens/scales.ts';
 
 const styles = StyleSheet.create({
   // Square, so the corner is read as a corner rather than as the end of a bar. Large enough that
@@ -23,7 +27,14 @@ function RadiusGallery() {
     // row empty.
     <TokenGrid minTileWidth={150}>
       {DS_RADIUS_STEPS.map((step) => (
-        <TokenTile key={step} name={step} value={`${DS_RADIUS[step]}px`} note={DS_RADIUS_USE[step]}>
+        // The tile shows the specimen and its value; where it is defined and when to use it sit in
+        // "Details ›", so a tile stays as short as its neighbours however long the note is.
+        <TokenTile
+          key={step}
+          name={step}
+          value={`${DS_RADIUS[step]}px`}
+          action={<TokenDetails title={step} kicker="Corner radius" expression={`DS_RADIUS.${step}`} source={RADIUS_SOURCE} usageSummary={DS_RADIUS_USE[step]} />}
+        >
           <View style={[styles.radiusBox, { borderRadius: DS_RADIUS[step] }]} />
         </TokenTile>
       ))}
@@ -33,7 +44,7 @@ function RadiusGallery() {
 
 export default defineCatalogPage({
   group: 'Tokens',
-  description: 'The corner-radius scale, each step with a grounded "when to use this" note from DS_RADIUS_USE. Reference steps directly — DS_RADIUS.medium, never a raw 12 — the key union is typo-safe by itself.',
+  description: 'The corner-radius scale, each step with its value and a Details › panel holding its source and the "when to use this" note from DS_RADIUS_USE. Reference steps directly — DS_RADIUS.medium, never a raw 12 — the key union is typo-safe by itself.',
   tokenGallery: true,
   render: () => <RadiusGallery />,
 });
