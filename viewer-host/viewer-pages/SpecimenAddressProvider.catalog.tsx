@@ -29,6 +29,7 @@ function WhereAmI() {
 
 export default defineCatalogPage({
   component: 'SpecimenAddressProvider',
+  title: 'Specimen address provider',
   group: 'Components',
   whenToUse: "Framework plumbing, not part of the package's public API: the catalog's own list, grid and preview renderers wrap each example in one so a PhoneFrame inside it can reopen that single example in its own device-sized document. A page author never writes one.",
   description: "Tells the example rendered inside it which catalog example it is — page, slot and item key. It renders no UI of its own: it is a context provider, so the only thing to see is what a descendant reads back out via useSpecimenAddress().",
