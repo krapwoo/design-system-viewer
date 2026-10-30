@@ -3,6 +3,21 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.22.0
+
+- `doctor` now catches seven more mistakes a real catalog made, and the starter kit shows the right way to do each.
+  - New warnings (`doctor.strict` still promotes them):
+    - `style-as-part`: a family member in an `inWhole` section, or a group member with a `parent`, is a style or modifier (its `relationship` is `Style` or `Modifier`, or, for a member with no `component`, its id ends in `Style` or `Modifier`), where it would be numbered as a part. Give it its own page and name it in `relatedPages` on a family page.
+    - `related-pages-unused`: `relatedPages` on a page without `members` renders nothing; the catalog console warns too.
+    - `anatomy-no-picture`: an anatomy lists parts a reader should see but has no `picture`. Draw the whole with `AnatomySpecimen` and pin the parts, or write `picture: null` when there deliberately is none.
+    - `anatomy-picture-not-specimen`: an anatomy `picture` isn't drawn by `AnatomySpecimen`, so it isn't at the page's phone width and centred like the variant cells. A plain wrapper (`View`, a fragment, a `{children}` wrapper) whose only drawn child is `AnatomySpecimen` counts as one. Both anatomy rules read a shorthand `picture` and skip an anatomy with a spread.
+    - `anatomy-picture-geometry` (`doctor --render`): an anatomy specimen more than 6px off the centre of its stage, a pin (any `anatomy-pin` in the stage) more than 48px from the specimen's pin side, on the wrong side of it or above or below it, or over the legend. Pins beside the specimen are judged as a column, so a column taller than the specimen passes when it is centred on it; a pin cut off by the picture area is reported too (`AnatomySpecimen` now makes its block as tall as its pin column on the web, so a tall column is no longer clipped). Each pin is one finding; the ↗ badge on a pin is not measured.
+  - New hints, a new level below warnings: they are printed, listed in `--json` and counted as `summary.hints`, and they never fail `--ci` and are never promoted by `doctor.strict`:
+    - `grid-empty-cell`: an odd number of items laid out two across leaves an empty cell where `specimenSize: 'regular'` would fit three across.
+    - `heading-breaks-word` (`doctor --render`): at 800px a page heading breaks inside a word, because an unbroken run is wider than its column. Give the page a human `title`.
+  - `doctor --render --ci` is the documented CI step. The GitHub Action `init` writes runs it when `puppeteer` is installed, and plain `doctor --ci` (with a note) when it isn't. `init` does not add `puppeteer`, since ds-viewer never installs a browser; it prints a one-line recommendation to add it when the project lacks it. In CI the headless browser runs with `--no-sandbox`.
+  - The starter kit has a worked anatomy page (`TripCard`), its Radius page keeps source and usage in "Details ›", its Motion page shows a SwiftUI-style spring, and the README has a "Common mistakes" section.
+
 ## 0.21.0
 
 - Token pages move each token's source and usage text into a "Details ›" side panel, and `MotionSpecimen` can play SwiftUI springs:
