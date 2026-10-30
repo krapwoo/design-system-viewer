@@ -556,3 +556,32 @@ test('entry.tsx imports usage and passes it to the shell only when a usage path 
   assert.equal(withUsage.replace("import usage from './generated/usage.json';\n", '').replace(' usage={usage}', ''), without);
   rmSync(projectRoot, { recursive: true, force: true });
 });
+
+test('every generated workspace directory ignores itself, and a re-run leaves the file alone', () => {
+  for (const workspaceDir of [undefined, RENDER_WORKSPACE_DIR]) {
+    const projectRoot = copyFixture();
+    const config = { ...baseConfig(projectRoot), ...(workspaceDir ? { workspaceDir } : {}) };
+    const workspace = writeWorkspace(config);
+    const ignoreFile = path.join(workspace, '.gitignore');
+    assert.equal(readFileSync(ignoreFile, 'utf8'), '*\n');
+
+    const before = statSync(ignoreFile).mtimeMs;
+    writeWorkspace(config);
+    writeDevLock(config, { pid: process.pid, port: 5181 });
+    clearDevLock(config);
+    assert.equal(readFileSync(ignoreFile, 'utf8'), '*\n');
+    assert.equal(statSync(ignoreFile).mtimeMs, before);
+
+    // A stale or edited file is put back.
+    writeFileSync(ignoreFile, 'something-else\n');
+    writeWorkspace(config);
+    assert.equal(readFileSync(ignoreFile, 'utf8'), '*\n');
+  }
+});
+
+test('writing the dev lock or the endpoint record alone also leaves the directory ignoring itself', () => {
+  const projectRoot = copyFixture();
+  const config = baseConfig(projectRoot);
+  writeEndpointRecord(config, { port: 5181, secret: 'x'.repeat(48) });
+  assert.equal(readFileSync(path.join(projectRoot, '.ds-viewer', '.gitignore'), 'utf8'), '*\n');
+});

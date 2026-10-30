@@ -4,7 +4,7 @@ import { globBaseFolder, resolveGlob } from './glob.ts';
 import { createComponentReader, type ReadComponentsOptions } from './props.ts';
 import { readTokenModules } from './tokens.ts';
 import { discoverPages, writePageIndex } from './pageIndex.ts';
-import { workspacePath } from './workspace.ts';
+import { ensureWorkspaceDir, workspacePath } from './workspace.ts';
 import { loadUsage } from './usage.ts';
 import type { UsageData } from '../native/catalog/usage.ts';
 import type { ComponentRecord, ResolvedConfig } from './types.ts';
@@ -33,6 +33,7 @@ const GENERATED_INDEX = "export { default as components } from './components.jso
  *  (see this task's Interfaces note) — production callers omit it. */
 export function sync(config: ResolvedConfig, resolveOptions?: ReadComponentsOptions): SyncResult {
   const generatedDir = workspacePath(config, 'generated');
+  ensureWorkspaceDir(workspacePath(config));
   mkdirSync(generatedDir, { recursive: true });
 
   const excluded = new Set((config.exclude ?? []).flatMap((pattern) => resolveGlob(config.projectRoot, pattern)));

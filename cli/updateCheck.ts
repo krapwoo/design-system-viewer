@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import path from 'node:path';
 import { compareVersions, isBreakingUpgrade, parseVersion } from './semver.ts';
 import { DEFAULT_WORKSPACE_DIR } from './types.ts';
+import { ensureWorkspaceDir } from './workspace.ts';
 import type { AutoCheckSource, VersionStatus } from '../native/catalog/types.ts';
 
 /** Exactly what the user-wide cache file holds — deliberately missing `current`/`breaking`
@@ -290,7 +291,7 @@ export function statusFromCheck(
  *  is the run's own generated directory — see `workspacePath`. */
 export function writeVersionFile(projectRoot: string, status: VersionStatus, workspaceDir: string = DEFAULT_WORKSPACE_DIR): string {
   const file = path.join(projectRoot, workspaceDir, 'version.json');
-  mkdirSync(path.dirname(file), { recursive: true });
+  ensureWorkspaceDir(path.dirname(file));
   writeFileSync(file, JSON.stringify(status));
   return file;
 }
@@ -300,7 +301,7 @@ export function writeVersionFile(projectRoot: string, status: VersionStatus, wor
  *  unconditionally `import updateNotice from './update.json'` without ever hitting a missing file. */
 export function writeUpdateFile(projectRoot: string, result: UpdateCheckResult | undefined, workspaceDir: string = DEFAULT_WORKSPACE_DIR): string {
   const file = path.join(projectRoot, workspaceDir, 'update.json');
-  mkdirSync(path.dirname(file), { recursive: true });
+  ensureWorkspaceDir(path.dirname(file));
   writeFileSync(file, JSON.stringify(result ?? null));
   return file;
 }
