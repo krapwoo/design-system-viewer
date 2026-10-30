@@ -119,6 +119,24 @@ export function workspacePath(config: Pick<ResolvedConfig, 'projectRoot' | 'work
   return path.join(config.projectRoot, config.workspaceDir ?? DEFAULT_WORKSPACE_DIR, ...segments);
 }
 
+const WORKSPACE_GITIGNORE = '*\n';
+
+/** Creates a generated workspace directory and makes it ignore itself. A project initialised before
+ *  `init` listed `.ds-viewer/` and `.ds-viewer-render/` in its `.gitignore` would otherwise see the
+ *  generated files as untracked; a `*` inside the directory covers every directory the viewer owns,
+ *  whatever the project's own ignore file says. Written only when missing or different, so a re-run
+ *  leaves it (and its mtime) alone. */
+export function ensureWorkspaceDir(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, '.gitignore');
+  try {
+    if (readFileSync(file, 'utf8') === WORKSPACE_GITIGNORE) return;
+  } catch {
+    // Missing or unreadable: written below.
+  }
+  writeFileSync(file, WORKSPACE_GITIGNORE);
+}
+
 /** Names the `dev` process that owns this workspace right now. */
 export interface DevLock {
   pid: number;
@@ -132,7 +150,7 @@ const LOCK_FILE = 'dev-lock.json';
  *  `metro.config.js` and `tsconfig.json`, and the loser is left serving a workspace that no longer
  *  describes it — reported by Expo as an unresolvable `main` field, which names neither cause. */
 export function writeDevLock(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>, lock: DevLock): void {
-  mkdirSync(workspacePath(config), { recursive: true });
+  ensureWorkspaceDir(workspacePath(config));
   writeFileSync(workspacePath(config, LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
 }
 
@@ -211,7 +229,7 @@ export function readEndpointRecord(config: Pick<ResolvedConfig, 'projectRoot' | 
  *  applies when the file is newly created, so a pre-existing record left with looser permissions
  *  would otherwise keep them across every later rewrite. */
 export function writeEndpointRecord(config: Pick<ResolvedConfig, 'projectRoot' | 'workspaceDir'>, record: EndpointRecord): void {
-  mkdirSync(workspacePath(config), { recursive: true });
+  ensureWorkspaceDir(workspacePath(config));
   const recordPath = workspacePath(config, ENDPOINT_RECORD_FILE);
   writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
   chmodSync(recordPath, 0o600);
@@ -243,7 +261,7 @@ export function missingWorkspaceFiles(config: Pick<ResolvedConfig, 'projectRoot'
  *  `.ds-viewer-render/` rather than this one — see the README. */
 export function writeWorkspace(config: ResolvedConfig, updateEndpoint?: { baseUrl: string; secret: string }): string {
   const workspace = workspacePath(config);
-  mkdirSync(workspace, { recursive: true });
+  ensureWorkspaceDir(workspace);
 
   writeFileSync(path.join(workspace, 'package.json'), `${JSON.stringify({ name: 'ds-viewer-workspace', private: true, main: 'entry.tsx' }, null, 2)}\n`);
   writeFileSync(

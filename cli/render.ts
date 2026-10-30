@@ -398,6 +398,8 @@ export const ANATOMY_CENTRE_TOLERANCE = 6;
 /** How far past the specimen's right edge a pin may sit, in px — the pin column is
  *  `ANATOMY_PIN_GUTTER` (30) wide, and a 22px pin fits inside it with room to spare. */
 export const ANATOMY_PIN_REACH = 48;
+/** Pins whose vertical gap is at most this belong to one column; a bigger gap starts a new run. */
+export const ANATOMY_PIN_RUN_GAP = 12;
 
 export type AnatomyFinding =
   | { kind: 'off-centre'; stage: number; offset: number }
@@ -466,24 +468,47 @@ export const ANATOMY_PICTURE_SCRIPT = `(() => {
     // Only the side-by-side legend: stacked, the columns sit below the stage and the cut-off check covers it.
     const legend = card ? card.querySelector('[data-testid="anatomy-legend"]') : null;
     const legendBox = legend ? legend.getBoundingClientRect() : null;
-    // The pins beside the specimen form a column. One taller than the specimen must overhang it, so
-    // it is judged as a whole (its centre against the specimen); a column that fits is judged per pin.
-    let colTop = Infinity, colBottom = -Infinity;
+    // The pins beside the specimen sit in runs: neighbours at most ${ANATOMY_PIN_RUN_GAP}px apart vertically. A run of
+    // two or more is a column; one taller than the specimen must overhang it, so it is judged as a whole (its
+    // centre against the specimen). A single pin, or a column that fits, is judged per pin. Runs keep a far-off
+    // stray pin from merging into the correct pins and dragging the column's centre towards the specimen.
+    const beside = [];
     for (const el of pinList) {
       const box = el.getBoundingClientRect();
       if ((rtl ? left - box.right : box.left - right) > ${ANATOMY_PIN_REACH}) continue;
       if (rtl ? box.left > right : box.right < left) continue;
-      if (box.top < colTop) colTop = box.top;
-      if (box.bottom > colBottom) colBottom = box.bottom;
+      beside.push({ el, top: box.top, bottom: box.bottom });
     }
-    const colCentre = (colTop + colBottom) / 2;
-    const tall = colBottom - colTop > bottom - top;
-    const colWhere = colBottom < top || colTop > bottom ? (colCentre < top ? 'above' : 'below') : colCentre < top - 1 ? 'above' : colCentre > bottom + 1 ? 'below' : null;
+    beside.sort((a, b) => a.top - b.top);
+    const runOf = new Map();
+    let run = [];
+    let runBottom = -Infinity;
+    const closeRun = () => {
+      if (run.length >= 2) {
+        const colTop = run[0].top;
+        const colBottom = Math.max(...run.map((p) => p.bottom));
+        const colCentre = (colTop + colBottom) / 2;
+        const tall = colBottom - colTop > bottom - top;
+        const colWhere = colBottom < top || colTop > bottom ? (colCentre < top ? 'above' : 'below') : colCentre < top - 1 ? 'above' : colCentre > bottom + 1 ? 'below' : null;
+        for (const p of run) runOf.set(p.el, { tall, colWhere });
+      }
+      run = [];
+      runBottom = -Infinity;
+    };
+    for (const p of beside) {
+      if (run.length && p.top - runBottom > ${ANATOMY_PIN_RUN_GAP}) closeRun();
+      run.push(p);
+      if (p.bottom > runBottom) runBottom = p.bottom;
+    }
+    closeRun();
     for (const el of pinList) {
       const box = el.getBoundingClientRect();
       const text = (el.textContent || '').replace('\u2197', '').trim() || '\u2197';
       const distance = rtl ? left - box.right : box.left - right;
       const centre = (box.top + box.bottom) / 2;
+      const col = runOf.get(el);
+      const tall = Boolean(col && col.tall);
+      const colWhere = col ? col.colWhere : null;
       if (box.top < stageBox.top - 0.5 || box.bottom > stageBox.bottom + 0.5) { out.push({ kind: 'pin-cut-off', stage: i, pin: text }); continue; }
       if (distance > ${ANATOMY_PIN_REACH}) out.push({ kind: 'pin-far', stage: i, pin: text, distance: Math.round(distance) });
       else if (rtl ? box.left > right : box.right < left) out.push({ kind: 'pin-outside', stage: i, pin: text, where: 'opposite' });

@@ -1324,8 +1324,9 @@ you want when something else already holds that range — another project's cata
 that server's pages as your project's failures.
 
 It starts its own `dev` server, with `--no-update-endpoint` and its own generated directory
-(`.ds-viewer-render/`, gitignored by `init` alongside `.ds-viewer/`). Nothing it generates touches
-the workspace a running `dev` owns, so you can run it beside a catalog you already have open and
+(`.ds-viewer-render/`, gitignored by `init` alongside `.ds-viewer/`; every generated directory also
+holds its own `.gitignore` containing `*`, so a project initialised earlier never sees them as
+untracked). Nothing it generates touches the workspace a running `dev` owns, so you can run it beside a catalog you already have open and
 that catalog is unaffected — including its update page's actions.
 It stops the viewer it started, including on Ctrl-C (exit codes 130, 143 or 129 for SIGINT,
 SIGTERM or SIGHUP). On Windows it stops the viewer with `taskkill`; that path is unit-tested, not

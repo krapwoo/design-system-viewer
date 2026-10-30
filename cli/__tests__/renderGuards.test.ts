@@ -465,3 +465,16 @@ test('the same shape with the stage only as tall as the specimen (before the fix
   assert.deepEqual(found.filter((f: { kind: string }) => f.kind === 'pin-cut-off').map((f: { pin: string }) => f.pin), ['1', '4'], 'the first pin is cut at the top, the last at the bottom');
   assert.equal(found.filter((f: { kind: string }) => f.kind === 'pin-over-legend').length, 0, 'stacked: no legend to overlap');
 });
+
+test('a correct pin plus a far-off stray pin is two runs: exactly one finding, for the stray', () => {
+  // Specimen 200-240; pin 1 sits beside it, pin 2 is 83px above it. Merged, the two form one tall 100-227 column whose centre is above the specimen, so the correct pin is flagged too.
+  const dom = anatomyDom([49, 351], [355, 377], { specY: [200, 240], stageY: [80, 300], stacked: true, column: [[205, 227], [100, 122]] });
+  const found = measure(dom);
+  assert.equal(found.length, 1);
+  assert.deepEqual({ kind: found[0].kind, pin: found[0].pin, where: found[0].where }, { kind: 'pin-outside', pin: '2', where: 'above' });
+});
+
+test('the BotReplyFooter column (4 pins, 4px gaps, 366-466 against a 402-431 specimen) stays one clean run', () => {
+  const dom = anatomyDom([49, 351], [355, 377], { specY: [402, 431], stageY: [330, 500], stacked: true, column: [[366, 388], [392, 414], [418, 440], [444, 466]] });
+  assert.deepEqual(measure(dom), []);
+});

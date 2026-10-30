@@ -1,0 +1,1 @@
+The generated `.ds-viewer/` and `.ds-viewer-render/` folders now ignore themselves with their own `.gitignore`, so a project set up before `init` listed them no longer sees untracked files after `doctor --render`; and `doctor --render` now reports a far-off stray pin instead of letting it merge into a correct pin column.

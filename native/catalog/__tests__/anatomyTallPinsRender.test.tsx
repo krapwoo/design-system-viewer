@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import React from 'react';
+import React, { act, Profiler, useState } from 'react';
 
 const warmup = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true });
 (globalThis as Record<string, unknown>).window = warmup.window;
@@ -17,7 +17,7 @@ Object.defineProperty(globalThis, 'Node', { configurable: true, get: () => windo
 
 const { renderCatalog } = await import('../../../test/renderCatalog.tsx');
 const { AnatomySpecimen } = await import('../Anatomy.tsx');
-const { ANATOMY_PINS_WRAPPER_TEST_ID } = await import('../SpecimenSurface.tsx');
+const { ANATOMY_PINS_WRAPPER_TEST_ID, ANATOMY_PIN_LAYER_TEST_ID } = await import('../SpecimenSurface.tsx');
 const { StyleSheet } = await import('react-native');
 
 type Box = { top: number; bottom: number };
@@ -42,13 +42,18 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 function padding(el: Element, side: 'top' | 'bottom'): number {
-  const inline = (el as HTMLElement).style.getPropertyValue(`padding-${side}`);
+  return cssPx(el, `padding-${side}`);
+}
+
+/** A px declaration on `el`: inline, else from the generated stylesheet's class rules. */
+function cssPx(el: Element, property: string): number {
+  const inline = (el as HTMLElement).style.getPropertyValue(property);
   if (inline) return parseFloat(inline) || 0;
   const rules = StyleSheet.getSheet().textContent.split('\n');
   for (const cls of (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean)) {
     for (const rule of rules) {
       const m = rule.match(new RegExp(`^\\.${cls}\\{(.*)\\}$`));
-      const d = m?.[1].split(';').map((x) => x.split(':')).find(([name]) => name === `padding-${side}`);
+      const d = m?.[1].split(';').map((x) => x.split(':')).find(([name]) => name === property);
       if (d) return parseFloat(d[1]) || 0;
     }
   }
@@ -85,4 +90,44 @@ test('pins that fit inside the specimen add no padding', () => {
     assert.equal(padding(view.wrapper, 'bottom'), 0);
     view.cleanup();
   }
+});
+
+test('the pin layer is offset by the same padding as the block, and a second layout pass settles with no further change', () => {
+  // Specimen 306-335, 4-pin column 270-370: 36px over the top, 35px under, so the block pads 36px.
+  const column: [number, number][] = [[270, 292], [296, 318], [322, 344], [348, 370]];
+  let shift = 0;
+  let bump = () => {};
+  let commits = 0;
+  function Harness() {
+    const [, setTick] = useState(0);
+    bump = () => setTick((n) => n + 1);
+    specimenBox = { top: 306 + shift, bottom: 335 + shift };
+    return (
+      <Profiler id="specimen" onRender={() => { commits += 1; }}>
+        <AnatomySpecimen pins={<>{column.map(([top, bottom], n) => <span key={n} data-box={`${top + shift},${bottom + shift}`} />)}</>}>
+          <span>chip</span>
+        </AnatomySpecimen>
+      </Profiler>
+    );
+  }
+  const view = renderCatalog(<Harness />);
+  const wrapper = view.container.querySelector(`[data-testid="${ANATOMY_PINS_WRAPPER_TEST_ID}"]`) as HTMLElement;
+  const layer = view.container.querySelector(`[data-testid="${ANATOMY_PIN_LAYER_TEST_ID}"]`) as HTMLElement;
+  const pad = padding(wrapper, 'top');
+  assert.equal(pad, 36);
+  assert.equal(padding(wrapper, 'bottom'), pad);
+  assert.equal(cssPx(layer, 'top'), pad, 'the pin layer starts below the padding, so it stays exactly the specimen');
+  assert.equal(cssPx(layer, 'bottom'), pad, 'and ends above the bottom padding');
+
+  // The browser now reports the specimen (and the pins riding on it) `pad` lower. The overhang is
+  // unchanged, so a second pass must not change state: no re-render beyond the one that was asked for.
+  shift = pad;
+  commits = 0;
+  act(() => { bump(); });
+  assert.equal(commits, 1, 'one commit for the re-render itself, none from a measurement loop');
+  assert.equal(padding(wrapper, 'top'), pad);
+  assert.equal(padding(wrapper, 'bottom'), pad);
+  assert.equal(cssPx(layer, 'top'), pad);
+  assert.equal(cssPx(layer, 'bottom'), pad);
+  view.cleanup();
 });
