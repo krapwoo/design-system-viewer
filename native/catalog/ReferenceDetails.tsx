@@ -227,6 +227,7 @@ export function ReferenceDetails<TId extends string>({
   if (def.tokenGallery) {
     // Full-width pages with no component API (token galleries, and whole screens such as a
     // starter kit's Patterns) still disclose what they're built from when they say so.
+    // They have no Notes and API panel, so an `api` excerpt is not shown here (it is for plain component pages).
     const hasComposition = Boolean(def.composedOf && def.composedOf.length > 0);
     return (
       <View style={styles.card}>
@@ -240,7 +241,6 @@ export function ReferenceDetails<TId extends string>({
           </>
         )}
         {hasAlsoUsedBy && <AlsoUsedByFact entries={def.alsoUsedBy!} navigation={navigation} last />}
-        {def.api && <ApiExcerpt text={def.api} />}
       </View>
     );
   }

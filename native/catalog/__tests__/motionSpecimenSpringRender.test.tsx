@@ -21,7 +21,7 @@ Object.defineProperty(globalThis, 'navigator', { value: warmup.window.navigator,
 (globalThis as Record<string, unknown>).cancelAnimationFrame = () => {};
 
 const { renderCatalog } = await import('../../../test/renderCatalog.tsx');
-const { MotionSpecimen, MOTION_SPRING_MAX_MS, UNDAMPED_NOTE, UNDAMPED_SWINGS } = await import('../MotionSpecimen.tsx');
+const { MotionSpecimen, MOTION_SPRING_MAX_MS, UNDAMPED_NOTE, UNDAMPED_SWINGS, undampedPeriodMs } = await import('../MotionSpecimen.tsx');
 const { Animated } = await import('react-native');
 
 type SpringConfig = { stiffness?: number; damping?: number; mass?: number; overshootClamping?: boolean; restDisplacementThreshold?: number };
@@ -156,4 +156,49 @@ test('a damped spring shows no "never settles" note', async () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     assert.equal((container.textContent || '').includes('Never settles'), false);
   } finally { cleanup(); }
+});
+
+/** Mounts an undamped spring specimen with `Animated.timing` replaced by an instantly finishing fake
+ *  that moves the value to its `toValue`; returns each half-swing's duration and the dot's value. */
+async function runUndamped(spring: Record<string, number>): Promise<{ durations: number[]; value: () => number }> {
+  const durations: number[] = [];
+  let dot: { __getValue(): number } | undefined;
+  const originalTiming = Animated.timing;
+  (Animated as { timing: unknown }).timing = (value: { setValue(n: number): void; __getValue(): number }, config: { toValue: number; duration: number }) => {
+    dot = value;
+    durations.push(config.duration);
+    return {
+      start: (callback?: (result: { finished: boolean }) => void) => { value.setValue(config.toValue); callback?.({ finished: true }); },
+      stop: () => {},
+      reset: () => {},
+    };
+  };
+  const { cleanup } = renderCatalog(<MotionSpecimen kind="spring" spring={spring} label="Zero" distance={160} />);
+  try {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    return { durations, value: () => dot!.__getValue() };
+  } finally {
+    cleanup();
+    (Animated as { timing: unknown }).timing = originalTiming;
+  }
+}
+
+test('the undamped demo ends with the dot exactly at the target once its swings finish', async () => {
+  const { durations, value } = await runUndamped({ stiffness: 100, damping: 0, mass: 1 });
+  assert.equal(durations.length, 2 * UNDAMPED_SWINGS, 'every half-swing ran');
+  assert.equal(value(), 160, 'the sequence ends back at 0, then the dot is placed at the target');
+});
+
+test('the undamped swings all fit inside the spring cut-off, however slow the spring', async () => {
+  const { durations } = await runUndamped({ stiffness: 1, damping: 0, mass: 1 });
+  const total = durations.reduce((sum, d) => sum + d, 0);
+  assert.ok(total < MOTION_SPRING_MAX_MS, `${UNDAMPED_SWINGS} swings take ${total} ms, under ${MOTION_SPRING_MAX_MS}`);
+  assert.equal(durations.length, 2 * UNDAMPED_SWINGS);
+});
+
+test('an undamped spring with no stiffness uses Animated\'s default of 100 for its period', async () => {
+  assert.ok(Math.abs(undampedPeriodMs({ damping: 0 }) - 628.3) < 0.1, `${undampedPeriodMs({ damping: 0 })}`);
+  assert.equal(undampedPeriodMs({ damping: 0, stiffness: 100 }), undampedPeriodMs({ damping: 0 }));
+  const { durations } = await runUndamped({ damping: 0 });
+  assert.ok(Math.abs(durations[0] - 314.2) < 0.1, `half-swing ${durations[0]}`);
 });

@@ -57,11 +57,25 @@ export const UNDAMPED_SWINGS = 3;
 /** Plain label shown under a spring with no damping. */
 export const UNDAMPED_NOTE = `Never settles (damping 0). Shown for ${UNDAMPED_SWINGS} swings, then stopped.`;
 
-/** `Animated.spring` refuses a damping of 0 (it throws), so a spring with none gets this bounded
- *  stand-in instead: `UNDAMPED_SWINGS` sine-eased swings, each one the spring's own period long. */
-function undampedDemo(progress: Animated.Value, target: number, config: MotionSpecimenSpringConfig): Animated.CompositeAnimation {
-  const stiffness = config.stiffness ?? 0;
+/** The longest period of one undamped swing: `UNDAMPED_SWINGS` of them, with a margin, finish before
+ *  the `MOTION_SPRING_MAX_MS` cut-off, so the note's "3 swings" is always what was shown. */
+const UNDAMPED_MAX_PERIOD_MS = Math.floor((MOTION_SPRING_MAX_MS * 0.9) / UNDAMPED_SWINGS);
+/** `Animated.spring`'s own default stiffness, used when the config names none. */
+const ANIMATED_DEFAULT_STIFFNESS = 100;
+
+/** The period of one undamped swing: the spring's own (`2π·√(mass / stiffness)`, with `Animated`'s
+ *  default stiffness when none is given), capped at `UNDAMPED_MAX_PERIOD_MS`. */
+export function undampedPeriodMs(config: MotionSpecimenSpringConfig): number {
+  const stiffness = config.stiffness ?? ANIMATED_DEFAULT_STIFFNESS;
   const periodMs = stiffness > 0 ? 2 * Math.PI * Math.sqrt((config.mass ?? 1) / stiffness) * 1000 : 1000;
+  return Math.min(periodMs, UNDAMPED_MAX_PERIOD_MS);
+}
+
+/** `Animated.spring` refuses a damping of 0 (it throws), so a spring with none gets this bounded
+ *  stand-in instead: `UNDAMPED_SWINGS` sine-eased swings, each one the spring's own period long
+ *  (capped, see `undampedPeriodMs`). */
+function undampedDemo(progress: Animated.Value, target: number, config: MotionSpecimenSpringConfig): Animated.CompositeAnimation {
+  const periodMs = undampedPeriodMs(config);
   const half = (toValue: number) => Animated.timing(progress, { toValue, duration: periodMs / 2, easing: Easing.inOut(Easing.sin), useNativeDriver: true });
   return Animated.sequence(Array.from({ length: UNDAMPED_SWINGS }, () => [half(target), half(0)]).flat());
 }
