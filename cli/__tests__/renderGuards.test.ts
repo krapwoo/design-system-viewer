@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ANATOMY_PICTURE_SCRIPT, anatomyPictureIssues, HEAD_OVERLAP_SCRIPT, HEAD_WORD_BREAK_SCRIPT, headWordBreakIssues, launchOptions, NARROW_VIEWPORT, renderCheck } from '../render.ts';
+import { ANATOMY_PICTURE_SCRIPT, SPECIMEN_CONTRAST_SCRIPT, anatomyPictureIssues, HEAD_OVERLAP_SCRIPT, HEAD_WORD_BREAK_SCRIPT, headWordBreakIssues, launchOptions, NARROW_VIEWPORT, renderCheck } from '../render.ts';
 
 // Slice G1. jsdom has no layout engine, so these run the real browser scripts against a small fake
 // DOM whose rects are the geometry a real page produced.
@@ -159,6 +159,31 @@ test('renderCheck runs the anatomy script at the default desktop width and repor
   const found = issues.filter((i) => i.id === 'anatomy-picture-geometry');
   assert.equal(found.length, 1, 'the anatomy measurement must reach the findings, taken at 1280');
   assert.equal(found[0].page, 'Card');
+});
+
+test('renderCheck runs the specimen-contrast script and reports each illegible cell as a warning on its page', async () => {
+  const fakeChild = () => Object.assign(new EventEmitter(), { pid: 1, stdout: null, stderr: null, unref: () => {} });
+  let first = true;
+  const browser = {
+    newPage: async () => {
+      if (first) { first = false; return { goto: async () => {}, evaluate: async () => ['#SectionCard'], close: async () => {} }; }
+      return {
+        setViewport: async () => {}, on: () => {}, goto: async () => {},
+        evaluate: async (arg: unknown) => {
+          if (typeof arg !== 'string') return true;
+          return arg === SPECIMEN_CONTRAST_SCRIPT ? [{ name: 'Dark', text: 'Card content', ratio: 1.2, kind: 'dark' }] : [];
+        },
+        close: async () => {},
+      };
+    },
+    close: async () => {},
+  };
+  const issues = await renderCheck('/tmp/x', { settleMs: 0, deps: { puppeteer: { launch: async () => browser }, startDev: async () => ({ child: fakeChild() as never, port: 5199 }), stopDev: () => {} } });
+  const found = issues.filter((i) => i.id === 'specimen-text-illegible');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].severity, 'warning');
+  assert.equal(found[0].page, 'SectionCard');
+  assert.equal(found[0].message, "Text 'Card content' in 'SectionCard' · Dark is dark text on a dark background (1.2:1).");
 });
 
 // ---- rule 1: a long unbroken id under the pager ----

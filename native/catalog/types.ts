@@ -308,6 +308,9 @@ export interface SectionDef<TId extends string = string> {
    *  same layer from their own page; there is no separate per-member field. See
    *  `CatalogPageInput.navigation`. */
   navigation?: 'browse' | 'reference';
+  /** Lists this page in the sidebar under another page of the same group, indented and joined to
+   *  it by connector lines. See `CatalogPageInput.sidebarParent`. */
+  sidebarParent?: string;
   /** The real detected component export this page documents, set only from an actual binding
    *  (`GeneratedComponent.name`) — never guessed from the page's own id. Undefined for a family
    *  page (each member carries its own `CatalogMember.component` instead) and for a page with no
@@ -377,6 +380,10 @@ export interface VersionStatus {
  *  specimens or reference text, and API. The whole (the page's own `id`) is a member too. */
 export interface CatalogMember {
   id: string;
+  /** Display name, with the same meaning as a page's `title`: the member's heading, its entry in
+   *  the anatomy legend and part lists, the label of Appears-in/Related links, and what search
+   *  shows. Defaults to `id`, which stays the member's address and the name on its code line. */
+  title?: string;
   /** A detected component export. Its generated props go in the disclosure, and its stub page is
    *  suppressed. Omit for a documentation-only member with no rendered specimen. */
   component?: string;

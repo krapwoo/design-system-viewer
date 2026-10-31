@@ -12,7 +12,7 @@ import { gridColumnLimit, isGridAxisLabel, listGeometry, MATRIX_LAYOUT, presenta
 import { memberBlocks, toSectionDef } from './explain.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
 import {
-  relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateFamily, validateGroupIssues,
+  relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateFamily, validateGroupIssues, validateSidebarParents,
   type FamilyPageLike, type GroupPageLike, type MemberLocation,
 } from '../native/catalog/pageApi.ts';
 import { canonicalTokenTitle, findDuplicateIds, isTokenKind } from '../native/catalog/tokenDefinition.ts';
@@ -305,7 +305,7 @@ function checkFamilyValidity(pages: StaticPage[]): DoctorIssue[] {
       // number" the day `anatomy` joins the static read) rather than passing `undefined` where
       // `validateFamily`'s own type expects a boolean.
       sections: page.sections?.map((s) => ({ ...s, inWhole: s.inWhole ?? false })),
-      members: (page.members ?? []).map((m) => ({ id: m.id, parent: m.parent, aliases: m.aliases, hasSpecimens: m.hasExamples })),
+      members: (page.members ?? []).map((m) => ({ id: m.id, title: m.title, parent: m.parent, aliases: m.aliases, hasSpecimens: m.hasExamples })),
       aliases: page.aliases,
       // I2: passed through so an unresolvable or self-naming `relatedPages` entry is reported here
       // too, the same precedent `checkMemberComposedOf` below already follows for `composedOf` —
@@ -342,6 +342,7 @@ function checkGroupValidity(pages: StaticPage[]): DoctorIssue[] {
       members: (page.members ?? []).map((m) => ({
         id: m.id,
         parent: m.parent,
+        title: m.title,
         aliases: m.aliases,
         anatomy: m.anatomy ? { groups: [{ label: '', items: m.anatomy.memberIds.map((memberId) => ({ member: memberId, description: '' })) }] } : undefined,
       })),
@@ -441,6 +442,18 @@ function checkDuplicatePageId(pages: StaticPage[]): DoctorIssue[] {
     }
   }
   return issues;
+}
+
+/** `sidebarParent` problems (an unknown parent, a parent in another group, a parent that is not
+ *  listed, a nested parent, a page naming itself), from the same `validateSidebarParents` the viewer's development console uses. */
+function checkSidebarParents(pages: StaticPage[]): DoctorIssue[] {
+  const byId = new Map(pages.map((page) => [resolvePageId(page, page.file), page]));
+  const found = validateSidebarParents(pages.map((page) => ({ id: resolvePageId(page, page.file), group: page.group, sidebarParent: page.sidebarParent, navigation: page.navigation })));
+  return found.map(({ page, message }) => issue({
+    id: 'sidebar-parent-invalid', severity: 'error', page, file: byId.get(page)?.file,
+    message,
+    fix: 'Set sidebarParent to the id of a page in the same group that is listed in the sidebar and not itself nested, or remove it.',
+  }));
 }
 
 function checkGridAxisKeys(pages: StaticPage[]): DoctorIssue[] {
@@ -1390,6 +1403,7 @@ export function collectIssues(
     ...checkComponentExportRemoved(pages, components),
     ...checkComponentNoExamples(pages, components),
     ...checkDuplicatePageId(pages),
+    ...checkSidebarParents(pages),
     ...checkGridAxisKeys(pages),
     ...checkGridColumnLimit(pages),
     ...checkDegenerateGridAxis(pages),

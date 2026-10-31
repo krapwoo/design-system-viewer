@@ -12,7 +12,8 @@ import { AnatomyBox } from './Anatomy';
 import { PartNumbersContext, usePagePartNumbering } from './partNumbersContext';
 import { nextTopLevelNumber, type PartEntry } from './partsModel';
 import { FamilyPageHead, FamilyPart, MemberPanelHost, PartOfLine, PartTreeBranch, scrollAndFocusMember, type FamilyMember } from './FamilyPage';
-import { anatomyPreviewWidth, buildPartTree } from './familyModel';
+import { anatomyPreviewWidth, buildPartTree, memberTitle } from './familyModel';
+import { MemberTitlesProvider } from './memberTitlesContext';
 import type { CatalogAnatomy, FamilyDef, PreviewWidths, SectionDef } from './types';
 
 /** #63 R2: the same "resolve, then build a real link" `FamilyPage.tsx`'s own module-private
@@ -184,7 +185,7 @@ export function GroupPage<TId extends string>({
           : descendantCount > 0
             ? `+${descendantCount} part${descendantCount === 1 ? '' : 's'}`
             : undefined;
-        return { id: member.id, title: member.id, qualifier, href: link?.href, onPress: link?.onPress };
+        return { id: member.id, title: memberTitle(member), qualifier, href: link?.href, onPress: link?.onPress };
       }),
     [topLevel, navigation, resolvesAddress, descendantsByTopLevel],
   );
@@ -207,6 +208,7 @@ export function GroupPage<TId extends string>({
   const pageUsage = pageLevelUsage(usage, def, family.members);
 
   return (
+    <MemberTitlesProvider members={family.members} pageId={def.id}>
     <UsageContext.Provider value={usage ?? null}>
     <MemberPanelHost>
     <View>
@@ -236,6 +238,7 @@ export function GroupPage<TId extends string>({
     </View>
     </MemberPanelHost>
     </UsageContext.Provider>
+    </MemberTitlesProvider>
   );
 }
 

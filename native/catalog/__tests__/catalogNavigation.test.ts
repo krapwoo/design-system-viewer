@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { filterGroups, groupLabelFor, hashForId, idFromHash, neighbors, orderedIds, sortIds } from '../catalogNavigation.ts';
+import { filterGroups, groupLabelFor, hashForId, idFromHash, neighbors, nestGroups, orderedIds, sidebarParents, sortIds } from '../catalogNavigation.ts';
 import { DS_VIEWER_SECRET_HEADER, footerLabel, resolveActiveFromHash, shouldShowMajorBanner, UPDATE_PAGE_ID } from '../catalogNavigation.ts';
 import { aliasTargets, resolveRoute, searchResults } from '../catalogNavigation.ts';
 import type { SectionDef, UpdateNotice } from '../types.ts';
@@ -423,4 +423,64 @@ test('neighbors and idFromHash fallback share the same title-canonical order', (
   // An empty or unknown hash recovers to the title-canonical first page, not the id-canonical one.
   assert.equal(idFromHash('', order), 'BotConnectionRequestBody');
   assert.equal(idFromHash('#Nope', order), 'BotConnectionRequestBody');
+});
+
+
+// --- Sidebar categories (`sidebarParent`) ---
+
+const nestedGroups = [
+  { label: 'Components', ids: ['Buttons', 'Banner', 'PrimaryButton', 'GhostButton', 'Card'] },
+  { label: 'Tokens', ids: ['Colors'] },
+];
+const nestedSections = [
+  { id: 'Buttons' }, { id: 'Banner' }, { id: 'Card' }, { id: 'Colors' },
+  { id: 'PrimaryButton', sidebarParent: 'Buttons' },
+  { id: 'GhostButton', sidebarParent: 'Buttons' },
+];
+const nestedLabels = new Map([['PrimaryButton', 'Primary'], ['GhostButton', 'Ghost']]);
+
+test('sidebarParents keeps a usable declaration and ignores unknown, cross-group, nested and self parents', () => {
+  const usable = sidebarParents(nestedSections, nestedGroups);
+  assert.deepEqual([...usable], [['PrimaryButton', 'Buttons'], ['GhostButton', 'Buttons']]);
+  assert.equal(sidebarParents([{ id: 'Card', sidebarParent: 'Nope' }], nestedGroups).size, 0);
+  assert.equal(sidebarParents([{ id: 'Card', sidebarParent: 'Colors' }], nestedGroups).size, 0, 'a parent in another group');
+  assert.equal(sidebarParents([{ id: 'Card', sidebarParent: 'Card' }], nestedGroups).size, 0, 'self-parenting');
+  const twoLevels = sidebarParents([{ id: 'Card', sidebarParent: 'Banner' }, { id: 'Banner', sidebarParent: 'Buttons' }], nestedGroups);
+  assert.deepEqual([...twoLevels], [['Banner', 'Buttons']], 'a parent that is itself nested is not a parent');
+  assert.equal(sidebarParents(nestedSections, nestedGroups, new Set(['PrimaryButton', 'GhostButton'])).size, 0, 'a parent that is not browsable');
+});
+
+test('orderedIds puts a nested page right after its parent, sorted by title, and leaves the rest alphabetical', () => {
+  const parents = sidebarParents(nestedSections, nestedGroups);
+  assert.deepEqual(orderedIds(nestedGroups, undefined, nestedLabels, parents), ['Banner', 'Buttons', 'GhostButton', 'PrimaryButton', 'Card', 'Colors']);
+  // Without `parents` nothing changes: the nested pages sit at their own alphabetical places.
+  assert.deepEqual(orderedIds(nestedGroups, undefined, nestedLabels), ['Banner', 'Buttons', 'Card', 'GhostButton', 'PrimaryButton', 'Colors']);
+});
+
+test('nestGroups lists children under their parent, and the rows read in the same order as orderedIds', () => {
+  const parents = sidebarParents(nestedSections, nestedGroups);
+  const rows = nestGroups(nestedGroups, '', parents, nestedLabels);
+  assert.deepEqual(rows.map((group) => group.ids), [['Banner', 'Buttons', 'Card'], ['Colors']]);
+  assert.deepEqual(rows[0].children.get('Buttons'), ['GhostButton', 'PrimaryButton']);
+  const flat = rows.flatMap((group) => group.ids.flatMap((id) => [id, ...(group.children.get(id) ?? [])]));
+  assert.deepEqual(flat, orderedIds(nestedGroups, undefined, nestedLabels, parents));
+});
+
+test('nestGroups: a matching child brings its parent row in above it; a matching parent shows all its children', () => {
+  const parents = sidebarParents(nestedSections, nestedGroups);
+  const byChild = nestGroups(nestedGroups, 'ghost', parents, nestedLabels);
+  assert.deepEqual(byChild.map((group) => group.ids), [['Buttons']]);
+  assert.deepEqual(byChild[0].children.get('Buttons'), ['GhostButton'], 'only the matching child is listed');
+  const byParent = nestGroups(nestedGroups, 'buttons', parents, nestedLabels);
+  assert.deepEqual(byParent[0].children.get('Buttons'), ['GhostButton', 'PrimaryButton']);
+  assert.deepEqual(nestGroups(nestedGroups, 'zzz', parents, nestedLabels), []);
+});
+
+
+test('searchResults labels a titled member by its title and finds it by title, id or alias', () => {
+  const entries = [{ pageId: 'Bot', memberId: 'BotAnimatedFaceView', title: 'Animated face', aliases: ['OldFace'], familyTitle: 'Bot avatar' }];
+  const hit = [{ pageId: 'Bot', memberId: 'BotAnimatedFaceView', label: 'Animated face', familyTitle: 'Bot avatar' }];
+  assert.deepEqual(searchResults(entries, 'animated face'), hit);
+  assert.deepEqual(searchResults(entries, 'botanimated'), hit);
+  assert.deepEqual(searchResults(entries, 'oldface'), hit);
 });

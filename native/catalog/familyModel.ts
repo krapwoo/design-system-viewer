@@ -4,7 +4,7 @@
  * building, disclosure content, and link/pin lookups. Outline numbering (`numberFor`) and family
  * validation (`validateFamily`) live in `pageApi.ts` instead — see that file's own comments.
  */
-import type { AlsoUsedByEntry, CatalogMember, CatalogMemberSection, PreviewWidths, PropDef } from './types.ts';
+import type { AlsoUsedByEntry, CatalogMember, CatalogMemberSection, PreviewWidths, PropDef, SectionDef } from './types.ts';
 
 /** One node of a `blocks` section's own Part tree (Slice D1 item 7 "Tree line"). */
 export interface PartTreeEntry {
@@ -289,4 +289,70 @@ export function linkifyRelated(text: string, memberIds: readonly string[]): Rela
   }
   if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex) });
   return segments.length > 0 ? segments : [{ text }];
+}
+
+
+/** A member's displayed name: its `title`, else its id (the same fallback a page's `title` has). */
+export function memberTitle(member: { id: string; title?: string }): string {
+  return member.title ?? member.id;
+}
+
+/** The code line's identity for a member: its id (and its component, when that is a different
+ *  name) before the source, so a titled member's heading can be human while the code line still
+ *  names the declaration. Untitled members are unchanged: their heading already is the id. */
+export function memberCodeLine(member: { id: string; title?: string; component?: string; source: string }): string {
+  if (member.title === undefined || member.title === member.id) return member.source;
+  const names = member.component && member.component !== member.id ? [member.id, member.component] : [member.id];
+  return [...names, member.source].join(' · ');
+}
+
+/** Every titled member's displayed name by id and alias, across the catalog — what a link to a
+ *  member (Uses, Also used by, Related, a part list, the anatomy legend) shows in place of its id.
+ *  A page's whole is its page and is named by the page's title, so it is not listed here. A member
+ *  without a `title` is absent: its id is what shows. */
+export function memberTitleMap(sections: readonly SectionDef[]): Map<string, string> {
+  const titles = new Map<string, string>();
+  const scope = memberNameScope(sections.map((section) => ({ id: section.id, members: section.family?.members ?? [] })));
+  for (const section of sections) {
+    if (section.family) addMemberTitles(titles, section.family.members, section.family.whole, scope);
+  }
+  return titles;
+}
+
+type TitledMember = Pick<CatalogMember, 'id' | 'title' | 'aliases' | 'component'>;
+
+/** The names a member's `component` may not take (`taken`: page ids and every member's id and alias)
+ *  and how many members claim each component (`claims`), over the pages `memberTitleMap` or a page's
+ *  own provider is naming. */
+export interface MemberNameScope {
+  taken: ReadonlySet<string>;
+  claims: ReadonlyMap<string, number>;
+}
+
+export function memberNameScope(pages: ReadonlyArray<{ id: string; members: readonly TitledMember[] }>): MemberNameScope {
+  const taken = new Set<string>();
+  const claims = new Map<string, number>();
+  for (const page of pages) {
+    taken.add(page.id);
+    for (const member of page.members) {
+      taken.add(member.id);
+      for (const alias of member.aliases ?? []) taken.add(alias);
+      if (member.component) claims.set(member.component, (claims.get(member.component) ?? 0) + 1);
+    }
+  }
+  return { taken, claims };
+}
+
+/** Adds one page's titled members to `titles`, by id and alias, and by `component` when that is a
+ *  name of its own (not the member's id, not another member's id/alias, not a page id, and not
+ *  claimed by a second member: two members bound to one component cannot both be what the name
+ *  shows). The family's `whole` is its page, named by the page's title, so it is left out. */
+export function addMemberTitles(titles: Map<string, string>, members: readonly TitledMember[], whole: string | undefined, scope: MemberNameScope): void {
+  for (const member of members) {
+    if (member.title === undefined || member.id === whole) continue;
+    titles.set(member.id, member.title);
+    for (const alias of member.aliases ?? []) titles.set(alias, member.title);
+    const component = member.component;
+    if (component && component !== member.id && !scope.taken.has(component) && scope.claims.get(component) === 1) titles.set(component, member.title);
+  }
 }

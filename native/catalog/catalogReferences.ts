@@ -31,9 +31,8 @@ export function browsableIds<TId extends string>(sections: readonly SectionDef<T
 /** One address the catalog-wide Source reference search can find: a whole page, or (for a family
  *  page) one of its non-whole members — the whole is never listed twice (see `aliasTargets`'s own
  *  precedent of skipping the whole among member addresses). `title` is the page's own displayed
- *  title for a page-level entry, or the member's own id for a member entry (a family member has no
- *  separate display title of its own, the same convention `MemberSearchEntry`'s `label` already
- *  uses). `component` is set only from an actual detected binding (`SectionDef.component` /
+ *  title for a page-level entry, or the member's own `title` (else its id) for a member entry, the
+ *  same convention `MemberSearchEntry`'s `label` uses. `component` is set only from an actual detected binding (`SectionDef.component` /
  *  `CatalogMember.component`), never guessed. */
 export interface ReferenceEntry<TId extends string = string> {
   pageId: TId;
@@ -74,7 +73,7 @@ export function buildReferenceIndex<TId extends string>(sections: readonly Secti
       entries.push({
         pageId: section.id,
         memberId: member.id,
-        title: member.id,
+        title: member.title ?? member.id,
         component: member.component,
         aliases: member.aliases ?? [],
         path: member.path,

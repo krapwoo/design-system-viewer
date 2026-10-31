@@ -4,6 +4,7 @@ import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_T
 import { hashForId } from './catalogNavigation';
 import { referenceLinkProps, type ReferenceNavigation } from './catalogReferences';
 import { ANATOMY_PIN_GUTTER, anatomyColumns, anatomyLayout, anatomyPinFor } from './familyModel';
+import { useMemberTitle } from './memberTitlesContext';
 import { usePartNumbers } from './partNumbersContext';
 import { ANATOMY_PINS_WRAPPER_TEST_ID, ANATOMY_PIN_LAYER_TEST_ID, SpecimenContent } from './SpecimenSurface';
 import type { CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, FamilyDef, SpecimenAlign } from './types';
@@ -207,6 +208,7 @@ function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus, r
   // minimum, cover it) — an explicitly supplied `navigation` that still can't resolve it must stay
   // honest plain text, never a raw `hashForId(memberId)` escape hatch around that refusal.
   const link = familyLink(navigation, resolvesAddress, memberId);
+  const name = useMemberTitle()(memberId);
   return (
     <View style={styles.legendRow}>
       {pin && (
@@ -225,10 +227,10 @@ function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus, r
             ref={(node) => legendFocus.register(memberId, node as unknown as FocusableNode)}
             {...({ ...link, onFocus: () => legendFocus.onFocus(memberId), onBlur: () => legendFocus.onBlur(memberId) } as Record<string, unknown>)}
           >
-            {memberId}
+            {name}
           </Text>
         ) : (
-          <Text style={styles.legendName}>{memberId}</Text>
+          <Text style={styles.legendName}>{name}</Text>
         )}
         <Text style={styles.legendDesc}>{description}</Text>
       </View>

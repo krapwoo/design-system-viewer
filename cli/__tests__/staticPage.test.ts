@@ -1265,3 +1265,45 @@ test('hasWhole / hasSections record presence even when the value is not a litera
   assert.equal(groupPage.hasSections, false);
   rmSync(path.dirname(group), { recursive: true, force: true });
 });
+
+
+test('reads a literal sidebarParent, and leaves a non-literal one unset without making the page uncheckable', () => {
+  const literal = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ id: 'Primary', group: 'Components', description: 'd', sidebarParent: 'Buttons' });
+  `);
+  const [child] = readStaticPages([literal]);
+  assert.equal(child.sidebarParent, 'Buttons');
+  rmSync(path.dirname(literal), { recursive: true, force: true });
+
+  const computed = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    declare const parent: string;
+    export default defineCatalogPage({ id: 'Primary', group: 'Components', description: 'd', sidebarParent: parent });
+  `);
+  const [dynamic] = readStaticPages([computed]);
+  assert.equal(dynamic.sidebarParent, undefined);
+  assert.equal(dynamic.checkable, true);
+  rmSync(path.dirname(computed), { recursive: true, force: true });
+});
+
+
+test('reads a family member\'s literal title, and leaves a non-literal one unset', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    declare const dynamic: string;
+    export default defineCatalogPage({
+      id: 'Whole', group: 'Components', description: 'd', whole: 'Whole',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['A', 'B'] }],
+      members: [
+        { id: 'Whole', source: 's', fidelity: 'replicated', relationship: 'r', description: 'd' },
+        { id: 'A', title: 'Alpha', parent: 'Whole', source: 's', fidelity: 'replicated', relationship: 'r', description: 'd' },
+        { id: 'B', title: dynamic, parent: 'Whole', source: 's', fidelity: 'replicated', relationship: 'r', description: 'd' },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.members?.find((m) => m.id === 'A')?.title, 'Alpha');
+  assert.equal(page.members?.find((m) => m.id === 'B')?.title, undefined);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});

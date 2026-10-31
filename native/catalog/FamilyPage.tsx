@@ -37,6 +37,8 @@ import {
   type PartTreeEntry,
   type RelatedSegment,
 } from './familyModel';
+import { memberCodeLine, memberTitle } from './familyModel';
+import { MemberTitlesProvider, useMemberTitle } from './memberTitlesContext';
 import type { AlsoUsedByEntry, CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, CatalogMemberSection, ComposedOfEntry, FamilyDef, PreviewWidths, PropDef, RelatedPage, SectionDef } from './types';
 
 /** `SectionDef`'s parts `presentationBlocks`/`Blocks` actually read, built from one family member
@@ -215,6 +217,7 @@ function BelowSpecimensLine({
   sourceMemberId?: string;
 }) {
   const usedBy = alsoUsedBySegments(alsoUsedBy);
+  const titleOf = useMemberTitle();
   return (
     <Text style={styles.belowLine}>
       {related &&
@@ -222,7 +225,7 @@ function BelowSpecimensLine({
           const link = segment.memberId ? familyLink(navigation, resolvesAddress, segment.memberId, sourceMemberId) : undefined;
           return link ? (
             <Text key={i} role="link" style={styles.relatedLink} {...link}>
-              {segment.text}
+              {titleOf(segment.text)}
             </Text>
           ) : (
             <Text key={i}>{segment.text}</Text>
@@ -236,7 +239,7 @@ function BelowSpecimensLine({
         const link = segment.component ? familyLink(navigation, resolvesAddress, segment.component, sourceMemberId) : undefined;
         return link ? (
           <Text key={i} role="link" style={styles.relatedLink} {...link}>
-            {segment.text}
+            {titleOf(segment.text)}
           </Text>
         ) : (
           <Text key={i}>{segment.text}</Text>
@@ -265,6 +268,7 @@ function WholeBelowLine({
   navigation?: ReferenceNavigation;
 }) {
   const usedBy = alsoUsedBySegments(alsoUsedBy);
+  const titleOf = useMemberTitle();
   return (
     <View style={styles.wholeBelowRow}>
       <Text style={styles.wholeName}>{name}</Text>
@@ -279,7 +283,7 @@ function WholeBelowLine({
         const link = segment.component ? familyLink(navigation, resolvesAddress, segment.component, name) : undefined;
         return link ? (
           <Text key={i} role="link" style={styles.relatedLink} {...link}>
-            {segment.text}
+            {titleOf(segment.text)}
           </Text>
         ) : (
           <Text key={i} style={styles.belowLine}>
@@ -306,6 +310,7 @@ function UsesLine({
   navigation?: ReferenceNavigation;
   sourceMemberId?: string;
 }) {
+  const titleOf = useMemberTitle();
   return (
     <Text style={styles.usesLine}>
       {'Uses '}
@@ -315,7 +320,7 @@ function UsesLine({
           <Text key={i}>
             {link ? (
               <Text role="link" style={styles.relatedLink} {...link}>
-                {entry.component}
+                {titleOf(entry.component)}
               </Text>
             ) : (
               <Text style={styles.usesCode}>{entry.component}</Text>
@@ -404,7 +409,7 @@ function MemberPanel({ request, onClose }: { request: MemberPanelRequest; onClos
   const { member, parts, label, resolvesAddress, navigation } = request;
   const closingNavigation = useClosingNavigation(navigation, onClose);
   return (
-    <SidePanel kicker={label} title={member.id} onClose={onClose}>
+    <SidePanel kicker={label} title={memberTitle(member)} onClose={onClose}>
       <DisclosureBody member={member} parts={parts} resolvedProps={member.props} resolvesAddress={resolvesAddress} navigation={closingNavigation} />
     </SidePanel>
   );
@@ -522,7 +527,7 @@ export function FamilyPart({ member, number, level, allMemberIds, defaultPreview
         )}
         <View style={styles.partHeadMain}>
           <MemberNameRow
-            name={member.id}
+            name={memberTitle(member)}
             fidelity={member.fidelity}
             osComponent={member.osComponent}
             heading
@@ -554,7 +559,7 @@ export function FamilyPart({ member, number, level, allMemberIds, defaultPreview
           related={related}
           showRelationship={false}
           relationship={member.relationship}
-          source={member.source}
+          source={memberCodeLine(member)}
           alsoUsedBy={member.alsoUsedBy ?? []}
           resolvesAddress={resolvesAddress}
           navigation={navigation}
@@ -593,7 +598,7 @@ function FoldedRow({ member, number, allMemberIds, apiLabel, resolvesAddress, na
       >
         <View style={styles.foldedRowHead}>
           {number !== undefined && <Pin number={number} />}
-          <MemberNameRow name={member.id} fidelity={member.fidelity} osComponent={member.osComponent} heading={false} />
+          <MemberNameRow name={memberTitle(member)} fidelity={member.fidelity} osComponent={member.osComponent} heading={false} />
         </View>
         <Text style={styles.memberDesc}>{member.description}</Text>
       </Pressable>
@@ -606,7 +611,7 @@ function FoldedRow({ member, number, allMemberIds, apiLabel, resolvesAddress, na
             related={related}
             showRelationship={false}
             relationship={member.relationship}
-            source={member.source}
+            source={memberCodeLine(member)}
             alsoUsedBy={member.alsoUsedBy ?? []}
             resolvesAddress={resolvesAddress}
             navigation={navigation}
@@ -722,6 +727,7 @@ function ExternalPartRow({
   navigation?: ReferenceNavigation;
 }) {
   const link = familyLink(navigation, resolvesAddress, memberId);
+  const titleOf = useMemberTitle();
   return (
     <View>
       <View style={styles.partHeadRow}>
@@ -731,7 +737,7 @@ function ExternalPartRow({
           </View>
         )}
         <View style={styles.partHeadMain}>
-          <Text style={[CATALOG_TEXT.heading2, styles.memberName]}>{memberId}</Text>
+          <Text style={[CATALOG_TEXT.heading2, styles.memberName]}>{titleOf(memberId)}</Text>
         </View>
       </View>
       <View style={[styles.partBody, number !== undefined && styles.partBodyIndented]}>
@@ -1215,6 +1221,7 @@ export function FamilyPage<TId extends string>({
   const partNumbers = usePagePartNumbering(nextTopLevelNumber(family.outline), [family.anatomy], parts, navigation);
 
   return (
+    <MemberTitlesProvider members={family.members} whole={family.whole} pageId={def.id}>
     <UsageContext.Provider value={usage ?? null}>
     <PartNumbersContext.Provider value={partNumbers}>
     <MemberPanelHost>
@@ -1292,6 +1299,7 @@ export function FamilyPage<TId extends string>({
     </MemberPanelHost>
     </PartNumbersContext.Provider>
     </UsageContext.Provider>
+    </MemberTitlesProvider>
   );
 }
 

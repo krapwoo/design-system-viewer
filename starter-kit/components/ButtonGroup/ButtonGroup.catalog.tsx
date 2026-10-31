@@ -6,6 +6,7 @@ import { Button } from '../Button';
 export default defineCatalogPage({
   component: 'ButtonGroup',
   group: 'Components',
+  sidebarParent: 'Buttons',
   standalone: 'A reusable kit component in its own right; EmptyState is just the only kit component that uses it.',
   whenToUse: 'Two or three Buttons that should read as one family — horizontal for a trailing-aligned pair (a dialog\'s Cancel and Confirm), vertical for up to three stretched full width. Keep one variant tier and one size across the group. For a screen\'s bottom action area, use Dock.',
   composedOf: [

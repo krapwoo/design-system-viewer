@@ -121,7 +121,7 @@ export const CATALOG_TYPE_USE: Record<keyof typeof CATALOG_TYPE, string> = {
 /** When to reach for each catalog-chrome typography role. Rendered in the framework catalog's
  *  Type Scale page. */
 export const CATALOG_TEXT_USE: Record<keyof typeof CATALOG_TEXT, string> = {
-  pageTitle: 'The selected page\'s title, including the update page\'s own title.',
+  pageTitle: 'The selected page\'s title, including the update page\'s own title, and the large value in a CountStrip.',
   heading1: 'The update page\'s version numbers and the arrow between them.',
   heading2: 'The app name at the top of the sidebar.',
   heading3: 'A result note\'s title (the update page\'s success/failure banner).',

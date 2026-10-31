@@ -21,6 +21,7 @@ import {
 // `numberFor` lives in `pageApi.ts` (see that file's own comments) — these tests only need it to
 // build the outline `buildPartTree` (above) nests against.
 import { numberFor } from '../pageApi.ts';
+import { memberCodeLine, memberTitle, memberTitleMap } from '../familyModel.ts';
 import { CATALOG_SPACE } from '../tokens.ts';
 import type { CatalogMember, PropDef } from '../types.ts';
 
@@ -474,4 +475,56 @@ test('anatomyLayout with a preview width: half the card must hold the width, its
   assert.deepEqual(anatomyLayout(4, 1020, 0, 402), { stacked: false, legendColumns: 1 });
   assert.equal(anatomyLayout(4, 1019, 0, 402).stacked, true);
   assert.equal(ANATOMY_PIN_GUTTER, 30);
+});
+
+
+// --- CatalogMember.title ---
+
+test('memberTitle is the title, falling back to the id', () => {
+  assert.equal(memberTitle({ id: 'BotAvatarView', title: 'Bot avatar' }), 'Bot avatar');
+  assert.equal(memberTitle({ id: 'BotAvatarView' }), 'BotAvatarView');
+});
+
+test('memberCodeLine keeps the id (and a different component) before the source of a titled member only', () => {
+  assert.equal(memberCodeLine({ id: 'A', source: 'a.tsx:1' }), 'a.tsx:1');
+  assert.equal(memberCodeLine({ id: 'A', title: 'Alpha', source: 'a.tsx:1' }), 'A · a.tsx:1');
+  assert.equal(memberCodeLine({ id: 'A', title: 'Alpha', component: 'AView', source: 'a.tsx:1' }), 'A · AView · a.tsx:1');
+  assert.equal(memberCodeLine({ id: 'A', title: 'Alpha', component: 'A', source: 'a.tsx:1' }), 'A · a.tsx:1', 'a component named like the id is not repeated');
+});
+
+test('memberTitleMap lists titled members by id and alias, across pages, and skips untitled members and the whole', () => {
+  const member = (id: string, extra: Record<string, unknown> = {}) => ({ id, source: 's', fidelity: 'replicated' as const, relationship: 'r', description: 'd', ...extra });
+  const titles = memberTitleMap([
+    { id: 'Whole', description: 'd', path: 'p', family: { whole: 'Whole', sections: [], outline: new Map(), members: [member('Whole', { title: 'Ignored' }), member('A', { title: 'Alpha', aliases: ['OldA'] }), member('B')] } },
+    { id: 'Plain', description: 'd', path: 'p' },
+    { id: 'Group', description: 'd', path: 'p', family: { kind: 'group', sections: [], outline: new Map(), members: [member('G', { title: 'Gee' })] } },
+  ]);
+  assert.deepEqual([...titles], [['A', 'Alpha'], ['OldA', 'Alpha'], ['G', 'Gee']]);
+});
+
+test('memberTitleMap also maps a member\'s component to its title, unless it is the id or collides with another name', () => {
+  const member = (id: string, extra: Record<string, unknown> = {}) => ({ id, source: 's', fidelity: 'replicated' as const, relationship: 'r', description: 'd', ...extra });
+  const titles = memberTitleMap([
+    {
+      id: 'Whole', description: 'd', path: 'p',
+      family: {
+        whole: 'Whole', sections: [], outline: new Map(),
+        members: [
+          member('Whole'),
+          member('A', { title: 'Alpha', component: 'AView' }),
+          member('Same', { title: 'Same title', component: 'Same' }),
+          member('B', { title: 'Bee', component: 'Other' }),
+          member('Other', { title: 'Other title' }),
+          member('C', { title: 'Cee', component: 'Shared' }),
+          member('D', { title: 'Dee', component: 'Shared' }),
+          member('E', { title: 'Eee', component: 'Whole' }),
+        ],
+      },
+    },
+  ]);
+  assert.equal(titles.get('AView'), 'Alpha', 'a component with its own name is mapped');
+  assert.equal(titles.get('Same'), 'Same title');
+  assert.equal(titles.get('Other'), 'Other title', 'a component equal to another member\'s id keeps that member\'s title');
+  assert.equal(titles.has('Shared'), false, 'a component two members claim is ambiguous');
+  assert.equal(titles.get('Whole'), undefined, 'a component named like a page id is left to the page');
 });

@@ -217,6 +217,9 @@ export interface StaticPage {
    *  read) for an omitted field — the same leniency every optional field here already gets, so an
    *  old page predating this field never changes `checkable`. */
   navigation?: 'browse' | 'reference';
+  /** `CatalogPageInput.sidebarParent`, literal only. A non-literal value is left unset (the
+   *  `sidebar-parent-invalid` rule then has nothing to check), never a "not checkable" penalty. */
+  sidebarParent?: string;
   /** #61: whether the page object has its own `tokenDefinition` property at all (presence only,
    *  same reasoning as `hasWhenToUse`) — used by `cli/doctor.ts`'s conflict rule regardless of
    *  whether the definition itself turned out to be literal-readable below. */
@@ -299,6 +302,8 @@ export interface StaticFamilySection {
  *  expects, rather than a second, parallel validation implementation. */
 export interface StaticMember {
   id: string;
+  /** `CatalogMember.title`, literal only (a non-literal title is left unset). */
+  title?: string;
   /** A detected component export this member documents — undefined for a documentation-only
    *  member, which `doctor` exempts from every per-member advisory below. */
   component?: string;
@@ -423,6 +428,8 @@ function readStaticPage(file: string): StaticPage {
   if (titleProp) page.title = stringLiteral(resolve(titleProp.initializer, consts, new Set()));
   if (componentProp) page.component = stringLiteral(resolve(componentProp.initializer, consts, new Set()));
   if (groupProp) page.group = stringLiteral(resolve(groupProp.initializer, consts, new Set()));
+  const sidebarParentProp = findProp(pageObject, 'sidebarParent');
+  if (sidebarParentProp) page.sidebarParent = stringLiteral(resolve(sidebarParentProp.initializer, consts, new Set()));
   if (specimenSizeProp) page.specimenSize = stringLiteral(resolve(specimenSizeProp.initializer, consts, new Set()));
   page.hasExplicitTokenGallery = tokenGalleryProp !== undefined;
   if (tokenGalleryProp) page.tokenGallery = resolve(tokenGalleryProp.initializer, consts, new Set()).kind === ts.SyntaxKind.TrueKeyword;
@@ -654,6 +661,7 @@ function readFamilyMembers(
     const id = propertyStringLiteral(resolvedElement, 'id', consts);
     if (id === undefined) return undefined;
     const component = propertyStringLiteral(resolvedElement, 'component', consts);
+    const memberTitleText = propertyStringLiteral(resolvedElement, 'title', consts);
     const parent = propertyStringLiteral(resolvedElement, 'parent', consts);
     const aliasesProp = findProp(resolvedElement, 'aliases');
     const aliases = aliasesProp ? readStringLiteralArray(aliasesProp.initializer, consts) : undefined;
@@ -673,6 +681,7 @@ function readFamilyMembers(
     const memberIds = anatomyProp ? readAnatomyMemberIds(anatomyProp.initializer, consts) : undefined;
     members.push({
       id,
+      ...(memberTitleText !== undefined ? { title: memberTitleText } : {}),
       component,
       parent,
       aliases,
