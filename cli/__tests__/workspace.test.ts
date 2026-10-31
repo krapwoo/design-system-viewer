@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import * as ts from 'typescript';
@@ -565,12 +565,18 @@ test('every generated workspace directory ignores itself, and a re-run leaves th
     const ignoreFile = path.join(workspace, '.gitignore');
     assert.equal(readFileSync(ignoreFile, 'utf8'), '*\n');
 
-    const before = statSync(ignoreFile).mtimeMs;
+    // Pin the mtime to a moment well in the past: a rewrite, even within the same timestamp tick as
+    // the first write, moves it to now, so it can't pass as untouched on a coarse-timestamp filesystem.
+    const past = new Date(Date.now() - 60_000);
+    utimesSync(ignoreFile, past, past);
+    const before = statSync(ignoreFile);
     writeWorkspace(config);
     writeDevLock(config, { pid: process.pid, port: 5181 });
     clearDevLock(config);
     assert.equal(readFileSync(ignoreFile, 'utf8'), '*\n');
-    assert.equal(statSync(ignoreFile).mtimeMs, before);
+    const after = statSync(ignoreFile);
+    assert.equal(after.mtimeMs, before.mtimeMs, 'not rewritten');
+    assert.equal(after.ino, before.ino, 'not replaced');
 
     // A stale or edited file is put back.
     writeFileSync(ignoreFile, 'something-else\n');

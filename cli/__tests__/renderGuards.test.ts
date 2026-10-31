@@ -503,3 +503,16 @@ test('the BotReplyFooter column (4 pins, 4px gaps, 366-466 against a 402-431 spe
   const dom = anatomyDom([49, 351], [355, 377], { specY: [402, 431], stageY: [330, 500], stacked: true, column: [[366, 388], [392, 414], [418, 440], [444, 466]] });
   assert.deepEqual(measure(dom), []);
 });
+
+test('pins exactly 12px apart are one column; 13px apart split into two runs', () => {
+  // Specimen 402-431. Pin 1 is 366-388. At a 12px gap pin 2 is 400-422 and the pair is one 366-422
+  // column whose centre (394) is above the specimen, so both pins are flagged. At 13px, pin 2 is
+  // 401-423: the two are separate, pin 2 (centre 412) is inside the specimen's span, and only pin 1 is flagged.
+  const at = (gap: number) => {
+    const top = 388 + gap;
+    return measure(anatomyDom([49, 351], [355, 377], { ...SHORT, column: [[366, 388], [top, top + 22]] }));
+  };
+  const summary = (found: Array<{ kind: string; where?: string; pin: string }>) => found.map((f) => `${f.pin}:${f.kind}:${f.where}`);
+  assert.deepEqual(summary(at(12)), ['1:pin-outside:above', '2:pin-outside:above']);
+  assert.deepEqual(summary(at(13)), ['1:pin-outside:above']);
+});

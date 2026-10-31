@@ -426,7 +426,9 @@ export interface IllegibleSpecimen {
  * or near-black (luminance <= 0.05, spread <= 24) on a background of luminance <= 0.1, unless the
  * background is a clearly coloured fill (channel spread > 64): the other appearance's background is a
  * grey, perhaps tinted (system greys, slate, a pale blue wash), so white on saturated yellow is a
- * deliberate choice, not an appearance mistake, while tinted greys are still checked.
+ * deliberate choice, not an appearance mistake, while tinted greys are still checked. The text's own
+ * colour (before alpha and opacity) must be near-white or near-black too, so a dark glyph that is
+ * fading in or out is not mistaken for light text.
  * Anything else is a faithful platform colour that is faint by design (placeholder grey, a yellow
  * warning glyph).
  *
@@ -522,6 +524,9 @@ export const SPECIMEN_CONTRAST_SCRIPT = `(() => {
       if (hidden || unknown) continue;
       const fg = parse(getComputedStyle(el).color);
       if (!fg) continue;
+      // The text's own colour, before alpha and opacity: a dark glyph fading in or out is faint by
+      // design, not drawn for the other appearance.
+      const base = luminance(fg);
       fg.a *= opacity;
       if (fg.a < 0.05) continue;
       let behind = { r: 255, g: 255, b: 255, a: 1 };
@@ -532,7 +537,7 @@ export const SPECIMEN_CONTRAST_SCRIPT = `(() => {
       const lf = luminance(shown), lb = luminance(behind);
       const spread = Math.max(shown.r, shown.g, shown.b) - Math.min(shown.r, shown.g, shown.b);
       const behindSpread = Math.max(behind.r, behind.g, behind.b) - Math.min(behind.r, behind.g, behind.b);
-      const kind = spread > 24 || behindSpread > 64 ? null : lf >= 0.8 && lb >= 0.6 ? 'light' : lf <= 0.05 && lb <= 0.1 ? 'dark' : null;
+      const kind = spread > 24 || behindSpread > 64 ? null : lf >= 0.8 && lb >= 0.6 && base >= 0.8 ? 'light' : lf <= 0.05 && lb <= 0.1 && base <= 0.05 ? 'dark' : null;
       if (!kind) continue;
       if (paintedBehind(el, range, settledEl)) continue;
       if (!worst || ratio < worst.ratio) worst = { text: text.length > 40 ? text.slice(0, 39) + '\\u2026' : text, ratio, kind };

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, AccessibilityInfo, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { motionReplayLabel, motionTranslatesDirectly, motionValueTarget, type MotionValueRange } from './motionValueDomain';
 import { isSwiftUISpring, swiftUISpringPhysics, type SwiftUISpring } from './swiftUISpring';
@@ -52,6 +52,19 @@ const DEFAULT_DISTANCE = 160;
  *  settles (`dampingFraction: 0`, `bounce: 1`) can't keep animating for as long as the page is open.
  *  A timing play is bounded by its own `duration`; this is the spring's equivalent. */
 export const MOTION_SPRING_MAX_MS = 5000;
+/** How many back-and-forth swings the demo of a spring with no damping shows. */
+export const UNDAMPED_SWINGS = 3;
+/** Plain label shown under a spring with no damping. */
+export const UNDAMPED_NOTE = `Never settles (damping 0). Shown for ${UNDAMPED_SWINGS} swings, then stopped.`;
+
+/** `Animated.spring` refuses a damping of 0 (it throws), so a spring with none gets this bounded
+ *  stand-in instead: `UNDAMPED_SWINGS` sine-eased swings, each one the spring's own period long. */
+function undampedDemo(progress: Animated.Value, target: number, config: MotionSpecimenSpringConfig): Animated.CompositeAnimation {
+  const stiffness = config.stiffness ?? 0;
+  const periodMs = stiffness > 0 ? 2 * Math.PI * Math.sqrt((config.mass ?? 1) / stiffness) * 1000 : 1000;
+  const half = (toValue: number) => Animated.timing(progress, { toValue, duration: periodMs / 2, easing: Easing.inOut(Easing.sin), useNativeDriver: true });
+  return Animated.sequence(Array.from({ length: UNDAMPED_SWINGS }, () => [half(target), half(0)]).flat());
+}
 
 /** The physics `Animated.spring` gets: a SwiftUI spring converted to stiffness/damping/mass, with any
  *  other field (`overshootClamping`, the rest thresholds) kept as written. */
@@ -85,6 +98,7 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [props.kind, props.kind === 'spring' ? props.spring : undefined],
   );
+  const undamped = springConfig?.damping === 0;
   const clearSpringTimer = () => {
     if (springTimer.current !== null) clearTimeout(springTimer.current);
     springTimer.current = null;
@@ -102,11 +116,13 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
       const anim =
         props.kind === 'timing'
           ? Animated.timing(progress, { toValue: target, duration: props.duration, easing: props.easing, useNativeDriver: true })
-          : Animated.spring(progress, {
-              toValue: target,
-              useNativeDriver: true,
-              ...springConfig,
-            });
+          : undamped
+            ? undampedDemo(progress, target, springConfig!)
+            : Animated.spring(progress, {
+                toValue: target,
+                useNativeDriver: true,
+                ...springConfig,
+              });
       activeAnim.current = anim;
       if (props.kind === 'spring') {
         springTimer.current = setTimeout(() => {
@@ -115,12 +131,17 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
           progress.setValue(target);
         }, MOTION_SPRING_MAX_MS);
       }
-      anim.start(() => { if (activeAnim.current === anim) clearSpringTimer(); });
+      anim.start(({ finished }) => {
+        if (activeAnim.current !== anim) return;
+        clearSpringTimer();
+        // The swings end back at the start: place the dot at the end, like the 5 s cut-off does.
+        if (undamped && finished) progress.setValue(target);
+      });
     },
     // `props` covers every field `play` reads (duration/easing/spring differ per kind); `target`
     // is derived from `props` (distance, kind, valueRange), not independent state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [progress, props, springConfig, target],
+    [progress, props, springConfig, target, undamped],
   );
 
   useEffect(() => {
@@ -161,6 +182,7 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
           <Text style={styles.replayText}>Replay</Text>
         </Pressable>
       </View>
+      {undamped && <Text style={styles.label}>{UNDAMPED_NOTE}</Text>}
     </View>
   );
 }

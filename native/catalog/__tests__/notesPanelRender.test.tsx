@@ -161,3 +161,29 @@ test('a token page keeps its short Quick reference inline, with no panel control
     assert.equal(triggerIn(container), undefined);
   } finally { cleanup(); }
 });
+
+test('a plain page\'s api shows in the panel after Props, under the page\'s apiLabel, not inline', () => {
+  const def = pageDef({ api: 'struct Chip: View {}', apiLabel: 'Swift API' });
+  const { container, cleanup } = renderCatalog(<SectionBlock def={def} />);
+  try {
+    assert.equal((container.textContent || '').includes('struct Chip: View {}'), false, 'the excerpt is not inline');
+    const trigger = [...container.querySelectorAll('[aria-haspopup="dialog"]')].find((el) => (el.textContent || '').startsWith('Notes and Swift API'));
+    assert.ok(trigger, 'the control uses apiLabel');
+    press(trigger!);
+    const text = normalize(panelEl()!.textContent);
+    assert.ok(text.includes('Notes and Swift API'), 'the panel kicker uses apiLabel');
+    assert.ok(text.includes('struct Chip: View {}'), 'the panel shows the excerpt');
+    assert.ok(text.indexOf('struct Chip: View {}') > text.indexOf('What it says.'), 'the excerpt follows Props');
+  } finally { cleanup(); }
+});
+
+test('a plain page without api keeps the "Notes and API" label and shows no excerpt; a family page ignores a page-level api', () => {
+  assert.equal((pageDef() as { api?: string }).api, undefined);
+  const family = defineCatalogPage({
+    id: 'Suite', group: 'Components', description: 'The suite.', whole: 'Suite', api: 'struct Hidden {}',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: [] }],
+    members: [{ id: 'Suite', source: 's.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'The whole.' }],
+  } as never);
+  const built = buildCatalogSections([{ ...family, file: 'Suite.catalog.tsx' }], [], []).sections[0] as { api?: string };
+  assert.equal(built.api, undefined);
+});

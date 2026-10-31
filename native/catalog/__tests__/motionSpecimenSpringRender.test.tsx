@@ -21,7 +21,7 @@ Object.defineProperty(globalThis, 'navigator', { value: warmup.window.navigator,
 (globalThis as Record<string, unknown>).cancelAnimationFrame = () => {};
 
 const { renderCatalog } = await import('../../../test/renderCatalog.tsx');
-const { MotionSpecimen, MOTION_SPRING_MAX_MS } = await import('../MotionSpecimen.tsx');
+const { MotionSpecimen, MOTION_SPRING_MAX_MS, UNDAMPED_NOTE, UNDAMPED_SWINGS } = await import('../MotionSpecimen.tsx');
 const { Animated } = await import('react-native');
 
 type SpringConfig = { stiffness?: number; damping?: number; mass?: number; overshootClamping?: boolean; restDisplacementThreshold?: number };
@@ -119,4 +119,41 @@ test('a spring that barely settles is stopped after the maximum', async () => {
     cleanup();
     (Animated as { spring: unknown }).spring = original;
   }
+});
+
+test('a spring with no damping shows a bounded demo and says it does not settle, instead of throwing', async () => {
+  const springs: unknown[] = [];
+  const timings: number[] = [];
+  const originalSpring = Animated.spring;
+  const originalTiming = Animated.timing;
+  (Animated as { spring: unknown }).spring = (value: unknown, config: unknown) => { springs.push(config); return originalSpring(value as never, config as never); };
+  (Animated as { timing: unknown }).timing = (value: unknown, config: { toValue: number }) => { timings.push(config.toValue); return originalTiming(value as never, config as never); };
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => { rejections.push(reason); };
+  process.on('unhandledRejection', onRejection);
+  const { container, cleanup } = renderCatalog(<MotionSpecimen kind="spring" spring={{ response: 0.5, dampingFraction: 0 }} label="Zero" />);
+  try {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    assert.ok((container.textContent || '').includes(UNDAMPED_NOTE), 'a plain label says it never settles');
+    assert.match(UNDAMPED_NOTE, /never settles/i);
+    const replay = container.querySelector('[aria-label="Replay Zero"]') as HTMLElement;
+    act(() => { replay.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    assert.deepEqual(springs, [], 'Animated.spring (which refuses damping 0) is never called');
+    assert.equal(timings.length, 2 * UNDAMPED_SWINGS * 2, 'the demo is a fixed number of swings (mount + Replay)');
+    assert.deepEqual(rejections, [], 'nothing is thrown');
+  } finally {
+    process.off('unhandledRejection', onRejection);
+    cleanup();
+    (Animated as { spring: unknown }).spring = originalSpring;
+    (Animated as { timing: unknown }).timing = originalTiming;
+  }
+});
+
+test('a damped spring shows no "never settles" note', async () => {
+  const { container, cleanup } = renderCatalog(<MotionSpecimen kind="spring" spring={{ response: 0.5, dampingFraction: 0.7 }} label="Damped" />);
+  try {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    assert.equal((container.textContent || '').includes('Never settles'), false);
+  } finally { cleanup(); }
 });

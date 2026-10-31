@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Pressable, ScrollView, StyleSheet, Text, View, findNodeHandle } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_MAX_CONTENT_WIDTH, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
@@ -642,6 +642,16 @@ export function CatalogShell<TId extends string>({
       if (focus) focusElement(headingRef.current);
     }
   }, [active, pendingMemberId, pendingSectionId, routesByUrl]);
+
+  // A component a token page documents is addressed like a member, so the effect above leaves the
+  // scroll alone for it, expecting the bound tile to scroll itself into view. When no tile is
+  // bound, nothing does, and the page would open at the previous page's offset: go to the top
+  // instead. This is a layout effect, so it runs before a bound tile's own (passive) jump, which
+  // still wins.
+  useLayoutEffect(() => {
+    if (active === undefined || pendingMemberId === undefined) return;
+    if (sectionsById.get(active as TId)?.documents?.some((documented) => documented.component === pendingMemberId)) resetMainScroll(scrollRef.current);
+  }, [active, pendingMemberId, pendingMemberNonce, sectionsById]);
 
   // #60: captures the current page/member as this journey's origin (before the picker has
   // changed anything), then opens it. A cancellation (Escape/Close) never reaches the effect

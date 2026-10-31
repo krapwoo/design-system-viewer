@@ -1,8 +1,10 @@
 // A picture's pins are absolutely positioned, so they add no height: a column taller than a short
 // specimen used to be cut off by the picture area. `AnatomySpecimen` now measures how far the pins
 // reach past the specimen (web) and pads its block by the larger overhang on both sides. jsdom has
-// no layout, so rects are stubbed by test id: the pin layer is exactly the specimen, and the pin
-// column overhangs it.
+// no layout, so rects are stubbed by test id: a pin has its own box, and the pin layer is laid out
+// the way the browser would — the block (the specimen plus the padding) minus the layer's own
+// top/bottom offsets — so a missing offset stretches the layer over the padding and the measured
+// overhang changes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
@@ -25,16 +27,24 @@ type Rects = { getBoundingClientRect: () => DOMRect };
 let specimenBox: Box = { top: 0, bottom: 0 };
 
 /** `renderCatalog` builds a fresh JSDOM per render, so the stub goes on each window as it is
- *  installed: the pin layer is the specimen's box, a pin has its `data-box` ("top,bottom"), anything
- *  else has no height. */
+ *  installed: the pin layer is the block's box minus the layer's own offsets (the specimen's box
+ *  when they equal the block's padding), a pin has its `data-box` ("top,bottom"), anything else has
+ *  no height. */
 let current = (globalThis as { window: unknown }).window;
 Object.defineProperty(globalThis, 'window', {
   configurable: true,
   get: () => current,
   set: (next: { Element: { prototype: Rects } }) => {
     next.Element.prototype.getBoundingClientRect = function (this: Element) {
-      const own = this.getAttribute('data-testid') === 'anatomy-pin-layer' ? `${specimenBox.top},${specimenBox.bottom}` : this.getAttribute('data-box') ?? '0,0';
-      const [top, bottom] = own.split(',').map(Number);
+      let top: number;
+      let bottom: number;
+      if (this.getAttribute('data-testid') === ANATOMY_PIN_LAYER_TEST_ID) {
+        const block = this.closest(`[data-testid="${ANATOMY_PINS_WRAPPER_TEST_ID}"]`)!;
+        top = specimenBox.top - cssPx(block, 'padding-top') + cssPx(this, 'top');
+        bottom = specimenBox.bottom + cssPx(block, 'padding-bottom') - cssPx(this, 'bottom');
+      } else {
+        [top, bottom] = (this.getAttribute('data-box') ?? '0,0').split(',').map(Number);
+      }
       return { top, bottom, left: 0, right: 10, width: 10, height: bottom - top } as DOMRect;
     };
     current = next;

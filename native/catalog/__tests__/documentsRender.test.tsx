@@ -365,3 +365,37 @@ test('a Parts card and a pin label name a titled family member by the member\'s 
     assert.equal((cardLink!.textContent || '').includes('Card family'), false, 'the family page\'s title is not shown');
   } finally { cleanup(); }
 });
+
+// N-1: an unbound documented component opens its page at the very top (the main scroll resets),
+// like a plain page address; a bound tile's own jump still comes after the reset and wins.
+test('an unbound documented component resets the main scroll to the top, and a bound tile\'s jump still comes last', () => {
+  const events: string[] = [];
+  // Installed while rendering: the window the catalog renders into is not the one this file imports.
+  function Spy() {
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollTop', { configurable: true, get() { return 0; }, set(value: number) { events.push(`top:${value}`); } });
+    (window.Element.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = function (this: Element) {
+      events.push(`jump:${this.getAttribute('data-documented') ?? 'page'}`);
+    };
+    return null;
+  }
+  const loose = defineCatalogPage({ id: 'Loose', title: 'Loose icons', group: 'Tokens', description: 'Icons.', documents: [{ component: 'Hero', title: 'Hero mark' }], render: () => <Text>no bound tile</Text> });
+  const built = buildCatalogSections([...PAGES, { ...loose, id: 'Loose', file: 'Loose.catalog.tsx' }].filter((page) => page.id !== 'Hero') as never, COMPONENTS);
+  const open = (hash: string) => {
+    events.length = 0;
+    const { cleanup } = renderCatalog(
+      <Mount hash={hash}>
+        <Spy />
+        <CatalogShell appName="App" title="Catalog" groups={built.groups} sections={built.sections} />
+      </Mount>,
+    );
+    cleanup();
+    return [...events];
+  };
+  {
+    assert.ok(open('#Hero').includes('top:0'), 'the unbound address returns the main scroll to the top');
+    const bound = open('#FooterMark');
+    assert.ok(bound.includes('top:0'), 'a bound address resets first too');
+    assert.equal(bound[bound.length - 1], 'jump:FooterMark', `the bound tile's jump comes after the reset: ${bound}`);
+    assert.equal(open('#Iconography').includes('top:0'), true, 'a plain page address still resets (the existing rule)');
+  }
+});
