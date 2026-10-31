@@ -38,6 +38,16 @@ function Fact({ label, value, mono = false, last = false }: { label: string; val
   );
 }
 
+/** The source API excerpt in a code block: a family member's `api` and a plain page's `api` share
+ *  it (`FamilyPage`'s disclosure imports it), so both look the same. */
+export function ApiExcerpt({ text }: { text: string }) {
+  return (
+    <View style={styles.apiBlock}>
+      <Text style={styles.apiText}>{text}</Text>
+    </View>
+  );
+}
+
 /** Props in their own full-width box. Two columns, filled across first, when there are 4+ props and
  *  each column keeps PROPS_MIN_COLUMN_WIDTH; otherwise one column. */
 function PropsBox<TId extends string>({ def }: { def: SectionDef<TId> }) {
@@ -230,6 +240,7 @@ export function ReferenceDetails<TId extends string>({
           </>
         )}
         {hasAlsoUsedBy && <AlsoUsedByFact entries={def.alsoUsedBy!} navigation={navigation} last />}
+        {def.api && <ApiExcerpt text={def.api} />}
       </View>
     );
   }
@@ -279,6 +290,7 @@ export function ReferenceDetails<TId extends string>({
         </View>
       </View>
       {!hide.props && <PropsBox def={def} />}
+      {def.api && <ApiExcerpt text={def.api} />}
     </View>
   );
 }
@@ -296,6 +308,7 @@ export function hasReferenceContent<TId extends string>(def: SectionDef<TId>): b
       (def.notes && def.notes.length > 0) ||
       (def.composedOf && def.composedOf.length > 0) ||
       (def.alsoUsedBy && def.alsoUsedBy.length > 0) ||
+      def.api ||
       (!hide.props && def.props && def.props.length > 0),
   );
 }
@@ -309,11 +322,12 @@ export function ReferenceDetailsPanel<TId extends string>({ def, navigation }: {
   const close = useCallback(() => setOpen(false), []);
   const closingNavigation = useClosingNavigation(navigation as ReferenceNavigation | undefined, close) as ReferenceNavigation<TId> | undefined;
   if (!hasReferenceContent(def)) return null;
+  const label = `Notes and ${def.apiLabel ?? 'API'}`;
   return (
     <>
-      <SidePanelTrigger label="Notes and API" open={open} onPress={() => setOpen(true)} />
+      <SidePanelTrigger label={label} open={open} onPress={() => setOpen(true)} />
       {open && (
-        <SidePanel kicker="Notes and API" title={def.title ?? def.id} onClose={close}>
+        <SidePanel kicker={label} title={def.title ?? def.id} onClose={close}>
           <ReferenceDetails def={def} navigation={closingNavigation} />
         </SidePanel>
       )}
@@ -366,5 +380,7 @@ const styles = StyleSheet.create({
   // `AnimatedChevron.tsx`) has no space for the browser's default line-breaking to use, so without
   // this it stays one unbroken run and overflows a narrow card instead of wrapping at its '/'s.
   mono: { ...CATALOG_TEXT.code, wordBreak: 'break-word' } as TextStyle,
+  apiBlock: { backgroundColor: CATALOG_COLOR.codeSurface, borderRadius: CATALOG_RADIUS.md, padding: CATALOG_SPACE.md, marginTop: CATALOG_SPACE.xs },
+  apiText: { ...CATALOG_TEXT.codeSmall, color: CATALOG_COLOR.codeOnSurface },
   empty: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
 });

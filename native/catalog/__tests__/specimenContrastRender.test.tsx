@@ -140,6 +140,35 @@ test('mid-grey text that is low-contrast but not extreme is quiet', () => {
   cleanup();
 });
 
+test('a fading dark glyph is not light text: black at low alpha or under low opacity is quiet', () => {
+  const { found, cleanup } = measure(list([
+    { key: 'a', label: 'Alpha fade', node: sample('rgba(0, 0, 0, 0.06)', {}, 'k') },
+    { key: 'b', label: 'Opacity fade', node: React.createElement(View, { style: { opacity: 0.08 } }, sample('#000000', {}, 'k')) },
+  ]));
+  assert.deepEqual(found, []);
+  cleanup();
+});
+
+test('translucent white text on a light cell is still light text', () => {
+  const { found, cleanup } = measure(list([{ key: 'a', label: 'Half white', node: sample('rgba(255, 255, 255, 0.5)') }]));
+  assert.deepEqual(found.map((f) => [f.name, f.kind]), [['Half white', 'light']]);
+  cleanup();
+});
+
+test('a fading white glyph on a dark cell is quiet; a faint grey on dark still fires', () => {
+  const dark = (label: string, color: string) => ({ key: label, label, node: React.createElement(View, { style: { backgroundColor: '#000000', padding: 8 } }, sample(color, {}, 'k')) });
+  const { found, cleanup } = measure(list([dark('White fade', 'rgba(255, 255, 255, 0.08)'), dark('Secondary label', 'rgba(60, 60, 67, 0.6)')]));
+  assert.deepEqual(found.map((f) => [f.name, f.kind]), [['Secondary label', 'dark']]);
+  cleanup();
+});
+
+test('white text under a half-faded ancestor on a light cell is still light text', () => {
+  const node = React.createElement(View, { style: { opacity: 0.5 } }, sample('#ffffff'));
+  const { found, cleanup } = measure(list([{ key: 'a', label: 'Faded white', node }]));
+  assert.deepEqual(found.map((f) => [f.name, f.kind]), [['Faded white', 'light']]);
+  cleanup();
+});
+
 test('a nearly opaque dark surface over light passes: the composite is dark enough', () => {
   const node = React.createElement(View, { style: { backgroundColor: 'rgba(0, 0, 0, 0.9)', padding: 8 } }, sample('#ffffff'));
   const { found, cleanup } = measure(list([{ key: 'veil', label: 'Veil', node }]));

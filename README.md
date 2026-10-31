@@ -336,6 +336,10 @@ specimens first, then a "Notes and API ›" side panel holding Guidance, Quick r
 actually apply:
 - `notes: string[]` — page-level notes, listed as a "Notes" entry in the page's Quick reference (in its Notes and API panel)
   (for facts about the source that aren't part of the description, guidance or accessibility).
+- `api: string` (with `apiLabel`, default `'API'`) — the source API excerpt (for example a Swift
+  declaration), shown in a code block at the end of the Notes and API panel, after Props, exactly as a
+  family member's `api` is. With `apiLabel: 'Swift API'` the link and panel are named "Notes and Swift
+  API". Not used on a family or group page, whose members carry their own `api`.
 - `comparison: { rowLabel, columnLabel, rows, columns, cells, size? }` — when two props genuinely
   combine. Author every row × column cell with a real instance, or an `unavailableReason` when that
   combination does not exist. Never multiply `variants` by `states` to fill it. Keep the column axis
@@ -855,7 +859,7 @@ knows its parts are separate components, unlike variants.
   it and returns focus to the link; a member with nothing to show has no link.
 - **`apiLabel`** (default `'API'`) renames the disclosure's reference-excerpt part for a host app
   that generates one (e.g. `'Swift API'`) — never hardcode a specific language's wording. Also
-  only takes effect on a page with `members`.
+  only takes effect on a page with `members`; a plain page's `api` uses it too.
 - Every component-bound member (one with `component` set) wants a real `whenToUse`, a real `a11y`,
   and at least one specimen, the same as a normal page's component — `doctor` checks each one.
   See `viewer-host/viewer-pages/FamilyPage.catalog.tsx` in this repo for a complete, worked example.
@@ -991,9 +995,12 @@ shape:
   boundary) whatever the reduce-motion setting. Other fields in the object, such as
   `overshootClamping` or the rest thresholds, are passed on to `Animated.spring` as written. A
   `dampingFraction` of `0` (`bounce: 1`) is converted as written (`damping: 0`), but
-  `Animated.spring` on web refuses a damping of 0 ("Damping value must be greater than 0"); a
-  value just above 0 is accepted and oscillates for a very long time. So the specimen cuts any
-  spring play off after 5 seconds (`MOTION_SPRING_MAX_MS`) and places the dot at the end:
+  `Animated.spring` on web refuses a damping of 0 ("Damping value must be greater than 0"), so the
+  specimen does not call it: it shows three sine-eased swings, each one the spring's own period long,
+  stops, places the dot at the end and says "Never settles (damping 0). Shown for 3 swings, then
+  stopped." underneath. A value just above 0 is accepted and oscillates for a very long time, so
+  the specimen cuts any spring play off after 5 seconds (`MOTION_SPRING_MAX_MS`) and places the
+  dot at the end:
   ```tsx
   <MotionSpecimen kind="spring" spring={{ response: 0.5, dampingFraction: 0.7 }} />
   <MotionSpecimen kind="spring" spring={{ duration: 0.5, bounce: 0.3 }} />
@@ -1057,7 +1064,8 @@ export default defineCatalogPage({
   as a part although its page is in Tokens.
 - **Bind the tile.** `<TokenTile documents="HeaderLogo">` or `<DocumentedAnchor component="HeaderLogo">`
   around a custom tile. An address for a documented component whose tile is not bound still opens the
-  page, at the top, with no tile outlined.
+  page at the very top (the main area scrolls back up, on web and native), with no tile outlined; on
+  web, a bound tile still scrolls itself to the top and wins.
 - **Not on a family or group page** — give those components to a member instead.
 - **`doctor` (`documents-invalid`, error)** for a component that is not a component export of the
   project (or that `exclude` drops), is documented by two pages, also has a page of its own, has a blank
@@ -1374,7 +1382,7 @@ Each of these is caught by `doctor`. The worked example for the anatomy ones is
 | `documents-invalid` (error) | A token page's `documents` entry that names no component export (or one `exclude` drops), is documented by two pages, also has a page of its own, has a blank `title`, is listed twice, or collides with another id or alias; or `documents` on a family or group page. A `documents` list doctor cannot read (not a literal) is reported as `page-not-checkable`, and while one exists doctor stops reporting "needs a page" for every component that has no page, catalog-wide. | List each component once, on one token page, with a title, and give it no page of its own; see **Documenting components on a token page**. |
 | `sidebar-parent-invalid` (error) | A `sidebarParent` that names an unknown page, a page in another group, a page that is itself nested, the page itself, or a page that is not listed in the sidebar (`navigation: 'reference'`). | Name a page in the same group that is listed in the sidebar and has no `sidebarParent` of its own, or remove the field. |
 | `grid-empty-cell` (hint) | An odd number of items two across, leaving an empty cell. | Set `specimenSize: 'regular'`, or add or remove one item. |
-| `specimen-text-illegible` (`--render`) | Sample text drawn for the other appearance: near-white text on a light cell, or near-black text on a dark one (under 1.5:1). The background must be a grey too: a coloured fill (white on saturated yellow) is a deliberate choice and is left alone, as are faint platform colours (placeholder grey, a yellow warning glyph). | Set the item's `surface` (`'dark'` for light-on-dark components), or give the sample text a colour that follows the scheme. |
+| `specimen-text-illegible` (`--render`) | Sample text drawn for the other appearance: near-white text on a light cell, or near-black text on a dark one (under 1.5:1). The background must be a grey or tinted grey too: a coloured fill (white on saturated yellow) is a deliberate choice and is left alone, as are faint platform colours (placeholder grey, a yellow warning glyph). | Set the item's `surface` (`'dark'` for light-on-dark components), or give the sample text a colour that follows the scheme. |
 | `heading-breaks-word` (hint, `--render`) | A page heading that the browser splits in the middle of a word. | Give the page a human `title`. |
 | `page-head-overlap` (`--render`) | A heading painted under the ← → pager. | Let the heading wrap or truncate in its own column. |
 
@@ -1413,7 +1421,9 @@ and adds what only a real render shows:
   0.05 or less; no more than 24 between colour channels), so faint platform colours such as iOS
   tertiary label grey, system yellow, muted counts and disabled text are left alone. A clearly
   coloured background is left alone too: white on a yellow swatch is a chosen fill, while tinted
-  greys (system grey, slate, a pale blue wash) still count. The check
+  greys (system grey, slate, a pale blue wash) still count. The text's own colour, before any
+  transparency, must be near-white or near-black as well, so a dark glyph fading in or out (a
+  streaming reveal) is not mistaken for light text. The check
   walks up from each visible text node through its ancestors, laying every translucent background
   over what is beneath it (up to the page, on white if nothing is opaque), so a translucent
   panel is measured as the colour it really is. When something that is not the text's ancestor

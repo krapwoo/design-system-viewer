@@ -187,6 +187,10 @@ export interface SectionDef<TId extends string = string> {
   a11y?: string;
   /** Page-level notes, listed as a "Notes" entry in the page's Quick reference. */
   notes?: string[];
+  /** Source API excerpt of a plain page. See `CatalogPageInput.api`. */
+  api?: string;
+  /** Heading for `api` (default `'API'`). See `CatalogPageInput.apiLabel`. */
+  apiLabel?: string;
   /** Every value of the component's primary enum prop (e.g. `variant`), as individual instances —
    *  **including whichever value that prop defaults to** (e.g. Button's Variants starts with
    *  "Primary" since `variant` defaults to `'primary'`; Card's single instance is named "Default"

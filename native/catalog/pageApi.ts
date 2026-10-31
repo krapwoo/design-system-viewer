@@ -85,9 +85,13 @@ export interface CatalogPageInput<TId extends string = string> {
    *  effect on a page with `members` — unused on a normal page. */
   notShown?: string;
   /** Label for the disclosure's API part (spec V2b item 9), e.g. `'Swift API'`. Defaults to
-   *  `'API'` when absent — a generic viewer must never hardcode a host app's own wording. V2c
-   *  item 15: only takes effect on a page with `members` — unused on a normal page. */
+   *  `'API'` when absent — a generic viewer must never hardcode a host app's own wording. Applies
+   *  to a family or group page's members and to this page's own `api` on a plain page. */
   apiLabel?: string;
+  /** Source API excerpt of a plain component page (what a family member's `api` is), shown under
+   *  the `apiLabel` heading in the page's "Notes and API" panel, after Props. Not used on a family
+   *  or group page, whose members carry their own `api`. */
+  api?: string;
   /** Slice D1 item 1: the anatomy box `FamilyPage` renders first, right after the page head —
    *  a picture of the whole with numbered pins and a legend. Drawn on a family page and on a
    *  standalone page (one without `members`); a group page takes it on a top-level member instead.
@@ -1334,6 +1338,7 @@ export function buildCatalogSections<TId extends string>(
       props: component ? mergePropNotes(component, page.propNotes) : undefined,
       a11y: page.a11y,
       notes: page.notes,
+      ...(page.api && !hasMembers ? { api: page.api, ...(page.apiLabel ? { apiLabel: page.apiLabel } : {}) } : {}),
       variants: page.variants,
       states: page.states,
       render: page.render,

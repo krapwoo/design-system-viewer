@@ -11,6 +11,7 @@ import { findUsage, pageLevelUsage, type UsageData } from './usage';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { Blocks, SectionPagerRow, type SectionPager } from './SectionBlock';
 import { PropsTable } from './PropsTable';
+import { ApiExcerpt } from './ReferenceDetails';
 import { presentationBlocks } from './comparison';
 import { DEFAULT_SPECIMEN_SURFACE } from './specimenSurfaceStyle';
 import { hashForId } from './catalogNavigation';
@@ -376,11 +377,7 @@ function DisclosureBody({
         </Text>
       )}
       {parts.includes('props') && resolvedProps && <PropsTable props={resolvedProps} />}
-      {parts.includes('api') && (
-        <View style={styles.apiBlock}>
-          <Text style={styles.apiText}>{member.api}</Text>
-        </View>
-      )}
+      {parts.includes('api') && <ApiExcerpt text={member.api!} />}
     </View>
   );
 }
@@ -1387,8 +1384,6 @@ const styles = StyleSheet.create({
   note: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.text },
   disclosureText: { ...CATALOG_TEXT.body, color: CATALOG_COLOR.textMuted, maxWidth: 700 },
   disclosureLead: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.text },
-  apiBlock: { backgroundColor: CATALOG_COLOR.codeSurface, borderRadius: CATALOG_RADIUS.md, padding: CATALOG_SPACE.md, marginTop: CATALOG_SPACE.xs },
-  apiText: { ...CATALOG_TEXT.codeSmall, color: CATALOG_COLOR.codeOnSurface },
 
   // Slice D1 item 4: "Parts"/"Related" are the only two section labels — 80px above each, 64px
   // between each authored section's own group within a bucket.
