@@ -51,6 +51,39 @@ test('duplicate-page-id fires once per page sharing an id, and not for distinct 
   assert.equal(ids(distinct).filter((id) => id === 'duplicate-page-id').length, 0);
 });
 
+test('sidebar-parent-invalid is an error for an unknown parent, another group\'s parent, a nested parent and self-parenting, and quiet for a valid one', () => {
+  const buttons = page({ id: 'Buttons', group: 'Components', file: '/x/Buttons.catalog.tsx' });
+  const child = (id: string, overrides: Partial<StaticPage>) => page({ id, group: 'Components', file: `/x/${id}.catalog.tsx`, ...overrides });
+  const quiet = collectIssues([buttons, child('Primary', { sidebarParent: 'Buttons' })], []);
+  assert.deepEqual(ids(quiet).filter((id) => id === 'sidebar-parent-invalid'), []);
+
+  const broken = collectIssues([
+    buttons,
+    child('Lost', { sidebarParent: 'Missing' }),
+    child('Far', { group: 'Patterns', sidebarParent: 'Buttons' }),
+    child('Mid', { sidebarParent: 'Buttons' }),
+    child('Deep', { sidebarParent: 'Mid' }),
+    child('Me', { sidebarParent: 'Me' }),
+  ], []).filter((i) => i.id === 'sidebar-parent-invalid');
+  assert.deepEqual(broken.map((i) => i.page), ['Lost', 'Far', 'Deep', 'Me']);
+  assert.ok(broken.every((i) => i.severity === 'error' && i.file && i.fix));
+});
+
+test('family-invalid reports a blank family member title, and is quiet for a real one', () => {
+  const family = (title: string) => page({
+    id: 'Whole', group: 'Components', file: '/x/Whole.catalog.tsx', whole: 'Whole', hasWhole: true, hasSections: true,
+    sections: [{ label: 'Parts', kind: 'blocks', members: ['Part'], inWhole: true }],
+    members: [
+      { id: 'Whole', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+      { id: 'Part', title, parent: 'Whole', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+    ],
+  });
+  const blank = collectIssues([family('  ')], []).filter((i) => i.id === 'family-invalid');
+  assert.equal(blank.length, 1);
+  assert.match(blank[0].message, /member "Part" has a blank title/);
+  assert.deepEqual(collectIssues([family('Part title')], []).filter((i) => i.id === 'family-invalid'), []);
+});
+
 test('page-parse-error maps a reader parse failure into its own issue, and suppresses page-not-checkable for the same page', () => {
   const issues = collectIssues([page({ checkable: false, parseError: 'Unexpected token' })], []);
   assert.deepEqual(ids(issues), ['page-parse-error']);
@@ -1449,4 +1482,13 @@ test('runDoctor passes config.patternGroups to the structure checks', () => {
   assert.equal(count({}), 1, 'Screens is not a pattern group by default');
   assert.equal(count({ patternGroups: ['Screens'] }), 0);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('sidebar-parent-invalid reports a parent that is not listed in the sidebar', () => {
+  const hidden = page({ id: 'Hidden', group: 'Components', file: '/x/Hidden.catalog.tsx', navigation: 'reference' });
+  const child = page({ id: 'Under', group: 'Components', file: '/x/Under.catalog.tsx', sidebarParent: 'Hidden' });
+  const found = collectIssues([hidden, child], []).filter((i) => i.id === 'sidebar-parent-invalid');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].page, 'Under');
+  assert.match(found[0].message, /not listed in the sidebar/);
 });

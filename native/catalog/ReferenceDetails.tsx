@@ -6,6 +6,7 @@ import { propsColumns, referenceColumns } from './comparison';
 import { hashForId } from './catalogNavigation';
 import { referenceLinkProps, type ReferenceNavigation } from './catalogReferences';
 import { alsoUsedBySegments } from './familyModel';
+import { useMemberTitle } from './memberTitlesContext';
 import { SidePanel, useClosingNavigation } from './SidePanel';
 import { SidePanelTrigger } from './SidePanelTrigger';
 import type { AlsoUsedByEntry, ComposedOfEntry, SectionDef } from './types';
@@ -83,11 +84,12 @@ function CompositionFact<TId extends string>({
   last?: boolean;
 }) {
   const link = linkProps(navigation, entry.component);
+  const titleOf = useMemberTitle();
   return (
     <View style={[styles.fact, last && styles.factLast]}>
       <Text style={styles.factLabel}>
         {link ? (
-          <Text role="link" style={styles.factLabelLink} {...link}>{entry.component}</Text>
+          <Text role="link" style={styles.factLabelLink} {...link}>{titleOf(entry.component)}</Text>
         ) : (
           entry.component
         )}
@@ -154,6 +156,7 @@ function AlsoUsedByFact<TId extends string>({
   last?: boolean;
 }) {
   const segments = alsoUsedBySegments(entries);
+  const titleOf = useMemberTitle();
   if (segments.length === 0) return null;
   return (
     <View style={[styles.fact, last && styles.factLast]}>
@@ -161,7 +164,7 @@ function AlsoUsedByFact<TId extends string>({
         {segments.map((segment, i) => {
           const link = segment.component ? linkProps(navigation, segment.component) : undefined;
           return link ? (
-            <Text key={i} role="link" style={styles.factLabelLink} {...link}>{segment.text}</Text>
+            <Text key={i} role="link" style={styles.factLabelLink} {...link}>{titleOf(segment.text)}</Text>
           ) : (
             <Text key={i}>{segment.text}</Text>
           );

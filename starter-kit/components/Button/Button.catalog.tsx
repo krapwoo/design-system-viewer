@@ -56,6 +56,7 @@ const BUTTON_COMPARISON = grid(
 export default defineCatalogPage({
   component: 'Button',
   group: 'Components',
+  sidebarParent: 'Buttons',
   composedOf: [
     { component: 'Loading', role: "The spinner that replaces the label and icon while loading is true.", relationship: 'built-in' },
   ],

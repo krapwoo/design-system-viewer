@@ -109,6 +109,16 @@ export interface CatalogPageInput<TId extends string = string> {
    *  `SectionDef.navigation`. A family page's members inherit this same layer; there is no
    *  separate per-member opt-in. */
   navigation?: 'browse' | 'reference';
+  /** Lists this page in the sidebar under another page of the same group instead of at its own
+   *  alphabetical place: indented, sorted by title among its siblings, and joined to the parent by
+   *  connector lines. The parent is an ordinary page (for example a category overview) and must be
+   *  a page id in the same `group` that has no `sidebarParent` of its own — one level only — and is
+   *  listed in the sidebar (not `navigation: 'reference'`).
+   *  Selecting the child highlights the child; the ← → pager and the filter follow the nested
+   *  order. Only the sidebar changes: the page keeps its own address. An unknown parent, a parent
+   *  in another group, a parent that is itself nested, or a page naming itself is an error
+   *  (`validateSidebarParents`; `doctor`: `sidebar-parent-invalid`). */
+  sidebarParent?: string;
 }
 
 export interface CatalogPage<TId extends string = string> extends CatalogPageInput<TId> {
@@ -294,7 +304,7 @@ export interface FamilyPageLike extends FamilyOutlineInput {
    *  `variants`/`states`/`comparison` at runtime, `StaticMember.hasExamples` in `doctor`) so
    *  `validateFamily` can flag a `list`-section member authored with a specimen that `FoldedRow`
    *  never renders. */
-  members?: Array<Pick<CatalogMember, 'id' | 'parent' | 'aliases'> & { hasSpecimens?: boolean }>;
+  members?: Array<Pick<CatalogMember, 'id' | 'parent' | 'aliases' | 'title'> & { hasSpecimens?: boolean }>;
   aliases?: string[];
   /** Slice D1 item 3: the minimal shape `validateFamily` needs from `CatalogPageInput.anatomy` —
    *  decoupled from the full `CatalogAnatomy` type (which carries a `picture` React node this pure
@@ -307,6 +317,14 @@ export interface FamilyPageLike extends FamilyOutlineInput {
 /** Slice D1 item 3. */
 export interface FamilyAnatomyLike {
   groups: ReadonlyArray<{ label: string; items: ReadonlyArray<{ member: string } | { other: string }> }>;
+}
+
+/** A member's `title` is its displayed name, so an empty or whitespace-only one would show a blank
+ *  heading and unlabeled links: it must be omitted (the id shows) or say something. */
+function blankMemberTitles(kind: 'Family' | 'Group', pageId: string, members: ReadonlyArray<{ id: string; title?: string }>): string[] {
+  return members
+    .filter((member) => member.title !== undefined && member.title.trim() === '')
+    .map((member) => `${kind} "${pageId}": member "${member.id}" has a blank title — omit "title" to show the id, or give it a name.`);
 }
 
 /** Validates a family page (spec §5.1): exactly one whole belonging to no section; every other
@@ -338,6 +356,8 @@ export function validateFamily(
   }
   const whole = page.whole;
   const byId = new Map(members.map((m) => [m.id, m]));
+
+  for (const message of blankMemberTitles('Family', page.id, members)) issues.push(message);
 
   if (!byId.has(whole)) {
     issues.push(`Family "${page.id}": whole "${whole}" is not one of its members.`);
@@ -610,6 +630,8 @@ export function numberForGroupMember(
 /** #63 A3/A6: the minimal shape `validateGroup` needs from a group page's own `members`. */
 export interface GroupMemberLike {
   id: string;
+  /** See `CatalogMember.title`. */
+  title?: string;
   parent?: string;
   aliases?: string[];
   /** #63 A4: only meaningful on a top-level member — see `CatalogMember.anatomy`. */
@@ -661,6 +683,8 @@ export function validateGroupIssues(page: GroupPageLike, allPageIds: ReadonlySet
   const shapeIssue = (message: string) => issues.push({ rule: 'family-invalid', message });
   const anatomyIssue = (message: string) => issues.push({ rule: 'group-anatomy-member', message });
   const byId = new Map(members.map((m) => [m.id, m]));
+
+  for (const message of blankMemberTitles('Group', page.id, members)) shapeIssue(message);
 
   if (page.anatomy !== undefined) {
     shapeIssue(`Group "${page.id}": page-level "anatomy" is not used on a group page — move it to the relevant top-level member instead.`);
@@ -793,6 +817,48 @@ export function resolveExternalPart(
     return { issue: `"${id}"'s parent on "${owner.pageId}" ("${owner.parent ?? 'none'}") does not equal this family's whole "${familyWhole}".` };
   }
   return { pageId: owner.pageId };
+}
+
+/** One `sidebarParent` problem, tied to the page that declares it. */
+export interface SidebarParentIssue {
+  page: string;
+  message: string;
+}
+
+/** Checks every page's `sidebarParent`: it must name a real page (not the page itself) in the same
+ *  group, and that parent must not be nested itself — the sidebar nests one level only. A page's
+ *  group is compared only when both pages' groups are known (`doctor` cannot always read one).
+ *  Pure, so the viewer's development console and `doctor` report the same problems. */
+export function validateSidebarParents(
+  pages: ReadonlyArray<{ id: string; group?: string; sidebarParent?: string; navigation?: 'browse' | 'reference' }>,
+): SidebarParentIssue[] {
+  const byId = new Map(pages.map((page) => [page.id, page]));
+  const issues: SidebarParentIssue[] = [];
+  for (const page of pages) {
+    if (page.sidebarParent === undefined) continue;
+    const parentId = page.sidebarParent;
+    if (parentId === page.id) {
+      issues.push({ page: page.id, message: `Page "${page.id}": sidebarParent names the page itself.` });
+      continue;
+    }
+    const parent = byId.get(parentId);
+    if (!parent) {
+      issues.push({ page: page.id, message: `Page "${page.id}": sidebarParent "${parentId}" is not a page id.` });
+      continue;
+    }
+    if (page.group !== undefined && parent.group !== undefined && page.group !== parent.group) {
+      issues.push({ page: page.id, message: `Page "${page.id}": sidebarParent "${parentId}" is in the group "${parent.group}", not "${page.group}". A child sits under its parent in the sidebar, so both must share a group.` });
+      continue;
+    }
+    if (parent.navigation === 'reference') {
+      issues.push({ page: page.id, message: `Page "${page.id}": sidebarParent "${parentId}" is not listed in the sidebar (it is a navigation: 'reference' page), so there is no row to nest under.` });
+      continue;
+    }
+    if (parent.sidebarParent !== undefined) {
+      issues.push({ page: page.id, message: `Page "${page.id}": sidebarParent "${parentId}" is itself listed under "${parent.sidebarParent}". The sidebar nests one level only.` });
+    }
+  }
+  return issues;
 }
 
 function orderGroups<TId extends string>(groupIds: Map<string, TId[]>, groupOrder: string[] | undefined): NavGroup<TId>[] {
@@ -1004,6 +1070,9 @@ export function buildCatalogSections<TId extends string>(
   // nothing extra to also notice two pages claiming the same one (`sectionsById` in
   // `CatalogShell.tsx` would otherwise just let the last one silently win).
   const seenIds = new Set<TId>();
+  if ((globalThis as { __DEV__?: boolean }).__DEV__) {
+    for (const parentIssue of validateSidebarParents(pages)) console.error(`[Catalog] ${parentIssue.message}`);
+  }
   const sections: SectionDef<TId>[] = pages.map((page) => {
     // N2: `seenIds` must be populated (and consulted, below in the undocumented-component loop)
     // regardless of `__DEV__` — only the `console.warn` calls are development-only diagnostics;
@@ -1199,6 +1268,7 @@ export function buildCatalogSections<TId extends string>(
       intentionalStaticPreview: page.intentionalStaticPreview,
       family,
       navigation: page.navigation,
+      sidebarParent: page.sidebarParent,
       // Family and group pages alike carry their own component binding per member
       // (`FamilyDef.members[].component` isn't a field — a member names its binding via
       // `CatalogMember.component` itself); only a normal page's own single binding is surfaced here.

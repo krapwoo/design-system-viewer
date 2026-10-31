@@ -393,6 +393,195 @@ export function clippedSpecimenIssues(page: { id: string; file?: string }, clipp
   }));
 }
 
+/** The contrast ratio below which a specimen's text can count as illegible. Deliberately far under
+ *  WCAG's 3:1: platform colours such as iOS tertiary label grey or system yellow are faint by design.
+ *  The mistake this check exists for is content drawn for the other appearance (white on light, black
+ *  on dark), which sits at about 1.0–1.2:1. It also has to be extreme text (see the script). */
+export const SPECIMEN_CONTRAST_MIN = 1.5;
+
+export interface IllegibleSpecimen {
+  /** The example's name: its caption, or `row × column` in a comparison grid. */
+  name: string;
+  /** The worst text in the cell, shortened. */
+  text: string;
+  /** Its contrast ratio against the background actually behind it, rounded down to one decimal so a
+   *  reported ratio never reads as the 1.5 threshold it is under. */
+  ratio: number;
+  /** Which appearance the text was drawn for: `light` is near-white text, `dark` near-black. */
+  kind: 'light' | 'dark';
+}
+
+/**
+ * Runs in the browser: for each specimen cell, the contrast of every visible text node against the
+ * background actually behind it. The background is composited bottom-up: from the text's element up
+ * through its ancestors (past the cell, up to the page) until an opaque colour, each translucent
+ * colour laid over what is beneath it, on white when nothing opaque is found. A text node is
+ * skipped when it is hidden on purpose (`visibility: hidden`, `display: none`, `opacity: 0`, fully
+ * transparent text, zero size, or positioned outside its cell), sits inside an image, an `svg` or a
+ * `canvas`, sits in a disabled control (`disabled` or `aria-disabled`; a disabled control is exempt
+ * from contrast rules), or has a gradient or image behind it (the colour behind it is not one
+ * colour, so no ratio is claimed). One finding per cell: the worst text, when below
+ * ${SPECIMEN_CONTRAST_MIN}:1 and when it is achromatic and extreme once composited onto its
+ * background: near-white (luminance >= 0.8, channel spread <= 24) on a background of luminance >= 0.6,
+ * or near-black (luminance <= 0.05, spread <= 24) on a background of luminance <= 0.1. Anything else
+ * is a faithful platform colour that is faint by design (placeholder grey, a yellow warning glyph).
+ *
+ * A cell is a `listitem` of a variants/states card (its second child is the specimen; the first is
+ * the caption, which is the viewer's own text and not measured) or a `cell` of a comparison grid.
+ */
+export const SPECIMEN_CONTRAST_SCRIPT = `(() => {
+  const doc = document;
+  const MIN = ${SPECIMEN_CONTRAST_MIN};
+  const parse = (value) => {
+    const m = /^rgba?\\(\\s*([\\d.]+)[,\\s]+([\\d.]+)[,\\s]+([\\d.]+)(?:[,\\s/]+([\\d.]+%?))?\\s*\\)$/.exec((value || '').trim());
+    if (!m) return null;
+    const a = m[4] === undefined ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+    return { r: parseFloat(m[1]), g: parseFloat(m[2]), b: parseFloat(m[3]), a };
+  };
+  const over = (top, under) => ({
+    r: top.r * top.a + under.r * (1 - top.a),
+    g: top.g * top.a + under.g * (1 - top.a),
+    b: top.b * top.a + under.b * (1 - top.a),
+    a: 1,
+  });
+  const channel = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const luminance = (c) => 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+  const ratioOf = (a, b) => {
+    const la = luminance(a), lb = luminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+  // The ancestor walk only knows the text's ancestors. Content a sibling paints behind the text (an
+  // ImageBackground's image, an absolutely positioned scrim) sits above the first opaque ancestor
+  // background in the stack at the text's centre but is not an ancestor, so the colour behind the
+  // text is unknown and no ratio is claimed.
+  const paints = (c) => {
+    const style = getComputedStyle(c);
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+    if (/^(img|picture|video|canvas|svg)$/i.test(c.localName)) return true;
+    if (style.backgroundImage && style.backgroundImage !== 'none') return true;
+    const bg = parse(style.backgroundColor);
+    return Boolean(bg && bg.a > 0);
+  };
+  const paintedBehind = (el, range, settledEl) => {
+    if (!doc.elementsFromPoint) return false;
+    const box = range.getBoundingClientRect();
+    const stack = doc.elementsFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    for (const c of stack) {
+      if (c === settledEl) break;
+      if (c.contains(el) || el.contains(c)) continue;
+      if (paints(c)) return true;
+    }
+    return false;
+  };
+  // elementsFromPoint only answers for points inside the viewport, so the cell is scrolled into
+  // view once, before anything is measured: scrolling per text node would leave rootBox stale. Only
+  // the cell itself is brought into view, never the clipping boxes inside it that text sits in.
+  const worstIn = (root) => {
+    const view = doc.defaultView;
+    let rootBox = root.getBoundingClientRect();
+    if (view && root.scrollIntoView && (rootBox.top < 0 || rootBox.bottom > view.innerHeight || rootBox.left < 0 || rootBox.right > view.innerWidth)) {
+      root.scrollIntoView({ block: 'center', inline: 'center' });
+      rootBox = root.getBoundingClientRect();
+    }
+    let worst = null;
+    const walker = doc.createTreeWalker(root, 4);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = (node.nodeValue || '').replace(/\\s+/g, ' ').trim();
+      if (!text) continue;
+      const el = node.parentElement;
+      if (!el || el.closest('svg, img, canvas, video, picture, iframe, script, style, noscript')) continue;
+      const range = doc.createRange();
+      range.selectNodeContents(node);
+      const box = range.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) continue;
+      if (box.right <= rootBox.left || box.left >= rootBox.right || box.bottom <= rootBox.top || box.top >= rootBox.bottom) continue;
+      let hidden = false;
+      let unknown = false;
+      let opacity = 1;
+      const layers = [];
+      let settled = false;
+      let settledEl = null;
+      for (let p = el; p; p = p.parentElement) {
+        if (p.hasAttribute('disabled') || p.getAttribute('aria-disabled') === 'true') { hidden = true; break; }
+        const style = getComputedStyle(p);
+        if (style.display === 'none' || style.visibility === 'hidden') { hidden = true; break; }
+        const o = parseFloat(style.opacity);
+        if (o === 0) { hidden = true; break; }
+        if (!isNaN(o)) opacity *= o;
+        if (settled) continue;
+        if (style.backgroundImage && style.backgroundImage !== 'none') { unknown = true; break; }
+        const bg = parse(style.backgroundColor);
+        if (!bg || bg.a === 0) continue;
+        layers.push(bg);
+        if (bg.a >= 0.999) { settled = true; settledEl = p; }
+      }
+      if (hidden || unknown) continue;
+      const fg = parse(getComputedStyle(el).color);
+      if (!fg) continue;
+      fg.a *= opacity;
+      if (fg.a < 0.05) continue;
+      let behind = { r: 255, g: 255, b: 255, a: 1 };
+      for (let i = layers.length - 1; i >= 0; i--) behind = over(layers[i], behind);
+      const shown = over(fg, behind);
+      const ratio = ratioOf(shown, behind);
+      if (ratio >= MIN) continue;
+      const lf = luminance(shown), lb = luminance(behind);
+      const spread = Math.max(shown.r, shown.g, shown.b) - Math.min(shown.r, shown.g, shown.b);
+      const kind = spread > 24 ? null : lf >= 0.8 && lb >= 0.6 ? 'light' : lf <= 0.05 && lb <= 0.1 ? 'dark' : null;
+      if (!kind) continue;
+      if (paintedBehind(el, range, settledEl)) continue;
+      if (!worst || ratio < worst.ratio) worst = { text: text.length > 40 ? text.slice(0, 39) + '\\u2026' : text, ratio, kind };
+    }
+    return worst;
+  };
+  const out = [];
+  const report = (name, worst) => {
+    if (worst) out.push({ name: (name || '').trim(), text: worst.text, ratio: Math.floor(worst.ratio * 10) / 10, kind: worst.kind });
+  };
+  // elementsFromPoint skips pointer-events: none elements, which is how a React Native scrim
+  // (pointerEvents="none") is drawn. react-native-web writes that as a class rule marked
+  // !important, so the override needs the extra specificity of an id to win. It is removed after.
+  const probe = doc.createElement('style');
+  probe.id = 'ds-viewer-contrast-probe';
+  probe.textContent = '*:not(#ds-viewer-contrast-probe){pointer-events:auto!important}';
+  (doc.head || doc.documentElement).appendChild(probe);
+  try {
+    for (const card of doc.querySelectorAll('[role=list][aria-label]')) {
+      if (!/^[^:]+: .+/.test(card.getAttribute('aria-label') || '')) continue;
+      for (const cell of card.querySelectorAll('[role=listitem]')) {
+        if (cell.closest('[role=list]') !== card || cell.children.length < 2) continue;
+        report(cell.children[0].textContent, worstIn(cell.children[1]));
+      }
+    }
+    for (const table of doc.querySelectorAll('[role=table]')) {
+      const header = table.querySelector('[role=row]');
+      for (const cell of table.querySelectorAll('[role=cell]')) {
+        const row = cell.closest('[role=row]');
+        if (!row) continue;
+        const index = Array.prototype.indexOf.call(row.children, cell);
+        const rowName = row.querySelector('[role=rowheader]');
+        const columnName = header && header.children[index];
+        report([rowName && rowName.textContent, columnName && columnName.textContent].filter(Boolean).join(' \\u00d7 '), worstIn(cell));
+      }
+    }
+  } finally {
+    probe.remove();
+  }
+  return out;
+})()`;
+
+/** Turns the browser's findings into doctor warnings, one per illegible cell. */
+export function illegibleSpecimenIssues(page: { id: string; file?: string }, found: readonly IllegibleSpecimen[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  return found.map((f) => ({
+    id: 'specimen-text-illegible',
+    severity: 'warning' as const,
+    ...ref,
+    message: `Text '${f.text}' in '${page.id}'${f.name ? ` · ${f.name}` : ''} is ${f.kind} text on a ${f.kind} background (${(Math.floor(f.ratio * 10) / 10).toFixed(1)}:1).`,
+    fix: "Set the item's `surface`, or give the sample text a colour that follows the scheme.",
+  }));
+}
+
 /** How far off the stage's centre an anatomy picture's specimen may sit, in px. */
 export const ANATOMY_CENTRE_TOLERANCE = 6;
 /** How far past the specimen's right edge a pin may sit, in px — the pin column is
@@ -818,6 +1007,14 @@ export async function renderCheck(
           clipped = undefined;
         }
         if (Array.isArray(clipped)) issues.push(...clippedSpecimenIssues({ id, file: options.files?.get(id) }, clipped));
+        // Advisory and separate, like the passes around it.
+        let illegible: IllegibleSpecimen[] | undefined;
+        try {
+          illegible = (await page!.evaluate(SPECIMEN_CONTRAST_SCRIPT)) as IllegibleSpecimen[] | undefined;
+        } catch {
+          illegible = undefined;
+        }
+        if (Array.isArray(illegible)) issues.push(...illegibleSpecimenIssues({ id, file: options.files?.get(id) }, illegible));
         // At the default desktop width, like the passes above, and advisory for the same reason.
         let anatomy: unknown[] | undefined;
         try {

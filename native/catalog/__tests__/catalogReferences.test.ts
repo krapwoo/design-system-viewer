@@ -224,3 +224,11 @@ test('resolveReference: a group member\'s own component binding resolves to that
     { kind: 'address', pageId: 'Widgets', memberId: 'WidgetA' },
   );
 });
+
+
+test('buildReferenceIndex titles a member by its title, so reference search finds it by that name', () => {
+  const family = { ...botAvatarFamily!, members: botAvatarFamily!.members.map((m) => (m.id === 'BotAnimatedFaceView' ? { ...m, title: 'Animated face' } : m)) };
+  const entries = buildReferenceIndex([section({ id: 'BotAvatarView', family, path: 'src/BotAvatarView.tsx' })]);
+  assert.equal(entries.find((e) => e.memberId === 'BotAnimatedFaceView')?.title, 'Animated face');
+  assert.deepEqual(searchReferenceIndex(entries, 'animated face').map((e) => e.memberId), ['BotAnimatedFaceView']);
+});

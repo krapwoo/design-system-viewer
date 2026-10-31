@@ -1,4 +1,5 @@
 import React, { useId, useMemo } from 'react';
+import { useMemberTitle } from './memberTitlesContext';
 import { StyleSheet, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { hashForId } from './catalogNavigation';
@@ -13,6 +14,7 @@ import { usePartNumbers } from './partNumbersContext';
 export function PartsBlock({ parts, navigation, title = 'Parts' }: { parts: readonly PartEntry[]; navigation?: ReferenceNavigation; title?: string }) {
   const headingId = useId();
   const numbers = usePartNumbers();
+  const titleOf = useMemberTitle();
   // Resolved once per change of its inputs, not per render: the cards' page sources must stay the
   // same objects so a re-render does not re-run their live specimens.
   const { cards, plain } = useMemo(() => {
@@ -36,7 +38,7 @@ export function PartsBlock({ parts, navigation, title = 'Parts' }: { parts: read
           {cards.map(({ part, link, page }) => (
             <View key={part.entry.component} role="listitem" style={cardGrid.item}>
               <OverviewCard
-                title={page?.title ?? part.entry.component}
+                title={page?.title ?? titleOf(part.entry.component)}
                 number={numbers?.numberOf(part.entry.component)}
                 caption={part.entry.role}
                 source={page?.source}
@@ -51,7 +53,7 @@ export function PartsBlock({ parts, navigation, title = 'Parts' }: { parts: read
         <View role="list" style={[styles.rows, cards.length > 0 && styles.rowsAfterCards]}>
           {plain.map(({ part }) => (
             <View key={part.entry.component} role="listitem" style={styles.row}>
-              <Text style={styles.rowName}>{part.entry.component}</Text>
+              <Text style={styles.rowName}>{titleOf(part.entry.component)}</Text>
               <Text style={styles.rowRole}>{part.entry.role}</Text>
             </View>
           ))}

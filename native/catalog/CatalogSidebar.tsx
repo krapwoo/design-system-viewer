@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-native';
 import type { ImageSourcePropType, LayoutChangeEvent, NativeSyntheticEvent, ImageLoadEventData } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { logoLayout } from './logoLayout';
-import { filterGroups, hashForId, OVERVIEW_PAGE_ID, searchResults, UPDATE_PAGE_ID, type MemberSearchEntry } from './catalogNavigation';
+import { hashForId, nestGroups, OVERVIEW_PAGE_ID, searchResults, UPDATE_PAGE_ID, type MemberSearchEntry } from './catalogNavigation';
 import type { NavGroup } from './types';
 import { CatalogSearchInput } from './CatalogSearchInput';
+
+const NO_PARENTS: ReadonlyMap<string, string> = new Map();
 
 function webLinkProps(id: string, active: boolean) {
   return active ? { href: hashForId(id), 'aria-current': 'page' } : { href: hashForId(id) };
@@ -22,11 +25,48 @@ function pressHandler(onPress: () => void, keepDocumentUrl: boolean) {
   };
 }
 
+/** The sidebar's own scroll view, so a row can find the list it sits in, and the id of the page whose
+ *  row was last brought into view, so a row that re-mounts for the page already shown (clearing the
+ *  filter) does not scroll again. Both are owned by `CatalogSidebar`. */
+const SidebarScrollContext = createContext<{ scrollView: RefObject<ScrollView | null>; revealed: { current: string | undefined } } | null>(null);
+
+/** Scrolls `scrollView`'s own scrollable node, and nothing above it, just far enough to show `row`.
+ *  A row already inside the visible area moves nothing. Web only: native has no DOM rects. */
+function revealInScroll(scrollView: ScrollView | null, row: HTMLElement | null): void {
+  if (!scrollView || !row?.getBoundingClientRect) return;
+  const node = (scrollView as unknown as { getScrollableNode?: () => HTMLElement | null }).getScrollableNode?.();
+  if (!node?.getBoundingClientRect) return;
+  const view = node.getBoundingClientRect();
+  const box = row.getBoundingClientRect();
+  if (box.top < view.top) node.scrollTop -= view.top - box.top;
+  else if (box.bottom > view.bottom) node.scrollTop += box.bottom - view.bottom;
+}
+
 function NavItem<TId extends string>({ id, label, active, onPress, keepDocumentUrl = false }: { id: TId; label: string; active: boolean; onPress: () => void; keepDocumentUrl?: boolean }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const ref = useRef<unknown>(null);
+  const sidebarScroll = useContext(SidebarScrollContext);
+  // The open page's row, nested or not, is brought into view when it becomes the open page, not when
+  // its row merely re-mounts (clearing a filter does): a long sidebar otherwise leaves it below the
+  // fold. Only the sidebar's own list is moved, and only as far as needed: `scrollIntoView` would
+  // also scroll every scrollable ancestor, so a sidebar drawn inside a page (an embedded shell, an
+  // Overview thumbnail) would drag that page's column along with it.
+  useEffect(() => {
+    if (!sidebarScroll) return;
+    if (!active) {
+      // Leaving this page (to another row, or to a page with no row) forgets it, so coming back to it
+      // reveals it again. Unmounting runs no effect, so a filter that hides the row keeps the guard.
+      if (sidebarScroll.revealed.current === id) sidebarScroll.revealed.current = undefined;
+      return;
+    }
+    if (sidebarScroll.revealed.current === id) return;
+    sidebarScroll.revealed.current = id;
+    revealInScroll(sidebarScroll.scrollView.current, ref.current as HTMLElement | null);
+  }, [active]);
   return (
     <Pressable
+      ref={ref as never}
       onPress={pressHandler(onPress, keepDocumentUrl)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
@@ -137,6 +177,7 @@ export function CatalogSidebar<TId extends string>({
   logoImageSource,
   caption,
   groups,
+  parents,
   labels,
   memberIndex,
   memberSearchEntries,
@@ -158,6 +199,9 @@ export function CatalogSidebar<TId extends string>({
   logoImageSource?: ImageSourcePropType;
   caption: string;
   groups: NavGroup<TId>[];
+  /** Pages listed under another page (child id → parent id, from `sidebarParents`): each sits
+   *  indented under its parent, joined by connector lines. Omitted: a flat list. */
+  parents?: ReadonlyMap<string, string>;
   /** Display titles by page id (`SectionDef.title`); pages without one show their id. */
   labels?: ReadonlyMap<string, string>;
   /** Every family page's own member ids/aliases, by page id (spec §5.3 "Search") — a page also
@@ -185,6 +229,8 @@ export function CatalogSidebar<TId extends string>({
   overview?: { active: boolean; onPress: () => void };
 }) {
   const [query, setQuery] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollContext = useRef({ scrollView: scrollRef, revealed: { current: undefined as string | undefined } }).current;
   // A bundled local image (the only kind `cli/workspace.ts` ever produces — see its doc comment
   // above) already carries its own `width`/`height` on the required module object, both on native
   // and on react-native-web (confirmed by reading `AssetRegistry`/Metro's asset plugin output) — no
@@ -198,7 +244,7 @@ export function CatalogSidebar<TId extends string>({
   const [loadedAspect, setLoadedAspect] = useState<number | undefined>(undefined);
   const [logoFailed, setLogoFailed] = useState(false);
   const [nameWrapped, setNameWrapped] = useState(false);
-  const filtered = filterGroups(groups, query, labels, memberIndex);
+  const filtered = nestGroups(groups, query, parents ?? NO_PARENTS, labels, memberIndex);
   const memberHits = memberSearchEntries ? searchResults(memberSearchEntries, query) : [];
 
   const logoAspect = staticAspect ?? loadedAspect;
@@ -232,7 +278,8 @@ export function CatalogSidebar<TId extends string>({
 
   return (
     <View role="navigation" aria-label="Catalog pages" style={styles.sidebar}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <SidebarScrollContext.Provider value={scrollContext}>
+      <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           {/* Invisible — exists only so a configured logo's `onLoad`/`onError` can fire at all
               while `header` is still `'text'` (the aspect isn't known yet). Once `logoAspect`
@@ -287,9 +334,38 @@ export function CatalogSidebar<TId extends string>({
         {filtered.map((group) => (
           <View key={group.label}>
             <Text style={styles.groupLabel}>{group.label}</Text>
-            {group.ids.map((id) => (
-              <NavItem key={id} id={id} label={labels?.get(id) ?? id} active={active === id} onPress={() => onPress(id)} keepDocumentUrl={keepDocumentUrl} />
-            ))}
+            {group.ids.map((id) => {
+              const nested = group.children.get(id) ?? [];
+              const label = labels?.get(id) ?? id;
+              return (
+                <View key={id}>
+                  <NavItem id={id} label={label} active={active === id} onPress={() => onPress(id)} keepDocumentUrl={keepDocumentUrl} />
+                  {nested.length > 0 && (
+                    // The pages stay links in order; the list tells a screen reader they belong to
+                    // the row above ("<parent> pages, list, 3 items").
+                    <View role="list" aria-label={`${label} pages`} style={styles.children}>
+                      {nested.map((childId, index) => (
+                        <View key={childId} role="listitem" style={styles.childRow}>
+                          <View style={styles.connectorColumn}>
+                            {index === nested.length - 1 ? (
+                              <View style={styles.connectorElbow} />
+                            ) : (
+                              <>
+                                <View style={styles.connectorSpine} />
+                                <View style={styles.connectorTick} />
+                              </>
+                            )}
+                          </View>
+                          <View style={styles.childItem}>
+                            <NavItem id={childId} label={labels?.get(childId) ?? childId} active={active === childId} onPress={() => onPress(childId)} keepDocumentUrl={keepDocumentUrl} />
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
           </View>
         ))}
         {memberHits.length > 0 && (
@@ -308,6 +384,7 @@ export function CatalogSidebar<TId extends string>({
           </View>
         )}
       </ScrollView>
+      </SidebarScrollContext.Provider>
       {footer && (
         <View style={styles.footerContainer}>
           <FooterLink label={footer.label} kind={footer.kind ?? 'update'} active={footer.active} onPress={footer.onPress} keepDocumentUrl={keepDocumentUrl} />
@@ -375,6 +452,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: CATALOG_LAYOUT.navItemPaddingX,
     borderRadius: CATALOG_RADIUS.sm,
   },
+  // Nested pages: the connector column draws, in the sidebar's divider colour, a spine down the
+  // children with a tick into each, and an 8px rounded turn into the last one.
+  children: { marginLeft: CATALOG_LAYOUT.navItemPaddingX + 2 },
+  childRow: { flexDirection: 'row', alignItems: 'stretch' },
+  connectorColumn: { width: 16, pointerEvents: 'none' },
+  connectorSpine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, backgroundColor: CATALOG_COLOR.borderHairline },
+  connectorTick: { position: 'absolute', left: 0, top: '50%', width: 12, height: 1, backgroundColor: CATALOG_COLOR.borderHairline },
+  connectorElbow: { position: 'absolute', left: 0, top: 0, height: '50%', width: 12, borderLeftWidth: 1, borderBottomWidth: 1, borderColor: CATALOG_COLOR.borderHairline, borderBottomLeftRadius: 8 },
+  childItem: { flex: 1, minWidth: 0 },
   itemHover: { backgroundColor: CATALOG_COLOR.surfacePressed },
   itemActive: { backgroundColor: CATALOG_COLOR.accentSubtle },
   focusRing: { outlineWidth: CATALOG_LAYOUT.focusRingWidth, outlineStyle: 'solid', outlineColor: CATALOG_COLOR.focusRing },

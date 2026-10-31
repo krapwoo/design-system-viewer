@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatalogSections, defineCatalogPage, numberFor, numberForGroupMember, relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateFamily, validateGroup } from '../pageApi.ts';
+import { buildCatalogSections, defineCatalogPage, numberFor, numberForGroupMember, relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateFamily, validateGroup, validateSidebarParents } from '../pageApi.ts';
 import { alsoUsedBySegments } from '../familyModel.ts';
 import { validateTokenDefinition, validateTokenDefinitionUsage } from '../tokenDefinition.ts';
 import type { TokenDefinition } from '../tokenDefinition.ts';
@@ -768,6 +768,7 @@ test('buildCatalogSections: a page without members gives a byte-identical sectio
     intentionalStaticPreview: undefined,
     family: undefined,
     navigation: undefined,
+    sidebarParent: undefined,
     notes: undefined,
     component: 'Button',
     alsoUsedBy: [],
@@ -2066,4 +2067,92 @@ test('validateFamily: an anatomy item naming a resolved external part is valid, 
   assert.deepEqual(validateFamily(page as never, new Set(['Card']), new Set(), new Set(['ExternalPart'])), []);
   // Still reported when the id is not a resolved external part.
   assert.ok(validateFamily(page as never, new Set(['Card']), new Set(), new Set()).some((i) => i.includes('anatomy item "ExternalPart" is not a member of this page')));
+});
+
+
+// --- sidebarParent ---
+
+test('buildCatalogSections carries a page\'s sidebarParent onto its section', () => {
+  const { sections } = buildCatalogSections([
+    { ...defineCatalogPage({ id: 'Buttons', group: 'Components', description: 'All buttons.' }), id: 'Buttons', file: 'Buttons.catalog.tsx' },
+    { ...defineCatalogPage({ id: 'Primary', group: 'Components', description: 'Primary.', sidebarParent: 'Buttons' }), id: 'Primary', file: 'Primary.catalog.tsx' },
+  ], []);
+  assert.equal(sections.find((s) => s.id === 'Primary')?.sidebarParent, 'Buttons');
+  assert.equal(sections.find((s) => s.id === 'Buttons')?.sidebarParent, undefined);
+});
+
+test('validateSidebarParents accepts a same-group parent that is not itself nested', () => {
+  assert.deepEqual(validateSidebarParents([
+    { id: 'Buttons', group: 'Components' },
+    { id: 'Primary', group: 'Components', sidebarParent: 'Buttons' },
+    { id: 'Ghost', group: 'Components', sidebarParent: 'Buttons' },
+  ]), []);
+});
+
+test('validateSidebarParents reports an unknown parent, another group\'s parent, a nested parent and self-parenting', () => {
+  const issues = validateSidebarParents([
+    { id: 'Buttons', group: 'Components' },
+    { id: 'Lost', group: 'Components', sidebarParent: 'Missing' },
+    { id: 'Far', group: 'Patterns', sidebarParent: 'Buttons' },
+    { id: 'Mid', group: 'Components', sidebarParent: 'Buttons' },
+    { id: 'Deep', group: 'Components', sidebarParent: 'Mid' },
+    { id: 'Me', group: 'Components', sidebarParent: 'Me' },
+  ]);
+  assert.deepEqual(issues.map((i) => i.page), ['Lost', 'Far', 'Deep', 'Me']);
+  assert.match(issues[0].message, /sidebarParent "Missing" is not a page id/);
+  assert.match(issues[1].message, /is in the group "Components", not "Patterns"/);
+  assert.match(issues[2].message, /itself listed under "Buttons".*one level only/);
+  assert.match(issues[3].message, /names the page itself/);
+});
+
+test('validateSidebarParents skips the group comparison when a group is unknown', () => {
+  assert.deepEqual(validateSidebarParents([{ id: 'A' }, { id: 'B', group: 'X', sidebarParent: 'A' }]), []);
+});
+
+
+// --- CatalogMember.title ---
+
+test('validateFamily reports a blank member title, and accepts a real one or none', () => {
+  const page = (title?: string) => ({
+    id: 'Whole', whole: 'Whole',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['Part'] }],
+    members: [{ id: 'Whole' }, { id: 'Part', parent: 'Whole', title }],
+  });
+  assert.deepEqual(validateFamily(page('Part title'), new Set(), new Set()), []);
+  assert.deepEqual(validateFamily(page(undefined), new Set(), new Set()), []);
+  const blank = validateFamily(page('   '), new Set(), new Set());
+  assert.equal(blank.length, 1);
+  assert.match(blank[0], /Family "Whole": member "Part" has a blank title/);
+});
+
+test('validateGroup reports a blank member title', () => {
+  assert.deepEqual(validateGroup({ id: 'G', members: [{ id: 'A', title: 'Alpha' }] }, new Set(), new Set()), []);
+  const blank = validateGroup({ id: 'G', members: [{ id: 'A', title: '' }] }, new Set(), new Set());
+  assert.equal(blank.length, 1);
+  assert.match(blank[0], /Group "G": member "A" has a blank title/);
+});
+
+test('buildCatalogSections keeps a member\'s title on the family and group members', () => {
+  const { sections } = buildCatalogSections([
+    { ...defineCatalogPage({
+      id: 'Whole', group: 'Components', description: 'd', whole: 'Whole',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['Part'] }],
+      members: [
+        { id: 'Whole', source: 's', fidelity: 'replicated', relationship: 'r', description: 'd' },
+        { id: 'Part', title: 'The part', parent: 'Whole', source: 's', fidelity: 'replicated', relationship: 'r', description: 'd' },
+      ],
+    }), id: 'Whole', file: 'Whole.catalog.tsx' },
+  ], []);
+  assert.equal(sections[0].family?.members.find((m) => m.id === 'Part')?.title, 'The part');
+});
+
+test('validateSidebarParents reports a parent that is not listed in the sidebar (navigation: reference)', () => {
+  const issues = validateSidebarParents([
+    { id: 'Hidden', group: 'Components', navigation: 'reference' },
+    { id: 'Shown', group: 'Components', navigation: 'browse' },
+    { id: 'Under', group: 'Components', sidebarParent: 'Hidden' },
+    { id: 'Fine', group: 'Components', sidebarParent: 'Shown' },
+  ]);
+  assert.deepEqual(issues.map((i) => i.page), ['Under']);
+  assert.match(issues[0].message, /sidebarParent "Hidden" is not listed in the sidebar/);
 });

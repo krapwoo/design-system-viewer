@@ -11,6 +11,8 @@ import { Overview } from './Overview';
 import { DEFAULT_OVERVIEW_PREFS, thumbnailSource, tokenGroupIds, type OverviewPrefs } from './overviewModel';
 import { ScrollRootContext } from './scrollRootContext';
 import { SourceReferencePicker } from './SourceReferencePicker';
+import { memberTitleMap } from './familyModel';
+import { MemberTitlesContext } from './memberTitlesContext';
 import {
   aliasTargets,
   DS_VIEWER_SECRET_HEADER,
@@ -23,6 +25,7 @@ import {
   OVERVIEW_HASH,
   resolveRoute,
   shouldShowMajorBanner,
+  sidebarParents,
   UPDATE_PAGE_ID,
   type MemberSearchEntry,
 } from './catalogNavigation';
@@ -281,7 +284,9 @@ export function CatalogShell<TId extends string>({
   // see `knownAddressIds` below — but drop out of the sidebar/pager/hash-fallback sequence
   // `order` itself is).
   const browsable = useMemo(() => browsableIds(sections), [sections]);
-  const order = useMemo(() => orderedIds(groups, browsable, labels), [groups, browsable, labels]);
+  // Pages the sidebar lists under another page: the pager and the sidebar both follow this nesting.
+  const parents = useMemo(() => sidebarParents(sections, groups, browsable), [sections, groups, browsable]);
+  const order = useMemo(() => orderedIds(groups, browsable, labels, parents), [groups, browsable, labels, parents]);
   // #60: true once any page opts into the `'reference'` layer — the sidebar's own trigger for
   // showing the separate Source reference entry at all; a legacy catalog with no such page keeps
   // its present sidebar unchanged.
@@ -294,6 +299,8 @@ export function CatalogShell<TId extends string>({
   // anything other than the whole) — used both for an old/alias/member address (`resolveRoute`)
   // and for the sidebar's member search (`memberSearchEntries` below).
   const aliasMap = useMemo(() => aliasTargets(sections), [sections]);
+  // Titled members' displayed names, for every link or label that would otherwise show an id.
+  const memberTitles = useMemo(() => memberTitleMap(sections), [sections]);
   // V2d item 3: every real catalog address a family member's `composedOf` could resolve to,
   // outside its own family — every other page's own id, plus every member id/alias `aliasMap`
   // already resolves (`FamilyPage` itself always adds its own family's member ids on top of this).
@@ -312,7 +319,7 @@ export function CatalogShell<TId extends string>({
       if (!section.family || !browsable.has(section.id)) continue;
       const ids: string[] = [];
       for (const member of section.family.members) {
-        ids.push(member.id, ...(member.aliases ?? []));
+        ids.push(member.id, ...(member.title !== undefined ? [member.title] : []), ...(member.aliases ?? []));
       }
       map.set(section.id, ids);
     }
@@ -324,7 +331,7 @@ export function CatalogShell<TId extends string>({
       if (!section.family || !browsable.has(section.id)) continue;
       for (const member of section.family.members) {
         if (member.id === section.family.whole) continue;
-        entries.push({ pageId: section.id, memberId: member.id, aliases: member.aliases, familyTitle: section.title ?? section.id });
+        entries.push({ pageId: section.id, memberId: member.id, title: member.title, aliases: member.aliases, familyTitle: section.title ?? section.id });
       }
     }
     return entries;
@@ -723,6 +730,7 @@ export function CatalogShell<TId extends string>({
         logoImageSource={logoImageSource}
         caption={title}
         groups={browsableGroups}
+        parents={parents}
         labels={labels}
         memberIndex={memberIndex}
         memberSearchEntries={memberSearchEntries}
@@ -735,6 +743,7 @@ export function CatalogShell<TId extends string>({
         keepDocumentUrl={embedded}
       />
       <SourceReferencePicker visible={pickerOpen} entries={referenceEntries} onDismiss={dismissSourceReferencePicker} onSelect={selectReference} />
+      <MemberTitlesContext.Provider value={memberTitles}>
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {notFoundRaw !== undefined ? (
           <NotFoundPage raw={notFoundRaw} firstHref={order[0] !== undefined ? hashForId(order[0]) : undefined} onOpenFirst={() => order[0] !== undefined && select(order[0])} />
@@ -850,6 +859,7 @@ export function CatalogShell<TId extends string>({
           <Text style={styles.empty}>No catalog pages are available.</Text>
         )}
       </ScrollView>
+      </MemberTitlesContext.Provider>
     </View>
   );
 }

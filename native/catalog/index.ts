@@ -60,6 +60,10 @@ export type {
   MotionTokenValue, MotionTokenEntry, TokenDefinitionSection, TokenDefinition, TokenDefinitionPageUsage,
 } from './tokenDefinition';
 export { DividedStack } from './DividedStack';
+export { CountStrip } from './CountStrip';
+export type { CountStripItem } from './CountStrip';
+export { WarningBanner } from './WarningBanner';
+export type { WarningBannerTone } from './WarningBanner';
 export { Swatch } from './Swatch';
 export { PhoneFrame } from './PhoneFrame';
 export { PhoneScreen } from './PhoneScreen';

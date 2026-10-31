@@ -496,6 +496,32 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   "Status" purely to browse by — that makes readers guess where a component lives; search and A–Z
   already find it. A distinct semantic group (Tokens vs. Components vs. Patterns) is a different
   decision from that, since it changes what the reader expects to find there.
+- **Sidebar categories (`sidebarParent`).** When several pages belong together (a "Buttons"
+  overview and the button pages it introduces), list them as a small tree instead of one long A–Z
+  run. Give each child `sidebarParent: '<parent page id>'`:
+
+  ```tsx
+  // Buttons.catalog.tsx — the category page, an ordinary page
+  export default defineCatalogPage({ id: 'Buttons', group: 'Components', description: 'Every button in the app, and when to use each.', /* ... */ });
+
+  // PrimaryButton.catalog.tsx
+  export default defineCatalogPage({ id: 'PrimaryButton', group: 'Components', sidebarParent: 'Buttons', /* ... */ });
+  ```
+
+  In the sidebar the children sit under "Buttons", indented, sorted by title, joined to it by thin
+  connector lines. They keep their own addresses, and selecting one highlights that child, not the
+  parent. The filter finds children (their parent row shows above a match; a match on the parent
+  itself shows all of its children), and the ← → pager follows what the sidebar shows: the parent,
+  then its children, then the next page. Screen readers hear each parent's children as a list
+  named "<parent title> pages".
+
+  One level only, and the parent must be a page id in the **same group** that has no
+  `sidebarParent` of its own. An unknown parent, a parent in another group, a parent that is
+  itself nested, a page naming itself, and a parent that is not listed in the sidebar (a
+  `navigation: 'reference'` page) are `doctor` errors (`sidebar-parent-invalid`), and show
+  in the viewer's development console; the page then simply stays at its own place in the list.
+  Keep it for real categories: it replaces A–Z browsing for the pages it covers, so the category
+  page should say what the children are and link readers onward.
 - **Wide components at 3 columns.** Give block-level components (Banner, Card, Toast,
   InputField) `specimenSize: 'regular'`, so Variants and States sit 3 across on a laptop
   (about 316px each). `'wide'` (2 columns, phone width) is only for pages where the full phone
@@ -524,6 +550,40 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   string-literal unions declared in the component's own folder or a token folder. A union
   declared in another component's folder, such as a shared `IconName`, is that component's
   options, so a Banner page never needs one example per icon.
+
+### Overview-page building blocks
+
+A category overview page (the page a sidebar category opens; see **Sidebar categories** above) is
+an ordinary page with a `render()`. Two blocks exported from `@krapwoo/ds-viewer` draw its
+opening, in the viewer's own tokens:
+
+- **`CountStrip`** is a row of 2–6 stats, `items={[{ label, value, sub? }]}`: the label small and
+  uppercase, the value large, the optional `sub` a muted caption. The cells share the row equally
+  and wrap onto the next row on a narrow page (each is at least 150px wide). Fewer than 2 or more
+  than 6 still render, with a development warning.
+- **`WarningBanner`** is a titled note in the viewer's amber attention colours:
+  `<WarningBanner title="…">body</WarningBanner>`. `tone="info"` switches it to the accent blue.
+  The body is a string (styled for you) or your own elements. It has no dismiss control, and it
+  is a `role="note"` named by its title, not an alert, so it does not interrupt a screen reader.
+
+```tsx
+import { CountStrip, WarningBanner, defineCatalogPage } from '@krapwoo/ds-viewer';
+
+export default defineCatalogPage({
+  id: 'Buttons', group: 'Components', description: 'Where to start with buttons.', standalone: 'A category page.',
+  render: () => (
+    <>
+      <WarningBanner title="One primary per surface">A screen has one primary Button.</WarningBanner>
+      <CountStrip items={[{ label: 'Pages', value: 2 }, { label: 'Variants', value: 5, sub: 'primary to ghost' }]} />
+      {/* each child page's specimen, then its name as a link, as in starter-kit/pages/Buttons.catalog.tsx */}
+    </>
+  ),
+});
+```
+
+The starter kit's [Buttons page](starter-kit/pages/Buttons.catalog.tsx) is the worked example: it
+uses both blocks and sits above the Button and ButtonGroup pages, which name it as their
+`sidebarParent`.
 
 ### Usage data
 
@@ -692,6 +752,13 @@ knows its parts are separate components, unlike variants.
   (`doctor` reports an unresolvable or self-naming entry either way), then its `note`, when
   authored — no specimens, disclosure, source line, number, or pin. A page with neither
   `relatedPages` nor a non-`inWhole` section renders no "Related" heading at all.
+- **`title`** gives a member a human name, with the same meaning as a page's `title`: the member's
+  heading, its entry in the anatomy legend and part lists, the label of the Uses, Also used by and
+  Related links that point at it, and what search shows (search also matches the title, besides the
+  id and aliases). Without one, the id shows, as before. The id stays the member's address and the
+  name on its code line: a titled member's line reads `<id> · <component> · <source>`. A member's
+  `title` must not be blank (`doctor`: `family-invalid`). A family's whole is named by the page's
+  own `title`.
 - **`parent`** nests a member under another (e.g. a subview under its view). A top-level part (an
   `inWhole` member whose `parent` is the whole, or who has no `parent` at all) is numbered `1`,
   `2`, `3`… in the order it's first listed across `sections`; a child takes its parent's number
@@ -1246,7 +1313,9 @@ Each of these is caught by `doctor`. The worked example for the anatomy ones is
 | `anatomy-no-picture` | An anatomy that lists parts to look at but has no `picture`. | Draw the whole with `AnatomySpecimen` and pin the parts with `AnatomyPin`; `picture: null` says there is deliberately none. |
 | `anatomy-picture-not-specimen` | A `picture` that isn't drawn by `AnatomySpecimen`, so it ignores the page's width and centring. | Make `AnatomySpecimen` the picture's root (a plain wrapper around it is fine). |
 | `anatomy-picture-geometry` (`--render`) | A specimen off-centre, a pin far from the specimen, a pin cut off by the picture area, or a pin over the side-by-side legend. | Pass the pins in `AnatomySpecimen`'s `pins` prop at `position: 'absolute', right: 0`, as TripCard does. |
+| `sidebar-parent-invalid` (error) | A `sidebarParent` that names an unknown page, a page in another group, a page that is itself nested, the page itself, or a page that is not listed in the sidebar (`navigation: 'reference'`). | Name a page in the same group that is listed in the sidebar and has no `sidebarParent` of its own, or remove the field. |
 | `grid-empty-cell` (hint) | An odd number of items two across, leaving an empty cell. | Set `specimenSize: 'regular'`, or add or remove one item. |
+| `specimen-text-illegible` (`--render`) | Sample text drawn for the other appearance: near-white text on a light cell, or near-black text on a dark one (under 1.5:1). Faint platform colours (placeholder grey, a yellow warning glyph) are left alone. | Set the item's `surface` (`'dark'` for light-on-dark components), or give the sample text a colour that follows the scheme. |
 | `heading-breaks-word` (hint, `--render`) | A page heading that the browser splits in the middle of a word. | Give the page a human `title`. |
 | `page-head-overlap` (`--render`) | A heading painted under the ← → pager. | Let the heading wrap or truncate in its own column. |
 
@@ -1279,6 +1348,24 @@ and adds what only a real render shows:
   cells are not visited at all. Usually fixed with a wider `specimenSize`, by stacking the blocks so
   the example gets the full row, or by dropping `itemsFill` from a small instance that should sit
   centered.
+- `specimen-text-illegible` (warning): content drawn for one appearance sitting on the other's
+  background — near-white text on a light cell, or near-black text on a dark one — at under
+  **1.5:1**. Only extreme, colourless text counts (near-white: luminance 0.8 or more; near-black:
+  0.05 or less; no more than 24 between colour channels), so faint platform colours such as iOS
+  tertiary label grey, system yellow, muted counts and disabled text are left alone. The check
+  walks up from each visible text node through its ancestors, laying every translucent background
+  over what is beneath it (up to the page, on white if nothing is opaque), so a translucent
+  panel is measured as the colour it really is. When something that is not the text's ancestor
+  paints behind it (an `ImageBackground`'s image, or an absolutely positioned scrim or photo
+  beside the text) the colour behind it is unknown, so that text is skipped. It reports the worst
+  text in each cell, once (the ratio is rounded down, so it never reads as the 1.5 limit):
+  `Text 'Card content' in 'SectionCard' · Dark is dark text on a dark background (1.2:1)`. Fix it by setting the item's `surface`
+  (`'dark'`, `'white'`, `'neutral'`), or by giving the sample text a colour that follows the scheme.
+  Not measured: text that is hidden on purpose (`opacity: 0`, `visibility: hidden`, transparent
+  text, zero size, or positioned outside its cell), text inside an image, `svg` or `canvas`, text
+  in a disabled control (`disabled` / `aria-disabled`, which WCAG exempts), and text over a
+  gradient or image, including one a sibling paints behind it (no single colour to measure). Variants and states cards and comparison grids
+  are checked; a free-form `render()` preview is not.
 - `page-head-overlap` (error): something is painting on top of a page's own heading. This is the
   one check measured at **800x600** — Puppeteer's default viewport, and so the size a smoke check
   judges your catalog at — because the overlap it catches does not appear at 1280 at all: a page

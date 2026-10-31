@@ -27,23 +27,77 @@ export function sortIds<TId extends string>(ids: readonly TId[], labels?: Readon
   return ids.slice().sort((a, b) => compareCanonical(a, b, labels));
 }
 
+/** Which pages the sidebar lists under another page (`SectionDef.sidebarParent`), as child id →
+ *  parent id. Only a usable declaration counts: the parent is another page of the child's own
+ *  group, is itself not nested (one level only), and both are in `availableIds` when it is given.
+ *  Anything else is ignored here, so the page keeps its own place — `validateSidebarParents`
+ *  (`pageApi.ts`) is what reports it. */
+export function sidebarParents<TId extends string>(
+  sections: ReadonlyArray<{ id: TId; sidebarParent?: string }>,
+  groups: readonly NavGroup<TId>[],
+  availableIds?: ReadonlySet<string>,
+): Map<string, string> {
+  const declared = new Map<string, string>();
+  for (const section of sections) {
+    if (section.sidebarParent !== undefined) declared.set(section.id, section.sidebarParent);
+  }
+  const usable = new Map<string, string>();
+  for (const [childId, parentId] of declared) {
+    if (childId === parentId) continue;
+    if (availableIds && (!availableIds.has(childId) || !availableIds.has(parentId))) continue;
+    const childGroup = groups.find((group) => (group.ids as readonly string[]).includes(childId));
+    if (!childGroup || !(childGroup.ids as readonly string[]).includes(parentId)) continue;
+    if (declared.has(parentId)) continue;
+    usable.set(childId, parentId);
+  }
+  return usable;
+}
+
+/** The nested shape of one sidebar group: its top-level ids in title order, and each parent's
+ *  children in title order. An id whose parent is not among `ids` stays top-level. */
+function nestIds<TId extends string>(
+  ids: readonly TId[],
+  parents: ReadonlyMap<string, string>,
+  labels?: ReadonlyMap<string, string>,
+): { top: TId[]; children: Map<string, TId[]> } {
+  const present = new Set<string>(ids);
+  const top: TId[] = [];
+  const children = new Map<string, TId[]>();
+  for (const id of ids) {
+    const parentId = parents.get(id);
+    if (parentId !== undefined && present.has(parentId)) children.set(parentId, [...(children.get(parentId) ?? []), id]);
+    else top.push(id);
+  }
+  for (const [parentId, kids] of children) children.set(parentId, sortIds(kids, labels));
+  return { top: sortIds(top, labels), children };
+}
+
 /** Every page id in sidebar order: groups in declared order, ids sorted within each group (by
  *  displayed title, via `labels`), first occurrence wins, and ids without a matching section (when
- *  `availableIds` is given) are dropped. */
+ *  `availableIds` is given) are dropped. With `parents` (see `sidebarParents`) a nested page follows
+ *  its parent, sorted among its siblings, rather than sitting at its own alphabetical place. */
 export function orderedIds<TId extends string>(
   groups: readonly NavGroup<TId>[],
   availableIds?: ReadonlySet<TId>,
   labels?: ReadonlyMap<string, string>,
+  parents?: ReadonlyMap<string, string>,
 ): TId[] {
   const seen = new Set<TId>();
   const order: TId[] = [];
   for (const group of groups) {
-    for (const id of sortIds(group.ids, labels)) {
+    const fresh: TId[] = [];
+    for (const id of group.ids) {
       if (seen.has(id)) continue;
       if (availableIds && !availableIds.has(id)) continue;
       seen.add(id);
-      order.push(id);
+      fresh.push(id);
     }
+    if (!parents || parents.size === 0) {
+      order.push(...sortIds(fresh, labels));
+      continue;
+    }
+    const { top, children } = nestIds(fresh, parents, labels);
+    for (const id of top) order.push(id, ...(children.get(id) ?? []));
   }
   return order;
 }
@@ -86,6 +140,42 @@ export function filterGroups<TId extends string>(
       ) : group.ids, labels),
     }))
     .filter((group) => group.ids.length > 0);
+}
+
+/** A sidebar group with its nesting resolved: `ids` are the top-level rows in title order, and
+ *  `children` holds each parent's nested rows, also in title order. */
+export interface NestedNavGroup<TId extends string = string> extends NavGroup<TId> {
+  children: ReadonlyMap<string, TId[]>;
+}
+
+/** The sidebar's rows for a filter: `filterGroups`'s matches, with every nested page moved under
+ *  its parent (`parents`, from `sidebarParents`). A page that matches shows itself; a matching
+ *  child also brings its parent row in above it, and a matching parent shows all of its children.
+ *  Group order, title order and the empty-group rule are `filterGroups`'s. Its rows, read parent
+ *  then children, are the same sequence `orderedIds` gives the ← → pager. */
+export function nestGroups<TId extends string>(
+  groups: readonly NavGroup<TId>[],
+  query: string,
+  parents: ReadonlyMap<string, string>,
+  labels?: ReadonlyMap<string, string>,
+  memberIds?: ReadonlyMap<string, readonly string[]>,
+): NestedNavGroup<TId>[] {
+  const matched = new Set<string>(filterGroups(groups, query, labels, memberIds).flatMap((group) => group.ids));
+  const nested: NestedNavGroup<TId>[] = [];
+  for (const group of groups) {
+    const { top, children } = nestIds(group.ids, parents, labels);
+    const ids: TId[] = [];
+    const shownChildren = new Map<string, TId[]>();
+    for (const id of top) {
+      const kids = children.get(id) ?? [];
+      const shown = matched.has(id) ? kids : kids.filter((kid) => matched.has(kid));
+      if (!matched.has(id) && shown.length === 0) continue;
+      ids.push(id);
+      if (shown.length > 0) shownChildren.set(id, shown);
+    }
+    if (ids.length > 0) nested.push({ label: group.label, ids, children: shownChildren });
+  }
+  return nested;
 }
 
 export function hashForId(id: string): string {
@@ -255,12 +345,15 @@ export function resolveRoute<TId extends string>(
 export interface MemberSearchEntry<TId extends string> {
   pageId: TId;
   memberId: string;
+  /** The member's displayed name, when it has a `title`; the hit's label and a search target. */
+  title?: string;
   aliases?: readonly string[];
   familyTitle: string;
 }
 
-/** Member search hits (spec §5.3 "Search"): every entry whose member id or alias contains the
- *  query, case-insensitively. The label is always the member id — the Swift declaration name. */
+/** Member search hits (spec §5.3 "Search"): every entry whose member id, title or alias contains the
+ *  query, case-insensitively. The label is the member's title when it has one, else its id (the
+ *  Swift declaration name). */
 export function searchResults<TId extends string>(
   entries: readonly MemberSearchEntry<TId>[],
   query: string,
@@ -268,8 +361,8 @@ export function searchResults<TId extends string>(
   const q = query.trim().toLowerCase();
   if (!q) return [];
   return entries
-    .filter((entry) => entry.memberId.toLowerCase().includes(q) || (entry.aliases ?? []).some((alias) => alias.toLowerCase().includes(q)))
-    .map((entry) => ({ pageId: entry.pageId, memberId: entry.memberId, label: entry.memberId, familyTitle: entry.familyTitle }));
+    .filter((entry) => entry.memberId.toLowerCase().includes(q) || (entry.title?.toLowerCase().includes(q) ?? false) || (entry.aliases ?? []).some((alias) => alias.toLowerCase().includes(q)))
+    .map((entry) => ({ pageId: entry.pageId, memberId: entry.memberId, label: entry.title ?? entry.memberId, familyTitle: entry.familyTitle }));
 }
 
 /** Design §5: "Major: ... dismissible per version; the footer line remains." `dismissedVersion`
