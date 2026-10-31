@@ -1315,7 +1315,7 @@ Each of these is caught by `doctor`. The worked example for the anatomy ones is
 | `anatomy-picture-geometry` (`--render`) | A specimen off-centre, a pin far from the specimen, a pin cut off by the picture area, or a pin over the side-by-side legend. | Pass the pins in `AnatomySpecimen`'s `pins` prop at `position: 'absolute', right: 0`, as TripCard does. |
 | `sidebar-parent-invalid` (error) | A `sidebarParent` that names an unknown page, a page in another group, a page that is itself nested, the page itself, or a page that is not listed in the sidebar (`navigation: 'reference'`). | Name a page in the same group that is listed in the sidebar and has no `sidebarParent` of its own, or remove the field. |
 | `grid-empty-cell` (hint) | An odd number of items two across, leaving an empty cell. | Set `specimenSize: 'regular'`, or add or remove one item. |
-| `specimen-text-illegible` (`--render`) | Sample text drawn for the other appearance: near-white text on a light cell, or near-black text on a dark one (under 1.5:1). Faint platform colours (placeholder grey, a yellow warning glyph) are left alone. | Set the item's `surface` (`'dark'` for light-on-dark components), or give the sample text a colour that follows the scheme. |
+| `specimen-text-illegible` (`--render`) | Sample text drawn for the other appearance: near-white text on a light cell, or near-black text on a dark one (under 1.5:1). The background must be a grey too: a coloured fill (white on saturated yellow) is a deliberate choice and is left alone, as are faint platform colours (placeholder grey, a yellow warning glyph). | Set the item's `surface` (`'dark'` for light-on-dark components), or give the sample text a colour that follows the scheme. |
 | `heading-breaks-word` (hint, `--render`) | A page heading that the browser splits in the middle of a word. | Give the page a human `title`. |
 | `page-head-overlap` (`--render`) | A heading painted under the ← → pager. | Let the heading wrap or truncate in its own column. |
 
@@ -1352,7 +1352,9 @@ and adds what only a real render shows:
   background — near-white text on a light cell, or near-black text on a dark one — at under
   **1.5:1**. Only extreme, colourless text counts (near-white: luminance 0.8 or more; near-black:
   0.05 or less; no more than 24 between colour channels), so faint platform colours such as iOS
-  tertiary label grey, system yellow, muted counts and disabled text are left alone. The check
+  tertiary label grey, system yellow, muted counts and disabled text are left alone. A clearly
+  coloured background is left alone too: white on a yellow swatch is a chosen fill, while tinted
+  greys (system grey, slate, a pale blue wash) still count. The check
   walks up from each visible text node through its ancestors, laying every translucent background
   over what is beneath it (up to the page, on white if nothing is opaque), so a translucent
   panel is measured as the colour it really is. When something that is not the text's ancestor

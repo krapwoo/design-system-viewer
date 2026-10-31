@@ -423,8 +423,12 @@ export interface IllegibleSpecimen {
  * colour, so no ratio is claimed). One finding per cell: the worst text, when below
  * ${SPECIMEN_CONTRAST_MIN}:1 and when it is achromatic and extreme once composited onto its
  * background: near-white (luminance >= 0.8, channel spread <= 24) on a background of luminance >= 0.6,
- * or near-black (luminance <= 0.05, spread <= 24) on a background of luminance <= 0.1. Anything else
- * is a faithful platform colour that is faint by design (placeholder grey, a yellow warning glyph).
+ * or near-black (luminance <= 0.05, spread <= 24) on a background of luminance <= 0.1, unless the
+ * background is a clearly coloured fill (channel spread > 64): the other appearance's background is a
+ * grey, perhaps tinted (system greys, slate, a pale blue wash), so white on saturated yellow is a
+ * deliberate choice, not an appearance mistake, while tinted greys are still checked.
+ * Anything else is a faithful platform colour that is faint by design (placeholder grey, a yellow
+ * warning glyph).
  *
  * A cell is a `listitem` of a variants/states card (its second child is the specimen; the first is
  * the caption, which is the viewer's own text and not measured) or a `cell` of a comparison grid.
@@ -527,7 +531,8 @@ export const SPECIMEN_CONTRAST_SCRIPT = `(() => {
       if (ratio >= MIN) continue;
       const lf = luminance(shown), lb = luminance(behind);
       const spread = Math.max(shown.r, shown.g, shown.b) - Math.min(shown.r, shown.g, shown.b);
-      const kind = spread > 24 ? null : lf >= 0.8 && lb >= 0.6 ? 'light' : lf <= 0.05 && lb <= 0.1 ? 'dark' : null;
+      const behindSpread = Math.max(behind.r, behind.g, behind.b) - Math.min(behind.r, behind.g, behind.b);
+      const kind = spread > 24 || behindSpread > 64 ? null : lf >= 0.8 && lb >= 0.6 ? 'light' : lf <= 0.05 && lb <= 0.1 ? 'dark' : null;
       if (!kind) continue;
       if (paintedBehind(el, range, settledEl)) continue;
       if (!worst || ratio < worst.ratio) worst = { text: text.length > 40 ? text.slice(0, 39) + '\\u2026' : text, ratio, kind };

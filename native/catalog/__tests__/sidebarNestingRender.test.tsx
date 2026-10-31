@@ -211,6 +211,31 @@ test('clearing a filter re-mounts the open page\'s row without scrolling the lis
   cleanup();
 });
 
+test('a page left while a filter hides its row is revealed again when the filter is cleared', () => {
+  // The shell owns the URL here (not embedded), so an address change opens a page as a link would.
+  const { container, cleanup } = renderCatalog(
+    <Mount>
+      <CatalogShell appName="App" title="Component Catalog" groups={GROUPS} sections={SECTIONS} />
+    </Mount>,
+  );
+  const scrollNode = stubSidebarLayout(container, { Banner: 10, Ghost: 150, Card: 400 });
+  click(linkIn(container, 'Ghost'));
+  assert.equal(scrollNode.scrollTop, 80, 'choosing the page reveals its row');
+  const input = container.querySelector('input[aria-label="Filter components"]') as HTMLInputElement;
+  // The filter hides every row, then the reader goes to another page and back by address: no row
+  // mounts for either, so only the sidebar itself can notice the open page changed.
+  typeInto(input, 'zzz');
+  assert.equal(linkIn(container, 'Ghost'), undefined, 'the row really is unmounted by the filter');
+  const go = (hash: string) => act(() => { window.location.hash = hash; window.dispatchEvent(new window.HashChangeEvent('hashchange')); });
+  go('#Card');
+  go('#GhostButton');
+  scrollNode.scrollTop = 0;
+  typeInto(input, '');
+  assert.equal(linkIn(container, 'Ghost').getAttribute('aria-current'), 'page');
+  assert.equal(scrollNode.scrollTop, 80, 'the row mounts active and is revealed');
+  cleanup();
+});
+
 test('coming back to a page after visiting one with no sidebar row reveals its row again', () => {
   // `Notes` is a page no group lists, like a reference page opened from a source link.
   // The shell owns the URL here (not embedded), so an address change opens a page as a link would.

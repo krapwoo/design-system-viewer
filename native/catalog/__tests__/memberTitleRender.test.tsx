@@ -117,9 +117,26 @@ test('under the shell, MemberTitlesProvider keeps the catalog-wide decision for 
   const outer = memberTitleMap(pages as never);
   assert.equal(outer.get('Button'), undefined, 'precondition: the shell map skips a page name');
   const { container, cleanup } = renderCatalog(
-    React.createElement(MemberTitlesContext.Provider, { value: outer },
+    React.createElement(MemberTitlesContext.Provider, { value: { titles: outer, pageIds: new Set(pages.map((page) => page.id)) } },
       React.createElement(MemberTitlesProvider, { members, pageId: 'Card' }, React.createElement(Name, { id: 'Button' }), React.createElement(Name, { id: 'action' }))),
   );
   assert.deepEqual([...container.querySelectorAll('span')].map((s) => s.textContent), ['Button', 'Action button']);
+  cleanup();
+});
+
+test('a titled family page drawn inside a catalog that does not hold it names its own members', async () => {
+  const { MemberTitlesContext, MemberTitlesProvider, useMemberTitle } = await import('../memberTitlesContext.ts');
+  function Name({ id }: { id: string }) {
+    const titleOf = useMemberTitle();
+    return React.createElement('span', null, titleOf(id));
+  }
+  // The outer shell's catalog covers other pages, and even gives `action` another title.
+  const outer = { titles: new Map([['action', 'Another catalog\'s title']]), pageIds: new Set(['Other']) };
+  const members = [{ id: 'action', title: 'Action button' }];
+  const { container, cleanup } = renderCatalog(
+    React.createElement(MemberTitlesContext.Provider, { value: outer },
+      React.createElement(MemberTitlesProvider, { members, pageId: 'Card' }, React.createElement(Name, { id: 'action' }))),
+  );
+  assert.deepEqual([...container.querySelectorAll('span')].map((s) => s.textContent), ['Action button']);
   cleanup();
 });
