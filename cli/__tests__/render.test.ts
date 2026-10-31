@@ -25,6 +25,17 @@ test('console errors and a missing heading are errors; overflow warnings are ren
   assert.equal(issues[0].file, 'x/Checkbox.catalog.tsx');
 });
 
+test('a TokenGrid order warning is a token-grid-order warning, reported once per page', () => {
+  const seen = new Set<string>();
+  const warning = { type: 'warn', text: '[Catalog] TokenGrid order: "4pt" comes after "17pt". Order tiles smallest to largest, or set order="authored" on the TokenGrid if this order is deliberate.' };
+  const first = issuesFromPage({ id: 'Radius', file: 'x/Radius.catalog.tsx' }, [warning, warning], true, seen);
+  assert.deepEqual(first.map((i) => [i.id, i.severity, i.page, i.file]), [['token-grid-order', 'warning', 'Radius', 'x/Radius.catalog.tsx']]);
+  assert.equal(first[0].message, '"4pt" comes after "17pt". Order tiles smallest to largest, or set order="authored" on the TokenGrid if this order is deliberate.');
+  assert.match(first[0].fix ?? '', /smallest to largest/);
+  assert.equal(issuesFromPage({ id: 'Spacing' }, [warning], true, seen).length, 1, 'another page with the same problem is its own finding');
+  assert.equal(issuesFromPage({ id: 'Radius' }, [warning], true, seen).length, 0);
+});
+
 test('a [Catalog] warning repeated on later pages is reported once, on the first page', () => {
   const seen = new Set<string>();
   const warning = { type: 'warn', text: '[Catalog] Page id "X" is used by more than one page.' };

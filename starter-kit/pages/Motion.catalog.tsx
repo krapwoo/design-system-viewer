@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Easing } from 'react-native';
-import { defineCatalogPage, TokenRow, TokenRowGroup, MotionSpecimen } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, TokenRow, TokenRowGroup, TokenGrid, TokenTile, MotionSpecimen, type SwiftUITransition } from '@krapwoo/ds-viewer';
 import {
   DS_MOTION_DURATION,
   DS_MOTION_DURATION_STEPS,
@@ -139,6 +139,41 @@ function DurationRows({ steps, values, notes, label }: {
   );
 }
 
+/** SwiftUI's built-in transitions, as a SwiftUI source writes them. Each tile rests with a sample view
+ *  inserted; Replay removes it, holds the empty stage, then inserts it again, once. With no `animation` they run in an assumed
+ *  `withAnimation` default (iOS 17+); pass one (`{ duration: 240 }` or `{ spring: { response, dampingFraction } }`) to
+ *  show the animation the product really uses. */
+const TRANSITIONS: { name: string; code: string; transition: SwiftUITransition }[] = [
+  { name: 'opacity', code: '.transition(.opacity)', transition: { type: 'opacity' } },
+  { name: 'move', code: '.transition(.move(edge: .bottom))', transition: { type: 'move', edge: 'bottom' } },
+  { name: 'slide', code: '.transition(.slide)', transition: { type: 'slide' } },
+  { name: 'push', code: '.transition(.push(from: .trailing))', transition: { type: 'push', from: 'trailing' } },
+  { name: 'scale', code: '.transition(.scale(scale: 0.8, anchor: .top))', transition: { type: 'scale', scale: 0.8, anchor: 'top' } },
+  { name: 'offset', code: '.transition(.offset(y: 24))', transition: { type: 'offset', y: 24 } },
+  {
+    name: 'combined',
+    code: '.transition(.opacity.combined(with: .scale))',
+    transition: { type: 'combined', of: [{ type: 'opacity' }, { type: 'scale', scale: 0.8 }] },
+  },
+  {
+    name: 'asymmetric',
+    code: '.transition(.asymmetric(insertion: .move(edge: .bottom), removal: .opacity))',
+    transition: { type: 'asymmetric', insertion: { type: 'move', edge: 'bottom' }, removal: { type: 'opacity' } },
+  },
+];
+
+function TransitionTiles() {
+  return (
+    <TokenGrid minTileWidth={230}>
+      {TRANSITIONS.map(({ name, code, transition }) => (
+        <TokenTile key={name} name={name} value={code}>
+          <MotionSpecimen kind="transition" transition={transition} label={name} />
+        </TokenTile>
+      ))}
+    </TokenGrid>
+  );
+}
+
 function EasingRows() {
   return (
     <TokenRowGroup>
@@ -206,6 +241,11 @@ export default defineCatalogPage({
       title: 'Spring',
       desc: 'for Animated.spring(value, DS_MOTION_SPRING) — snap-point transitions, not fixed-duration timing',
       render: () => <SpringTable />,
+    },
+    {
+      title: 'Transitions',
+      desc: 'how a view looks as it is inserted and removed — the sample view rests inserted; Replay removes it, holds the empty stage, then inserts it again',
+      render: () => <TransitionTiles />,
     },
   ],
 });

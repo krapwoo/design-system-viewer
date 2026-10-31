@@ -13,6 +13,7 @@ import { ScrollRootContext } from './scrollRootContext';
 import { SourceReferencePicker } from './SourceReferencePicker';
 import { memberTitleMap } from './familyModel';
 import { MemberTitlesContext } from './memberTitlesContext';
+import { ReferenceNavigationContext } from './referenceNavigationContext';
 import {
   aliasTargets,
   DS_VIEWER_SECRET_HEADER,
@@ -768,6 +769,7 @@ export function CatalogShell<TId extends string>({
       />
       <SourceReferencePicker visible={pickerOpen} entries={referenceEntries} onDismiss={dismissSourceReferencePicker} onSelect={selectReference} />
       <MemberTitlesContext.Provider value={memberTitles}>
+      <ReferenceNavigationContext.Provider value={referenceNavigation as ReferenceNavigation}>
       <ScrollView ref={scrollRef} style={styles.main} contentContainerStyle={styles.mainContent}>
         {notFoundRaw !== undefined ? (
           <NotFoundPage raw={notFoundRaw} firstHref={order[0] !== undefined ? hashForId(order[0]) : undefined} onOpenFirst={() => order[0] !== undefined && select(order[0])} />
@@ -885,6 +887,7 @@ export function CatalogShell<TId extends string>({
           <Text style={styles.empty}>No catalog pages are available.</Text>
         )}
       </ScrollView>
+      </ReferenceNavigationContext.Provider>
       </MemberTitlesContext.Provider>
     </View>
   );
