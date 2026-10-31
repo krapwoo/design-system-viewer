@@ -340,7 +340,8 @@ actually apply:
   declaration), shown in a code block at the end of the Notes and API panel, after Props, exactly as a
   family member's `api` is. With `apiLabel: 'Swift API'` the link and panel are named "Notes and Swift
   API". Not used on a family or group page, whose members carry their own `api`, nor on a token page
-  (`tokenGallery`, `tokenSections` or `tokenDefinition`), which has no Notes and API panel: its `api` is not shown.
+  (`tokenGallery`, `tokenSections` or `tokenDefinition`), which has no Notes and API panel: its `api`
+  is not shown.
 - `comparison: { rowLabel, columnLabel, rows, columns, cells, size? }` — when two props genuinely
   combine. Author every row × column cell with a real instance, or an `unavailableReason` when that
   combination does not exist. Never multiply `variants` by `states` to fill it. Keep the column axis

@@ -371,6 +371,7 @@ test('a Parts card and a pin label name a titled family member by the member\'s 
 test('an unbound documented component resets the main scroll to the top, and a bound tile\'s jump still comes last', () => {
   const events: string[] = [];
   // Installed while rendering: the window the catalog renders into is not the one this file imports.
+  // Each render makes a fresh window (test/renderCatalog.tsx), so the stub goes with it: nothing to restore.
   function Spy() {
     Object.defineProperty(window.HTMLElement.prototype, 'scrollTop', { configurable: true, get() { return 0; }, set(value: number) { events.push(`top:${value}`); } });
     (window.Element.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = function (this: Element) {
