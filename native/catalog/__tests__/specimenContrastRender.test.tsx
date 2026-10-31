@@ -107,6 +107,33 @@ test('faint platform colours are quiet: iOS tertiary label grey on white, system
   cleanup();
 });
 
+test('a clearly coloured background is never the other appearance: white on saturated or pale yellow is quiet', () => {
+  const fill = (bg: string, label: string) => ({ key: label, label, node: React.createElement(View, { style: { backgroundColor: bg, padding: 8 } }, sample('#ffffff', {}, '✓')) });
+  const { found, cleanup } = measure(list([fill('#FFD700', 'Gold'), fill('#FFE066', 'Pale yellow')]));
+  assert.deepEqual(found, []);
+  cleanup();
+});
+
+test('a grey background is still the other appearance: white on system grey, black on dark grey', () => {
+  const { found, cleanup } = measure(list([
+    { key: 'a', label: 'Grey', node: React.createElement(View, { style: { backgroundColor: '#F2F2F7', padding: 8 } }, sample('#ffffff')) },
+    { key: 'b', label: 'Dark grey', node: React.createElement(View, { style: { backgroundColor: '#1C1C1E', padding: 8 } }, sample('#000000')) },
+  ]));
+  assert.deepEqual(found.map((f) => [f.name, f.kind]), [['Grey', 'light'], ['Dark grey', 'dark']]);
+  cleanup();
+});
+
+test('a tinted grey is still the other appearance: slate, a pale blue, a translucent blue wash', () => {
+  const on = (bg: string, color: string, label: string) => ({ key: label, label, node: React.createElement(View, { style: { backgroundColor: bg, padding: 8 } }, sample(color)) });
+  const { found, cleanup } = measure(list([
+    on('#0F172A', '#000000', 'Slate'),
+    on('#E0F2FE', '#ffffff', 'Sky'),
+    on('rgba(0, 122, 255, 0.12)', '#ffffff', 'Wash'),
+  ]));
+  assert.deepEqual(found.map((f) => [f.name, f.kind]), [['Slate', 'dark'], ['Sky', 'light'], ['Wash', 'light']]);
+  cleanup();
+});
+
 test('mid-grey text that is low-contrast but not extreme is quiet', () => {
   const { found, cleanup } = measure(list([{ key: 'a', label: 'Mid', node: React.createElement(View, { style: { backgroundColor: '#bbbbbb', padding: 8 } }, sample('#cccccc')) }]));
   assert.deepEqual(found, []);

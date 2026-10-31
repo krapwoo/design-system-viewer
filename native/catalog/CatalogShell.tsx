@@ -300,7 +300,7 @@ export function CatalogShell<TId extends string>({
   // and for the sidebar's member search (`memberSearchEntries` below).
   const aliasMap = useMemo(() => aliasTargets(sections), [sections]);
   // Titled members' displayed names, for every link or label that would otherwise show an id.
-  const memberTitles = useMemo(() => memberTitleMap(sections), [sections]);
+  const memberTitles = useMemo(() => ({ titles: memberTitleMap(sections), pageIds: new Set<string>(sections.map((section) => section.id)) }), [sections]);
   // V2d item 3: every real catalog address a family member's `composedOf` could resolve to,
   // outside its own family — every other page's own id, plus every member id/alias `aliasMap`
   // already resolves (`FamilyPage` itself always adds its own family's member ids on top of this).

@@ -53,13 +53,7 @@ function NavItem<TId extends string>({ id, label, active, onPress, keepDocumentU
   // also scroll every scrollable ancestor, so a sidebar drawn inside a page (an embedded shell, an
   // Overview thumbnail) would drag that page's column along with it.
   useEffect(() => {
-    if (!sidebarScroll) return;
-    if (!active) {
-      // Leaving this page (to another row, or to a page with no row) forgets it, so coming back to it
-      // reveals it again. Unmounting runs no effect, so a filter that hides the row keeps the guard.
-      if (sidebarScroll.revealed.current === id) sidebarScroll.revealed.current = undefined;
-      return;
-    }
+    if (!sidebarScroll || !active) return;
     if (sidebarScroll.revealed.current === id) return;
     sidebarScroll.revealed.current = id;
     revealInScroll(sidebarScroll.scrollView.current, ref.current as HTMLElement | null);
@@ -231,6 +225,12 @@ export function CatalogSidebar<TId extends string>({
   const [query, setQuery] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const scrollContext = useRef({ scrollView: scrollRef, revealed: { current: undefined as string | undefined } }).current;
+  // Leaving the remembered page (to another row, to a page with no row, or while a filter hides its
+  // row) forgets it, so coming back reveals it again. This runs after the rows' own effects, so a row
+  // that has just revealed the new open page is not forgotten.
+  useEffect(() => {
+    if (scrollContext.revealed.current !== active) scrollContext.revealed.current = undefined;
+  }, [active]);
   // A bundled local image (the only kind `cli/workspace.ts` ever produces — see its doc comment
   // above) already carries its own `width`/`height` on the required module object, both on native
   // and on react-native-web (confirmed by reading `AssetRegistry`/Metro's asset plugin output) — no
