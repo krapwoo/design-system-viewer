@@ -3,6 +3,14 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.23.0
+
+- Sidebar categories, member titles, a readability check for example text, and two building blocks for overview pages:
+  - Pages can sit under a category in the sidebar: give a page `sidebarParent: '<page id>'` and it is listed, indented and joined by connector lines, under that page of the same group. The filter, the ← → pager and screen readers follow the nesting, and `doctor` reports a parent that is unknown, in another group, itself nested, the page itself, or not listed in the sidebar (a `navigation: 'reference'` page) (`sidebar-parent-invalid`).
+  - Family and group members can have a `title`: it is the member's heading and its name in the anatomy legend, part lists, Uses, Also used by and Related links and in search, while its code line keeps the id. A blank title is a `doctor` error.
+  - `doctor --render` warns when text in an example is hard to read: it reports light text on a light background or dark text on a dark one, under 1.5:1 (`specimen-text-illegible`), and leaves faint platform colours alone, so you can set the item's `surface` or give the text a colour that follows the scheme.
+  - New `CountStrip` (a row of 2–6 stats) and `WarningBanner` (a titled attention note) for building category overview pages, with the starter kit's new Buttons page as the example.
+
 ## 0.22.1
 
 - The generated `.ds-viewer/` and `.ds-viewer-render/` folders now ignore themselves with their own `.gitignore`, so a project set up before `init` listed them no longer sees untracked files after `doctor --render`; and `doctor --render` now reports a far-off stray pin instead of letting it merge into a correct pin column.
