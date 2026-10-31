@@ -187,3 +187,14 @@ test('a plain page without api keeps the "Notes and API" label and shows no exce
   const built = buildCatalogSections([{ ...family, file: 'Suite.catalog.tsx' }], [], []).sections[0] as { api?: string };
   assert.equal(built.api, undefined);
 });
+
+test('a token page\'s api is not shown inline in its Quick reference card', () => {
+  const def = pageDef({ api: 'struct Hidden: View {}', tokenGallery: true, render: () => <div>Token specimen</div> });
+  assert.equal((def as { tokenGallery?: boolean }).tokenGallery, true, 'the fixture is a token page');
+  const { container, cleanup } = renderCatalog(<ReferenceDetails def={def} />);
+  try {
+    const text = container.textContent || '';
+    assert.ok(text.includes('Quick reference'), 'the card itself still renders');
+    assert.equal(text.includes('struct Hidden: View {}'), false, 'the excerpt is not rendered');
+  } finally { cleanup(); }
+});

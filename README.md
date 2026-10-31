@@ -339,7 +339,8 @@ actually apply:
 - `api: string` (with `apiLabel`, default `'API'`) — the source API excerpt (for example a Swift
   declaration), shown in a code block at the end of the Notes and API panel, after Props, exactly as a
   family member's `api` is. With `apiLabel: 'Swift API'` the link and panel are named "Notes and Swift
-  API". Not used on a family or group page, whose members carry their own `api`.
+  API". Not used on a family or group page, whose members carry their own `api`, nor on a token page
+  (`tokenGallery`, `tokenSections` or `tokenDefinition`), which has no Notes and API panel: its `api` is not shown.
 - `comparison: { rowLabel, columnLabel, rows, columns, cells, size? }` — when two props genuinely
   combine. Author every row × column cell with a real instance, or an `unavailableReason` when that
   combination does not exist. Never multiply `variants` by `states` to fill it. Keep the column axis
@@ -996,7 +997,9 @@ shape:
   `overshootClamping` or the rest thresholds, are passed on to `Animated.spring` as written. A
   `dampingFraction` of `0` (`bounce: 1`) is converted as written (`damping: 0`), but
   `Animated.spring` on web refuses a damping of 0 ("Damping value must be greater than 0"), so the
-  specimen does not call it: it shows three sine-eased swings, each one the spring's own period long,
+  specimen does not call it: it shows three sine-eased swings, each one the spring's own period long (from
+  `stiffness`, `Animated`'s default of 100 when none is given, and `mass`; capped at 1.5 s so all three
+  finish before the 5 s cut-off below),
   stops, places the dot at the end and says "Never settles (damping 0). Shown for 3 swings, then
   stopped." underneath. A value just above 0 is accepted and oscillates for a very long time, so
   the specimen cuts any spring play off after 5 seconds (`MOTION_SPRING_MAX_MS`) and places the

@@ -647,11 +647,14 @@ export function CatalogShell<TId extends string>({
   // scroll alone for it, expecting the bound tile to scroll itself into view. When no tile is
   // bound, nothing does, and the page would open at the previous page's offset: go to the top
   // instead. This is a layout effect, so it runs before a bound tile's own (passive) jump, which
-  // still wins.
+  // still wins. `sectionsById` is read through a ref: a new `sections` object (a hot reload) is not
+  // a new target and must not scroll an open address back to the top.
+  const sectionsByIdRef = useRef(sectionsById);
+  sectionsByIdRef.current = sectionsById;
   useLayoutEffect(() => {
     if (active === undefined || pendingMemberId === undefined) return;
-    if (sectionsById.get(active as TId)?.documents?.some((documented) => documented.component === pendingMemberId)) resetMainScroll(scrollRef.current);
-  }, [active, pendingMemberId, pendingMemberNonce, sectionsById]);
+    if (sectionsByIdRef.current.get(active as TId)?.documents?.some((documented) => documented.component === pendingMemberId)) resetMainScroll(scrollRef.current);
+  }, [active, pendingMemberId, pendingMemberNonce]);
 
   // #60: captures the current page/member as this journey's origin (before the picker has
   // changed anything), then opens it. A cancellation (Escape/Close) never reaches the effect

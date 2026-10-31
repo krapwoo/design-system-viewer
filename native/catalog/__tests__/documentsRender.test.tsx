@@ -399,3 +399,36 @@ test('an unbound documented component resets the main scroll to the top, and a b
     assert.equal(open('#Iconography').includes('top:0'), true, 'a plain page address still resets (the existing rule)');
   }
 });
+
+// A new `sections` object (a hot reload) is not a new target: an open unbound documented address
+// must not be scrolled back to the top again.
+test('re-rendering with a new sections object does not reset the scroll of an open documented address', () => {
+  const tops: number[] = [];
+  function Spy() {
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollTop', { configurable: true, get() { return 0; }, set(value: number) { tops.push(value); } });
+    return null;
+  }
+  const loose = defineCatalogPage({ id: 'Loose', title: 'Loose icons', group: 'Tokens', description: 'Icons.', documents: [{ component: 'Hero', title: 'Hero mark' }], render: () => <Text>no bound tile</Text> });
+  const pages = [...PAGES, { ...loose, id: 'Loose', file: 'Loose.catalog.tsx' }].filter((page) => page.id !== 'Hero') as never;
+  const first = buildCatalogSections(pages, COMPONENTS);
+  const second = buildCatalogSections(pages, COMPONENTS);
+  assert.notEqual(first.sections, second.sections, 'a rebuild gives a new sections object');
+  let swap: (() => void) | undefined;
+  function Shell() {
+    const [built, setBuilt] = useState(first);
+    swap = () => setBuilt(second);
+    return <CatalogShell appName="App" title="Catalog" groups={built.groups} sections={built.sections} />;
+  }
+  const { cleanup } = renderCatalog(
+    <Mount hash="#Hero">
+      <Spy />
+      <Shell />
+    </Mount>,
+  );
+  try {
+    assert.ok(tops.includes(0), 'the unbound address reset the scroll on arrival');
+    tops.length = 0;
+    act(() => { swap!(); });
+    assert.deepEqual(tops, [], `a new sections object does not scroll again: ${tops}`);
+  } finally { cleanup(); }
+});
