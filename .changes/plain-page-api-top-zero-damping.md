@@ -1,6 +1,0 @@
-A plain component page can show an API excerpt, and a few rough edges are fixed:
-- A plain component page can carry `api` (and `apiLabel`, for example `'Swift API'`), the same source API excerpt a family or group member has. It shows in the page's Notes and API panel as a code block after Props, and the link and panel are named after `apiLabel`. When a component stops being a family, move its member's `api` to the page to keep the excerpt.
-- Opening a documented component whose tile is not bound now shows its token page at the very top, on web and native, like a plain page address. On web, a bound tile still scrolls itself to the top.
-- A `MotionSpecimen` spring with no damping (`dampingFraction: 0`, `bounce: 1`) no longer fails: `Animated.spring` refuses a damping of 0, so the dot used to stay put. It now shows three swings, stops, and says "Never settles (damping 0). Shown for 3 swings, then stopped."
-- The `doctor` table row for `specimen-text-illegible` now says the background must be "a grey or tinted grey", matching the longer description.
-- `specimen-text-illegible` no longer flags a dark glyph that is fading in or out (black at low alpha or under low opacity): the text's own colour must be near-white or near-black too.
