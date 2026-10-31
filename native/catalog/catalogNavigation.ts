@@ -290,6 +290,8 @@ export function aliasTargets<TId extends string>(sections: readonly SectionDef<T
       }
       for (const alias of family.aliases ?? []) targets.set(alias, { pageId: section.id });
     }
+    // A token page's documented components resolve like members: the page, focused on the tile.
+    for (const documented of section.documents ?? []) targets.set(documented.component, { pageId: section.id, memberId: documented.component });
     for (const alias of section.tokenDefinitionAliases ?? []) targets.set(alias, { pageId: section.id });
     for (const tdSection of section.tokenDefinition?.sections ?? []) {
       for (const alias of tdSection.aliases ?? []) targets.set(alias, { pageId: section.id, sectionId: tdSection.id });
@@ -341,7 +343,8 @@ export function resolveRoute<TId extends string>(
   return { kind: 'notFound', raw: decoded };
 }
 
-/** One member search candidate: a family page's member, with its owning page and family title. */
+/** One member search candidate: a family page's member (or a token page's documented component),
+ *  with its owning page and family title. */
 export interface MemberSearchEntry<TId extends string> {
   pageId: TId;
   memberId: string;

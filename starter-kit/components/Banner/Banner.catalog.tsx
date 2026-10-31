@@ -1,10 +1,28 @@
 import React from 'react';
-import { defineCatalogPage } from '@krapwoo/ds-viewer';
+import { View, StyleSheet } from 'react-native';
+import { AnatomyPin, AnatomySpecimen, defineCatalogPage } from '@krapwoo/ds-viewer';
 import { Banner } from './Banner';
+
+const styles = StyleSheet.create({
+  pin: { position: 'absolute', right: 0 },
+});
+
+// The collapsible banner, drawn with `AnatomySpecimen` so it takes the page's width. The chevron is a
+// component the Icons page documents (`documents` there), so it is an `other` item and pin: numbered,
+// shown by that page's title ("Animated chevron"), and opening the Icons page at its tile.
+const anatomyPicture = (
+  <AnatomySpecimen fill pins={<View style={[styles.pin, { top: 14 }]}><AnatomyPin other="AnimatedChevron" /></View>}>
+    <Banner variant="neutral" title="Trip details" description="Board at the front car for a faster transfer at Union Sq." collapsible />
+  </AnatomySpecimen>
+);
 
 export default defineCatalogPage({
   component: 'Banner',
   group: 'Components',
+  anatomy: {
+    picture: anatomyPicture,
+    groups: [{ label: 'Components it uses', items: [{ other: 'AnimatedChevron', description: 'The chevron at the end of a collapsible banner\'s header; it flips as the body opens and closes.' }] }],
+  },
   // Spans the screen: 'wide' keeps a 402px minimum, so two blocks never share a row and each
   // specimen keeps a width the component is actually used at.
   specimenSize: 'wide',

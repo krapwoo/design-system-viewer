@@ -315,6 +315,8 @@ export function memberTitleMap(sections: readonly SectionDef[]): Map<string, str
   const scope = memberNameScope(sections.map((section) => ({ id: section.id, members: section.family?.members ?? [] })));
   for (const section of sections) {
     if (section.family) addMemberTitles(titles, section.family.members, section.family.whole, scope);
+    // A token page's documented components are named by their title, like titled members.
+    for (const documented of section.documents ?? []) titles.set(documented.component, documented.title);
   }
   return titles;
 }

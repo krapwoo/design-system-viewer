@@ -47,6 +47,7 @@ export type { MotionSpecimenProps, MotionSpecimenSpringConfig } from './MotionSp
 export type { SwiftUIDurationSpring, SwiftUIResponseSpring, SwiftUISpring } from './swiftUISpring';
 export { SpecimenSurface } from './SpecimenSurface';
 export { TokenSections, TokenGrid, TokenTile } from './TokenLayouts';
+export { DocumentedAnchor } from './DocumentedAnchor';
 export { StructuredTokenPage, tokenDefinitionSections } from './StructuredTokenPage';
 export {
   TOKEN_KINDS, isTokenKind, canonicalTokenTitle, findDuplicateIds, tokenEntryAddress,
@@ -89,7 +90,7 @@ export type { CatalogPage, CatalogPageInput, GeneratedComponent, GeneratedPropRe
 export type {
   PropDef, SectionDef, NavGroup, SpecimenSize, SpecimenSurfaceKind, ComparisonDef, ComparisonCell, ComparisonAxisItem, GridAxis,
   PreviewWidths, TokenSection, ComposedOfEntry, AlsoUsedByEntry, CatalogMember, CatalogMemberSection, FamilyDef,
-  CatalogAnatomy, CatalogAnatomyGroup, CatalogAnatomyItem, RelatedPage,
+  CatalogAnatomy, CatalogAnatomyGroup, CatalogAnatomyItem, RelatedPage, DocumentedComponent,
 } from './types';
 export { UpdatePanel } from './UpdatePanel';
 export { UPDATE_PAGE_ID, OVERVIEW_PAGE_ID } from './catalogNavigation';

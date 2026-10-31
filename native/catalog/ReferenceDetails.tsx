@@ -84,7 +84,7 @@ function CompositionFact<TId extends string>({
   last?: boolean;
 }) {
   const link = linkProps(navigation, entry.component);
-  const titleOf = useMemberTitle();
+  const titleOf = useMemberTitle(navigation);
   return (
     <View style={[styles.fact, last && styles.factLast]}>
       <Text style={styles.factLabel}>
@@ -156,7 +156,7 @@ function AlsoUsedByFact<TId extends string>({
   last?: boolean;
 }) {
   const segments = alsoUsedBySegments(entries);
-  const titleOf = useMemberTitle();
+  const titleOf = useMemberTitle(navigation);
   if (segments.length === 0) return null;
   return (
     <View style={[styles.fact, last && styles.factLast]}>

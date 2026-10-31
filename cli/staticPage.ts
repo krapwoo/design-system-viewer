@@ -203,6 +203,11 @@ export interface StaticPage {
   sections?: StaticFamilySection[];
   /** `CatalogPageInput.aliases`, literal only. */
   aliases?: string[];
+  /** `CatalogPageInput.documents`, literal only: the components this token page documents.
+   *  `hasDocuments` is presence alone, so `doctor` can tell an unread `documents` (the page is then
+   *  not checkable) from none. */
+  documents?: { component: string; title: string }[];
+  hasDocuments?: boolean;
   /** `CatalogPageInput.relatedPages`, read down to just `page` (design parity with `composedOf`:
    *  `note` is authored prose `doctor`'s own `family-invalid` reuse of `validateFamily` never
    *  needs). Absent both when the page has none at all, and when it authored one non-literally —
@@ -576,6 +581,13 @@ function readStaticPage(file: string): StaticPage {
     const aliases = readStringLiteralArray(aliasesProp.initializer, consts);
     if (!aliases) page.checkable = false;
     else page.aliases = aliases;
+  }
+  const documentsProp = findProp(pageObject, 'documents');
+  page.hasDocuments = documentsProp !== undefined;
+  if (documentsProp) {
+    const documents = readDocuments(documentsProp.initializer, consts);
+    if (!documents) page.checkable = false;
+    else page.documents = documents;
   }
   const relatedPagesProp = findProp(pageObject, 'relatedPages');
   if (relatedPagesProp) page.relatedPages = readRelatedPages(relatedPagesProp.initializer, consts);
@@ -970,6 +982,23 @@ function readRelatedPages(node: ts.Expression, consts: Map<string, ts.Expression
     const page = propertyStringLiteral(resolvedElement, 'page', consts);
     if (page === undefined) return undefined;
     entries.push({ page });
+  }
+  return entries;
+}
+
+/** A `documents` array read down to `{ component, title }` per entry; `undefined` when it, or any
+ *  entry's `component`/`title`, is not a literal. */
+function readDocuments(node: ts.Expression, consts: Map<string, ts.Expression>): { component: string; title: string }[] | undefined {
+  const resolved = resolve(node, consts, new Set());
+  if (!ts.isArrayLiteralExpression(resolved)) return undefined;
+  const entries: { component: string; title: string }[] = [];
+  for (const element of resolved.elements) {
+    const resolvedElement = resolve(element, consts, new Set());
+    if (!ts.isObjectLiteralExpression(resolvedElement)) return undefined;
+    const component = propertyStringLiteral(resolvedElement, 'component', consts);
+    const title = propertyStringLiteral(resolvedElement, 'title', consts);
+    if (component === undefined || title === undefined) return undefined;
+    entries.push({ component, title });
   }
   return entries;
 }

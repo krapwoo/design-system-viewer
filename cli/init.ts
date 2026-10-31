@@ -7,6 +7,9 @@ import { detectComponentFolders, detectTokenFiles, type DetectedComponentFolder,
 import { ensureAgentsFileSection } from './agentsFile.ts';
 import { ensureGithubAction } from './githubAction.ts';
 import { loadProjectPuppeteer } from './render.ts';
+import { resolveConfig } from './config.ts';
+import { discoverAllPageFiles } from './pageIndex.ts';
+import { readStaticPages } from './staticPage.ts';
 import { readOwnVersion } from './packageVersion.ts';
 import { DEFAULT_WORKSPACE_DIR, RENDER_WORKSPACE_DIR } from './types.ts';
 
@@ -79,6 +82,25 @@ function detectIndent(raw: string): string {
   return match ? match[1] : '  ';
 }
 
+/** The component names the project's existing catalog pages document through `documents`, read the
+ *  way `doctor` reads pages. Empty when there is no readable config or no such page. */
+function componentsDocumentedByTokenPages(projectRoot: string, componentFolders: DetectedComponentFolder[]): Set<string> {
+  const documented = new Set<string>();
+  try {
+    const configPath = path.join(projectRoot, 'ds-viewer.config.ts');
+    const pageGlobs = existsSync(configPath) ? (resolveConfig(projectRoot).pages ?? []) : [];
+    const pageFiles = discoverAllPageFiles({
+      componentFolders: componentFolders.map((folder) => path.join(projectRoot, folder.relativePath)),
+      standalonePageGlobs: pageGlobs,
+      projectRoot,
+    });
+    for (const page of readStaticPages(pageFiles)) for (const entry of page.documents ?? []) documented.add(entry.component);
+  } catch {
+    // An unreadable config or page: draft as before.
+  }
+  return documented;
+}
+
 /** The existing-project half of `init` (design §2) — new-project/starter-kit `init` is 0.2 scope. */
 export async function initExistingProject(projectRoot: string, options: InitOptions = {}): Promise<InitResult> {
   const { errors, warnings } = preflight(projectRoot);
@@ -124,9 +146,12 @@ export async function initExistingProject(projectRoot: string, options: InitOpti
     written.push(configPath);
   }
 
+  // A rerun must not draft a page for a component a token page already documents (`documents`):
+  // that would give it a second owner (`documents-invalid`).
+  const documentedElsewhere = componentsDocumentedByTokenPages(projectRoot, componentFolders);
   for (const folder of componentFolders) {
     const draftPath = path.join(projectRoot, folder.relativePath, `${folder.name}.catalog.tsx`);
-    if (!existsSync(draftPath)) {
+    if (!existsSync(draftPath) && !documentedElsewhere.has(folder.name)) {
       writeFileSync(draftPath, draftPageContents(folder.name));
       written.push(draftPath);
     }

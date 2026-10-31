@@ -1,0 +1,9 @@
+A token page can document components, and a link to a page shows the page's title:
+- A token page can declare the components it documents: `documents: [{ component: 'HeaderLogo', title: 'Header logo' }]`. Each counts as catalogued (no "needs a page" `doctor` finding, no `exclude`), keeps component discovery, usage and Appears-in (the Overview and one block per component on the page), and is owned by that page.
+- Everything that names a documented component — anatomy items and `<AnatomyPin other=…>`, `composedOf`, Uses / Also used by / Related links, the Parts block, the sidebar filter and the Source reference search — shows its title and opens the token page at its tile (`#HeaderLogo`): the tile scrolls to the top and is outlined. With `partGroups`, a documented component still counts as a part.
+- `<TokenTile documents="HeaderLogo">` and the new `DocumentedAnchor` (for custom tiles) bind a tile to its component.
+- `documents` is checked by `doctor` (`documents-invalid`, error) and in the viewer's console: an unknown component, a component documented by two pages, one that also has its own page, a blank title, a repeat, a collision with another id, or `documents` on a family or group page.
+- An anatomy item, pin or link that targets a page id now shows that page's `title` instead of the raw id (including inside the Notes and API panel).
+- The starter kit's Icons page documents `AnimatedChevron` and `InputClearButton` as tiles, and its Banner page pins the chevron in its anatomy.
+- A Parts card and an anatomy pin's "opens …" label now name a titled family member by the member's own title, where they used to show the title of the page that holds it. This applies to every catalog, not only ones that use `documents`.
+- Opening a documented component whose tile is not bound now shows its page at the top.

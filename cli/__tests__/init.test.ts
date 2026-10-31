@@ -329,3 +329,23 @@ test('the generated workflow runs doctor --render --ci only when puppeteer resol
   const workflow = readFileSync(path.join(projectRoot, '.github', 'workflows', 'ds-viewer.yml'), 'utf8');
   assert.match(workflow, /if node -e "require\.resolve\('puppeteer'\)" 2>\/dev\/null; then\n\s+npx ds-viewer doctor --render --ci\n\s+else\n\s+echo "puppeteer is not installed[^\n]*\n\s+npx ds-viewer doctor --ci\n\s+fi/);
 });
+
+// M-4: a rerun must not draft a page for a component a token page documents.
+test('initExistingProject skips the draft for a component a token page documents', async () => {
+  const projectRoot = copyFixture();
+  mkdirSync(path.join(projectRoot, 'src/pages'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'src/pages/Icons.catalog.tsx'), [
+    "import { defineCatalogPage } from '@krapwoo/ds-viewer';",
+    'export default defineCatalogPage({',
+    "  id: 'Icons', group: 'Tokens', description: 'Icons.',",
+    "  documents: [{ component: 'Badge', title: 'Badge' }],",
+    '  render: () => null,',
+    '});',
+    '',
+  ].join('\n'));
+  const result = await initExistingProject(projectRoot, { yes: true });
+  const badgeDraft = path.join(projectRoot, 'src/components/Badge/Badge.catalog.tsx');
+  assert.equal(existsSync(badgeDraft), false, 'no second owner for Badge');
+  assert.ok(!result.written.includes(badgeDraft));
+  rmSync(projectRoot, { recursive: true, force: true });
+});

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, findNodeHandle, type LayoutChangeEvent, type TextStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent, type TextStyle } from 'react-native';
 import { AppearsIn } from './AppearsIn';
 import { PartsBlock } from './PartsBlock';
 import { partEntries, nextTopLevelNumber } from './partsModel';
@@ -39,6 +39,7 @@ import {
 } from './familyModel';
 import { memberCodeLine, memberTitle } from './familyModel';
 import { MemberTitlesProvider, useMemberTitle } from './memberTitlesContext';
+import { scrollAndFocusMember } from './scrollAndFocusMember';
 import type { AlsoUsedByEntry, CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, CatalogMemberSection, ComposedOfEntry, FamilyDef, PreviewWidths, PropDef, RelatedPage, SectionDef } from './types';
 
 /** `SectionDef`'s parts `presentationBlocks`/`Blocks` actually read, built from one family member
@@ -217,7 +218,7 @@ function BelowSpecimensLine({
   sourceMemberId?: string;
 }) {
   const usedBy = alsoUsedBySegments(alsoUsedBy);
-  const titleOf = useMemberTitle();
+  const titleOf = useMemberTitle(navigation);
   return (
     <Text style={styles.belowLine}>
       {related &&
@@ -268,7 +269,7 @@ function WholeBelowLine({
   navigation?: ReferenceNavigation;
 }) {
   const usedBy = alsoUsedBySegments(alsoUsedBy);
-  const titleOf = useMemberTitle();
+  const titleOf = useMemberTitle(navigation);
   return (
     <View style={styles.wholeBelowRow}>
       <Text style={styles.wholeName}>{name}</Text>
@@ -310,7 +311,7 @@ function UsesLine({
   navigation?: ReferenceNavigation;
   sourceMemberId?: string;
 }) {
-  const titleOf = useMemberTitle();
+  const titleOf = useMemberTitle(navigation);
   return (
     <Text style={styles.usesLine}>
       {'Uses '}
@@ -727,7 +728,7 @@ function ExternalPartRow({
   navigation?: ReferenceNavigation;
 }) {
   const link = familyLink(navigation, resolvesAddress, memberId);
-  const titleOf = useMemberTitle();
+  const titleOf = useMemberTitle(navigation);
   return (
     <View>
       <View style={styles.partHeadRow}>
@@ -936,15 +937,16 @@ function FamilySectionGroup({
  *  a dead link — then its note, when authored. No specimens, no disclosure, no source line, no
  *  number, no pin. */
 function RelatedPageRow({ entry, resolvesAddress, navigation }: { entry: RelatedPage; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation }) {
+  const titleOf = useMemberTitle(navigation);
   const link = familyLink(navigation, resolvesAddress, entry.page);
   return (
     <Text style={styles.belowLine}>
       {link ? (
         <Text role="link" style={styles.relatedPageName} {...link}>
-          {entry.page}
+          {titleOf(entry.page)}
         </Text>
       ) : (
-        <Text style={[styles.relatedPageName, styles.relatedPageNameUnresolved]}>{entry.page}</Text>
+        <Text style={[styles.relatedPageName, styles.relatedPageNameUnresolved]}>{titleOf(entry.page)}</Text>
       )}
       {entry.note ? ` — ${entry.note}` : null}
     </Text>
@@ -1066,25 +1068,6 @@ export function PartOfLine({
       )}
     </Text>
   );
-}
-
-/** Scrolls a member's node into view and moves focus to it (spec §5.3 "Member address"). The jump
- *  is always instant, like a normal anchor link: a smooth `scrollIntoView` does not reliably move
- *  the shell's nested scroll container on web (the same limitation `CatalogShell`'s
- *  `resetMainScroll` works around), and an instant jump also satisfies Reduce Motion. Native has
- *  no scroll-into-view of its own; `AccessibilityInfo`'s focus call is enough there.
- *
- *  #63 R2: exported so `GroupPage.tsx` reuses the exact same jump mechanics for its own member
- *  addresses, rather than a second implementation. */
-export function scrollAndFocusMember(node: View): void {
-  if (Platform.OS === 'web') {
-    const dom = node as unknown as { scrollIntoView?: (options: { behavior: 'auto'; block: 'start' }) => void; focus?: (options?: { preventScroll?: boolean }) => void };
-    dom.scrollIntoView?.({ behavior: 'auto', block: 'start' });
-    dom.focus?.({ preventScroll: true });
-    return;
-  }
-  const handle = findNodeHandle(node as unknown as View);
-  if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
 }
 
 /**

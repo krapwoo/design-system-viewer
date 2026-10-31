@@ -141,6 +141,8 @@ function pageEntries(def: SectionDef, usage: UsageData, find: UsageLookup): Usag
   };
   add([def.id, def.component]);
   for (const member of def.family?.members ?? []) add([member.id, member.component]);
+  // A token page owns the usage of the components it documents.
+  for (const documented of def.documents ?? []) add([documented.component]);
   return [...entries];
 }
 
