@@ -16,6 +16,9 @@ export function useClosingNavigation(navigation: ReferenceNavigation | undefined
   return useMemo<ReferenceNavigation | undefined>(
     () =>
       navigation && {
+        // Everything else the navigation offers (`page`, `isPart`) stays available inside the
+        // panel: its links name pages by title, which needs `page`.
+        ...navigation,
         resolve: (name) => navigation.resolve(name),
         open: (pageId, memberId, sourceMemberId) => {
           onClose();

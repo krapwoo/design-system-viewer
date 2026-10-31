@@ -1,5 +1,6 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from 'react';
 import { addMemberTitles, memberNameScope } from './familyModel';
+import type { ReferenceNavigation } from './catalogReferences';
 import type { CatalogMember } from './types';
 
 /** The catalog-wide displayed names of titled family/group members, by id and alias
@@ -15,10 +16,18 @@ export interface MemberTitles {
 const NO_OUTER_TITLES: MemberTitles = { titles: new Map(), pageIds: new Set() };
 export const MemberTitlesContext = createContext<MemberTitles>(NO_OUTER_TITLES);
 
-/** `(name) => the member's title`, or `name` itself when it has none (or is not a member). */
-export function useMemberTitle(): (name: string) => string {
+/** `(name) => the name a link or label should show`: a titled member's (or documented component's)
+ *  title; else, given the page's `navigation`, the title of the page `name` is the id of — never the
+ *  raw page id; else `name` itself. */
+export function useMemberTitle(navigation?: ReferenceNavigation): (name: string) => string {
   const { titles } = useContext(MemberTitlesContext);
-  return (name) => titles.get(name) ?? name;
+  return (name) => {
+    const own = titles.get(name);
+    if (own !== undefined) return own;
+    // Only a name that IS a page id (not a component or alias that merely resolves to one).
+    const target = navigation?.resolve(name);
+    return target && target.pageId === name && target.memberId === undefined ? navigation?.page?.(name)?.title ?? name : name;
+  };
 }
 
 /** Names one page's titled members. Under the shell that holds this page (`pageIds` has `pageId`) it

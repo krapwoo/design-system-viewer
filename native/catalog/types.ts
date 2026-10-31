@@ -337,6 +337,22 @@ export interface SectionDef<TId extends string = string> {
    *  own `aliases` already resolves via `FamilyDef.aliases`. Set only when the page has
    *  `tokenDefinition`; every other page's own `aliases` stays accepted-but-unused, unchanged. */
   tokenDefinitionAliases?: string[];
+  /** The components this page documents although it is not their component page (a token page
+   *  that shows several small icon components as tiles). See `CatalogPageInput.documents`. */
+  documents?: ResolvedDocumentedComponent[];
+}
+
+/** One component a token page documents: the component's export name — which is also its stable
+ *  address on the page (`#HeaderLogo` opens the page and scrolls to its tile) — and the human title
+ *  every link, legend and search hit shows for it. */
+export interface DocumentedComponent {
+  component: string;
+  title: string;
+}
+
+/** A `DocumentedComponent` with the component's own source file, where the build found it. */
+export interface ResolvedDocumentedComponent extends DocumentedComponent {
+  path?: string;
 }
 
 /** A labeled group of section ids in the sidebar (e.g. "Components" vs "Tokens"). */

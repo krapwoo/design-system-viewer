@@ -323,6 +323,10 @@ export function CatalogShell<TId extends string>({
       }
       map.set(section.id, ids);
     }
+    for (const section of sections) {
+      if (!section.documents?.length || !browsable.has(section.id)) continue;
+      map.set(section.id, [...(map.get(section.id) ?? []), ...section.documents.flatMap((documented) => [documented.component, documented.title])]);
+    }
     return map;
   }, [sections, browsable]);
   const memberSearchEntries = useMemo(() => {
@@ -332,6 +336,12 @@ export function CatalogShell<TId extends string>({
       for (const member of section.family.members) {
         if (member.id === section.family.whole) continue;
         entries.push({ pageId: section.id, memberId: member.id, title: member.title, aliases: member.aliases, familyTitle: section.title ?? section.id });
+      }
+    }
+    for (const section of sections) {
+      if (!browsable.has(section.id)) continue;
+      for (const documented of section.documents ?? []) {
+        entries.push({ pageId: section.id, memberId: documented.component, title: documented.title, familyTitle: section.title ?? section.id });
       }
     }
     return entries;
@@ -508,7 +518,8 @@ export function CatalogShell<TId extends string>({
         const validHint = sourceMemberId !== undefined && ownerFamily?.members.some((member) => member.id === sourceMemberId) ? sourceMemberId : undefined;
         openReference(pageId, memberId, { pageId: current, memberId: validHint });
       },
-      isPart: (pageId) => partPageIds === undefined || partPageIds.has(pageId),
+      // A component a token page documents is a component, wherever its tile sits.
+      isPart: (pageId, memberId) => (memberId !== undefined && Boolean(sectionsById.get(pageId)?.documents?.some((documented) => documented.component === memberId))) || partPageIds === undefined || partPageIds.has(pageId),
       page: (pageId) => {
         const def = sectionsById.get(pageId);
         return def && { title: def.title ?? def.id, source: thumbnailSource(def, { inTokenGroup: tokenIds.has(def.id), defaultPreviewWidths }) };
@@ -839,6 +850,8 @@ export function CatalogShell<TId extends string>({
               navigation={referenceNavigation}
               focusSectionId={pendingSectionId}
               focusNonce={pendingSectionNonce}
+              focusMemberId={pendingMemberId}
+              focusMemberNonce={pendingMemberNonce}
               usage={usage}
             />
           </React.Fragment>

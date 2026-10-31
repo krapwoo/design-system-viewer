@@ -67,6 +67,9 @@ export function buildReferenceIndex<TId extends string>(sections: readonly Secti
       path: whole?.path ?? section.path,
       ...(whole?.source && whole.source !== (whole.path ?? section.path) ? { source: whole.source } : {}),
     });
+    for (const documented of section.documents ?? []) {
+      entries.push({ pageId: section.id, memberId: documented.component, title: documented.title, component: documented.component, aliases: [], path: documented.path ?? section.path });
+    }
     if (!family) continue;
     for (const member of family.members) {
       if (member.id === family.whole) continue; // the whole already has its own page-level entry above
@@ -163,7 +166,7 @@ export interface ReferenceNavigation<TId extends string = string> {
   open(pageId: TId, memberId?: string, sourceMemberId?: string): void;
   /** Whether `pageId` is a component page, so what it documents counts as a part (the shell's
    *  `partGroups`). Optional: without it every page does. */
-  isPart?(pageId: TId): boolean;
+  isPart?(pageId: TId, memberId?: string): boolean;
   /** What a card for `pageId` shows: the page's title and its first specimen (`source` is absent
    *  when the page has none, e.g. a token page). Optional: without it a Parts card falls back to
    *  the name it was declared with and an empty thumbnail frame. */

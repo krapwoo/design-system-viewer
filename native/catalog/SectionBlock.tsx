@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, type LayoutChangeEvent, type TextStyle } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { ComparisonGrid } from './ComparisonGrid';
 import { ComparisonGroups } from './ComparisonGroups';
 import { ComparisonList } from './ComparisonList';
 import { AppearsIn } from './AppearsIn';
+import { DocumentedFocusContext } from './documentedFocusContext';
+import { scrollAndFocusMember } from './scrollAndFocusMember';
 import { PartsBlock } from './PartsBlock';
 import { AnatomyBox } from './Anatomy';
 import { PartNumbersContext, usePagePartNumbering } from './partNumbersContext';
@@ -358,6 +360,8 @@ export function SectionBlock<TId extends string>({
   navigation,
   focusSectionId,
   focusNonce,
+  focusMemberId,
+  focusMemberNonce,
   usage,
 }: {
   def: SectionDef<TId>;
@@ -383,6 +387,12 @@ export function SectionBlock<TId extends string>({
   /** Bumped by `CatalogShell` on every activation, even a repeat one — the same
    *  `focusMemberId`/`focusNonce` convention `FamilyPage` already uses. */
   focusNonce?: number;
+  /** A component this page documents (`def.documents`) whose address the shell just opened: its
+   *  tile (`TokenTile documents=…` / `DocumentedAnchor`) scrolls into view and is outlined.
+   *  `focusMemberNonce` is bumped on every activation, even a repeat one. Omitted for a
+   *  standalone-mounted `SectionBlock`. */
+  focusMemberId?: string;
+  focusMemberNonce?: number;
   /** The project's usage data (`CatalogShell`'s `usage`). With an entry for this page's id or
    *  component, an "Appears in" block follows the specimens. Omitted: no block. */
   usage?: UsageData | null;
@@ -398,9 +408,20 @@ export function SectionBlock<TId extends string>({
   // react-native-web reads `aria-level`; React Native's prop types do not declare it.
   const headingLevelProps = { 'aria-level': headingLevel } as Record<string, unknown>;
 
+  const documentedFocus = useMemo(() => ({ memberId: focusMemberId, nonce: focusMemberNonce }), [focusMemberId, focusMemberNonce]);
+  // A member-style address never resets the shell's scroll (its target scrolls itself into view), so
+  // a documented component with no bound tile would open this page at the previous page's offset.
+  // Returning to the top here is a layout effect, which runs before every passive effect: a bound
+  // `DocumentedAnchor`'s own jump (a passive effect) still wins.
+  const rootRef = useRef<View>(null);
+  const documentsFocused = focusMemberId !== undefined && (def.documents ?? []).some((documented) => documented.component === focusMemberId);
+  useLayoutEffect(() => {
+    if (documentsFocused && rootRef.current) scrollAndFocusMember(rootRef.current);
+  }, [documentsFocused, focusMemberId, focusMemberNonce]);
   return (
     <PartNumbersContext.Provider value={partNumbers}>
-    <View>
+    <DocumentedFocusContext.Provider value={documentedFocus}>
+    <View ref={rootRef}>
       {groupLabel && (
         <Text style={styles.breadcrumb}>{breadcrumbRoot ? `${breadcrumbRoot} / ${groupLabel}` : groupLabel}</Text>
       )}
@@ -429,11 +450,15 @@ export function SectionBlock<TId extends string>({
       <PartsBlock parts={parts} navigation={navigation} />
 
       <AppearsIn entry={findUsage(usage, [def.id, def.component])} />
+      {(def.documents ?? []).map((documented) => (
+        <AppearsIn key={documented.component} entry={findUsage(usage, [documented.component])} title={documented.title} />
+      ))}
 
       {/* Token galleries keep their short Quick reference inline; every other page's reference
           details live in the side panel behind "Notes and API". */}
       {def.tokenGallery ? <ReferenceDetails def={def} navigation={navigation} /> : <ReferenceDetailsPanel def={def} navigation={navigation} />}
     </View>
+    </DocumentedFocusContext.Provider>
     </PartNumbersContext.Provider>
   );
 }

@@ -246,6 +246,9 @@ function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus, r
  *  instead left each description hanging 26px to the left of its own name. */
 function AnatomyOtherRow({ name, description, resolvesAddress, navigation, legendFocus }: { name: string; description: string; resolvesAddress: (name: string) => boolean; navigation?: ReferenceNavigation; legendFocus: LegendFocus }) {
   const link = familyLink(navigation, resolvesAddress, name);
+  // What the row shows: a documented component's or titled member's title, or the title of the page
+  // `name` is the id of — never the raw id.
+  const shown = useMemberTitle(navigation)(name);
   // No member id of its own (it names a component documented elsewhere), so it needs its own
   // namespace to never collide with a real member id sharing the same text.
   const focusKey = `other:${name}`;
@@ -269,12 +272,12 @@ function AnatomyOtherRow({ name, description, resolvesAddress, navigation, legen
               role="link"
               style={styles.legendName}
               ref={(node) => legendFocus.register(focusKey, node as unknown as FocusableNode)}
-              {...({ ...link, ...(number !== undefined ? { 'aria-label': `Part ${number}, ${name}` } : {}), onFocus: () => legendFocus.onFocus(focusKey), onBlur: () => legendFocus.onBlur(focusKey) } as Record<string, unknown>)}
+              {...({ ...link, ...(number !== undefined ? { 'aria-label': `Part ${number}, ${shown}` } : {}), onFocus: () => legendFocus.onFocus(focusKey), onBlur: () => legendFocus.onBlur(focusKey) } as Record<string, unknown>)}
             >
-              {name}
+              {shown}
             </Text>
           ) : (
-            <Text style={styles.legendName}>{name}</Text>
+            <Text style={styles.legendName}>{shown}</Text>
           )}
           <Text style={styles.legendExt}>Other page</Text>
         </View>

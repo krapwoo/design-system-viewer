@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo } from 'react';
 import type { ReferenceNavigation } from './catalogReferences';
+import { MemberTitlesContext } from './memberTitlesContext';
 import { partNumbering, type PartEntry, type PartNumbering } from './partsModel';
 import type { CatalogAnatomy } from './types';
 
@@ -26,12 +27,13 @@ function identityOf(navigation: ReferenceNavigation | undefined, name: string): 
 export function countsAsPart(navigation: ReferenceNavigation | undefined, name: string, requireResolved: boolean): boolean {
   const target = navigation?.resolve(name);
   if (!target) return !requireResolved;
-  return navigation?.isPart?.(target.pageId) ?? true;
+  return navigation?.isPart?.(target.pageId, target.memberId) ?? true;
 }
 
 /** `partNumbering` for a page: its anatomies' `other` items, then the Parts-block entries that open
  *  a page of their own (a plain row is not a part), resolved through `navigation`. */
 export function usePagePartNumbering(first: number, anatomies: ReadonlyArray<CatalogAnatomy | undefined>, parts: readonly PartEntry[], navigation: ReferenceNavigation | undefined): PartNumbering {
+  const { titles } = useContext(MemberTitlesContext);
   return useMemo(
     () => partNumbering({
       first,
@@ -41,12 +43,14 @@ export function usePagePartNumbering(first: number, anatomies: ReadonlyArray<Cat
       opens: (name) => Boolean(navigation?.resolve(name)),
       titleOf: (name) => {
         const target = navigation?.resolve(name);
-        return target ? navigation?.page?.(target.pageId)?.title : undefined;
+        if (!target) return undefined;
+        // A titled member or documented component names itself; any other name is its page's title.
+        return titles.get(name) ?? navigation?.page?.(target.pageId)?.title;
       },
       counts: (name) => countsAsPart(navigation, name, true),
     }),
     // `anatomies` is a fresh array each render; its members are what change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [first, ...anatomies, parts, navigation],
+    [first, ...anatomies, parts, navigation, titles],
   );
 }

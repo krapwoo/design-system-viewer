@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage, DividedStack, VariantGroup } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, DividedStack, TokenDetails, TokenGrid, TokenTile, VariantGroup } from '@krapwoo/ds-viewer';
+import { AnimatedChevron } from '../components/AnimatedChevron';
+import { InputClearButton } from '../components/InputClearButton';
 import { Icon } from '../icons/Icon.native';
 import { ICON_PATHS, type IconName } from '../icons';
 import { DS_ICON_SIZE, DS_ICON_SIZE_STEPS, DS_SEMANTIC, DS_SPACING, DS_TYPOGRAPHY } from '../tokens';
@@ -13,6 +15,9 @@ const styles = StyleSheet.create({
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DS_SPACING[800] },
   iconGridItem: { width: 72, alignItems: 'center', gap: DS_SPACING[200] },
   iconGridLabel: { ...DS_TYPOGRAPHY.bodyXs, color: DS_SEMANTIC.text.muted, textAlign: 'center' },
+  chevronPair: { flexDirection: 'row', gap: DS_SPACING[800] },
+  // A TokenGrid sizes its tiles from its own width, so it must fill the group rather than shrink to fit.
+  tileGrid: { alignSelf: 'stretch' },
 });
 
 function IconsGallery() {
@@ -39,13 +44,47 @@ function IconsGallery() {
           ))}
         </View>
       </VariantGroup>
+      {/* Two small icon components live here, as tiles, instead of on pages of their own: the page
+          lists them in `documents`, and each tile is bound to its component with `documents=…`, so
+          a link, an anatomy pin or a search hit for the component opens this page at its tile. */}
+      <VariantGroup name="Icon components" desc="small components that draw an icon, documented here rather than on pages of their own" align="left">
+        <View style={styles.tileGrid}>
+        <TokenGrid minTileWidth={200}>
+          <TokenTile
+            documents="AnimatedChevron"
+            name="Animated chevron"
+            value="AnimatedChevron"
+            note="Flips between down (collapsed) and up (expanded) in place. Banner's collapsible header uses it."
+            action={<TokenDetails title="Animated chevron" kicker="Icon component" source="components/AnimatedChevron/AnimatedChevron.tsx:24" />}
+          >
+            <View style={styles.chevronPair}>
+              <AnimatedChevron expanded={false} size={DS_ICON_SIZE.lg} />
+              <AnimatedChevron expanded size={DS_ICON_SIZE.lg} />
+            </View>
+          </TokenTile>
+          <TokenTile
+            documents="InputClearButton"
+            name="Clear button"
+            value="InputClearButton"
+            note="The × InputField and SearchField show once a field holds a value. 24px, padded to a 44pt touch target."
+            action={<TokenDetails title="Clear button" kicker="Icon component" source="components/InputClearButton/InputClearButton.tsx:26" />}
+          >
+            <InputClearButton onPress={() => {}} />
+          </TokenTile>
+        </TokenGrid>
+        </View>
+      </VariantGroup>
     </DividedStack>
   );
 }
 
 export default defineCatalogPage({
   group: 'Tokens',
-  description: 'Every icon available to the Icon component, plus the DS_ICON_SIZE steps it can be rendered at — pair an icon\'s size with the text scale beside it.',
+  documents: [
+    { component: 'AnimatedChevron', title: 'Animated chevron' },
+    { component: 'InputClearButton', title: 'Clear button' },
+  ],
+  description: 'Every icon available to the Icon component, plus the DS_ICON_SIZE steps it can be rendered at — pair an icon\'s size with the text scale beside it. Also documents the two small icon components, AnimatedChevron and InputClearButton.',
   tokenGallery: true,
   render: () => <IconsGallery />,
 });

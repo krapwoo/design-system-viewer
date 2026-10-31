@@ -340,7 +340,8 @@ test('a same-page section-alias arrival does not reset the main scroll', async (
 test('a member-owned inverse reference returns to that member rather than the family page heading', () => {
   const { container, cleanup } = mountShell('BotFamily');
   try {
-    const crossUse = linkNamed(container, 'PageA');
+    // A link that names a page shows the page's title, never its raw id.
+    const crossUse = linkNamed(container, 'Page A');
     assert.ok(crossUse, 'the non-whole member inverse use must be visible before opening any notes');
     click(crossUse);
     assert.equal(pageHeading(), 'Page A');
@@ -355,7 +356,7 @@ test('a member-owned inverse reference returns to that member rather than the fa
 test('a related sentence activates its actual member link and returns to the owning part', () => {
   const { container, cleanup } = mountShell('BotFamily');
   try {
-    const related = linkNamed(container, 'BotFamily');
+    const related = linkNamed(container, 'Bot family');
     assert.ok(related, 'the related sentence should link its actual same-family address');
     click(related);
     const back = linkNamed(container, 'Back to Bot family');

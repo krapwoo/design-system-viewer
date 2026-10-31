@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { AlsoUsedByEntry, CatalogAnatomy, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, RelatedPage, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
+import type { AlsoUsedByEntry, CatalogAnatomy, DocumentedComponent, CatalogMember, CatalogMemberSection, ComparisonDef, ComposedOfEntry, NavGroup, PreviewWidths, PropDef, RelatedPage, SectionDef, SpecimenSize, SpecimenSurfaceKind, TokenSection, VariantSlot } from './types.ts';
 import type { TokenDefinition, TokenKind } from './tokenDefinition.ts';
 
 /** `SectionDef` without the derived fields (`id`/`path`/`props` come from detection and
@@ -119,6 +119,16 @@ export interface CatalogPageInput<TId extends string = string> {
    *  in another group, a parent that is itself nested, or a page naming itself is an error
    *  (`validateSidebarParents`; `doctor`: `sidebar-parent-invalid`). */
   sidebarParent?: string;
+  /** Components this (token) page documents instead of a component page of their own, e.g. the
+   *  small icon components shown as tiles on an Iconography page. Each counts as catalogued (no
+   *  "needs a page" finding, no `exclude`), keeps component discovery, usage and Appears-in, and
+   *  is owned by this page. Everything that names the component — anatomy items and pins,
+   *  `composedOf`, Uses / Also used by / Related links, search — opens this page at that tile and
+   *  shows `title`. `component` is the export name and doubles as the stable anchor
+   *  (`#HeaderLogo`); bind a tile to it with `<TokenTile documents="HeaderLogo">` or
+   *  `<DocumentedAnchor component="HeaderLogo">`. Not used on a family or group page.
+   *  Validated by `validateDocuments` (`doctor`: `documents-invalid`). */
+  documents?: DocumentedComponent[];
 }
 
 export interface CatalogPage<TId extends string = string> extends CatalogPageInput<TId> {
@@ -861,6 +871,77 @@ export function validateSidebarParents(
   return issues;
 }
 
+/** One `documents` problem, tied to the page that declares it. */
+export interface DocumentsIssue {
+  page: string;
+  message: string;
+}
+
+/** Checks every page's `documents`: each entry names a real component (`componentNames`, when the
+ *  caller knows them), has a non-blank title, is listed once, is documented by one page only, has no
+ *  component page of its own, and does not reuse an id or alias another page or member already owns.
+ *  A family or group page (one with `members`) cannot document components this way. Pure, so the
+ *  viewer's development console and `doctor` report the same problems. */
+export function validateDocuments(
+  pages: ReadonlyArray<{ id: string; component?: string; documents?: ReadonlyArray<{ component: string; title: string }>; members?: ReadonlyArray<{ id: string; component?: string; aliases?: string[] }>; aliases?: string[]; tokenDefinition?: { sections?: ReadonlyArray<{ aliases?: string[] }> } }>,
+  componentNames?: ReadonlySet<string>,
+): DocumentsIssue[] {
+  const issues: DocumentsIssue[] = [];
+  const documentedBy = new Map<string, string>();
+  // The component each page is the component page of: its own `component` (default: its id), or
+  // each member's `component` on a family or group page.
+  const ownPages = new Map<string, string>();
+  const claimedIds = new Map<string, string>();
+  for (const page of pages) {
+    const hasMembers = page.members !== undefined && page.members.length > 0;
+    if (hasMembers) {
+      for (const member of page.members!) {
+        if (member.component) ownPages.set(member.component, page.id);
+        claimedIds.set(member.id, page.id);
+        for (const alias of member.aliases ?? []) claimedIds.set(alias, page.id);
+      }
+    } else if (!page.documents || page.documents.length === 0 || page.component !== undefined) {
+      ownPages.set(page.component ?? page.id, page.id);
+    }
+    for (const alias of page.aliases ?? []) claimedIds.set(alias, page.id);
+    for (const section of page.tokenDefinition?.sections ?? []) for (const alias of section.aliases ?? []) claimedIds.set(alias, page.id);
+  }
+  const pageIds = new Map(pages.map((page) => [page.id, page.id]));
+  for (const page of pages) {
+    if (!page.documents || page.documents.length === 0) continue;
+    const here = (message: string) => issues.push({ page: page.id, message: `Page "${page.id}": ${message}` });
+    if (page.members && page.members.length > 0) here('"documents" is not used on a family or group page — move the component to a member, or to a token page.');
+    const seen = new Set<string>();
+    for (const entry of page.documents) {
+      if (typeof entry.title !== 'string' || entry.title.trim() === '') here(`documents entry "${entry.component}" has a blank title — give it the name links and search should show.`);
+      if (seen.has(entry.component)) {
+        here(`documents lists "${entry.component}" more than once.`);
+        continue;
+      }
+      seen.add(entry.component);
+      if (componentNames && !componentNames.has(entry.component)) {
+        here(`documents entry "${entry.component}" is not a component export of this project (check the name, and that the config's "exclude" does not drop it).`);
+        continue;
+      }
+      const other = documentedBy.get(entry.component);
+      if (other !== undefined) {
+        here(`documents entry "${entry.component}" is already documented by page "${other}" — a component belongs to one page.`);
+        continue;
+      }
+      documentedBy.set(entry.component, page.id);
+      const own = ownPages.get(entry.component);
+      if (own !== undefined) {
+        here(`documents entry "${entry.component}" also has its own page ("${own}") — keep one: remove the entry, or the component's own page.`);
+        continue;
+      }
+      const claimed = claimedIds.get(entry.component);
+      if (claimed !== undefined) here(`documents entry "${entry.component}" collides with an id or alias on page "${claimed}".`);
+      else if (pageIds.has(entry.component)) here(`documents entry "${entry.component}" collides with a page id.`);
+    }
+  }
+  return issues;
+}
+
 function orderGroups<TId extends string>(groupIds: Map<string, TId[]>, groupOrder: string[] | undefined): NavGroup<TId>[] {
   const listed = groupOrder ?? [];
   const labels = [...groupIds.keys()];
@@ -892,6 +973,9 @@ export function buildCatalogSections<TId extends string>(
     } else {
       documented.add(page.component ?? page.id);
     }
+    // A token page's `documents` own their components too, so none gets a "No examples documented."
+    // stub page of its own.
+    for (const entry of page.documents ?? []) documented.add(entry.component);
   }
   const groupIds = new Map<string, TId[]>();
   const addToGroup = (group: string, id: TId) => groupIds.set(group, [...(groupIds.get(group) ?? []), id]);
@@ -907,6 +991,7 @@ export function buildCatalogSections<TId extends string>(
     ...pages.flatMap((page) => (page.members ?? []).map((member) => member.id)),
     ...pages.flatMap((page) => (page.members ?? []).flatMap((member) => member.aliases ?? [])),
     ...pages.flatMap((page) => page.aliases ?? []),
+    ...pages.flatMap((page) => (page.documents ?? []).map((entry) => entry.component)),
   ]);
 
   // A member only ever looks itself up (below) by its own canonical `id`, but `knownComposedOfNames`
@@ -928,6 +1013,8 @@ export function buildCatalogSections<TId extends string>(
       for (const alias of member.aliases ?? []) canonicalMemberIdByAlias.set(alias, member.id);
     }
     for (const alias of page.aliases ?? []) canonicalMemberIdByAlias.set(alias, page.id);
+    // A documented component is an exact address of its own (a tile on the documenting page).
+    for (const entry of page.documents ?? []) canonicalMemberIdByAlias.set(entry.component, entry.component);
   }
   // #60/C1: a `composedOf` entry may instead name a component export rather than its page/member's
   // own id or alias — an ordinary page's own `component` (when it differs from its `id`) or a family
@@ -987,8 +1074,9 @@ export function buildCatalogSections<TId extends string>(
   const allPageIds = new Set(pages.map((page) => page.id));
   const familyIdsByPage = new Map<TId, Set<string>>();
   for (const page of pages) {
-    if (!page.members && !page.tokenDefinition) continue;
+    if (!page.members && !page.tokenDefinition && !(page.documents && page.documents.length > 0)) continue;
     const ids = new Set<string>();
+    for (const entry of page.documents ?? []) ids.add(entry.component);
     for (const member of page.members ?? []) {
       ids.add(member.id);
       for (const alias of member.aliases ?? []) ids.add(alias);
@@ -1072,6 +1160,9 @@ export function buildCatalogSections<TId extends string>(
   const seenIds = new Set<TId>();
   if ((globalThis as { __DEV__?: boolean }).__DEV__) {
     for (const parentIssue of validateSidebarParents(pages)) console.error(`[Catalog] ${parentIssue.message}`);
+  }
+  if ((globalThis as { __DEV__?: boolean }).__DEV__) {
+    for (const documentsIssue of validateDocuments(pages, new Set(componentByName.keys()))) console.error(`[Catalog] ${documentsIssue.message}`);
   }
   const sections: SectionDef<TId>[] = pages.map((page) => {
     // N2: `seenIds` must be populated (and consulted, below in the undocumented-component loop)
@@ -1275,7 +1366,11 @@ export function buildCatalogSections<TId extends string>(
       component: hasMembers ? undefined : component?.name,
       // #60: see `SectionDef.alsoUsedBy` (rendered by `ReferenceDetails`'s `AlsoUsedByFact`) — a family or group
       // page's "also used by" lives per member instead (`family.members[].alsoUsedBy`, above).
-      alsoUsedBy: hasMembers ? undefined : dedupeAlsoUsedBy(usedByTarget.get(page.id) ?? [], new Set([page.id])),
+      alsoUsedBy: hasMembers ? undefined : dedupeAlsoUsedBy(
+        [...(usedByTarget.get(page.id) ?? []), ...(page.documents ?? []).flatMap((entry) => usedByTarget.get(entry.component) ?? [])],
+        new Set([page.id]),
+      ),
+      ...(page.documents && page.documents.length > 0 && !hasMembers ? { documents: page.documents.map((entry) => ({ ...entry, path: componentByName.get(entry.component)?.file })) } : {}),
     };
   });
 

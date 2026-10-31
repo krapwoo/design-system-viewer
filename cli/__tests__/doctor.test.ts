@@ -1492,3 +1492,103 @@ test('sidebar-parent-invalid reports a parent that is not listed in the sidebar'
   assert.equal(found[0].page, 'Under');
   assert.match(found[0].message, /not listed in the sidebar/);
 });
+
+test('documents: a component a token page documents needs no page of its own', () => {
+  const logo = component({ name: 'HeaderLogo', file: '/x/HeaderLogo.tsx' });
+  const icons = page({ id: 'Iconography', group: 'Tokens', file: '/x/Iconography.catalog.tsx', hasDocuments: true, documents: [{ component: 'HeaderLogo', title: 'Header logo' }], hasRender: true });
+  assert.equal(collectIssues([], [logo]).filter((i) => i.id === 'component-no-examples').length, 1, 'baseline: a component with no page is flagged');
+  const withDocuments = collectIssues([icons], [logo]);
+  assert.deepEqual(withDocuments.filter((i) => i.id === 'component-no-examples' || i.id === 'documents-invalid'), []);
+});
+
+test('documents: an unreadable documents list gives its components the benefit of the doubt, not a false "needs a page"', () => {
+  const logo = component({ name: 'HeaderLogo' });
+  const icons = page({ id: 'Iconography', group: 'Tokens', file: '/x/Iconography.catalog.tsx', hasDocuments: true, checkable: false });
+  assert.deepEqual(collectIssues([icons], [logo]).filter((i) => i.id === 'component-no-examples'), []);
+});
+
+test('documents-invalid is an error for an unknown component, a double owner, an own page, a blank title and a repeat; quiet for a valid page', () => {
+  const logo = component({ name: 'HeaderLogo' });
+  const mark = component({ name: 'FooterMark' });
+  const tokenPage = (id: string, documents: { component: string; title: string }[]) =>
+    page({ id, group: 'Tokens', file: `/x/${id}.catalog.tsx`, hasDocuments: true, documents, hasRender: true });
+  const quiet = collectIssues([tokenPage('Icons', [{ component: 'HeaderLogo', title: 'Header logo' }])], [logo, mark]);
+  assert.deepEqual(quiet.filter((i) => i.id === 'documents-invalid'), []);
+
+  const broken = collectIssues([
+    tokenPage('Icons', [{ component: 'HeaderLogo', title: 'Header logo' }, { component: 'Nope', title: 'Nope' }, { component: 'FooterMark', title: ' ' }]),
+    tokenPage('More', [{ component: 'HeaderLogo', title: 'Again' }]),
+    page({ id: 'FooterMark', group: 'Components', component: 'FooterMark', file: '/x/FooterMark.catalog.tsx', hasRender: true }),
+  ], [logo, mark]).filter((i) => i.id === 'documents-invalid');
+  assert.deepEqual(broken.map((i) => i.page), ['Icons', 'Icons', 'Icons', 'More']);
+  assert.ok(broken.every((i) => i.severity === 'error' && i.file && i.fix));
+  assert.match(broken[0].message, /"Nope" is not a component export/);
+  assert.match(broken[1].message, /blank title/);
+  assert.match(broken[2].message, /"FooterMark" also has its own page/);
+  assert.match(broken[3].message, /already documented by page "Icons"/);
+});
+
+test('documents is read from the page source and clears the "needs a page" finding end to end', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-documents-'));
+  try {
+    mkdirSync(path.join(dir, 'pages'), { recursive: true });
+    writeFileSync(path.join(dir, 'pages', 'Iconography.catalog.tsx'), `
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      const TITLE = 'Header logo';
+      export default defineCatalogPage({ id: 'Iconography', title: 'Icons', group: 'Tokens', description: 'x', render: () => null,
+        documents: [{ component: 'HeaderLogo', title: TITLE }, { component: 'FooterMark', title: 'Footer mark' }] });
+    `);
+    const [parsed] = readStaticPages([path.join(dir, 'pages', 'Iconography.catalog.tsx')]);
+    assert.equal(parsed.hasDocuments, true);
+    assert.deepEqual(parsed.documents, [{ component: 'HeaderLogo', title: 'Header logo' }, { component: 'FooterMark', title: 'Footer mark' }]);
+    assert.equal(parsed.checkable, true);
+    const issues = collectIssues([parsed], [component({ name: 'HeaderLogo' }), component({ name: 'FooterMark' })]);
+    assert.deepEqual(issues.filter((i) => i.id === 'component-no-examples' || i.id === 'documents-invalid'), []);
+
+    writeFileSync(path.join(dir, 'pages', 'Dynamic.catalog.tsx'), `
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      export default defineCatalogPage({ id: 'Dynamic', group: 'Tokens', description: 'x', render: () => null, documents: makeDocuments() });
+    `);
+    const [dynamic] = readStaticPages([path.join(dir, 'pages', 'Dynamic.catalog.tsx')]);
+    assert.equal(dynamic.hasDocuments, true);
+    assert.equal(dynamic.documents, undefined);
+    assert.equal(dynamic.checkable, false, 'a documents list doctor cannot read is reported, never half-read');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// I-2: doctor registers a documented component as an address, as the viewer does.
+test('documents: a family page\'s relatedPages naming a documented component is not a family-invalid error', () => {
+  const icons = page({ id: 'Iconography', group: 'Tokens', file: '/x/Iconography.catalog.tsx', hasDocuments: true, documents: [{ component: 'HeaderLogo', title: 'Header logo' }], hasRender: true });
+  const family = page({
+    id: 'Card', group: 'Components', file: '/x/Card.catalog.tsx', whole: 'Card', hasWhole: true, hasSections: true,
+    sections: [{ label: 'Parts', kind: 'blocks', members: ['CardHeader'], inWhole: true }],
+    members: [
+      { id: 'Card', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+      { id: 'CardHeader', parent: 'Card', hasWhenToUse: false, hasA11y: false, hasExamples: false },
+    ],
+    relatedPages: [{ page: 'HeaderLogo' }],
+  });
+  const found = collectIssues([icons, family], [component({ name: 'HeaderLogo', file: '/x/HeaderLogo.tsx' })]).filter((i) => i.id === 'family-invalid');
+  assert.deepEqual(found, []);
+});
+
+test('documents: a token-definition alias colliding with a documented component is reported', () => {
+  const icons = page({ id: 'Iconography', group: 'Tokens', file: '/x/Iconography.catalog.tsx', hasDocuments: true, documents: [{ component: 'HeaderLogo', title: 'Header logo' }], hasRender: true });
+  const colors = page({
+    id: 'Colors', group: 'Tokens', file: '/x/Colors.catalog.tsx', aliases: ['HeaderLogo'],
+    tokenDefinition: { kind: 'color', sections: [{ id: 'base', entries: [] }] } as never,
+  });
+  const found = collectIssues([icons, colors], [component({ name: 'HeaderLogo', file: '/x/HeaderLogo.tsx' })]).filter((i) => i.id === 'family-invalid');
+  assert.ok(found.some((i) => /"HeaderLogo" collides/.test(i.message)), JSON.stringify(found.map((i) => i.message)));
+});
+
+test('documents: an unreadable documents list says in page-not-checkable that "needs a page" is off catalog-wide', () => {
+  const icons = page({ id: 'Iconography', group: 'Tokens', file: '/x/Iconography.catalog.tsx', hasDocuments: true, checkable: false });
+  const found = collectIssues([icons], []).filter((i) => i.id === 'page-not-checkable');
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /needs a page.*catalog-wide/);
+  const plain = collectIssues([page({ id: 'Other', file: '/x/Other.catalog.tsx', checkable: false })], []).filter((i) => i.id === 'page-not-checkable');
+  assert.doesNotMatch(plain[0].message, /needs a page/);
+});

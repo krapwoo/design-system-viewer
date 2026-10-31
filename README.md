@@ -1014,6 +1014,64 @@ shape:
   ```
   `TokenTile` and `TokenRow` both take an `action` slot after their note for it.
 
+### Documenting components on a token page (`documents`)
+
+A few small components are easier to read as tiles on one token page than as a page each — a set of
+icon components, a family of badges. List them in `documents` and bind each tile to its component:
+
+```tsx
+export default defineCatalogPage({
+  id: 'Iconography',
+  title: 'Icons',
+  group: 'Tokens',
+  description: 'The small icon components, as tiles.',
+  documents: [
+    { component: 'HeaderLogo', title: 'Header logo' },
+    { component: 'FooterMark', title: 'Footer mark' },
+  ],
+  render: () => (
+    <TokenGrid>
+      {/* A TokenTile binds with `documents`; the value is the component's export name. */}
+      <TokenTile documents="HeaderLogo" name="Header logo" value="HeaderLogo"
+        action={<TokenDetails title="Header logo" kicker="Icon component" source="components/HeaderLogo.tsx:12" />}>
+        <HeaderLogo />
+      </TokenTile>
+      {/* A custom tile wraps itself in DocumentedAnchor, the same binding. */}
+      <DocumentedAnchor component="FooterMark"><MyFooterMarkTile /></DocumentedAnchor>
+    </TokenGrid>
+  ),
+});
+```
+
+- **`documents: [{ component, title }]`.** `component` is the export name and doubles as the tile's
+  stable address, `#HeaderLogo`; `title` is the human name the viewer shows for it everywhere.
+- **The page owns the component.** Each documented component counts as catalogued: `doctor` no longer
+  wants a page for it, so it does not go in `exclude` — which would also drop it from component
+  discovery. Its usage and "Appears in" stay, counted under this page (the Overview, and one "Appears
+  in" block per component, named by its title), and "Also used by" on this page lists its users.
+- **Everything that names the component opens the page at its tile.** Anatomy items and
+  `<AnatomyPin other="HeaderLogo" />`, `composedOf`, Uses / Also used by / Related links, the Parts
+  block, the sidebar filter and the Source reference search all show the title ("Header logo", not the
+  id) and link to `#HeaderLogo`. Following one opens the token page, scrolls the bound tile to the top
+  and outlines it until you go elsewhere. With `partGroups` set, a documented component still counts
+  as a part although its page is in Tokens.
+- **Bind the tile.** `<TokenTile documents="HeaderLogo">` or `<DocumentedAnchor component="HeaderLogo">`
+  around a custom tile. An address for a documented component whose tile is not bound still opens the
+  page, at the top, with no tile outlined.
+- **Not on a family or group page** — give those components to a member instead.
+- **`doctor` (`documents-invalid`, error)** for a component that is not a component export of the
+  project (or that `exclude` drops), is documented by two pages, also has a page of its own, has a blank
+  `title`, is listed twice, or collides with another page's id, member or alias. The viewer's console
+  reports the same problems.
+
+The starter kit does this: its Icons page documents `AnimatedChevron` and `InputClearButton` as
+tiles, and the Banner page pins the chevron in its anatomy
+([`Icons.catalog.tsx`](starter-kit/pages/Icons.catalog.tsx),
+[`Banner.catalog.tsx`](starter-kit/components/Banner/Banner.catalog.tsx)).
+
+A link or legend entry that names a **page id** — an anatomy `other`, a pin, a `composedOf` entry, a
+Related or Uses line — shows that page's `title`, never the raw id.
+
 ### `tokenDefinition`
 
 An opt-in, structured alternative to `render`/`tokenGallery`/`tokenSections` for a token page's
@@ -1313,6 +1371,7 @@ Each of these is caught by `doctor`. The worked example for the anatomy ones is
 | `anatomy-no-picture` | An anatomy that lists parts to look at but has no `picture`. | Draw the whole with `AnatomySpecimen` and pin the parts with `AnatomyPin`; `picture: null` says there is deliberately none. |
 | `anatomy-picture-not-specimen` | A `picture` that isn't drawn by `AnatomySpecimen`, so it ignores the page's width and centring. | Make `AnatomySpecimen` the picture's root (a plain wrapper around it is fine). |
 | `anatomy-picture-geometry` (`--render`) | A specimen off-centre, a pin far from the specimen, a pin cut off by the picture area, or a pin over the side-by-side legend. | Pass the pins in `AnatomySpecimen`'s `pins` prop at `position: 'absolute', right: 0`, as TripCard does. |
+| `documents-invalid` (error) | A token page's `documents` entry that names no component export (or one `exclude` drops), is documented by two pages, also has a page of its own, has a blank `title`, is listed twice, or collides with another id or alias; or `documents` on a family or group page. A `documents` list doctor cannot read (not a literal) is reported as `page-not-checkable`, and while one exists doctor stops reporting "needs a page" for every component that has no page, catalog-wide. | List each component once, on one token page, with a title, and give it no page of its own; see **Documenting components on a token page**. |
 | `sidebar-parent-invalid` (error) | A `sidebarParent` that names an unknown page, a page in another group, a page that is itself nested, the page itself, or a page that is not listed in the sidebar (`navigation: 'reference'`). | Name a page in the same group that is listed in the sidebar and has no `sidebarParent` of its own, or remove the field. |
 | `grid-empty-cell` (hint) | An odd number of items two across, leaving an empty cell. | Set `specimenSize: 'regular'`, or add or remove one item. |
 | `specimen-text-illegible` (`--render`) | Sample text drawn for the other appearance: near-white text on a light cell, or near-black text on a dark one (under 1.5:1). The background must be a grey too: a coloured fill (white on saturated yellow) is a deliberate choice and is left alone, as are faint platform colours (placeholder grey, a yellow warning glyph). | Set the item's `surface` (`'dark'` for light-on-dark components), or give the sample text a colour that follows the scheme. |

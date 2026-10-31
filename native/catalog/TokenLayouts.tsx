@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { sectionColumns, tileGeometry, TOKEN_LAYOUT_GAP, TOKEN_SECTION_MIN_WIDTH } from './tokenLayout';
+import { DocumentedAnchor } from './DocumentedAnchor';
 import type { TokenSection } from './types';
 
 /** Measures its own width; renders nothing inside until the width is known. */
@@ -84,9 +85,12 @@ export function TokenGrid({ children, minTileWidth = 140, maxColumns }: { childr
 /**
  * One token in a `TokenGrid`: its preview, then its name and value, then its role. `note` says
  * where or why the token is used (from its comments or real usages) — omit it when there is none.
+ * `documents` binds the tile to a component its page documents (`documents: [{ component, title }]`),
+ * so an address for that component lands on this tile; a custom tile does the same with
+ * `DocumentedAnchor`.
  */
-export function TokenTile({ name, value, note, action, children }: { name: string; value?: string; note?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
+export function TokenTile({ name, value, note, action, documents, children }: { name: string; value?: string; note?: React.ReactNode; action?: React.ReactNode; documents?: string; children: React.ReactNode }) {
+  const tile = (
     <View style={styles.tile}>
       <View style={styles.tilePreview}>{children}</View>
       <Text style={styles.tileName}>{name}</Text>
@@ -95,6 +99,7 @@ export function TokenTile({ name, value, note, action, children }: { name: strin
       {action}
     </View>
   );
+  return documents === undefined ? tile : <DocumentedAnchor component={documents}>{tile}</DocumentedAnchor>;
 }
 
 const styles = StyleSheet.create({

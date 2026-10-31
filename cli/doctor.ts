@@ -12,7 +12,7 @@ import { gridColumnLimit, isGridAxisLabel, listGeometry, MATRIX_LAYOUT, presenta
 import { memberBlocks, toSectionDef } from './explain.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
 import {
-  relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateFamily, validateGroupIssues, validateSidebarParents,
+  relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateDocuments, validateFamily, validateGroupIssues, validateSidebarParents,
   type FamilyPageLike, type GroupPageLike, type MemberLocation,
 } from '../native/catalog/pageApi.ts';
 import { canonicalTokenTitle, findDuplicateIds, isTokenKind } from '../native/catalog/tokenDefinition.ts';
@@ -75,7 +75,8 @@ function checkNotCheckable(pages: StaticPage[]): DoctorIssue[] {
     .filter((p) => !p.checkable && !p.parseError)
     .map((p) => issue({
       id: 'page-not-checkable', severity: 'warning', ...pageRef(p),
-      message: 'Page not statically checkable — some of its layout data is not a literal doctor can read.',
+      message: 'Page not statically checkable — some of its layout data is not a literal doctor can read.'
+        + (p.hasDocuments === true && p.documents === undefined ? ' Its "documents" list is one of them, so doctor cannot tell which components it covers and stops reporting "needs a page" for every component without a page, catalog-wide.' : ''),
       fix: 'Write rows/columns/items/propNotes as literal arrays/objects (or a same-file const), not a function call.',
     }));
 }
@@ -108,13 +109,18 @@ function checkComponentNoExamples(pages: StaticPage[], components: ComponentReco
   // examples — a member with none gets its own `component-no-examples` from `checkFamilyMembers`
   // instead) is enough to clear the component-wide "no catalog page at all" half of this rule.
   const documentedByMember = new Set<string>();
+  // A page whose `documents` doctor could not read might document any component: give it the same
+  // benefit of the doubt as a not-checkable page (its `page-not-checkable` warning already tells).
+  const hasUnreadDocuments = pages.some((page) => page.hasDocuments === true && page.documents === undefined);
   for (const page of pages) {
     if (page.component) byComponent.set(page.component, [...(byComponent.get(page.component) ?? []), page]);
     for (const member of page.members ?? []) if (member.component) documentedByMember.add(member.component);
+    // A token page's `documents` catalogue their components without a page each.
+    for (const documented of page.documents ?? []) documentedByMember.add(documented.component);
   }
   return components
     .filter((c) => {
-      if (documentedByMember.has(c.name)) return false;
+      if (documentedByMember.has(c.name) || (hasUnreadDocuments && (byComponent.get(c.name) ?? []).length === 0)) return false;
       const componentPages = byComponent.get(c.name) ?? [];
       // A not-statically-checkable page is given the benefit of the doubt here — it might have
       // real examples this reader simply couldn't read (Global Constraint: never a partial read;
@@ -204,9 +210,12 @@ function idsRegisteredByPage(pages: StaticPage[]): Map<string, Set<string>> {
   // excluding it here turned a valid `relatedPages` entry into a false CI-failing error.
   for (const page of pages) {
     const hasMembers = Boolean(page.members && page.members.length > 0);
-    if (!hasMembers && !page.tokenDefinition) continue;
+    const hasDocuments = Boolean(page.documents && page.documents.length > 0);
+    if (!hasMembers && !page.tokenDefinition && !hasDocuments) continue;
     const id = resolvePageId(page, page.file);
     const ids = new Set<string>();
+    // A documented component is an address the viewer registers (`pageApi.ts`'s `familyIdsByPage`).
+    for (const entry of page.documents ?? []) ids.add(entry.component);
     for (const member of page.members ?? []) {
       ids.add(member.id);
       for (const alias of member.aliases ?? []) ids.add(alias);
@@ -405,6 +414,7 @@ function checkMemberComposedOf(pages: StaticPage[], components: ComponentRecord[
   for (const page of pages) for (const member of page.members ?? []) knownNames.add(member.id);
   for (const page of pages) for (const member of page.members ?? []) for (const alias of member.aliases ?? []) knownNames.add(alias);
   for (const page of pages) for (const alias of page.aliases ?? []) knownNames.add(alias);
+  for (const page of pages) for (const documented of page.documents ?? []) knownNames.add(documented.component);
 
   const issues: DoctorIssue[] = [];
   for (const page of pages) {
@@ -453,6 +463,22 @@ function checkSidebarParents(pages: StaticPage[]): DoctorIssue[] {
     id: 'sidebar-parent-invalid', severity: 'error', page, file: byId.get(page)?.file,
     message,
     fix: 'Set sidebarParent to the id of a page in the same group that is listed in the sidebar and not itself nested, or remove it.',
+  }));
+}
+
+/** `documents-invalid`: a token page's `documents` that name an unknown component, are blank-titled,
+ *  repeated, shared by two pages, or also have a page of their own — the same `validateDocuments` the
+ *  viewer's development console uses. */
+function checkDocuments(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
+  const byId = new Map(pages.map((page) => [resolvePageId(page, page.file), page]));
+  const found = validateDocuments(
+    pages.map((page) => ({ id: resolvePageId(page, page.file), component: page.component, documents: page.documents, members: page.members, aliases: page.aliases, tokenDefinition: page.tokenDefinition })),
+    new Set(components.map((component) => component.name)),
+  );
+  return found.map(({ page, message }) => issue({
+    id: 'documents-invalid', severity: 'error', page, file: byId.get(page)?.file,
+    message,
+    fix: 'List each component once, on one token page, with a title, and give it no page of its own; or remove the entry.',
   }));
 }
 
@@ -1424,6 +1450,7 @@ export function collectIssues(
     ...checkTokenDefinition(pages),
     ...checkTokenDefinitionDuplicateKind(pages),
     ...checkTokenDefinitionAliases(pages),
+    ...checkDocuments(pages, components),
     ...checkStyleAsPart(pages),
     ...checkRelatedPagesUnused(pages),
     ...checkAnatomyWithoutPicture(pages),

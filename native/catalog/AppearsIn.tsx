@@ -3,10 +3,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { USAGE_FILES_COLLAPSED, formatUseLocation, type UsageEntry } from './usage';
 
-/** The "Appears in" block: the files that use the component as `file:line`, collapsed to the first
+/** The "Appears in" block (`title` names the component on a page that documents several): the files that use the component as `file:line`, collapsed to the first
  *  few with a "Show all N" control. Renders nothing for an entry with no uses, so a page without
  *  usage looks exactly as it did before. */
-export function AppearsIn({ entry }: { entry: UsageEntry | undefined }) {
+export function AppearsIn({ entry, title }: { entry: UsageEntry | undefined; title?: string }) {
   const [expanded, setExpanded] = useState(false);
   const [focused, setFocused] = useState(false);
   if (!entry || entry.uses.length === 0) return null;
@@ -18,7 +18,7 @@ export function AppearsIn({ entry }: { entry: UsageEntry | undefined }) {
   return (
     <View style={styles.card}>
       <Text style={styles.heading}>Appears in</Text>
-      <Text style={styles.subheading}>{`Files that use it · ${total}`}</Text>
+      <Text style={styles.subheading}>{title !== undefined ? `Files that use ${title} · ${total}` : `Files that use it · ${total}`}</Text>
       <View role="list" style={styles.files}>
         {shown.map((use, index) => (
           <Text key={`${index}:${formatUseLocation(use)}`} role="listitem" style={styles.file}>{formatUseLocation(use)}</Text>

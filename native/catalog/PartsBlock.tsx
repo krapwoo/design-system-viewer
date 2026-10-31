@@ -14,14 +14,14 @@ import { usePartNumbers } from './partNumbersContext';
 export function PartsBlock({ parts, navigation, title = 'Parts' }: { parts: readonly PartEntry[]; navigation?: ReferenceNavigation; title?: string }) {
   const headingId = useId();
   const numbers = usePartNumbers();
-  const titleOf = useMemberTitle();
+  const titleOf = useMemberTitle(navigation);
   // Resolved once per change of its inputs, not per render: the cards' page sources must stay the
   // same objects so a re-render does not re-run their live specimens.
   const { cards, plain } = useMemo(() => {
     // An entry resolving to a page that is not a component page is left out altogether.
     const counted = parts.filter((part) => {
       const target = navigation?.resolve(part.entry.component);
-      return !target || (navigation?.isPart?.(target.pageId) ?? true);
+      return !target || (navigation?.isPart?.(target.pageId, target.memberId) ?? true);
     });
     const resolved = counted.map((part) => {
       const link = referenceLinkProps(navigation, part.entry.component, part.sourceMemberId);
@@ -38,7 +38,7 @@ export function PartsBlock({ parts, navigation, title = 'Parts' }: { parts: read
           {cards.map(({ part, link, page }) => (
             <View key={part.entry.component} role="listitem" style={cardGrid.item}>
               <OverviewCard
-                title={page?.title ?? titleOf(part.entry.component)}
+                title={titleOf(part.entry.component) !== part.entry.component ? titleOf(part.entry.component) : page?.title ?? part.entry.component}
                 number={numbers?.numberOf(part.entry.component)}
                 caption={part.entry.role}
                 source={page?.source}

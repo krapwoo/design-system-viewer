@@ -210,3 +210,19 @@ test('thumbnailScale shrinks to fit and never enlarges', () => {
   assert.equal(thumbnailScale({ width: 50, height: 20 }, { width: 300, height: 132 }, 8), 1);
   assert.equal(thumbnailScale({ width: 0, height: 0 }, { width: 300, height: 132 }, 8), 1, 'not measured yet');
 });
+
+test('a token page that documents components owns their usage in the Overview', () => {
+  const icons = page('Iconography', {
+    render: () => NODE,
+    documents: [{ component: 'HeaderLogo', title: 'Header logo' }, { component: 'FooterMark', title: 'Footer mark' }],
+  });
+  const data: UsageData = {
+    version: 1,
+    components: { HeaderLogo: { area: 'Home', uses: usesIn('Home', 3) }, FooterMark: { uses: usesIn('Settings', 2) } },
+  };
+  const [built] = buildOverviewPages([icons], data, HELPERS);
+  assert.equal(built.hasUsage, true);
+  assert.equal(built.uses, 5);
+  assert.equal(built.home, 'Home');
+  assert.deepEqual(built.byArea, [{ area: 'Home', count: 3 }, { area: 'Settings', count: 2 }]);
+});
