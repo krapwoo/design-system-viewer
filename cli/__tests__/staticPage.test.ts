@@ -1307,3 +1307,16 @@ test('reads a family member\'s literal title, and leaves a non-literal one unset
   assert.equal(page.members?.find((m) => m.id === 'B')?.title, undefined);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
+
+test('a page whose tokenDefinition is a tokenScale call stays checkable and counts as a tokenDefinition page', () => {
+  const file = writePage(`
+    import { defineCatalogPage, tokenScale } from '@krapwoo/ds-viewer';
+    const FINDINGS = [{ expression: 'cornerRadius: 6', value: 6, unit: 'pt' }];
+    const RADIUS = tokenScale('radius', FINDINGS);
+    export default defineCatalogPage({ group: 'Tokens', description: 'Fixture.', tokenDefinition: RADIUS });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.checkable, true);
+  assert.equal(page.hasTokenDefinition, true);
+  assert.equal(page.tokenDefinition?.kind, 'radius');
+});

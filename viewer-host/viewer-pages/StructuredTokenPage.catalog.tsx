@@ -1,6 +1,6 @@
 import React from 'react';
-import { defineCatalogPage, StructuredTokenPage } from '@krapwoo/ds-viewer';
-import type { TokenDefinition } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, StructuredTokenPage, tokenScale } from '@krapwoo/ds-viewer';
+import type { TokenDefinition, TokenFinding } from '@krapwoo/ds-viewer';
 
 // Fixture values only — illustrative, never a real design system's actual tokens (README's own
 // "Token pages" section documents the real authoring shape with its own real-value guidance).
@@ -93,6 +93,19 @@ const MOTION_FIXTURE: TokenDefinition = {
   }],
 };
 
+// A value scale built from scanner findings: invented rows (no real app), covering one value written two
+// ways, a named constant, a plain literal of the same number, and the three kinds of "not a fixed value".
+const SCALE_FINDINGS: TokenFinding[] = [
+  { expression: 'cornerRadius: 6 (fixture)', usages: ['Fixture/Tag.swift:9'], unit: 'pt', value: 6 },
+  { expression: 'RoundedRectangle(cornerRadius: 6, style: .continuous) (fixture)', usages: ['Fixture/Card.swift:31'], unit: 'pt', value: 6 },
+  { expression: 'Metrics.cardCornerRadius (fixture)', name: 'Metrics.cardCornerRadius', unit: 'pt', value: 12 },
+  { expression: 'cornerRadius: 12 (fixture)', usages: ['Fixture/Sheet.swift:4'], unit: 'pt', value: 12 },
+  { expression: 'cornerRadius: pill.height / 2 (fixture)', unresolved: { reason: 'size', detail: "Half of the pill's height" } },
+  { expression: 'cornerRadius: isExpanded ? 16 : 8 (fixture)', unresolved: { reason: 'state' } },
+  { expression: 'cornerRadius: radiusFromServer (fixture)' },
+];
+const SCALE_FIXTURE = tokenScale('radius', SCALE_FINDINGS);
+
 export default defineCatalogPage({
   component: 'StructuredTokenPage',
   group: 'Components',
@@ -112,6 +125,7 @@ export default defineCatalogPage({
       { key: 'spacing', name: 'Fixture spacing definition', fill: true, node: <StructuredTokenPage definition={SPACING_FIXTURE} /> },
       { key: 'shadows', name: 'Fixture shadows definition', fill: true, node: <StructuredTokenPage definition={SHADOW_FIXTURE} /> },
       { key: 'motion', name: 'Fixture motion definition', fill: true, node: <StructuredTokenPage definition={MOTION_FIXTURE} /> },
+      { key: 'scale', name: 'Fixture value scale (tokenScale)', fill: true, node: <StructuredTokenPage definition={SCALE_FIXTURE} /> },
     ],
   },
 });

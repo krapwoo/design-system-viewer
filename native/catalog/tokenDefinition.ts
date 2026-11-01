@@ -25,6 +25,18 @@ const TOKEN_KIND_TITLES: Record<TokenKind, string> = {
   motion: 'Motion',
 };
 
+/** The singular a kind reads as in "No <noun> tokens yet" ("No dimension tokens yet", never "No dimensions tokens yet"). */
+const TOKEN_KIND_NOUNS: Record<TokenKind, string> = {
+  colors: 'color',
+  typography: 'typography',
+  spacing: 'spacing',
+  radius: 'radius',
+  dimensions: 'dimension',
+  shadows: 'shadow',
+  opacity: 'opacity',
+  motion: 'motion',
+};
+
 export function isTokenKind(value: string): value is TokenKind {
   return Object.prototype.hasOwnProperty.call(TOKEN_KIND_TITLES, value);
 }
@@ -103,6 +115,13 @@ export interface TokenEntryBase {
   /** The token's source expression (e.g. `Color(red: 0.2, green: 0.4, blue: 0.9)`), shown in
    *  monospace in the token's Details panel. Authored only — never inferred from `value`. */
   expression?: string;
+  /** Every way the same value is written in code (`cornerRadius: 6`, `RoundedRectangle(cornerRadius: 6,
+   *  style: .continuous)`), when more than one. Two or more are listed in the Details panel under
+   *  "Written N ways"; one is shown as an ordinary "Expression", exactly as `expression` is. Authored
+   *  only. `expression` keeps working on its own; when both are set the Details panel lists each distinct
+   *  form once, so `expression` need not be repeated in `expressions`. Not read for a light/dark color
+   *  pair, which shows its two sides' `expression` instead. */
+  expressions?: readonly string[];
   /** Every place the token is used, one `path:line` each, listed in full in the Details panel under
    *  "Used at N sites". Authored only — never inferred or counted by the viewer. */
   usages?: readonly string[];
@@ -266,6 +285,30 @@ export function sectionEntryCount(kind: TokenKind, section: Pick<TokenDefinition
 export interface TokenDefinition {
   kind: TokenKind;
   sections: TokenDefinitionSection[];
+  /** `true`: a page with entries but no `provenance: 'named'` one says so near the top ("No radius
+   *  tokens yet"). Off unless set — `tokenScale` sets it,
+   *  since its findings are inline literals; a hand-written definition (platform or named values)
+   *  never makes that claim by default. */
+  showNoTokensNote?: boolean;
+}
+
+/** Every entry of a definition, across every section and group, whatever its `kind`. */
+function allDefinitionEntries(def: Pick<TokenDefinition, 'sections'>): TokenEntry[] {
+  return def.sections.flatMap((section) => [...section.entries, ...(section.groups ?? []).flatMap((group) => group.entries)]);
+}
+
+/** The "no tokens yet" line for a page, or `undefined` when it does not apply: the page did not opt
+ *  in (`showNoTokensNote: true`, which `tokenScale` sets), has no entries at all, or at least one entry anywhere is a real
+ *  named design-system token (`provenance: 'named'`). Honest by construction — it appears exactly
+ *  when nothing on the page is a token. */
+export function noTokensNote(def: Pick<TokenDefinition, 'kind' | 'sections' | 'showNoTokensNote'>): { title: string; body: string } | undefined {
+  if (def.showNoTokensNote !== true || !isTokenKind(def.kind)) return undefined;
+  const entries = allDefinitionEntries(def);
+  if (entries.length === 0 || entries.some((entry) => entry.value.provenance === 'named')) return undefined;
+  return {
+    title: `No ${TOKEN_KIND_NOUNS[def.kind]} tokens yet`,
+    body: "These are values written in the app's code, not shared tokens.",
+  };
 }
 
 /** Every id that appears more than once in `ids`, each listed once. Order-independent; used both for

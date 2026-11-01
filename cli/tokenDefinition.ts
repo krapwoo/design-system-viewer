@@ -51,11 +51,25 @@ export interface StaticTokenDefinitionSection {
 }
 
 export interface StaticTokenDefinition {
+  /** True when the definition is built by a `tokenScale('<kind>', findings)` call, as the whole value or
+   *  spread into an object literal (`{ ...tokenScale('radius', F), sections: [...] }`, or `...scale.sections`
+   *  inside `sections`): its `kind` is read, but the sections it produces are built at run time from the
+   *  findings, so `sections` holds only the literal ones (none for a bare call). */
+  fromTokenScale?: boolean;
   /** The literal `kind` string exactly as authored — may be any string, including one that isn't
    *  one of the eight approved kinds (see `isTokenKind`); `cli/doctor.ts`'s own
    *  `token-definition-invalid-kind` rule is what actually reports that, not this reader. */
   kind: string;
   sections: StaticTokenDefinitionSection[];
+}
+
+/** The literal kind of a `tokenScale('<kind>', …)` call, directly or through a same-file `const`;
+ *  `undefined` for anything else (including a non-literal kind). */
+function tokenScaleCallKind(node: ts.Expression, consts: Map<string, ts.Expression>): string | undefined {
+  const call = resolve(node, consts, new Set());
+  if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || call.expression.text !== 'tokenScale') return undefined;
+  const kindArg = call.arguments[0] ? resolve(call.arguments[0], consts, new Set()) : undefined;
+  return kindArg && ts.isStringLiteral(kindArg) ? kindArg.text : undefined;
 }
 
 /** Reads `node` (a `tokenDefinition:` property initializer) down to `kind` and each section's
@@ -68,16 +82,37 @@ export interface StaticTokenDefinition {
  *  value (design R4: "no blanket uncheckability of otherwise literal page geometry"). */
 export function readStaticTokenDefinition(node: ts.Expression, consts: Map<string, ts.Expression>): StaticTokenDefinition | undefined {
   const resolved = resolve(node, consts, new Set());
+  // `tokenScale('radius', findings)`: the kind is a literal argument, the sections are computed.
+  if (ts.isCallExpression(resolved) && ts.isIdentifier(resolved.expression) && resolved.expression.text === 'tokenScale') {
+    const scaleKind = tokenScaleCallKind(resolved, consts);
+    return scaleKind !== undefined ? { kind: scaleKind, sections: [], fromTokenScale: true } : undefined;
+  }
   if (!ts.isObjectLiteralExpression(resolved)) return undefined;
-  const kind = propertyStringLiteral(resolved, 'kind', consts);
+  // `{ ...tokenScale('radius', F), sections: [...] }`: with no `kind` of its own, the literal takes the
+  // one from a spread `tokenScale` call (directly or through a same-file `const`).
+  let kind = propertyStringLiteral(resolved, 'kind', consts);
+  let fromTokenScale = false;
+  if (kind === undefined && findProp(resolved, 'kind') === undefined) {
+    for (const property of resolved.properties) {
+      const scaleKind = ts.isSpreadAssignment(property) ? tokenScaleCallKind(property.expression, consts) : undefined;
+      if (scaleKind !== undefined) { kind = scaleKind; fromTokenScale = true; break; }
+    }
+  }
   if (kind === undefined) return undefined;
   const sectionsProp = findProp(resolved, 'sections');
-  if (!sectionsProp) return undefined;
+  if (!sectionsProp) return fromTokenScale ? { kind, sections: [], fromTokenScale } : undefined;
   const sectionsResolved = resolve(sectionsProp.initializer, consts, new Set());
   if (!ts.isArrayLiteralExpression(sectionsResolved)) return undefined;
 
   const sections: StaticTokenDefinitionSection[] = [];
   for (const element of sectionsResolved.elements) {
+    // `...scale.sections` (or `...tokenScale(...).sections`) keeps the computed sections: skipped, and
+    // the definition is marked as built by `tokenScale`.
+    if (ts.isSpreadElement(element) && ts.isPropertyAccessExpression(element.expression) && element.expression.name.text === 'sections'
+      && tokenScaleCallKind(element.expression.expression, consts) !== undefined) {
+      fromTokenScale = true;
+      continue;
+    }
     const sectionResolved = resolve(element, consts, new Set());
     if (!ts.isObjectLiteralExpression(sectionResolved)) return undefined;
     const id = propertyStringLiteral(sectionResolved, 'id', consts);
@@ -160,7 +195,7 @@ export function readStaticTokenDefinition(node: ts.Expression, consts: Map<strin
 
     sections.push({ id, title, desc, wide, entryIds, entriesOpaque, groups, groupsOpaque, ...(aliases !== undefined ? { aliases } : null) });
   }
-  return { kind, sections };
+  return { kind, sections, ...(fromTokenScale ? { fromTokenScale } : null) };
 }
 
 export { canonicalTokenTitle, isTokenKind };

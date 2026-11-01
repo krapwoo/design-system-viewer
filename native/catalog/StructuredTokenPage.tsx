@@ -7,10 +7,12 @@ import { Swatch } from './Swatch';
 import { MotionSpecimen } from './MotionSpecimen';
 import { TokenDetails } from './TokenDetails';
 import { JumpRow, type JumpItem } from './JumpRow';
+import { WarningBanner } from './WarningBanner';
 import {
   consolidatedProvenanceCaption,
   isTokenKind,
   filteredKindEntriesFromList,
+  noTokensNote,
   pairLightDarkColorEntries,
   pairRendersAsOneSwatch,
   sectionEntryCount,
@@ -68,12 +70,16 @@ function entryDetails(
   const rolesDiffer = dark !== undefined && entry.role !== undefined && dark.role !== undefined && entry.role !== dark.role;
   const role = entry.role ?? dark?.role;
   const expressionsDiffer = dark !== undefined && entry.expression !== undefined && dark.expression !== undefined && entry.expression !== dark.expression;
-  const expression = entry.expression ?? dark?.expression;
+  // Two or more distinct written forms of one value (`expression` plus `expressions`, each once) are
+  // listed under "Written N ways"; one is the usual "Expression". A light/dark pair keeps `expression`.
+  const forms = dark === undefined ? [...new Set([...(entry.expression ? [entry.expression] : []), ...(entry.expressions ?? [])])] : [];
+  const written = forms.length > 1 ? forms : undefined;
+  const expression = written ? undefined : forms[0] ?? entry.expression ?? dark?.expression;
   // A pair's two sides are used at different sites: the panel lists both, each site once.
   const usages = [...new Set([...(entry.usages ?? []), ...(dark?.usages ?? [])])];
   const lightProvenance = tokenProvenanceCaption(entry.value);
   const darkProvenance = dark ? tokenProvenanceCaption(dark.value) : lightProvenance;
-  if (!showProvenance && !source && !role && !expression && usages.length === 0) return null;
+  if (!showProvenance && !source && !role && !expression && !written && usages.length === 0) return null;
   return (
     <TokenDetails
       title={options.title ?? entry.name}
@@ -83,6 +89,7 @@ function entryDetails(
       usages={usages}
       usageSummary={rolesDiffer ? undefined : role}
     >
+      {written ? <PanelFact label={`Written ${written.length} ways`} value={written} /> : null}
       {expressionsDiffer ? (
         <>
           <PanelFact label="Expression (light)" value={entry.expression!} />
@@ -113,11 +120,13 @@ function entryDetails(
 }
 
 /** A labelled line in a `TokenDetails` panel's extra content, in the panel's own label/value style. */
-function PanelFact({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+function PanelFact({ label, value, mono = true }: { label: string; value: string | readonly string[]; mono?: boolean }) {
   return (
     <View style={styles.panelFact}>
       <Text style={styles.panelFactLabel}>{label}</Text>
-      <Text style={mono ? styles.panelFactMono : styles.panelFactText}>{value}</Text>
+      {(typeof value === 'string' ? [value] : value).map((line, index) => (
+        <Text key={`${index}:${line}`} style={mono ? styles.panelFactMono : styles.panelFactText}>{line}</Text>
+      ))}
     </View>
   );
 }
@@ -278,8 +287,42 @@ function TypographyEntries({ entries, showProvenance }: { entries: TypographyTok
 
 type DimensionLikeEntry = SpacingTokenEntry | RadiusTokenEntry | DimensionsTokenEntry;
 
-function DimensionTile({ kind, entry, showProvenance }: { kind: 'spacing' | 'radius' | 'dimensions'; entry: DimensionLikeEntry; showProvenance: boolean }) {
-  const note = tileNote(entry, entry.value);
+/** The radius sample is a square, so every corner up to half its side draws differently (on a
+ *  wider-than-tall box, anything over half its height looked like the same pill). Larger values,
+ *  a full-round `999` included, draw as the circle they are. */
+export const RADIUS_SAMPLE_SIZE = 56;
+/** The sample's box, square by construction. */
+export const RADIUS_SAMPLE_BOX = { width: RADIUS_SAMPLE_SIZE, height: RADIUS_SAMPLE_SIZE } as const;
+export function radiusSampleCorner(amount: number): number {
+  return Math.min(Math.max(amount, 0), RADIUS_SAMPLE_SIZE / 2);
+}
+
+/** The widest a length bar is drawn. A grid whose largest value is wider is drawn to scale instead,
+ *  so `max 132pt` and `max 520pt` still look different; `dimensionBarScale` gives that factor. */
+export const DIMENSION_BAR_MAX = 120;
+export function dimensionBarScale(amounts: readonly number[]): number {
+  const largest = Math.max(0, ...amounts.filter((a) => Number.isFinite(a)));
+  return largest > DIMENSION_BAR_MAX ? DIMENSION_BAR_MAX / largest : 1;
+}
+export function dimensionBarWidth(amount: number, scale: number): number {
+  return Math.min(Math.max(amount * scale, 1), DIMENSION_BAR_MAX);
+}
+
+/** The value line a tile shows, or `undefined` when its name already says it: `6pt` named `6pt`,
+ *  or a capped value named `max 360pt` / `min 360pt`. */
+export function dimensionValueText(name: string, valueText: string): string | undefined {
+  return name === valueText || name.endsWith(` ${valueText}`) ? undefined : valueText;
+}
+
+/** A dotted code name (`BotPendingRequestCard.cornerRadius`) may wrap after each dot instead of
+ *  mid-word: a zero-width space after every dot that is followed by a name character. */
+export function breakableCodeName(text: string): string {
+  return text.replace(/\.(?=[A-Za-z_$])/g, '.\u200B');
+}
+
+function DimensionTile({ kind, entry, showProvenance, barScale = 1 }: { kind: 'spacing' | 'radius' | 'dimensions'; entry: DimensionLikeEntry; showProvenance: boolean; barScale?: number }) {
+  // Notes here are usually code names (`BotPendingRequestCard.cornerRadius`): let them wrap at a dot.
+  const note = tileNote(entry.note === undefined ? entry : { ...entry, note: breakableCodeName(entry.note) }, entry.value);
   const action = entryDetails(kind, entry, showProvenance);
   if (entry.value.resolution.status === 'unresolved') {
     return (
@@ -289,22 +332,34 @@ function DimensionTile({ kind, entry, showProvenance }: { kind: 'spacing' | 'rad
     );
   }
   const { amount, unit } = entry.value.resolution.value;
+  // A tile named for its value (`6pt`, `max 360pt`) would print it twice, so the value is left off the tile.
+  const valueText = dimensionValueText(entry.name, `${amount}${unit}`);
   if (kind === 'radius') {
     return (
-      <TokenTile name={entry.name} value={`${amount}${unit}`} note={note} action={action}>
-        <View style={[styles.radiusSample, { borderRadius: Math.min(Math.max(amount, 0), 28) }]} />
+      <TokenTile name={entry.name} value={valueText} note={note} action={action}>
+        <View style={[styles.radiusSample, { borderRadius: radiusSampleCorner(amount) }]} />
       </TokenTile>
     );
   }
   return (
-    <TokenTile name={entry.name} value={`${amount}${unit}`} note={note} action={action}>
-      <View style={[styles.spacingBar, { width: Math.min(Math.max(amount, 1), 120) }]} />
+    <TokenTile name={entry.name} value={valueText} note={note} action={action}>
+      <View style={[styles.spacingBar, { width: dimensionBarWidth(amount, barScale) }]} />
     </TokenTile>
   );
 }
 
 function DimensionEntries({ kind, entries, showProvenance }: { kind: 'spacing' | 'radius' | 'dimensions'; entries: DimensionLikeEntry[]; showProvenance: boolean }) {
-  return <TokenGrid minTileWidth={140}>{entries.map((entry) => <DimensionTile key={entry.id} kind={kind} entry={entry} showProvenance={showProvenance} />)}</TokenGrid>;
+  const lengths = entries.flatMap((e) => (e.value.resolution.status === 'resolved' ? [e.value.resolution.value] : []));
+  const barScale = kind === 'radius' ? 1 : dimensionBarScale(lengths.map((v) => v.amount));
+  const grid = <TokenGrid minTileWidth={140}>{entries.map((entry) => <DimensionTile key={entry.id} kind={kind} entry={entry} showProvenance={showProvenance} barScale={barScale} />)}</TokenGrid>;
+  if (barScale === 1) return grid;
+  const longest = lengths.reduce((a, b) => (b.amount > a.amount ? b : a));
+  return (
+    <View>
+      <Text style={styles.scaleNote}>Bars are drawn to scale to fit; the longest is {longest.amount}{longest.unit}.</Text>
+      {grid}
+    </View>
+  );
 }
 
 function OpacityTile({ entry, showProvenance }: { entry: OpacityTokenEntry; showProvenance: boolean }) {
@@ -526,6 +581,12 @@ function tokenJumpItems(definition: TokenDefinition, onJump: (id: string) => voi
   });
 }
 
+/** The honesty line at the top of a page with no named design-system token on it (`noTokensNote`). */
+function NoTokensNote({ definition }: { definition: TokenDefinition }) {
+  const note = noTokensNote(definition);
+  return note ? <WarningBanner tone="info" title={note.title}>{note.body}</WarningBanner> : null;
+}
+
 /** #64 B2/B5: the real per-page wrapper `SectionBlock.tsx`'s own `tokenSections` block case
  *  renders for an opted-in `tokenDefinition` — the jump row (above the first section, B2) plus the
  *  existing `TokenSections` grammar, unchanged, now also given each section's own mounted node so
@@ -566,6 +627,7 @@ export function TokenDefinitionBlock({
   const jumpItems = tokenJumpItems(definition, scrollToSection);
   return (
     <>
+      <NoTokensNote definition={definition} />
       {jumpItems ? <JumpRow items={jumpItems} /> : null}
       <TokenSections sections={sections} columns={columns} label={label} onSectionNode={registerNode} />
     </>
@@ -586,6 +648,7 @@ export function StructuredTokenPage({ definition }: { definition: TokenDefinitio
   const jumpItems = tokenJumpItems(definition, scrollToSection);
   return (
     <View style={styles.pageStack}>
+      <NoTokensNote definition={definition} />
       {jumpItems ? <JumpRow items={jumpItems} /> : null}
       {sections.map((section) => {
         const key = section.id ?? section.title;
@@ -642,7 +705,8 @@ const styles = StyleSheet.create({
 
   dash: { ...CATALOG_TEXT.icon, color: CATALOG_COLOR.textMuted },
   spacingBar: { height: 12, borderRadius: CATALOG_RADIUS.sm, backgroundColor: CATALOG_COLOR.accent },
-  radiusSample: { width: 56, height: 36, backgroundColor: CATALOG_COLOR.accentSubtle, borderWidth: 1, borderColor: CATALOG_COLOR.accent },
+  scaleNote: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, marginBottom: CATALOG_SPACE.sm },
+  radiusSample: { ...RADIUS_SAMPLE_BOX, backgroundColor: CATALOG_COLOR.accentSubtle, borderWidth: 1, borderColor: CATALOG_COLOR.accent },
   opacityBase: { width: 56, height: 36, borderRadius: CATALOG_RADIUS.sm, backgroundColor: CATALOG_COLOR.surfaceMuted, borderWidth: 1, borderColor: CATALOG_COLOR.border, overflow: 'hidden' },
   opacityFill: { flex: 1, backgroundColor: CATALOG_COLOR.accent },
   shadowSample: { width: 64, height: 36, backgroundColor: '#ffffff', borderRadius: 6 },

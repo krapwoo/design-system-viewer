@@ -114,7 +114,8 @@ async function settleLayout(width = 1200) {
 }
 
 function plainTextPresent(container: HTMLElement, text: string): boolean {
-  return [...container.querySelectorAll('*')].some((e) => e.children.length === 0 && (e.textContent || '').includes(text));
+  // A zero-width space is only a line-break hint (`breakableCodeName`), not part of the text.
+  return [...container.querySelectorAll('*')].some((e) => e.children.length === 0 && (e.textContent || '').replace(/\u200B/g, '').includes(text));
 }
 
 /** Counts leaf elements whose own text includes `text` — used to tell "shown once, at the section
@@ -716,4 +717,172 @@ test('a light/dark pair: equal expressions show once, differing ones show per si
     const panel = openDetails(same.container, 'Ink');
     assert.ok(panel.includes('Expression') && !panel.includes('Expression (light)'), 'an equal expression is one fact');
   } finally { same.cleanup(); }
+});
+
+// --- Value scales from scanner findings (`tokenScale`) -----------------------------------------
+const { tokenScale } = await import('../tokenScale.ts');
+
+async function renderDefinition(id: string, def: TokenDefinition) {
+  const pages = [defineCatalogPage({ id, group: 'Tokens', description: 'Fixture.', tokenDefinition: def })];
+  const { sections } = buildCatalogSections(pages.map((p) => ({ ...p, file: `fixtures/${id}.catalog.tsx` })), []);
+  const rendered = renderWithResizeObserver(React.createElement(SectionBlock as never, { def: sections.find((s) => s.id === id)! } as never));
+  await settleLayout();
+  return rendered;
+}
+
+const SCALE_FINDINGS = [
+  { expression: 'cornerRadius: 6', usages: ['A.swift:1'], unit: 'pt', value: 6 },
+  { expression: 'RoundedRectangle(cornerRadius: 6, style: .continuous)', usages: ['B.swift:2'], unit: 'pt', value: 6 },
+  { expression: 'cornerRadius: pill.height / 2', unresolved: { reason: 'size' as const, detail: 'Half of the pill height' } },
+];
+
+test('a page of findings says, near the top, that there are no tokens; it is gone when one is a named token', async () => {
+  const inline = await renderDefinition('tokens-scale-note', tokenScale('radius', SCALE_FINDINGS));
+  try {
+    assert.ok(plainTextPresent(inline.container, 'No radius tokens yet'));
+    assert.ok(plainTextPresent(inline.container, "These are values written in the app's code, not shared tokens."));
+    assert.ok(inline.container.querySelector('[role="note"]'), 'in the viewer\'s own note banner');
+  } finally { inline.cleanup(); }
+  const named = await renderDefinition('tokens-scale-named', tokenScale('radius', [...SCALE_FINDINGS, { expression: 'DS.r', value: 4, unit: 'pt', provenance: 'named' }]));
+  try {
+    assert.equal(plainTextPresent(named.container, 'No radius tokens yet'), false);
+  } finally { named.cleanup(); }
+  const optedOut = await renderDefinition('tokens-scale-optout', tokenScale('radius', SCALE_FINDINGS, { showNoTokensNote: false }));
+  try {
+    assert.equal(plainTextPresent(optedOut.container, 'No radius tokens yet'), false);
+  } finally { optedOut.cleanup(); }
+});
+
+test('a value tile shows its value once, and Details lists every way it is written and every site', async () => {
+  const { container, cleanup } = await renderDefinition('tokens-scale-details', tokenScale('radius', SCALE_FINDINGS));
+  try {
+    assert.equal(plainTextOccurrences(container, '6pt'), 1, 'the value is printed once, not as both name and value');
+    assert.deepEqual(detailsLinks(container), ['Details for 6pt', 'Details for cornerRadius: pill.height / 2']);
+    const panel = openDetails(container, '6pt');
+    assert.ok(panel.includes('Written 2 ways'));
+    assert.ok(panel.includes('cornerRadius: 6') && panel.includes('RoundedRectangle(cornerRadius: 6, style: .continuous)'));
+    assert.ok(panel.includes('Used at 2 sites'));
+  } finally { cleanup(); }
+});
+
+test('what is not a fixed value is grouped by reason under its own heading, with the reason on the tile', async () => {
+  const { container, cleanup } = await renderDefinition('tokens-scale-groups', tokenScale('radius', SCALE_FINDINGS));
+  try {
+    assert.ok(plainTextPresent(container, 'Not a fixed value'));
+    assert.ok(plainTextPresent(container, 'Depends on size'));
+    assert.ok(plainTextPresent(container, 'Half of the pill height'));
+  } finally { cleanup(); }
+});
+
+test('an entry with one written form shows it as an ordinary Expression, not "Written 1 ways"', async () => {
+  const { container, cleanup } = await renderDefinition('tokens-scale-one-form', tokenScale('radius', [{ expression: 'cornerRadius: 2', value: 2, unit: 'pt' }]));
+  try {
+    const panel = openDetails(container, '2pt');
+    assert.ok(panel.includes('Expression') && panel.includes('cornerRadius: 2'));
+    assert.equal(panel.includes('Written'), false);
+  } finally { cleanup(); }
+});
+
+const dimensionEntry = (id: string, extra: Record<string, unknown>) =>
+  ({ id, name: id, kind: 'radius', value: { provenance: 'inline', resolution: { status: 'resolved', value: { amount: 6, unit: 'pt' } } }, ...extra }) as never;
+
+test('a repeated written form counts once: ["a", "a"] is an ordinary Expression, not "Written 2 ways"', async () => {
+  const def: TokenDefinition = { kind: 'radius', sections: [{ id: 's', title: 'S', entries: [dimensionEntry('dup', { expressions: ['cornerRadius: 6', 'cornerRadius: 6'] })] }] };
+  const { container, cleanup } = await renderDefinition('tokens-scale-dup-forms', def);
+  try {
+    const panel = openDetails(container, 'dup');
+    assert.equal(panel.includes('Written'), false);
+    assert.ok(panel.includes('Expression') && panel.includes('cornerRadius: 6'));
+  } finally { cleanup(); }
+});
+
+test('an expression that is not in expressions is still shown, once, alongside the others', async () => {
+  const def: TokenDefinition = { kind: 'radius', sections: [{ id: 's', title: 'S', entries: [dimensionEntry('extra', { expression: 'cornerRadius: 6', expressions: ['RoundedRectangle(cornerRadius: 6)', 'cornerRadius: 6'] })] }] };
+  const { container, cleanup } = await renderDefinition('tokens-scale-extra-form', def);
+  try {
+    const panel = openDetails(container, 'extra');
+    assert.ok(panel.includes('Written 2 ways'), panel);
+    assert.ok(panel.includes('RoundedRectangle(cornerRadius: 6)') && panel.includes('cornerRadius: 6'));
+  } finally { cleanup(); }
+  const alone: TokenDefinition = { kind: 'radius', sections: [{ id: 's', title: 'S', entries: [dimensionEntry('lone', { expression: 'cornerRadius: 6', expressions: ['RoundedRectangle(cornerRadius: 6)'] })] }] };
+  const second = await renderDefinition('tokens-scale-extra-form-2', alone);
+  try {
+    const panel = openDetails(second.container, 'lone');
+    assert.ok(panel.includes('Written 2 ways'), 'expression plus a different single form is two forms');
+  } finally { second.cleanup(); }
+});
+
+test('expressions are not read for a light/dark color pair, which keeps showing its two sides\' expression', async () => {
+  const side = (appearance: string, expression: string) => ({
+    id: appearance, name: 'Surface', kind: 'colors', appearance, expression, expressions: ['ignored-a', 'ignored-b'],
+    value: { provenance: 'named', resolution: { status: 'resolved', value: { color: appearance === 'light' ? '#ffffff' : '#000000' } } },
+  }) as never;
+  const def: TokenDefinition = { kind: 'colors', sections: [{ id: 's', title: 'S', entries: [side('light', 'Color.surface'), side('dark', 'Color.surface')] }] };
+  const { container, cleanup } = await renderDefinition('tokens-scale-pair-forms', def);
+  try {
+    const panel = openDetails(container, 'Surface');
+    assert.equal(panel.includes('Written'), false);
+    assert.equal(panel.includes('ignored-a'), false);
+    assert.ok(panel.includes('Color.surface'));
+  } finally { cleanup(); }
+});
+
+test('a named finding with no value shows its name on the unresolved tile', async () => {
+  const { container, cleanup } = await renderDefinition('tokens-scale-named-unresolved', tokenScale('radius', [{ expression: 'cornerRadius: theme.corner', name: 'ThemeMetrics.corner', unresolved: { reason: 'other', detail: 'Read from the theme' } }]));
+  try {
+    assert.ok(plainTextPresent(container, 'ThemeMetrics.corner'), 'the name is not dropped');
+  } finally { cleanup(); }
+});
+
+test('any dimension tile named for its own value shows it once; one named otherwise still shows its value', async () => {
+  const def: TokenDefinition = { kind: 'radius', sections: [{ id: 's', title: 'S', entries: [
+    { id: 'a', name: '8pt', kind: 'radius', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 8, unit: 'pt' } } } },
+    { id: 'b', name: 'Small', kind: 'radius', value: { provenance: 'named', resolution: { status: 'resolved', value: { amount: 4, unit: 'pt' } } } },
+  ] }] };
+  const { container, cleanup } = await renderDefinition('tokens-plain-value-once', def);
+  try {
+    assert.equal(plainTextOccurrences(container, '8pt'), 1, 'a hand-written definition, no tokenScale involved');
+    assert.equal(plainTextOccurrences(container, '4pt'), 1, '"Small" is not its value, so the value is shown');
+  } finally { cleanup(); }
+});
+
+test('the radius sample is square, so a large corner and a full round one draw differently', async () => {
+  const { radiusSampleCorner, RADIUS_SAMPLE_SIZE, RADIUS_SAMPLE_BOX } = await import('../StructuredTokenPage.tsx');
+  assert.equal(RADIUS_SAMPLE_BOX.width, RADIUS_SAMPLE_BOX.height, 'the sample box is square');
+  // The starter kit's own steps: large 24, round 999.
+  assert.notEqual(radiusSampleCorner(24), radiusSampleCorner(999), 'large and round are told apart');
+  assert.equal(radiusSampleCorner(999), RADIUS_SAMPLE_BOX.height / 2, 'a full-round value draws a circle');
+  assert.equal(RADIUS_SAMPLE_BOX.height, RADIUS_SAMPLE_SIZE);
+  assert.equal(radiusSampleCorner(24), 24);
+  assert.equal(radiusSampleCorner(-4), 0);
+});
+
+test('a capped value is not printed twice, wide grids draw bars to scale, and code names wrap at dots', async () => {
+  const { dimensionValueText, dimensionBarScale, dimensionBarWidth, breakableCodeName, DIMENSION_BAR_MAX } = await import('../StructuredTokenPage.tsx');
+  assert.equal(dimensionValueText('max 100pt', '100pt'), undefined, 'max 100pt already says 100pt');
+  assert.equal(dimensionValueText('min 360pt', '360pt'), undefined);
+  assert.equal(dimensionValueText('6pt', '6pt'), undefined);
+  assert.equal(dimensionValueText('Card', '6pt'), '6pt', 'a named tile still shows its value');
+  assert.equal(dimensionValueText('1100pt', '100pt'), '100pt', 'only a whole trailing word counts');
+  const scale = dimensionBarScale([12, 132, 520]);
+  assert.notEqual(dimensionBarWidth(132, scale), dimensionBarWidth(520, scale), '132 and 520 draw differently');
+  assert.equal(dimensionBarWidth(520, scale), DIMENSION_BAR_MAX);
+  assert.equal(dimensionBarScale([12, 44, 120]), 1, 'a grid that fits is drawn at its real size');
+  assert.equal(breakableCodeName('BotPendingRequestCard.cornerRadius'), 'BotPendingRequestCard.\u200BcornerRadius');
+  assert.equal(breakableCodeName('0.5 and 1.25'), '0.5 and 1.25', 'decimals are left alone');
+});
+
+test('a grid drawn to scale says so', async () => {
+  const def: TokenDefinition = { kind: 'dimensions', sections: [{ id: 'w', title: 'Widths', entries: [
+    { id: 'a', name: '12pt', kind: 'dimensions', value: { provenance: 'inline', resolution: { status: 'resolved', value: { amount: 12, unit: 'pt' } } } },
+    { id: 'b', name: 'max 520pt', kind: 'dimensions', note: 'SheetMetrics.maxWidth', value: { provenance: 'inline', resolution: { status: 'resolved', value: { amount: 520, unit: 'pt' } } } },
+  ] }] };
+  const { container, cleanup } = await renderDefinition('tokens-bar-scale', def);
+  try {
+    assert.match(container.textContent ?? '', /Bars are drawn to scale to fit; the longest is 520pt\./);
+    assert.doesNotMatch(container.textContent ?? '', /max 520pt520pt/, 'the capped tile does not repeat its value');
+    assert.match(container.textContent ?? '', /SheetMetrics\.\u200BmaxWidth/, 'a code-name note may wrap at its dot');
+  } finally {
+    cleanup();
+  }
 });

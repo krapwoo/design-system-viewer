@@ -53,7 +53,7 @@ export { DocumentedAnchor } from './DocumentedAnchor';
 export { StructuredTokenPage, tokenDefinitionSections } from './StructuredTokenPage';
 export {
   TOKEN_KINDS, isTokenKind, canonicalTokenTitle, findDuplicateIds, tokenEntryAddress,
-  validateTokenDefinition, validateTokenDefinitionUsage,
+  validateTokenDefinition, validateTokenDefinitionUsage, noTokensNote,
 } from './tokenDefinition';
 export type {
   TokenKind, TokenProvenance, TokenResolution, TokenValueInfo, TokenEntryBase, TokenEntry,
@@ -62,6 +62,8 @@ export type {
   ShadowTokenValue, ShadowTokenEntry, MotionTimingValue, MotionSpringValue, MotionNativeExpressionValue,
   MotionTokenValue, MotionTokenEntry, TokenDefinitionSection, TokenDefinition, TokenDefinitionPageUsage,
 } from './tokenDefinition';
+export { tokenScale, TOKEN_SCALE_KINDS, isTokenScaleKind } from './tokenScale';
+export type { TokenFinding, TokenFindingUnresolvedReason, TokenScaleKind, TokenScaleOptions } from './tokenScale';
 export { DividedStack } from './DividedStack';
 export { CountStrip } from './CountStrip';
 export type { CountStripItem } from './CountStrip';

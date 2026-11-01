@@ -1128,6 +1128,8 @@ function runtimeOnlyTokenSections(pages: StaticPage[]): { page: string; sections
     section.entriesOpaque || Boolean(section.groupsOpaque) || (section.groups ?? []).some((g) => g.entriesOpaque);
   const found = pages.flatMap((page) => {
     const sections = page.tokenDefinition?.sections.filter(isOpaque).map((section) => section.id) ?? [];
+    // A scale built by `tokenScale` has sections computed from findings at run time: none is validated.
+    if (page.tokenDefinition?.fromTokenScale) sections.push('tokenScale');
     return sections.length > 0 ? [{ page: resolvePageId(page, page.file), sections }] : [];
   });
   return found.length > 0 ? found : undefined;
@@ -1416,11 +1418,38 @@ function checkEmptyCellInGrid(pages: StaticPage[]): DoctorIssue[] {
   return issues;
 }
 
+/** The names a hand-built value-scale page goes by (a title, or an id with its spaces dropped), lower-cased. */
+const SCALE_PAGE_NAMES = new Set(['radius', 'radii', 'cornerradius', 'cornerradii', 'dimensions', 'dimension', 'spacing', 'opacity']);
+/** What a page imports from the viewer when it draws its own tiles or rows. */
+const HAND_BUILT_TOKEN_IMPORTS = ['TokenGrid', 'TokenTile', 'TokenRow', 'TokenRowGroup', 'TokenSections'];
+
+/** A page in the `Tokens` group titled like a value scale (radius, spacing, dimensions, opacity) that
+ *  draws its own tiles instead of using `tokenDefinition`/`tokenScale`, so it gets neither one tile per
+ *  value, nor the Details panel, nor the "no tokens yet" line. A hint, never a warning: a page built by
+ *  hand from real named tokens is fine (list it in `doctor.handBuiltTokenPages`). Scoped to the four
+ *  kinds `tokenScale` covers; shadows, colors, typography and motion pages are left alone. */
+function checkHandBuiltTokenPage(pages: StaticPage[], exempt: ReadonlySet<string>): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (page.group !== 'Tokens' || page.hasTokenDefinition || hasMembers(page) || !page.viewerImports?.some((name) => HAND_BUILT_TOKEN_IMPORTS.includes(name))) continue;
+    const id = resolvePageId(page, page.file);
+    if (exempt.has(id)) continue;
+    const name = (page.title ?? id).toLowerCase().replace(/[\s_-]+/g, '');
+    if (!SCALE_PAGE_NAMES.has(name)) continue;
+    issues.push(issue({
+      id: 'token-page-hand-built', severity: 'hint', ...pageRef(page),
+      message: `"${page.title ?? id}" draws its own value tiles.`,
+      fix: "For real named tokens, use tokenDefinition with provenance: 'named'; for literals found in code, tokenScale('<kind>', findings): one tile per value, smallest to largest, every written form and call site in Details. A page built by hand on purpose can be listed in doctor.handBuiltTokenPages.",
+    }));
+  }
+  return issues;
+}
+
 /** Every page-scoped issue, from every rule above. */
 export function collectIssues(
   pages: StaticPage[],
   components: ComponentRecord[],
-  options: { patternGroups?: readonly string[]; usage?: UsageData } = {},
+  options: { patternGroups?: readonly string[]; usage?: UsageData; handBuiltTokenPages?: readonly string[] } = {},
 ): DoctorIssue[] {
   const patternGroups = options.patternGroups ?? DEFAULT_PATTERN_GROUPS;
   return [
@@ -1456,6 +1485,7 @@ export function collectIssues(
     ...checkAnatomyWithoutPicture(pages),
     ...checkAnatomyPictureRoot(pages),
     ...checkEmptyCellInGrid(pages),
+    ...checkHandBuiltTokenPage(pages, new Set(options.handBuiltTokenPages ?? [])),
   ];
 }
 
@@ -1641,7 +1671,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
     : undefined;
 
   let issues = [
-    ...collectIssues(pages, components, { patternGroups: config.patternGroups, usage: syncResult.usage }),
+    ...collectIssues(pages, components, { patternGroups: config.patternGroups, usage: syncResult.usage, handBuiltTokenPages: config.doctor?.handBuiltTokenPages }),
     ...checkPageTypeErrors(pages, { fallbackPaths, hostRoot: config.projectRoot }),
     ...checkOverlaysFramed(pages, components, config.projectRoot),
     ...collectGlobalIssues({ syncWarnings: syncResult.warnings, tokenFileCount }),

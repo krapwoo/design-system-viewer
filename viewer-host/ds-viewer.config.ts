@@ -15,4 +15,6 @@ export default defineConfig({
   // Overview page and "Appears in" blocks. Every key names a real page here.
   usage: 'usage.fixture.json',
   updateCheck: false,
+  // The Radius page documents the viewer's own named CATALOG_RADIUS tokens with hand-drawn tiles.
+  doctor: { handBuiltTokenPages: ['CatalogRadius'] },
 });
