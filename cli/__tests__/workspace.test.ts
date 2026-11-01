@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import * as ts from 'typescript';
 import {
@@ -590,4 +591,40 @@ test('writing the dev lock or the endpoint record alone also leaves the director
   const config = baseConfig(projectRoot);
   writeEndpointRecord(config, { port: 5181, secret: 'x'.repeat(48) });
   assert.equal(readFileSync(path.join(projectRoot, '.ds-viewer', '.gitignore'), 'utf8'), '*\n');
+});
+
+test('the generated metro.config.js keeps the folders a project\'s own metro.config.js watches, so a page can require an image outside the catalog', () => {
+  // Real path: `require` reports one (macOS's temp folder is a symlink), and the config compares paths.
+  const projectRoot = realpathSync(copyFixture());
+  // The app's bundled images live outside the project, as in a native app's `App/Assets` folder.
+  const appAssets = path.join(path.dirname(projectRoot), `${path.basename(projectRoot)}-app-assets`);
+  mkdirSync(appAssets, { recursive: true });
+  writeFileSync(path.join(projectRoot, 'metro.config.js'), `module.exports = { watchFolders: [${JSON.stringify(appAssets)}], resolver: {} };\n`);
+  // `expo/metro-config` is only asked for when the project has no metro.config.js; stand-in so the
+  // generated file can run here at all.
+  mkdirSync(path.join(projectRoot, 'node_modules', 'expo'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'node_modules', 'expo', 'metro-config.js'), 'exports.getDefaultConfig = () => ({ resolver: {} });\n');
+  try {
+    const workspace = writeWorkspace(baseConfig(projectRoot));
+    const config = createRequire(path.join(workspace, 'x.js'))(path.join(workspace, 'metro.config.js')) as { watchFolders: string[] };
+    assert.ok(config.watchFolders.includes(appAssets), `the project's own watchFolders survive: ${config.watchFolders.join(', ')}`);
+    assert.ok(config.watchFolders.includes(projectRoot), 'and so does the project itself');
+    assert.ok(config.watchFolders.includes(path.join(projectRoot, 'src/components')), 'and the configured glob folders');
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(appAssets, { recursive: true, force: true });
+  }
+});
+
+test('without a project metro.config.js the generated one adds no folder outside the project and its globs', () => {
+  const projectRoot = realpathSync(copyFixture());
+  mkdirSync(path.join(projectRoot, 'node_modules', 'expo'), { recursive: true });
+  writeFileSync(path.join(projectRoot, 'node_modules', 'expo', 'metro-config.js'), 'exports.getDefaultConfig = () => ({ resolver: {} });\n');
+  try {
+    const workspace = writeWorkspace(baseConfig(projectRoot));
+    const config = createRequire(path.join(workspace, 'x.js'))(path.join(workspace, 'metro.config.js')) as { watchFolders: string[] };
+    assert.deepEqual([...config.watchFolders].sort(), [projectRoot, path.join(projectRoot, 'src/components'), path.join(projectRoot, 'src/tokens')].sort());
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+  }
 });

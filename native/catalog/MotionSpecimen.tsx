@@ -3,6 +3,11 @@ import { Animated, AccessibilityInfo, Easing, Pressable, StyleSheet, Text, View 
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { motionReplayLabel, motionTranslatesDirectly, motionValueTarget, type MotionValueRange } from './motionValueDomain';
 import { isSwiftUISpring, swiftUISpringPhysics, type SwiftUISpring } from './swiftUISpring';
+import {
+  describeTransition,
+  DEFAULT_TRANSITION_SPRING, assertTransition, describeTransitionAnimation, transitionOffState,
+  type SwiftUITransition, type TransitionState,
+} from './transitionModel';
 
 /** `Animated.spring`'s physics fields — the same shape as a design system's own spring-config
  *  token (e.g. `DS_MOTION_SPRING`), kept local here rather than imported from any app's tokens so
@@ -16,7 +21,26 @@ export interface MotionSpecimenSpringConfig {
   restSpeedThreshold?: number;
 }
 
+/** How a transition specimen animates: a duration with an optional easing, as `kind: 'timing'` takes
+ *  them, or a spring as `kind: 'spring'` takes it. The spring's rest thresholds are for the 0-to-1
+ *  value the transition animates (a `valueRange` of `'unit'`). */
+export type MotionSpecimenTransitionAnimation =
+  | { duration: number; easing?: (value: number) => number }
+  | { spring: MotionSpecimenSpringConfig | SwiftUISpring };
+
 export type MotionSpecimenProps =
+  | {
+      kind: 'transition';
+      /** A SwiftUI built-in `.transition(...)`, written declaratively (see `SwiftUITransition`):
+       *  `{ type: 'move', edge: 'bottom' }`, `{ type: 'combined', of: [...] }`, … */
+      transition: SwiftUITransition;
+      /** The animation of the change that inserts or removes the view. Omitted, the specimen models
+       *  `withAnimation` with no argument on iOS 17+: a spring of response 0.55 with no bounce (an
+       *  assumption, not a published constant; see `DEFAULT_TRANSITION_SPRING`). With no animation at
+       *  all SwiftUI shows no transition, and before iOS 17 the default was ease-in-out over 0.35 s. */
+      animation?: MotionSpecimenTransitionAnimation;
+      label?: string;
+    }
   | {
       kind: 'timing';
       /** Duration in ms, e.g. a page's own `DS_MOTION_DURATION.base`. */
@@ -98,6 +122,10 @@ function springPhysics(spring: MotionSpecimenSpringConfig | SwiftUISpring): Moti
  * `react-native`, already a peer dependency — no new runtime dependency.
  */
 export function MotionSpecimen(props: MotionSpecimenProps) {
+  return props.kind === 'transition' ? <TransitionSpecimen {...props} /> : <DotSpecimen {...props} />;
+}
+
+function DotSpecimen(props: Exclude<MotionSpecimenProps, { kind: 'transition' }>) {
   const { label, distance = DEFAULT_DISTANCE } = props;
   const valueRange: MotionValueRange = props.kind === 'spring' ? props.valueRange ?? 'distance' : 'distance';
   const target = motionValueTarget(valueRange, distance);
@@ -201,6 +229,192 @@ export function MotionSpecimen(props: MotionSpecimenProps) {
   );
 }
 
+/** How long the stage stays empty between the removal and the insertion. */
+export const TRANSITION_HOLD_MS = 500;
+/** Plain note shown when Reduce Motion is on: there is no animation, only the inserted view. */
+export const TRANSITION_REDUCE_MOTION_NOTE = 'Reduce Motion is on, so the transition is not animated. Showing the view as inserted.';
+/** The sample view, which also fills the clipped stage: a view moves away by its own size, so one
+ *  the size of its stage leaves it completely. */
+const STAGE_WIDTH = 200;
+const STAGE_HEIGHT = 96;
+
+/** The animation `Animated` runs to take one 0-to-1 value from 0 to 1. A spring gets
+ *  `MOTION_SPRING_MAX_MS` to settle before it is cut off and placed at 1; a spring with no damping gets
+ *  the bounded swing demo. Returns a function that cancels it. */
+function runUnitAnimation(value: Animated.Value, animation: MotionSpecimenTransitionAnimation | undefined, onEnd: () => void): () => void {
+  const plan = animation ?? { spring: DEFAULT_TRANSITION_SPRING };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let anim: Animated.CompositeAnimation;
+  let cancelled = false;
+  // Set before the cut-off stops the animation: `stop()` calls the `start` callback at once, and that
+  // callback must not end the run a second time.
+  let cutOff = false;
+  const undamped = 'spring' in plan && springPhysics(plan.spring).damping === 0;
+  if ('spring' in plan) {
+    const config = springPhysics(plan.spring);
+    anim = undamped ? undampedDemo(value, 1, config) : Animated.spring(value, { toValue: 1, useNativeDriver: true, ...config });
+    timer = setTimeout(() => {
+      timer = null;
+      if (cancelled) return;
+      cutOff = true;
+      anim.stop();
+      value.setValue(1);
+      onEnd();
+    }, MOTION_SPRING_MAX_MS);
+  } else {
+    anim = Animated.timing(value, { toValue: 1, duration: plan.duration, easing: plan.easing, useNativeDriver: true });
+  }
+  anim.start(({ finished }) => {
+    if (cancelled || cutOff) return;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    // The swings end back at the start: place the value at the end, like the cut-off does.
+    if (undamped && finished) value.setValue(1);
+    onEnd();
+  });
+  return () => {
+    cancelled = true;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    anim.stop();
+  };
+}
+
+/** The Animated style for a sample view whose insertion and removal progress are `inserted` and
+ *  `removed` (each 0 to 1): the off state of each phase, mixed straight to the normal look. The two
+ *  compose — opacity and scale multiply, offsets add — so a spring's overshoot in a phase goes past
+ *  that phase's end state, in its own direction. `present` (1 or 0) is whether the view exists at all:
+ *  once a removal ends SwiftUI drops the view, so it is 0 through the hold even for a transition whose
+ *  removal does not hide it (`identity`, `offset`, a partial `scale`). */
+function transitionStyle(transition: SwiftUITransition, inserted: Animated.Value, removed: Animated.Value, present: Animated.Value) {
+  const size = { width: STAGE_WIDTH, height: STAGE_HEIGHT };
+  const entering: TransitionState = transitionOffState(transition, 'insertion', size);
+  const leaving: TransitionState = transitionOffState(transition, 'removal', size);
+  const map = (value: Animated.Value, from: number, to: number, clamp = false) =>
+    value.interpolate({ inputRange: [0, 1], outputRange: [from, to], ...(clamp && { extrapolate: 'clamp' as const }) });
+  return {
+    opacity: Animated.multiply(Animated.multiply(map(inserted, entering.opacity, 1, true), map(removed, 1, leaving.opacity, true)), present),
+    transform: [
+      { translateX: Animated.add(map(inserted, entering.x, 0), map(removed, 0, leaving.x)) },
+      { translateY: Animated.add(map(inserted, entering.y, 0), map(removed, 0, leaving.y)) },
+      { scale: Animated.multiply(map(inserted, entering.scale, 1), map(removed, 1, leaving.scale)) },
+    ],
+  };
+}
+
+/**
+ * `MotionSpecimen`'s transition kind: a sample view inside a clipped stage, drawn inserted and at rest,
+ * with the transition and animation the source names. Nothing animates on mount. Replay removes the
+ * view, holds the empty stage for `TRANSITION_HOLD_MS`, then inserts it again, ending inserted; pressing
+ * it mid-play restarts from the removal. Nothing loops. With Reduce Motion on the view stays inserted,
+ * with a note, and Replay does not animate.
+ */
+function TransitionSpecimen({ transition, animation, label }: Extract<MotionSpecimenProps, { kind: 'transition' }>) {
+  // Rest state: insertion complete, removal not started.
+  const inserted = useRef(new Animated.Value(1)).current;
+  const removed = useRef(new Animated.Value(0)).current;
+  // Whether the view exists: 0 only while the stage is held empty between removal and insertion.
+  const present = useRef(new Animated.Value(1)).current;
+  const cancel = useRef<(() => void) | null>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  // Checked while rendering, so a transition SwiftUI has no built-in for (or an out-of-range spring)
+  // throws here whatever the reduce-motion setting, not later inside an effect or event handler.
+  // Keyed on the serialized props, not their identity: inline object props are new on every parent
+  // render, and the style's interpolation nodes should not be rebuilt while an animation runs.
+  const transitionKey = JSON.stringify(transition);
+  const springKey = animation && 'spring' in animation ? JSON.stringify(animation.spring) : '';
+  const style = useMemo(() => {
+    assertTransition(transition);
+    if (animation && 'spring' in animation) springPhysics(animation.spring);
+    return transitionStyle(transition, inserted, removed, present);
+    // `transitionKey` and `springKey` stand for `transition` and `animation`'s spring.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transitionKey, springKey, inserted, removed, present]);
+
+  const stopAll = () => {
+    cancel.current?.();
+    cancel.current = null;
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  };
+
+  const rest = () => {
+    inserted.setValue(1);
+    removed.setValue(0);
+    present.setValue(1);
+  };
+
+  const play = useCallback(
+    (instant: boolean) => {
+      stopAll();
+      rest();
+      if (instant) return;
+      cancel.current = runUnitAnimation(removed, animation, () => {
+        // The removal is over, so the view is gone: hold the empty stage, then bring the view back from
+        // its insertion's off look.
+        present.setValue(0);
+        holdTimer.current = setTimeout(() => {
+          holdTimer.current = null;
+          inserted.setValue(0);
+          removed.setValue(0);
+          present.setValue(1);
+          cancel.current = runUnitAnimation(inserted, animation, () => {
+            cancel.current = null;
+          });
+        }, TRANSITION_HOLD_MS);
+      });
+    },
+    // `animation` is the only prop `play` reads; the Animated values are stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inserted, removed, present, animation],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) setReduceMotion(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled: boolean) => {
+      setReduceMotion(enabled);
+      // Turned on mid-play: end on the inserted view the note describes, not wherever the animation was.
+      if (enabled) play(true);
+    });
+    return () => {
+      mounted = false;
+      subscription.remove();
+      stopAll();
+    };
+    // Subscribes once on mount; nothing plays until Replay.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const undamped = animation !== undefined && 'spring' in animation && springPhysics(animation.spring).damping === 0;
+  return (
+    <View style={[styles.wrap, styles.transitionWrap]}>
+      <View style={styles.transitionStage} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" {...({ 'aria-hidden': true } as Record<string, unknown>)}>
+        <Animated.View style={[styles.transitionSample, style]}>
+          <Text style={styles.transitionSampleText}>Sample view</Text>
+        </Animated.View>
+      </View>
+      <Text style={styles.label}>{describeTransitionAnimation(animation)}</Text>
+      <View style={[styles.footer, styles.transitionFooter]}>
+        {label ? <Text style={[styles.label, styles.transitionLabel]}>{label}</Text> : <View style={styles.labelSpacer} />}
+        <Pressable
+          onPress={() => play(reduceMotion)}
+          accessibilityRole="button"
+          accessibilityLabel={motionReplayLabel({ kind: 'transition', label, description: describeTransition(transition) })}
+          style={({ pressed }) => [styles.replayButton, pressed && styles.replayButtonPressed]}
+        >
+          <Text style={styles.replayText}>Replay</Text>
+        </Pressable>
+      </View>
+      {reduceMotion && <Text style={styles.label}>{TRANSITION_REDUCE_MOTION_NOTE}</Text>}
+      {undamped && <Text style={styles.label}>{UNDAMPED_NOTE}</Text>}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: { gap: CATALOG_SPACE.sm, alignItems: 'flex-start' },
   track: {
@@ -215,6 +429,31 @@ const styles = StyleSheet.create({
     borderRadius: DOT_SIZE / 2,
     backgroundColor: CATALOG_COLOR.accent,
   },
+  // The stage clips the sample, so a view that moves out of its own frame is cut off there.
+  transitionStage: {
+    width: STAGE_WIDTH,
+    height: STAGE_HEIGHT,
+    overflow: 'hidden',
+    borderRadius: CATALOG_RADIUS.md,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.border,
+    backgroundColor: CATALOG_COLOR.specimenStage,
+  },
+  transitionSample: {
+    width: STAGE_WIDTH - 2,
+    height: STAGE_HEIGHT - 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: CATALOG_RADIUS.md,
+    backgroundColor: CATALOG_COLOR.accentSubtle,
+    borderWidth: 1,
+    borderColor: CATALOG_COLOR.accent,
+  },
+  // A long label or note wraps inside the cell instead of widening the specimen past it.
+  transitionWrap: { maxWidth: '100%' },
+  transitionFooter: { flexWrap: 'wrap', maxWidth: '100%' },
+  transitionLabel: { flexShrink: 1 },
+  transitionSampleText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.accent },
   footer: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md },
   label: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted },
   labelSpacer: { flex: 1 },

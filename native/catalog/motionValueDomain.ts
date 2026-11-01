@@ -18,9 +18,11 @@
 export type MotionValueRange = 'distance' | 'unit';
 
 /** The Replay button's accessible name. A motion page shows many specimens, so each name must say
- *  which one it replays: the specimen's visible label, else its duration (timing) or "spring". */
-export function motionReplayLabel(specimen: { kind: 'timing' | 'spring'; duration?: number; label?: string }): string {
+ *  which one it replays: the specimen's visible label, else its duration (timing), the transition in
+ *  words (`description`, e.g. "move from bottom and fade"), or "spring". */
+export function motionReplayLabel(specimen: { kind: 'timing' | 'spring' | 'transition'; duration?: number; label?: string; description?: string }): string {
   if (specimen.label) return `Replay ${specimen.label}`;
+  if (specimen.kind === 'transition') return specimen.description ? `Replay transition: ${specimen.description}` : 'Replay transition';
   return specimen.kind === 'timing' ? `Replay ${specimen.duration}ms timing` : 'Replay spring';
 }
 

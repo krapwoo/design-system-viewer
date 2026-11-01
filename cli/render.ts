@@ -15,11 +15,13 @@ export interface PageMessage {
 }
 
 const OVERFLOW = /is \d+px wide in a \d+px cell/;
+const TOKEN_GRID_ORDER = /^TokenGrid order: /;
 
 /**
  * Turns one page's console output into doctor findings. Console errors and a missing heading are
  * errors. The viewer's own `[Catalog]` warnings are warnings: `render-layout` for an example that
- * overflows its cell, `render-catalog-warning` for anything else. Other console noise (React Native
+ * overflows its cell, `token-grid-order` for a `TokenGrid` with a duplicated or out-of-order tile,
+ * `render-catalog-warning` for anything else. Other console noise (React Native
  * web deprecations, logs) is ignored. `seen` is shared across the whole run, so a warning the
  * catalog logs on every page (a duplicate id, an unknown `composedOf` name) is reported once.
  */
@@ -43,12 +45,17 @@ export function issuesFromPage(
       issues.push({ id: 'render-error', severity: 'error', ...ref, message: `Console error while rendering: ${first}`, fix: 'Open the page in `ds-viewer dev` and fix the error in the browser console.' });
     } else if ((m.type === 'warn' || m.type === 'warning') && first.startsWith('[Catalog] ')) {
       const text = first.slice('[Catalog] '.length);
-      if (seen.has(text)) continue;
-      seen.add(text);
+      // A grid's order problem belongs to the page that draws it, so it is deduplicated per page;
+      // every other warning is catalog-wide and reported once.
+      const key = TOKEN_GRID_ORDER.test(text) ? `${page.id}\u0000${text}` : text;
+      if (seen.has(key)) continue;
+      seen.add(key);
       issues.push(
         OVERFLOW.test(text)
           ? { id: 'render-layout', severity: 'warning', ...ref, message: text, fix: 'Give the page a wider specimenSize; see the README page guide.' }
-          : { id: 'render-catalog-warning', severity: 'warning', ...ref, message: text, fix: 'Follow the message; the static doctor rule of the same name has the details.' },
+          : TOKEN_GRID_ORDER.test(text)
+            ? { id: 'token-grid-order', severity: 'warning', ...ref, message: text.replace(TOKEN_GRID_ORDER, ''), fix: 'One tile per value, smallest to largest; put alternative spellings and call sites in Details, or set order="authored" on the TokenGrid.' }
+            : { id: 'render-catalog-warning', severity: 'warning', ...ref, message: text, fix: 'Follow the message; the static doctor rule of the same name has the details.' },
       );
     }
   }

@@ -43,7 +43,9 @@ export { PropsTable } from './PropsTable';
 export { VariantGroup } from './VariantGroup';
 export { TokenRow, TokenRowGroup } from './TokenRow';
 export { MotionSpecimen } from './MotionSpecimen';
-export type { MotionSpecimenProps, MotionSpecimenSpringConfig } from './MotionSpecimen';
+export type { MotionSpecimenProps, MotionSpecimenSpringConfig, MotionSpecimenTransitionAnimation } from './MotionSpecimen';
+export { DEFAULT_TRANSITION_SPRING } from './transitionModel';
+export type { SwiftUITransition, TransitionEdge, TransitionAnchor } from './transitionModel';
 export type { SwiftUIDurationSpring, SwiftUIResponseSpring, SwiftUISpring } from './swiftUISpring';
 export { SpecimenSurface } from './SpecimenSurface';
 export { TokenSections, TokenGrid, TokenTile } from './TokenLayouts';
@@ -63,6 +65,7 @@ export type {
 export { DividedStack } from './DividedStack';
 export { CountStrip } from './CountStrip';
 export type { CountStripItem } from './CountStrip';
+export { InventoryGroup, InventoryTile } from './Inventory';
 export { WarningBanner } from './WarningBanner';
 export type { WarningBannerTone } from './WarningBanner';
 export { Swatch } from './Swatch';

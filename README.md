@@ -557,39 +557,102 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   declared in another component's folder, such as a shared `IconName`, is that component's
   options, so a Banner page never needs one example per icon.
 
-### Overview-page building blocks
+### Category overview pages
 
-A category overview page (the page a sidebar category opens; see **Sidebar categories** above) is
-an ordinary page with a `render()`. Two blocks exported from `@krapwoo/ds-viewer` draw its
-opening, in the viewer's own tokens:
+A category overview page is the page a sidebar category opens (**Buttons**, **Inputs**): it says what
+the category is, counts what is in it and shows each member, flat, with its name linking to its page. It
+is an ordinary page with a `render()`, built from these:
 
-- **`CountStrip`** is a row of 2–6 stats, `items={[{ label, value, sub? }]}`: the label small and
-  uppercase, the value large, the optional `sub` a muted caption. The cells share the row equally
-  and wrap onto the next row on a narrow page (each is at least 150px wide). Fewer than 2 or more
-  than 6 still render, with a development warning.
-- **`WarningBanner`** is a titled note in the viewer's amber attention colours:
-  `<WarningBanner title="…">body</WarningBanner>`. `tone="info"` switches it to the accent blue.
-  The body is a string (styled for you) or your own elements. It has no dismiss control, and it
-  is a `role="note"` named by its title, not an alert, so it does not interrupt a screen reader.
+1. **Nest the members** under it with `sidebarParent` (see **Sidebar categories** above): each member
+   page names the category's id, and the category page is in the same group.
+2. **`CountStrip`** is a row of 2–6 stats, `items={[{ label, value, sub? }]}`: the label small and
+   uppercase, the value large, the optional `sub` a muted caption. The cells share the row equally
+   and wrap onto the next row on a narrow page (each is at least 150px wide). Fewer than 2 or more
+   than 6 still render, with a development warning.
+3. **`WarningBanner`** is a titled note in the viewer's amber attention colours:
+   `<WarningBanner title="…">body</WarningBanner>`. `tone="info"` switches it to the accent blue.
+   The body is a string (styled for you) or your own elements. It has no dismiss control, and it
+   is a `role="note"` named by its title, not an alert, so it does not interrupt a screen reader.
+4. **`InventoryGroup`** and **`InventoryTile`** draw the inventory itself, so the page writes data and
+   not layout. A group is a title with its count in it (`Shared styles · 6`), a plain-English description
+   and its tiles in the same responsive grid as a `TokenGrid` (260px at least, up to four across; three
+   or five tiles sit three across, never four and an orphan). A tile is the member's **real specimen**
+   on a specimen stage and, under it, its **title as a link to its page** — flat, with no card around the
+   tile and none inside it. Its props:
+   - `target`: the page id, or a member's id (a leading `#` is allowed: `'#FilterChip'`). The link text is
+     the page's or member's own `title`, resolved the way every other link in the catalog resolves one,
+     never an id. A member with no title shows a readable name: camel case split into words, in
+     sentence case (`ChatTactileButtonStyle` → "Chat tactile button style"). A `target` that resolves to
+     nothing shows that name as text, not a dead link. `title` overrides the text.
+   - `specimen` and `surface`: the node drawn on the stage, and its stage (`'auto'` by default, as on a
+     page). Leave `specimen` out for a page `target` and the page's own first specimen is drawn, scaled
+     to fit, the same picture its **Overview** card shows. A member has no default specimen: pass one.
+   - Accessibility: the title link is the tile's one tab stop. The specimen is decoration, so it is hidden
+     from assistive technology and inert: nothing in it takes focus or a click.
+5. **Membership is a reviewed list.** Which things belong in a category is a judgment, so keep it as an
+   explicit list a person reviewed (an array of ids, or a generated file checked in and read in review),
+   never a guess from file names. The counts in `CountStrip` come from the same list, so they cannot
+   drift from the tiles.
 
 ```tsx
-import { CountStrip, WarningBanner, defineCatalogPage } from '@krapwoo/ds-viewer';
+import { CountStrip, InventoryGroup, InventoryTile, WarningBanner, defineCatalogPage } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
   id: 'Buttons', group: 'Components', description: 'Where to start with buttons.', standalone: 'A category page.',
+  previewWidths: 'full',
   render: () => (
     <>
       <WarningBanner title="One primary per surface">A screen has one primary Button.</WarningBanner>
       <CountStrip items={[{ label: 'Pages', value: 2 }, { label: 'Variants', value: 5, sub: 'primary to ghost' }]} />
-      {/* each child page's specimen, then its name as a link, as in starter-kit/pages/Buttons.catalog.tsx */}
+      <InventoryGroup title="Buttons" description="The two button components, as they look by default.">
+        <InventoryTile target="Button" specimen={<Button label="Continue" onPress={() => {}} />} />
+        <InventoryTile target="ButtonGroup" specimen={<ButtonGroup>…</ButtonGroup>} />
+      </InventoryGroup>
     </>
   ),
 });
 ```
 
-The starter kit's [Buttons page](starter-kit/pages/Buttons.catalog.tsx) is the worked example: it
-uses both blocks and sits above the Button and ButtonGroup pages, which name it as their
-`sidebarParent`.
+The starter kit's [Buttons page](starter-kit/pages/Buttons.catalog.tsx) is the worked example: it uses
+all four and sits above the Button and ButtonGroup pages, which name it as their `sidebarParent`.
+
+### Using the app's own images
+
+A catalog for a native app often needs the app's own bundled images (an app icon, a brand mark) that
+live outside the catalog folder, such as `App/Assets/mark.png`. Metro only bundles files inside the
+folders it watches, so add that folder to `watchFolders` in **your project's own `metro.config.js`**.
+The workspace `ds-viewer` generates starts from that file and keeps what it watches (adding the project
+and the folders your `components`, `tokens` and `pages` globs reach), so nothing more is needed:
+
+```js
+// metro.config.js (project root)
+const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
+
+const config = getDefaultConfig(__dirname);
+config.watchFolders = [...(config.watchFolders || []), path.resolve(__dirname, '../App/Assets')];
+
+module.exports = config;
+```
+
+Then a catalog page requires the file by its path from the page, as any React Native image:
+
+```tsx
+import { Image } from 'react-native';
+import { defineCatalogPage } from '@krapwoo/ds-viewer';
+
+export default defineCatalogPage({
+  id: 'AppIcon', group: 'Components', standalone: 'Shows the app icon.', description: 'The app icon.',
+  render: () => <Image source={require('../../App/Assets/mark.png')} style={{ width: 64, height: 64 }} accessibilityLabel="The app icon" />,
+});
+```
+
+PNG, JPG and WebP all work (see `logo` above for SVG). Pages are imported statically, so an image
+Metro cannot resolve breaks the whole bundle, not one page: the catalog fails to bundle, with
+Metro's `Unable to resolve module` or, for a path outside a watched folder, `Failed to get the SHA-1 …
+not watched`. Keep the image under a folder the project watches. This repository
+proves it: [`viewer-host/viewer-pages/AppImages.catalog.tsx`](viewer-host/viewer-pages/AppImages.catalog.tsx)
+requires a PNG from outside its project and `npm run check:catalog` renders it.
 
 ### Usage data
 
@@ -960,6 +1023,26 @@ shape:
   value already say it. If there's nothing grounded to say, leave the note out.
 - **Label each sample with its name and real value** (`bodyMd · 16/22 · 400`, `medium · 12px`).
   Use realistic sample text from the product, short enough to fit its column at the largest size.
+- **One tile per value, smallest to largest.** In a `TokenGrid`, write each distinct value once and in
+  ascending order (`2pt`, `4pt`, `6pt`, `17pt`). The other spellings of a value that are the same
+  number (`6` and `6.0`, a literal and its named constant) and every place it is used go in that tile's
+  **Details ›**, not in tiles of their own. Values that are computed rather than literal (derived from
+  another value at run time) get their own grid at the end of the section, so the literal scale reads
+  unbroken. In development a `TokenGrid` warns, and `doctor --render` reports a `token-grid-order`
+  warning, when two tiles share a `name`, or when tiles whose names start with a number (`4pt`,
+  `0.25s`, `22 × 22`: the first number counts) are not in ascending order. Tiles with names that do not
+  start with a number are ignored for ordering. `order="authored"` keeps a deliberate order (a scale
+  shown largest first) and turns off only that check; a duplicated name is still reported:
+  ```tsx
+  <TokenGrid order="authored">
+    <TokenTile name="24pt" value="large title"><View /></TokenTile>
+    <TokenTile name="16pt" value="body"><View /></TokenTile>
+  </TokenGrid>
+  ```
+  Tiles are only compared when they share a unit (`250ms`, `500ms`, `1s` is fine), a thousands group
+  (`1,000ms`) is one number, and a ratio (`16:9`) is no number. The check reads the `name` of the
+  tiles you give the grid directly; a tile wrapped in a component of your own, or written inside a
+  Fragment (`<>…</>`), is not seen.
 - **`MotionSpecimen`** demonstrates a duration/easing or spring token as a real, bounded
   start-to-end slide — a dot travels a fixed track once when it mounts, with a named Replay button
   to play it again. Give it `kind: 'timing'` with `duration` (and optionally a real `Easing`
@@ -1009,6 +1092,57 @@ shape:
   <MotionSpecimen kind="spring" spring={{ response: 0.5, dampingFraction: 0.7 }} />
   <MotionSpecimen kind="spring" spring={{ duration: 0.5, bounce: 0.3 }} />
   ```
+- **`MotionSpecimen kind="transition"`** previews a SwiftUI `.transition(...)` — how a view looks as it
+  is inserted and removed — which a duration or spring cannot show. A small sample view sits in a clipped
+  stage and **rests inserted**, with no animation on load. Replay **removes** it, holds the empty stage for
+  half a second, then **inserts** it again, ending inserted, once; pressing it mid-play restarts from the
+  removal. Nothing loops and nothing runs in between. Replay's accessible name is `Replay <label>`, or,
+  with no `label`, the transition in words (`Replay transition: move from bottom and fade`), so a page of
+  transitions never has a row of identical buttons. `transition` is a plain, typed value:
+
+  | SwiftUI | `transition` |
+  |---|---|
+  | `.opacity` | `{ type: 'opacity' }` |
+  | `.identity` | `{ type: 'identity' }` (the view just appears and disappears) |
+  | `.move(edge: .bottom)` | `{ type: 'move', edge: 'bottom' }` (`top`, `bottom`, `leading`, `trailing`) |
+  | `.slide` | `{ type: 'slide' }` (in from `leading`, out to `trailing`) |
+  | `.push(from: .trailing)` | `{ type: 'push', from: 'trailing' }` (moves in from that edge and fades in; moves out to the opposite edge and fades out) |
+  | `.scale` / `.scale(scale: 0.8, anchor: .top)` | `{ type: 'scale' }` (to 0 about the centre) / `{ type: 'scale', scale: 0.8, anchor: 'top' }` |
+  | `.offset(x: 0, y: 24)` | `{ type: 'offset', y: 24 }` (px; `x` and `y` default to 0; it does not fade) |
+  | `.opacity.combined(with: .scale)` | `{ type: 'combined', of: [{ type: 'opacity' }, { type: 'scale' }] }` (all parts at once) |
+  | `.asymmetric(insertion: .move(edge: .bottom), removal: .opacity)` | `{ type: 'asymmetric', insertion: { type: 'move', edge: 'bottom' }, removal: { type: 'opacity' } }` |
+
+  A `move`, `slide` or `push` moves the view by its own size, which is the whole stage, so it leaves
+  completely. `anchor` is any SwiftUI `UnitPoint` name: `center` (the default), `top`, `bottom`, `leading`,
+  `trailing`, `topLeading`, `topTrailing`, `bottomLeading`, `bottomTrailing`. Layout is left to right.
+  `asymmetric` plays its own insertion and its own removal; `combined` composes every part
+  simultaneously (opacities and scales multiply, offsets add). An unknown `type`, edge or anchor, a
+  non-finite number or an empty `combined` throws a `RangeError` while rendering, like an out-of-range spring.
+
+  `animation` is optional and takes what the other kinds take: `{ duration, easing? }` or
+  `{ spring }` (physics, or a SwiftUI `{ response, dampingFraction }` / `{ duration, bounce }` spring).
+  It runs for both the removal and the insertion, and its rest thresholds are for a 0-to-1 value. Left
+  out, the specimen models `withAnimation` with no argument on iOS 17 and later, a critically damped
+  spring of about half a second: `{ response: 0.55, dampingFraction: 1 }` (`DEFAULT_TRANSITION_SPRING`).
+  `animation` is the animation of the change that inserts or removes the view: with no animation at
+  all SwiftUI shows no transition (the view just appears), and before iOS 17 the default was ease-in-out
+  over 0.35 s. The spring figures are an assumption, not a published constant, so pass the animation the
+  product really uses when it matters (a catalog written from source, or for an older iOS, should). A
+  line under the stage says which animation ran ("Assumed: withAnimation default (iOS 17+) · spring,
+  response 0.55, no bounce" when none is named), and a spring is cut off after 5 seconds as
+  the other kinds are. With Reduce Motion on the view stays inserted and Replay does not animate,
+  with the note
+  "Reduce Motion is on, so the transition is not animated. Showing the view as inserted." — an empty
+  stage would say nothing. The stage is decoration: hidden from assistive technology.
+  ```tsx
+  <MotionSpecimen kind="transition" transition={{ type: 'move', edge: 'bottom' }} label="move(edge: .bottom)" />
+  <MotionSpecimen
+    kind="transition"
+    transition={{ type: 'combined', of: [{ type: 'opacity' }, { type: 'scale', scale: 0.8 }] }}
+    animation={{ duration: 240 }}
+  />
+  ```
+  The starter kit's Motion page has one tile for each built-in.
 - **`TokenDetails`** keeps a token's source and usage text off its tile. It renders a
   **Details ›** link and, when pressed, the same side panel **Notes and API ›** uses. Give it the
   token's `title` (the panel heading, and the link's accessible name: "Details for 8pt") and
@@ -1402,7 +1536,9 @@ and adds what only a real render shows:
 
 - `render-error` / `render-no-heading` (errors): a console error, or a page that didn't render.
 - `render-layout` (warning): an example wider than its cell (the viewer's own check), with the
-  page and file. `render-catalog-warning` (warning): any other `[Catalog]` warning, reported once.
+  page and file. `token-grid-order` (warning): a `TokenGrid` with two tiles of the same name, or numbered
+  tiles out of ascending order (see [Token pages](#token-pages)), reported once per page.
+  `render-catalog-warning` (warning): any other `[Catalog]` warning, reported once.
 - `identical-variants` (warning): two examples in the same card whose specimens render identically,
   so the difference their names claim isn't visible — usually a cell too narrow to show it, or a
   prop that was never wired up. The fingerprint reads each specimen's whole subtree (including a

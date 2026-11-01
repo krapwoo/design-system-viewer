@@ -1,24 +1,13 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { CATALOG_COLOR, CATALOG_SPACE, CATALOG_TEXT, CountStrip, WarningBanner, defineCatalogPage } from '@krapwoo/ds-viewer';
+import { View } from 'react-native';
+import { CATALOG_SPACE, CountStrip, InventoryGroup, InventoryTile, WarningBanner, defineCatalogPage } from '@krapwoo/ds-viewer';
 import { Button } from '../components/Button';
 import { ButtonGroup } from '../components/ButtonGroup';
 
-/** One inventory entry: the specimen, then its name. The name is the link to that page. */
-function Entry({ id, children }: { id: string; children: React.ReactNode }) {
-  return (
-    <View style={{ gap: CATALOG_SPACE.md, alignItems: 'flex-start' }}>
-      {children}
-      <Pressable accessibilityRole="link" {...({ href: `#${encodeURIComponent(id)}` } as Record<string, unknown>)}>
-        <Text style={{ ...CATALOG_TEXT.bodyStrong, color: CATALOG_COLOR.accent }}>{id}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 // A category overview: the page the sidebar's "Buttons" entry opens, with the two button pages listed
 // under it (`sidebarParent: 'Buttons'` on Button and ButtonGroup). It adds no components of its own.
-// Its inventory is only the specimen and the name: no card per item and no description line.
+// Membership is a reviewed list: the tiles below are the buttons this page claims, written as data.
+// Each `InventoryTile` draws a real specimen and links to its page by that page's own title.
 export default defineCatalogPage({
   id: 'Buttons',
   group: 'Components',
@@ -38,17 +27,18 @@ export default defineCatalogPage({
           { label: 'Sizes', value: 3, sub: 'large, medium, small' },
         ]}
       />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.xl }}>
-        <Entry id="Button">
-          <Button label="Continue" onPress={() => {}} />
-        </Entry>
-        <Entry id="ButtonGroup">
-          <ButtonGroup variant="horizontal">
-            <Button label="Cancel" variant="tertiary" onPress={() => {}} />
-            <Button label="Confirm" onPress={() => {}} />
-          </ButtonGroup>
-        </Entry>
-      </View>
+      <InventoryGroup title="Buttons" description="The two button components, as they look by default. Open a name for every variant, size and state.">
+        <InventoryTile target="Button" specimen={<Button label="Continue" onPress={() => {}} />} />
+        <InventoryTile
+          target="ButtonGroup"
+          specimen={
+            <ButtonGroup variant="horizontal">
+              <Button label="Cancel" variant="tertiary" onPress={() => {}} />
+              <Button label="Confirm" onPress={() => {}} />
+            </ButtonGroup>
+          }
+        />
+      </InventoryGroup>
     </View>
   ),
 });

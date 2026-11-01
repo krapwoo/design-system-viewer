@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { sectionColumns, tileGeometry, TOKEN_LAYOUT_GAP, TOKEN_SECTION_MIN_WIDTH } from './tokenLayout';
 import { DocumentedAnchor } from './DocumentedAnchor';
+import { tokenGridOrderProblems } from './tokenGridOrder';
 import type { TokenSection } from './types';
 
 /** Measures its own width; renders nothing inside until the width is known. */
@@ -71,10 +72,30 @@ export function TokenSections({
 /**
  * Tokens as tiles in columns — for tokens whose preview is small and self-contained (radius,
  * shadow, colour, control height). As many equal tiles per row as keep `minTileWidth`.
+ *
+ * Write one tile per value, smallest to largest. In development a grid warns (`doctor --render`
+ * reports it as `token-grid-order`) when two tiles share a `name`, or when tiles whose names start
+ * with a number (`4pt`, `0.25s`, `22 × 22`) are not in ascending order; tiles with other names are
+ * ignored for ordering, and tiles are compared only when they share a unit (`250ms`, `500ms`, `1s`).
+ * Only tiles given to the grid directly are read: one inside a Fragment or a component of your own
+ * is not checked. `order="authored"` keeps a deliberate order (a scale shown largest first)
+ * and turns off only the ordering check: a duplicated name is still reported.
  */
-export function TokenGrid({ children, minTileWidth = 140, maxColumns }: { children: React.ReactNode; minTileWidth?: number; maxColumns?: number }) {
+export function TokenGrid({ children, minTileWidth = 140, maxColumns, order = 'ascending' }: { children: React.ReactNode; minTileWidth?: number; maxColumns?: number; order?: 'ascending' | 'authored' }) {
   const [width, onLayout] = useWidth();
   const { tileWidth } = tileGeometry(width, minTileWidth, maxColumns);
+  const warned = useRef(new Set<string>());
+  if ((globalThis as { __DEV__?: boolean }).__DEV__) {
+    const names = React.Children.toArray(children).flatMap((child) => {
+      const name = React.isValidElement(child) ? (child.props as { name?: unknown }).name : undefined;
+      return typeof name === 'string' ? [name] : [];
+    });
+    for (const problem of tokenGridOrderProblems(names, { ordered: order !== 'authored' })) {
+      if (warned.current.has(problem)) continue;
+      warned.current.add(problem);
+      console.warn(`[Catalog] ${problem}`);
+    }
+  }
   return (
     <View onLayout={onLayout} style={styles.grid}>
       {width > 0 && React.Children.map(children, (child) => (child ? <View style={{ width: tileWidth }}>{child}</View> : null))}
