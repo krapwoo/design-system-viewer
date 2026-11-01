@@ -164,3 +164,55 @@ test('readStaticTokenDefinition omits aliases when absent, and when not a fully 
   const def2 = readStaticTokenDefinition(node2, consts2);
   assert.equal(def2?.sections[0].aliases, undefined);
 });
+
+test('readStaticTokenDefinition reads a tokenScale call\'s literal kind and marks its sections as computed', () => {
+  const { node, consts } = parseProperty(`tokenScale('radius', FINDINGS, { unit: 'pt' })`);
+  assert.deepEqual(readStaticTokenDefinition(node, consts), { kind: 'radius', sections: [], fromTokenScale: true });
+});
+
+test('readStaticTokenDefinition follows a same-file const to a tokenScale call, and gives up on a non-literal kind', () => {
+  const source = ts.createSourceFile('fixture.ts', `const RADIUS = tokenScale('radius', []); const ref = RADIUS;`, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  const consts = new Map<string, ts.Expression>();
+  for (const statement of source.statements) {
+    for (const declaration of (statement as ts.VariableStatement).declarationList.declarations) consts.set((declaration.name as ts.Identifier).text, declaration.initializer!);
+  }
+  assert.equal(readStaticTokenDefinition(consts.get('ref')!, consts)?.kind, 'radius');
+  const dynamic = parseProperty(`tokenScale(someKind, [])`);
+  assert.equal(readStaticTokenDefinition(dynamic.node, dynamic.consts), undefined);
+});
+
+function parseWithConsts(source: string): Map<string, ts.Expression> {
+  const file = ts.createSourceFile('fixture.ts', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  const consts = new Map<string, ts.Expression>();
+  for (const statement of file.statements) {
+    for (const declaration of (statement as ts.VariableStatement).declarationList.declarations) consts.set((declaration.name as ts.Identifier).text, declaration.initializer!);
+  }
+  return consts;
+}
+
+test('readStaticTokenDefinition takes kind from a spread tokenScale call when the literal has none of its own', () => {
+  const spread = parseProperty(`{ ...tokenScale('radius', FINDINGS), sections: [{ id: 'mine', title: 'Mine', entries: [{ id: 'a' }] }] }`);
+  const def = readStaticTokenDefinition(spread.node, spread.consts);
+  assert.equal(def?.kind, 'radius');
+  assert.equal(def?.fromTokenScale, true);
+  assert.deepEqual(def?.sections.map((s) => s.id), ['mine']);
+  const alone = parseProperty(`{ ...tokenScale('spacing', FINDINGS), showNoTokensNote: false }`);
+  assert.deepEqual(readStaticTokenDefinition(alone.node, alone.consts), { kind: 'spacing', sections: [], fromTokenScale: true });
+});
+
+test('readStaticTokenDefinition reads { ...scale, sections: [...scale.sections, mine] } through a same-file const', () => {
+  const consts = parseWithConsts(`const scale = tokenScale('dimensions', F); const def = { ...scale, sections: [...scale.sections, { id: 'mine', title: 'Mine', entries: [] }] };`);
+  const def = readStaticTokenDefinition(consts.get('def')!, consts);
+  assert.equal(def?.kind, 'dimensions');
+  assert.equal(def?.fromTokenScale, true);
+  assert.deepEqual(def?.sections.map((s) => s.id), ['mine']);
+});
+
+test('readStaticTokenDefinition still gives up on an own non-literal kind, and on a spread that is not a tokenScale call', () => {
+  const own = parseProperty(`{ ...tokenScale('radius', F), kind: someKind, sections: [] }`);
+  assert.equal(readStaticTokenDefinition(own.node, own.consts), undefined, 'an own kind that is not a literal is not replaced by the spread');
+  const other = parseProperty(`{ ...somethingElse(), sections: [] }`);
+  assert.equal(readStaticTokenDefinition(other.node, other.consts), undefined);
+  const unknownSpread = parseProperty(`{ kind: 'radius', sections: [...OTHER.sections] }`);
+  assert.equal(readStaticTokenDefinition(unknownSpread.node, unknownSpread.consts), undefined, 'a spread of anything but a tokenScale call is still unreadable');
+});

@@ -33,8 +33,11 @@ export interface DsViewerConfig {
   starterKit?: { version: string; root?: string };
   /** @default true */
   updateCheck?: boolean;
-  /** `strict: true` promotes `doctor` warnings to errors. */
-  doctor?: { strict?: boolean };
+  /** `strict: true` promotes `doctor` warnings to errors. `handBuiltTokenPages` lists page ids (the file
+   *  name without `.catalog.tsx`, or the explicit `id`) of radius, spacing, dimensions or opacity pages
+   *  that are built by hand on purpose, such as a page documenting real named tokens: `doctor` then
+   *  skips its `token-page-hand-built` hint for them. */
+  doctor?: { strict?: boolean; handBuiltTokenPages?: string[] };
 }
 
 export function defineConfig(config: DsViewerConfig): DsViewerConfig {

@@ -999,13 +999,15 @@ top-level member's own section in authored order.
 
 ### Token pages
 
-A token page shows each token at its real value with its role. Pick the layout by the token's
-shape:
+A token page shows each token at its real value with its role. Radius, Spacing, Dimensions and
+Opacity pages use [`tokenDefinition`](#tokendefinition) (with `provenance: 'named'` for real tokens),
+or `tokenScale` for literals found in code (see "Value scales from scanner findings"). For any other
+token, pick the layout by its shape:
 
 | Token shape | Layout | Example |
 |---|---|---|
-| Small, self-contained preview (radius, shadow, control height, a single colour) | `TokenGrid` of `TokenTile`s: equal tiles in as many columns as fit | Radius, Shadow, ControlHeights |
-| Narrow sample with a long note (icon size, spacing) | `TokenRow` with `notePlacement="right"`: one line per token | IconSizes |
+| Small, self-contained preview (shadow, control height, a single colour) | `TokenGrid` of `TokenTile`s: equal tiles in as many columns as fit | Shadow, ControlHeights |
+| Narrow sample with a long note (icon size) | `TokenRow` with `notePlacement="right"`: one line per token | IconSizes |
 | Several kinds of token on one page | `tokenSections`: one titled card per kind | Colors (semantic vs palette) |
 | A scale with families (type) | `tokenSections` with `tokenColumns: 2` or `3`, one section per family | Typography (label, body, emphasis…) |
 | A duration/easing or spring value | `MotionSpecimen` next to the token's value | Motion (duration, easing, spring) |
@@ -1031,7 +1033,8 @@ shape:
   unbroken. In development a `TokenGrid` warns, and `doctor --render` reports a `token-grid-order`
   warning, when two tiles share a `name`, or when tiles whose names start with a number (`4pt`,
   `0.25s`, `22 × 22`: the first number counts) are not in ascending order. Tiles with names that do not
-  start with a number are ignored for ordering. `order="authored"` keeps a deliberate order (a scale
+  start with a number are ignored for ordering. For a page of literals a scanner found, `tokenScale`
+  (below, "Value scales from scanner findings") does all of this for you. `order="authored"` keeps a deliberate order (a scale
   shown largest first) and turns off only that check; a duplicated name is still reported:
   ```tsx
   <TokenGrid order="authored">
@@ -1270,6 +1273,19 @@ export default defineCatalogPage({ group: 'Tokens', description: 'Semantic and p
   "+N more"). For a light/dark pair, an expression that is the same on both sides is shown once,
   one that differs is shown as "Expression (light)" and "Expression (dark)", and the two sides'
   `usages` are listed together, each site once.
+- **`expressions`: every way one value is written.** When the same value appears as `cornerRadius: 6`
+  and `RoundedRectangle(cornerRadius: 6, style: .continuous)`, give the entry
+  `expressions: [...]` (`expression` still works on its own). Two or more distinct forms are listed in
+  Details under "Written 2 ways"; a single one is shown as the usual "Expression". A repeated form
+  counts once, and an `expression` that is not in `expressions` is still shown with the others. A
+  light/dark color pair does not read `expressions`: it keeps showing its two sides' `expression`.
+  A dimension tile named for its own value (`6pt`) does not print the value a second time.
+- **"No tokens yet" line.** With `showNoTokensNote: true` (which `tokenScale` sets for you), a page
+  that has entries but none with `provenance: 'named'` says so in a note at the top: "No radius tokens
+  yet" / "These are values written in the app's code, not shared tokens." The noun is singular and
+  follows the kind ("No dimension tokens yet", "No color tokens yet", "No shadow tokens yet"). One
+  named token anywhere on the page removes it. Without the flag a definition never makes that claim, so a page of platform values isn't
+  mislabelled; a page with no entries makes none either.
 - **A tile shows only its value; the rest is behind "Details ›".** An entry's provenance (when it
   isn't already shown once for the section), `source`, `expression`, `usages` and `role` (the usage text) are not printed
   under its tile or row. They open from a **Details ›** link on that entry, named "Details for
@@ -1335,6 +1351,81 @@ export default defineCatalogPage({ group: 'Tokens', description: 'Semantic and p
   unchanged — `tokenDefinition` is additive, never required. To convert one, remove `render`/
   `tokenSections` and author the same data as `tokenDefinition`'s entries instead.
 
+### Value scales from scanner findings
+
+An app with no radius, dimension, spacing or opacity tokens still has the values: hundreds of literals
+written inline (`cornerRadius: 6`, `.frame(maxWidth: 360)`). A scanner finds them; `tokenScale(kind, findings,
+options?)` turns those findings into a `TokenDefinition` for the page:
+
+```tsx
+import { defineCatalogPage, tokenScale, type TokenFinding } from '@krapwoo/ds-viewer';
+
+const FINDINGS: TokenFinding[] = [
+  { expression: 'cornerRadius: 6', usages: ['Views/Tag.swift:9'], unit: 'pt', value: 6 },
+  { expression: 'RoundedRectangle(cornerRadius: 6, style: .continuous)', usages: ['Views/Card.swift:31'], unit: 'pt', value: 6 },
+  { expression: 'maxWidth: 360', unit: 'pt', value: 360, constraint: 'max' },
+  { expression: 'Metrics.cardCornerRadius', name: 'Metrics.cardCornerRadius', unit: 'pt', value: 10 },
+  { expression: 'cornerRadius: pill.height / 2', unresolved: { reason: 'size', detail: "Half of the pill's height" } },
+  { expression: 'cornerRadius: isExpanded ? 16 : 8', unresolved: { reason: 'state' } },
+];
+
+export default defineCatalogPage({ group: 'Tokens', description: 'Corner radii written inline.', tokenDefinition: tokenScale('radius', FINDINGS) });
+```
+
+- **Kinds.** `'radius'`, `'dimensions'`, `'spacing'` and `'opacity'`: the kinds one number describes.
+  Shadows (several fields per value), colors, typography and motion are not scales of numbers; write
+  those as a `tokenDefinition`.
+- **A finding** is one scanner row. Only `expression` is required.
+
+  | Field | Meaning |
+  | --- | --- |
+  | `expression` | The source text as written. |
+  | `value`, `unit` | The number it resolves to, and its unit. `unit` falls back to `options.unit`, then to none (a bare number). Opacity has no unit. |
+  | `constraint` | `'exact'` (default), `'min'` or `'max'`. `360pt`, `max 360pt` and `min 360pt` are three different values. |
+  | `usages`, `source` | Every call site as `path:line`; where the literal is defined. |
+  | `name` | What the code calls it (`ChatComposerMetrics.cardCornerRadius`). |
+  | `provenance` | Defaults to `'inline'`. Only `'named'` means a real design-system token. |
+  | `unresolved` | `{ reason: 'size' \| 'state' \| 'other', detail? }` when there is no one value. |
+  | `scale` | Which of `options.scales` a literal belongs to. |
+
+- **One tile per value, smallest to largest.** Findings with the same value, unit and constraint, and
+  the same standing (both named, or both plain; see below), and, for plain ones, the same sub-scale
+  (a 44pt width and a 44pt height are two values), become one entry named by its value
+  (`6pt`, `max 360pt`). Every written form (`expressions`) and every call site
+  (`usages`, each once) go in **Details ›**, not on the tile. Units keep the order they first appear in;
+  within one unit the order is value, then exact, `min`, `max`.
+- **Named values come first**, in a "Named in code" section: a component constant resolved to its number.
+  The tile carries the constant's name as its note. A name is not a design-system token: it stays
+  `provenance: 'inline'` unless the finding says `'named'`. A finding with a `name`, or with
+  `provenance: 'named'` (with or without a `name`), is named. Named and plain findings never merge:
+  `Metrics.cardCornerRadius` (12) and an unrelated `cornerRadius: 12` are two tiles, the second in
+  "Values written inline" with its own written form and sites.
+- **What is not a fixed value goes last**, in "Not a fixed value", one group per reason: "Depends on
+  size" (`pill.height / 2`), "Depends on state" (`isExpanded ? a : b`), "Other". An empty group is left
+  out. The tile is the source text with `detail` (the group's title when there is none); the viewer never
+  draws a sample for it. A finding with neither `value` nor `unresolved`, or with a `value` that is not a
+  finite number (`NaN`, `Infinity`), is shown as "No value found". The same expression found twice is one
+  tile, and every distinct `detail` is kept (joined with "; "). A named finding without a value keeps
+  its `name` as the tile's note.
+- **Sub-scales.** `options.scales: [{ id: 'widths', title: 'Widths', desc? }, ...]` splits the literal
+  values; a finding picks one with `scale: 'widths'`. A finding with no `scale`, or an unknown one, goes
+  in the last literal section ("Other values" when you split, "Values written inline" when you do not).
+  A sub-scale's section id is `scale-<id>` (`scale-widths`), so no scale id can collide with the
+  built-in `named`, `values` and `not-fixed` sections.
+- **Honesty.** Findings are inline unless a finding says `provenance: 'named'`, so the page opens with
+  "No radius tokens yet / These are values written in the app's code, not shared tokens."
+  (`showNoTokensNote: false` in `options` removes it). The result is a plain `TokenDefinition`. To add
+  sections of your own, keep the scale's: `const scale = tokenScale('radius', FINDINGS)`, then
+  `tokenDefinition: { ...scale, sections: [...scale.sections, mySection] }`. Writing only
+  `{ ...scale, sections: [mySection] }` replaces the computed sections.
+- `doctor` reads the `kind` of a `tokenScale('radius', ...)` call (a literal first argument, directly or
+  through a same-file `const`) the way it reads a `tokenDefinition` literal, so a scale page is not
+  reported as unreadable. That also holds for the spread above: an object literal with no `kind` of its
+  own takes it from a spread `tokenScale(...)` call, and `...scale.sections` inside `sections` is
+  allowed. The sections `tokenScale` computes are not checked statically: the page appears in
+  `doctor`'s "not statically validated" list as `tokenScale`, and any literal sections you add are
+  checked as usual.
+
 ## Keeping the catalog current
 
 ### Binding examples to props
@@ -1378,7 +1469,7 @@ Button
 
 - `--json` prints the same report as stable, versioned data: `{ version: 1, summary: { errors, warnings, hints?, components, withExamples, unboundExamples }, update: null, issues: [{ id, severity, page?, file?, line?, message, fix }] }`. `update` is always `null` in this release (filled in starting 0.4's update check); `file` is always relative to the project root. `line` is populated for a `page-parse-error` found by typechecking a page file (see below), and always `undefined` for every other issue id — threading a real position through every rule is future work.
 - `--ci` exits 1 only when an error was found — a warning or a hint alone never fails CI, and `--ci` never makes a network call.
-- `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code. A `hint` (below) is never promoted.
+- `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code. A `hint` (below) is never promoted. `doctor.handBuiltTokenPages: ['Radius']` lists pages (by id: the file name without `.catalog.tsx`, or the explicit `id`) that draw their own value tiles on purpose, so `token-page-hand-built` leaves them alone.
 - A page whose layout data (`specimenSize`, `group`, grid `rows`/`columns`, list items' `key`/`name`/`props`/`group`, `propNotes` keys) isn't a literal — written as something other than a literal value, array, object, or a same-file `const` reference — gets one "page not statically checkable" warning. A page file that fails to parse *or typecheck* is `page-parse-error` instead: every page file is also run through the TypeScript type checker (the same way a component file already is), so a genuine syntax or type error in a page is reported with its line.
 - Three further rules are conservative source-backed *suggestions*, warnings by default
   (the existing `doctor.strict` option still promotes them), never authoritative over what a page authors:
@@ -1519,13 +1610,16 @@ Each of these is caught by `doctor`. The worked example for the anatomy ones is
 | `anatomy-picture-geometry` (`--render`) | A specimen off-centre, a pin far from the specimen, a pin cut off by the picture area, or a pin over the side-by-side legend. | Pass the pins in `AnatomySpecimen`'s `pins` prop at `position: 'absolute', right: 0`, as TripCard does. |
 | `documents-invalid` (error) | A token page's `documents` entry that names no component export (or one `exclude` drops), is documented by two pages, also has a page of its own, has a blank `title`, is listed twice, or collides with another id or alias; or `documents` on a family or group page. A `documents` list doctor cannot read (not a literal) is reported as `page-not-checkable`, and while one exists doctor stops reporting "needs a page" for every component that has no page, catalog-wide. | List each component once, on one token page, with a title, and give it no page of its own; see **Documenting components on a token page**. |
 | `sidebar-parent-invalid` (error) | A `sidebarParent` that names an unknown page, a page in another group, a page that is itself nested, the page itself, or a page that is not listed in the sidebar (`navigation: 'reference'`). | Name a page in the same group that is listed in the sidebar and has no `sidebarParent` of its own, or remove the field. |
+| `token-page-hand-built` (hint) | A page in the `Tokens` group titled Radius, Spacing, Dimensions or Opacity that draws its own tiles (`TokenGrid`, `TokenTile`, `TokenRow`, `TokenRowGroup` or `TokenSections`) instead of using `tokenDefinition`. Shadows, colors, typography and motion pages are not checked, and neither is a page built from a viewer gallery such as `SpacingScaleGallery`. | Use `tokenDefinition`, or `tokenScale` for literals a scanner found (see **Value scales from scanner findings**). A page built by hand on purpose goes in `doctor.handBuiltTokenPages`. |
 | `grid-empty-cell` (hint) | An odd number of items two across, leaving an empty cell. | Set `specimenSize: 'regular'`, or add or remove one item. |
 | `specimen-text-illegible` (`--render`) | Sample text drawn for the other appearance: near-white text on a light cell, or near-black text on a dark one (under 1.5:1). The background must be a grey or tinted grey too: a coloured fill (white on saturated yellow) is a deliberate choice and is left alone, as are faint platform colours (placeholder grey, a yellow warning glyph). | Set the item's `surface` (`'dark'` for light-on-dark components), or give the sample text a colour that follows the scheme. |
 | `heading-breaks-word` (hint, `--render`) | A page heading that the browser splits in the middle of a word. | Give the page a human `title`. |
 | `page-head-overlap` (`--render`) | A heading painted under the ← → pager. | Let the heading wrap or truncate in its own column. |
 
 For a token page, keep each tile to its value and specimen and put the source and usage in
-**Details ›** (`TokenDetails`): see the [Radius page](starter-kit/pages/Radius.catalog.tsx). The
+**Details ›** (`TokenDetails`): see the [Icons page](starter-kit/pages/Icons.catalog.tsx). A
+`tokenDefinition` page such as the [Radius page](starter-kit/pages/Radius.catalog.tsx) gets its
+**Details ›** from each entry's `source`, `expression` and `role` instead. The
 [Motion page](starter-kit/pages/Motion.catalog.tsx) shows a SwiftUI-style spring through
 `MotionSpecimen`'s `{ response, dampingFraction }` form.
 

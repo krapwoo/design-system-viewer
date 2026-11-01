@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { applyComponentDefaults, withExtraIssues, checkOverlaysFramed, checkPageTypeErrors, collectGlobalIssues, collectIssues, formatHuman, runDoctor, toDoctorJson } from '../doctor.ts';
@@ -1591,4 +1591,109 @@ test('documents: an unreadable documents list says in page-not-checkable that "n
   assert.match(found[0].message, /needs a page.*catalog-wide/);
   const plain = collectIssues([page({ id: 'Other', file: '/x/Other.catalog.tsx', checkable: false })], []).filter((i) => i.id === 'page-not-checkable');
   assert.doesNotMatch(plain[0].message, /needs a page/);
+});
+
+// --- token-page-hand-built hint ---------------------------------------------------------------
+const handBuilt = (overrides: Partial<StaticPage> = {}) =>
+  page({ file: '/x/Radius.catalog.tsx', group: 'Tokens', tokenGallery: true, viewerImports: ['defineCatalogPage', 'TokenGrid', 'TokenTile'], ...overrides });
+
+test('token-page-hand-built: a Tokens page named like a value scale that draws its own tiles gets an advisory hint', () => {
+  const issues = collectIssues([handBuilt()], []).filter((i) => i.id === 'token-page-hand-built');
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].severity, 'hint', 'advisory: never fails --ci');
+  assert.match(issues[0].fix ?? '', /tokenScale/);
+  assert.match(issues[0].fix ?? '', /tokenDefinition/);
+});
+
+test('token-page-hand-built: reads an explicit title, and the page id when there is none', () => {
+  assert.equal(collectIssues([handBuilt({ file: '/x/Foo.catalog.tsx', title: 'Spacing' })], []).filter((i) => i.id === 'token-page-hand-built').length, 1);
+  assert.equal(collectIssues([handBuilt({ file: '/x/Opacity.catalog.tsx' })], []).filter((i) => i.id === 'token-page-hand-built').length, 1);
+  assert.equal(collectIssues([handBuilt({ file: '/x/Buttons.catalog.tsx' })], []).filter((i) => i.id === 'token-page-hand-built').length, 0);
+});
+
+test('token-page-hand-built: stays quiet for a tokenDefinition page, other groups, other kinds, pages that use a viewer gallery, and listed pages', () => {
+  const none = (p: StaticPage, options = {}) => collectIssues([p], [], options).filter((i) => i.id === 'token-page-hand-built').length;
+  assert.equal(none(handBuilt({ hasTokenDefinition: true })), 0, 'already a tokenDefinition page');
+  assert.equal(none(handBuilt({ group: 'Components' })), 0);
+  assert.equal(none(handBuilt({ file: '/x/Shadow.catalog.tsx' })), 0, 'tokenScale does not cover shadows');
+  assert.equal(none(handBuilt({ viewerImports: ['defineCatalogPage', 'SpacingScaleGallery'] })), 0, 'a viewer gallery is not hand-built tiles');
+  assert.equal(none(handBuilt(), { handBuiltTokenPages: ['Radius'] }), 0, 'listed in doctor.handBuiltTokenPages');
+});
+
+test('token-page-hand-built never fails --ci: the exit code stays 0 with the hint present, and doctor.strict does not promote it', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage, TokenGrid, TokenTile } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ title: 'Radius', group: 'Tokens', description: 'x', tokenGallery: true, render: () => null });
+  `);
+  writeFileSync(path.join(dir, 'node_modules', '@krapwoo', 'ds-viewer', 'index.d.ts'), 'export const defineCatalogPage: any;\nexport const TokenGrid: any;\nexport const TokenTile: any;\n');
+  try {
+    const plain = runDoctor(configFor(dir));
+    assert.equal(plain.issues.filter((i) => i.id === 'token-page-hand-built').length, 1, 'the hint is present');
+    assert.deepEqual(plain.issues.filter((i) => i.severity === 'error'), []);
+    assert.equal(plain.exitCode, 0);
+    assert.equal(withExtraIssues(plain, [], false).exitCode, 0, 'still 0 after render findings are added');
+    // Strict promotes this fixture's unrelated option-coverage warnings, but never the hint.
+    const strict = runDoctor(configFor(dir, { doctor: { strict: true } }));
+    assert.deepEqual(strict.issues.filter((i) => i.id === 'token-page-hand-built').map((i) => i.severity), ['hint']);
+    assert.equal(strict.issues.some((i) => i.id === 'token-page-hand-built' && i.severity === 'error'), false);
+    const withHintOnly = withExtraIssues({ ...plain, issues: [], summary: { ...plain.summary, errors: 0, warnings: 0, hints: undefined } }, plain.issues.filter((i) => i.id === 'token-page-hand-built'), true);
+    assert.equal(withHintOnly.exitCode, 0, 'strict, with only the hint left');
+    assert.equal(withHintOnly.summary.hints, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('token-page-hand-built: the fix says real named tokens use tokenDefinition with provenance named, and found literals tokenScale', () => {
+  const [issue] = collectIssues([handBuilt()], []).filter((i) => i.id === 'token-page-hand-built');
+  assert.match(issue.fix ?? '', /for real named tokens, use tokenDefinition with provenance: 'named'/i);
+  assert.match(issue.fix ?? '', /for literals found in code, tokenScale/i);
+});
+
+test('token-page-hand-built: a family page (members) is left alone, and an id like CatalogRadius is not matched by its prefix', () => {
+  const none = (p: StaticPage) => collectIssues([p], []).filter((i) => i.id === 'token-page-hand-built').length;
+  assert.equal(none(handBuilt({ hasMembers: true })), 0);
+  assert.equal(none(handBuilt({ members: [{ id: 'A' } as never] })), 0);
+  assert.equal(none(handBuilt({ file: '/x/CatalogRadius.catalog.tsx' })), 0, 'only the title or id as written names the page');
+  assert.equal(none(handBuilt({ file: '/x/CatalogRadius.catalog.tsx', title: 'Radius' })), 1, 'its title does');
+});
+
+test('the starter kit\'s own pages draw no token-page-hand-built hint', () => {
+  const kitPages = path.join(import.meta.dirname, '..', '..', 'starter-kit', 'pages');
+  const files = readdirSync(kitPages).filter((name) => name.endsWith('.catalog.tsx')).map((name) => path.join(kitPages, name));
+  assert.ok(files.length > 0);
+  const pages = readStaticPages(files);
+  assert.deepEqual(collectIssues(pages, []).filter((i) => i.id === 'token-page-hand-built'), []);
+  const radius = pages.find((p) => p.file.endsWith('Radius.catalog.tsx'));
+  assert.equal(radius?.hasTokenDefinition, true, 'the kit\'s Radius page is a tokenDefinition page');
+  assert.equal(radius?.checkable, true);
+});
+
+test('a page built by tokenDefinition.tokenScale is listed as not statically validated, and a literal one is not', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage, tokenScale } from '@krapwoo/ds-viewer';
+    const FINDINGS = [{ expression: 'cornerRadius: 6', value: 6, unit: 'pt' }];
+    export default defineCatalogPage({ id: 'tokens-radius', group: 'Tokens', description: 'x', tokenDefinition: tokenScale('radius', FINDINGS) });
+  `);
+  try {
+    const result = runDoctor(configFor(dir, { doctor: { strict: true } }));
+    assert.equal(result.issues.some((i) => i.id === 'page-not-checkable'), false, JSON.stringify(result.issues));
+    assert.deepEqual(result.summary.runtimeOnlyTokenSections, [{ page: 'tokens-radius', sections: ['tokenScale'] }]);
+    assert.match(formatHuman(toDoctorJson(result)), /1 token section with runtime-only entries \(not statically validated\): tokens-radius \(tokenScale\)/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the spread pattern { ...tokenScale(kind, F), sections } is checkable, and lists the computed sections as not validated', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage, tokenScale } from '@krapwoo/ds-viewer';
+    const scale = tokenScale('radius', []);
+    export default defineCatalogPage({
+      id: 'tokens-radius', group: 'Tokens', description: 'x',
+      tokenDefinition: { ...scale, sections: [...scale.sections, { id: 'mine', title: 'Mine', entries: [] }] },
+    });
+  `);
+  try {
+    const result = runDoctor(configFor(dir, { doctor: { strict: true } }));
+    assert.equal(result.issues.some((i) => i.id === 'page-not-checkable'), false, JSON.stringify(result.issues));
+    assert.equal(result.issues.some((i) => i.id.startsWith('token-definition')), false, JSON.stringify(result.issues));
+    assert.deepEqual(result.summary.runtimeOnlyTokenSections, [{ page: 'tokens-radius', sections: ['tokenScale'] }]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
