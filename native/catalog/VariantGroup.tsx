@@ -11,17 +11,20 @@ export function VariantGroup({
   name,
   desc,
   align = 'center',
+  testID,
   children,
 }: {
   name?: string;
   desc?: string;
   align?: 'center' | 'left';
+  /** Marks the group's element (`data-testid`, `variant-group` unless set, and only on a group with a `name`), for a check that reads the rendered page. */
+  testID?: string;
   children: React.ReactNode;
 }) {
   const centered = align === 'center';
   const hasLabel = !!name || !!desc;
   return (
-    <View style={[styles.group, centered ? styles.groupCenter : styles.groupLeft]}>
+    <View testID={testID ?? (name ? 'variant-group' : undefined)} style={[styles.group, centered ? styles.groupCenter : styles.groupLeft]}>
       {hasLabel && (
         <>
           {!!name && <Text style={[styles.name, centered && styles.textCenter]}>{name}</Text>}

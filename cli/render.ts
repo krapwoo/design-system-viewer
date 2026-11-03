@@ -400,6 +400,319 @@ export function clippedSpecimenIssues(page: { id: string; file?: string }, clipp
   }));
 }
 
+export interface UnusedGridWidth {
+  /** How many tiles the row holds. */
+  tiles: number;
+  /** The width every tile shares, in px. */
+  tileWidth: number;
+  /** The row's own width, in px. */
+  width: number;
+  /** How many rows the tiles wrap into. */
+  rows: number;
+  /** The share of a full row left empty after its last tile, 0 to 1. */
+  empty: number;
+}
+
+/** The share of a wrapped row's width that may sit empty before `grid-unused-width` reports it. */
+export const GRID_UNUSED_WIDTH_MIN = 0.2;
+
+/**
+ * Runs in the browser: finds a wrapping row of equal, fixed-width tiles whose full rows leave a large
+ * share of the container empty while more tiles wrap onto further rows: `flex-wrap` cells given a
+ * width of their own (`width: 220`) instead of a grid that sizes them to fill the row (`TokenGrid`).
+ *
+ * Deliberately not reported, to keep false positives low:
+ *  - single-row content (nothing wraps) and a row whose first row holds one tile (a narrow page);
+ *  - a container narrower than 480px;
+ *  - cells that grow (`flex-grow` over 0) or differ in width, such as chips and pills: only equal,
+ *    fixed-width tiles at least 120px wide and 40px tall can strand a gap;
+ *  - anything hidden, and anything inside a scroller (the reader can reach it).
+ * A `TokenGrid` sizes its tiles to fill the row exactly, so it never leaves a gap, whatever its
+ * `maxColumns`.
+ *
+ * Limits: it measures only the empty space to the right of the first row (the left-aligned case,
+ * which is what `flex-wrap` cells with a width of their own produce). A row that is reversed
+ * (`row-reverse`), right-to-left, spread with `space-between` or centred strands its space
+ * elsewhere, so it is not reported; this is a hint for the common mistake, not a layout audit.
+ */
+export const GRID_UNUSED_WIDTH_SCRIPT = `(() => {
+  const doc = document;
+  const MIN_EMPTY = ${GRID_UNUSED_WIDTH_MIN};
+  const out = [];
+  for (const el of doc.querySelectorAll('*')) {
+    const style = getComputedStyle(el);
+    if (style.display !== 'flex' || style.flexWrap !== 'wrap') continue;
+    if (style.flexDirection && style.flexDirection !== 'row' && style.flexDirection !== 'row-reverse') continue;
+    const box = el.getBoundingClientRect();
+    if (box.width < 480 || box.height < 2) continue;
+    const kids = [...el.children].filter((c) => {
+      const r = c.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(c).display !== 'none';
+    });
+    if (kids.length < 3) continue;
+    const rects = kids.map((c) => c.getBoundingClientRect());
+    const first = rects[0];
+    if (first.width < 120 || first.height < 40) continue;
+    if (rects.some((r) => Math.abs(r.width - first.width) > 1)) continue;
+    if (kids.some((c) => parseFloat(getComputedStyle(c).flexGrow) > 0)) continue;
+    let hidden = false;
+    for (let p = el; p && p !== doc.body; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      if (s.visibility === 'hidden' || s.display === 'none' || /^(auto|scroll)$/.test(s.overflowX)) { hidden = true; break; }
+    }
+    if (hidden) continue;
+    const tops = [];
+    for (const r of rects) if (!tops.some((t) => Math.abs(t - r.top) < 3)) tops.push(r.top);
+    if (tops.length < 2) continue;
+    const onFirstRow = rects.filter((r) => Math.abs(r.top - tops[0]) < 3);
+    if (onFirstRow.length < 2) continue;
+    const right = Math.max(...onFirstRow.map((r) => r.right));
+    const empty = (box.right - right) / box.width;
+    if (empty < MIN_EMPTY) continue;
+    out.push({ tiles: kids.length, tileWidth: Math.round(first.width), width: Math.round(box.width), rows: tops.length, empty: Math.round(empty * 100) / 100 });
+  }
+  return out;
+})()`;
+
+/** Turns the browser's findings into doctor warnings, one per wrapping row. */
+export function gridUnusedWidthIssues(page: { id: string; file?: string }, found: readonly UnusedGridWidth[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  return found.map((f) => ({
+    id: 'grid-unused-width',
+    severity: 'warning' as const,
+    ...ref,
+    message: `${f.tiles} tiles of ${f.tileWidth}px wrap into ${f.rows} rows in a ${f.width}px row, leaving ${Math.round(f.empty * 100)}% of each full row empty.`,
+    fix: 'Lay the tiles out in a TokenGrid (equal tiles that fill each row, `minTileWidth` sets the narrowest) instead of fixed-width cells in a wrapping row.',
+  }));
+}
+
+export interface InventoryBoxFinding {
+  /** Which box it is: the page's own preview box, a token gallery's box (`tokenGallery`), or a token-style section's box. */
+  box: 'page' | 'gallery' | 'section';
+  /** A banner (`role="note"`) is drawn inside the box. */
+  banner: boolean;
+  /** The inventory's filter chips are drawn inside the box. */
+  chips: boolean;
+  /** How many inventory groups the box holds. */
+  groups: number;
+  /** In a token gallery's box: how many titled groups (`VariantGroup`) it holds. */
+  sections?: number;
+}
+
+/**
+ * Runs in the browser: finds a box (the page's preview box, a token gallery's box, or a token-style
+ * section's box) that holds a token page's parts the way a token page never does. A token page draws
+ * its banner and its pills at page level and gives every section its own box (title and description
+ * outside). Reported, one finding per box:
+ *  - an `Inventory`'s filter chips inside the box;
+ *  - a banner (`role="note"`) inside a box that holds inventory groups;
+ *  - two or more inventory groups in one box;
+ *  - in a token gallery's box (a page with `tokenGallery` and a `render`), two or more titled groups
+ *    (`VariantGroup`, usually in a `DividedStack`): those are sections, so give the page
+ *    `tokenSections` and each draws in its own box.
+ * Reads the markers the viewer puts on its own elements (`data-testid`), not styles, so it cannot be
+ * fooled by a look-alike; a box with one group and nothing else, and every inventory drawn at page
+ * level, are fine. A miniature of a page (an overview's thumbnails, `aria-hidden`), and anything inside one, is ignored.
+ */
+export const INVENTORY_BOX_SCRIPT = `(() => {
+  const out = [];
+  for (const box of document.querySelectorAll('[data-testid="token-section-box"], [data-testid="page-preview-box"], [data-testid="token-gallery-box"]')) {
+    if (box.closest('[aria-hidden="true"]')) continue;
+    const id = box.getAttribute('data-testid');
+    // Not what sits inside a miniature (an overview tile's thumbnail is aria-hidden inside a box that is not).
+    const own = (selector) => [...box.querySelectorAll(selector)].filter((el) => !el.closest('[aria-hidden="true"]'));
+    const chips = own('[data-testid="inventory-filters"]').length > 0;
+    const groups = own('[data-testid="inventory-group"]').length;
+    const sections = id === 'token-gallery-box' ? own('[data-testid="variant-group"]').length : 0;
+    if (!chips && groups === 0 && sections < 2) continue;
+    const banner = groups > 0 && own('[role="note"]').length > 0;
+    if (!chips && !banner && groups < 2 && sections < 2) continue;
+    out.push({ box: id === 'page-preview-box' ? 'page' : id === 'token-gallery-box' ? 'gallery' : 'section', banner, chips, groups, ...(sections >= 2 ? { sections } : {}) });
+  }
+  return out;
+})()`;
+
+/** Turns the browser's findings into doctor warnings, one per box. */
+export function inventoryBoxIssues(page: { id: string; file?: string }, found: readonly InventoryBoxFinding[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  return found.map((f) => {
+    const inside: string[] = [];
+    if (f.banner) inside.push('a banner');
+    if (f.chips) inside.push('the filter chips');
+    if (f.groups > 1) inside.push(`${f.groups} groups`);
+    else if (f.groups === 1 && inside.length > 0) inside.push('a group');
+    if (f.sections) inside.push(`${f.sections} titled sections`);
+    const where = f.box === 'section' ? 'section' : f.box === 'gallery' ? 'token gallery' : 'page';
+    return {
+      id: 'sections-in-one-box',
+      severity: 'warning' as const,
+      ...ref,
+      message: f.sections && !f.groups && !f.chips && !f.banner
+        ? `A token page draws ${f.sections} titled sections inside one box; a token page gives each section its own box, with its title and description outside.`
+        : `An inventory is drawn inside one ${where} box with ${inside.join(', ')}; a token page draws the banner and the pills at page level and gives each section its own box.`,
+      fix: f.sections && !f.groups && !f.chips && !f.banner
+        ? 'Give the page `tokenSections: [{ title, desc, render }]` (one entry per group) instead of one `render` holding several `VariantGroup`s, so each section is its own box.'
+        : f.box === 'section'
+          ? 'Move the `Inventory` out of the section and onto the page (make it the page\'s whole `render`), or drop to one group and no filters; a section is one box with a title above it.'
+          : 'Make the `Inventory` the page\'s whole `render` (only `WarningBanner`s above it in a fragment, nothing after it), so it draws at page level with each `InventoryGroup` as its own section; do not wrap it in a `View`, a card or a section of your own, and do not set `layout="inline"` on a page.',
+    };
+  });
+}
+
+export interface CrowdedAnatomyPins {
+  /** How many pins the picture holds, in the lane and placed by hand. */
+  pins: number;
+  /** Pairs of pins closer than `ANATOMY_PIN_CROWDED_MIN` (touching or overlapping), ↗ badges included. */
+  overlapping: number;
+  /** The smallest distance, in px, from the specimen's edge to a pin or bracket in the lane; set only when it is under the minimum gap. */
+  nearSpecimen?: number;
+  /** Pins in the lane closer to a bracket than the bracket gap, or on it. */
+  overBracket: number;
+  /** Pins placed by hand (outside the lane) that overlap or touch text, a control or a bracket. */
+  overContent: number;
+  /** The labels of the pins involved, as drawn. */
+  labels: string[];
+}
+
+/** Pins closer than this many px to each other, or to the picture's content, count as crowded (the
+ *  viewer keeps lane pins 4px apart, and 8px from a bracket). */
+export const ANATOMY_PIN_CROWDED_MIN = 2;
+
+/** Mirrors `ANATOMY_PIN_EDGE_GAP` and `ANATOMY_PIN_BRACKET_GAP` in `native/catalog/familyModel.ts`
+ *  (`render.test.ts` asserts they agree): the clear space the viewer leaves between a specimen and
+ *  its pin lane, and between a bracket and a pin. */
+export const ANATOMY_EDGE_GAP = 12;
+export const ANATOMY_BRACKET_GAP = 8;
+
+/**
+ * Runs in the browser: for each anatomy picture (`anatomy-stage`), measures every `anatomy-pin` in
+ * it, wherever it was placed: in the pin lane `AnatomySpecimen` draws beside the specimen, or by
+ * hand in the picture's own layout (a row of `[content][pin]`, an overlay). A pin's box includes its
+ * ↗ badge. Reported, one finding per picture:
+ *  - pins that overlap or touch (closer than ${ANATOMY_PIN_CROWDED_MIN}px), lane or not;
+ *  - a pin in the lane, or a bracket there (marked `testID="anatomy-bracket"`), closer than the edge
+ *    gap to the specimen, and a lane pin on or within the bracket gap of a bracket it shares a height with;
+ *  - a pin outside the lane that overlaps or touches the picture's other content: text (measured
+ *    tightly, by its glyph boxes, so a pin in a gutter beside a wide text box is fine), a control or
+ *    image, a marked bracket, or any empty element with a border or a fill (a hand-drawn bracket
+ *    or swatch). Containers are not content: a pin sits on its own row's background.
+ * Hidden elements are ignored, and so is a picture inside an `aria-hidden` ancestor (the overview's
+ * scaled-down page thumbnails). Right-to-left text mirrors the lane's side.
+ */
+export const ANATOMY_PIN_CROWDED_SCRIPT = `(() => {
+  const EDGE = ${ANATOMY_EDGE_GAP};
+  const BRACKET = ${ANATOMY_BRACKET_GAP};
+  const MIN = ${ANATOMY_PIN_CROWDED_MIN};
+  const PIN = '[data-testid="anatomy-pin"]';
+  const LAYER = '[data-testid="anatomy-pin-layer"]';
+  const BRACKETS = '[data-testid="anatomy-bracket"]';
+  const CONTROLS = ['button', 'input', 'select', 'textarea', 'img', 'svg', 'canvas', 'video'];
+  // react-native-web draws a Pressable as a div with a role, and an Image as a background image.
+  const ROLES = ['button', 'switch', 'checkbox', 'slider', 'link', 'img'];
+  const apart = (a, b) => a.left - b.right >= MIN || b.left - a.right >= MIN || a.top - b.bottom >= MIN || b.top - a.bottom >= MIN;
+  const alpha = (c) => {
+    if (!c || c === 'transparent') return 0;
+    const m = /^rgba?\\(([^)]*)\\)$/.exec(c);
+    if (!m) return 1;
+    const parts = m[1].split(/[ ,\\/]+/).filter(Boolean);
+    return parts.length > 3 ? parseFloat(parts[3]) : 1;
+  };
+  const painted = (cs) => alpha(cs.backgroundColor) > 0 || (!!cs.backgroundImage && cs.backgroundImage !== 'none') || ['Top', 'Right', 'Bottom', 'Left'].some((side) => parseFloat(cs['border' + side + 'Width']) > 0 && cs['border' + side + 'Style'] !== 'none' && alpha(cs['border' + side + 'Color']) > 0);
+  const real = (r) => r.width > 0 && r.height > 0;
+  const boxOf = (el) => {
+    const r = el.getBoundingClientRect();
+    const box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    for (const child of el.querySelectorAll('*')) {
+      const q = child.getBoundingClientRect();
+      if (!real(q)) continue;
+      box.left = Math.min(box.left, q.left); box.top = Math.min(box.top, q.top);
+      box.right = Math.max(box.right, q.right); box.bottom = Math.max(box.bottom, q.bottom);
+    }
+    return box;
+  };
+  const contentOf = (stage) => {
+    const found = [];
+    for (const el of stage.querySelectorAll('*')) {
+      if (el.closest(PIN) || el.closest(LAYER)) continue;
+      const tag = el.tagName.toLowerCase();
+      if (tag !== 'svg' && el.closest('svg')) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
+      for (const node of el.childNodes) {
+        if (node.nodeType !== 3 || !(node.textContent || '').trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) if (real(r)) found.push(r);
+      }
+      const r = el.getBoundingClientRect();
+      if (!real(r)) continue;
+      if (((CONTROLS.indexOf(tag) >= 0 || ROLES.indexOf(el.getAttribute('role')) >= 0) && !el.querySelector(PIN)) || el.getAttribute('data-testid') === 'anatomy-bracket' || (el.children.length === 0 && painted(cs))) found.push(r);
+    }
+    return found;
+  };
+  const out = [];
+  for (const stage of document.querySelectorAll('[data-testid="anatomy-stage"]')) {
+    // A miniature of a page (the overview's thumbnails, scaled down and aria-hidden) is not the picture.
+    if (stage.closest('[aria-hidden="true"]')) continue;
+    const pins = [...stage.querySelectorAll(PIN)].map((el) => ({ el, r: el.getBoundingClientRect() })).filter((p) => real(p.r));
+    if (pins.length === 0) continue;
+    for (const p of pins) { p.box = boxOf(p.el); p.lane = Boolean(p.el.closest(LAYER)); }
+    const involved = new Set();
+    let overlapping = 0, overBracket = 0, overContent = 0, near = Infinity;
+    for (let i = 0; i < pins.length; i++) {
+      for (let j = i + 1; j < pins.length; j++) {
+        if (!apart(pins[i].box, pins[j].box)) { overlapping++; involved.add(i); involved.add(j); }
+      }
+    }
+    for (const layer of stage.querySelectorAll(LAYER)) {
+      const wrapper = layer.parentElement;
+      if (!wrapper) continue;
+      const rtl = getComputedStyle(layer).direction === 'rtl';
+      const specimen = wrapper.getBoundingClientRect();
+      const brackets = [...layer.querySelectorAll(BRACKETS)].map((el) => ({ el, r: el.getBoundingClientRect() })).filter((b) => real(b.r));
+      const inLane = pins.filter((p) => layer.contains(p.el));
+      for (const p of inLane) {
+        for (const b of brackets) {
+          const together = p.r.top < b.r.bottom && b.r.top < p.r.bottom;
+          const gap = Math.max(p.r.left - b.r.right, b.r.left - p.r.right);
+          if (together && gap < BRACKET - 1) { overBracket++; involved.add(pins.indexOf(p)); }
+        }
+      }
+      for (const b of inLane.map((p) => p.r).concat(brackets.map((k) => k.r))) near = Math.min(near, rtl ? specimen.left - b.right : b.left - specimen.right);
+    }
+    const inline = pins.filter((p) => !p.lane);
+    if (inline.length) {
+      const content = contentOf(stage);
+      for (const p of inline) {
+        if (content.some((c) => !apart(p.box, c))) { overContent++; involved.add(pins.indexOf(p)); }
+      }
+    }
+    const nearSpecimen = near < EDGE - 1 ? Math.round(near) : undefined;
+    if (!overlapping && !overBracket && !overContent && nearSpecimen === undefined) continue;
+    out.push({ pins: pins.length, overlapping, overBracket, overContent, ...(nearSpecimen === undefined ? {} : { nearSpecimen }), labels: [...involved].sort((a, b) => a - b).map((i) => (pins[i].el.textContent || '').replace('↗', '').trim() || '↗').filter(Boolean) });
+  }
+  return out;
+})()`;
+
+/** Turns the browser's findings into doctor warnings, one per picture. */
+export function anatomyPinCrowdedIssues(page: { id: string; file?: string }, found: readonly CrowdedAnatomyPins[]): DoctorIssue[] {
+  const ref = { page: page.id, ...(page.file ? { file: page.file } : {}) };
+  return found.map((f) => {
+    const problems: string[] = [];
+    if (f.overlapping > 0) problems.push(`${f.overlapping} pair${f.overlapping === 1 ? '' : 's'} of pins overlap or touch`);
+    if (f.nearSpecimen !== undefined) problems.push(`a pin or bracket sits ${f.nearSpecimen}px from the specimen (at least ${ANATOMY_EDGE_GAP}px is kept clear)`);
+    if (f.overBracket > 0) problems.push(`${f.overBracket} pin${f.overBracket === 1 ? '' : 's'} on or within ${ANATOMY_BRACKET_GAP}px of a bracket`);
+    if (f.overContent > 0) problems.push(`${f.overContent} pin${f.overContent === 1 ? '' : 's'} placed by hand overlap${f.overContent === 1 ? 's' : ''} or touch${f.overContent === 1 ? 'es' : ''} text, a control or a bracket of the picture`);
+    return {
+      id: 'anatomy-pin-crowded',
+      severity: 'warning' as const,
+      ...ref,
+      message: `In the anatomy picture of ${f.pins} pins, ${problems.join('; ')}${f.labels.length ? ` (pins ${f.labels.join(', ')})` : ''}.`,
+      fix: 'Draw the pins in AnatomySpecimen `pins` with `position: "absolute", right: 0` and a `top` per target, and keep any bracket (testID="anatomy-bracket") at `left: 0` of that lane: the viewer spreads close pins and keeps the gaps. Keep pins you place by hand 4px apart and 8px from text, controls, images and brackets; doctor reports them once they touch (under 2px).',
+    };
+  });
+}
+
 /** The contrast ratio below which a specimen's text can count as illegible. Deliberately far under
  *  WCAG's 3:1: platform colours such as iOS tertiary label grey or system yellow are faint by design.
  *  The mistake this check exists for is content drawn for the other appearance (white on light, black
@@ -602,7 +915,7 @@ export function illegibleSpecimenIssues(page: { id: string; file?: string }, fou
 /** How far off the stage's centre an anatomy picture's specimen may sit, in px. */
 export const ANATOMY_CENTRE_TOLERANCE = 6;
 /** How far past the specimen's right edge a pin may sit, in px — the pin column is
- *  `ANATOMY_PIN_GUTTER` (30) wide, and a 22px pin fits inside it with room to spare. */
+ *  `ANATOMY_PIN_GUTTER` (60) wide, 12px of it clear space, and a 22px pin fits the lane with room to spare. */
 export const ANATOMY_PIN_REACH = 48;
 /** Pins whose vertical gap is at most this belong to one column; a bigger gap starts a new run. */
 export const ANATOMY_PIN_RUN_GAP = 12;
@@ -1025,6 +1338,27 @@ export async function renderCheck(
         }
         if (Array.isArray(clipped)) issues.push(...clippedSpecimenIssues({ id, file: options.files?.get(id) }, clipped));
         // Advisory and separate, like the passes around it.
+        let unusedWidth: UnusedGridWidth[] | undefined;
+        try {
+          unusedWidth = (await page!.evaluate(GRID_UNUSED_WIDTH_SCRIPT)) as UnusedGridWidth[] | undefined;
+        } catch {
+          unusedWidth = undefined;
+        }
+        if (Array.isArray(unusedWidth)) issues.push(...gridUnusedWidthIssues({ id, file: options.files?.get(id) }, unusedWidth));
+        let crowdedPins: CrowdedAnatomyPins[] | undefined;
+        try {
+          crowdedPins = (await page!.evaluate(ANATOMY_PIN_CROWDED_SCRIPT)) as CrowdedAnatomyPins[] | undefined;
+        } catch {
+          crowdedPins = undefined;
+        }
+        if (Array.isArray(crowdedPins)) issues.push(...anatomyPinCrowdedIssues({ id, file: options.files?.get(id) }, crowdedPins));
+        let inventoryBoxes: InventoryBoxFinding[] | undefined;
+        try {
+          inventoryBoxes = (await page!.evaluate(INVENTORY_BOX_SCRIPT)) as InventoryBoxFinding[] | undefined;
+        } catch {
+          inventoryBoxes = undefined;
+        }
+        if (Array.isArray(inventoryBoxes)) issues.push(...inventoryBoxIssues({ id, file: options.files?.get(id) }, inventoryBoxes));
         let illegible: IllegibleSpecimen[] | undefined;
         try {
           illegible = (await page!.evaluate(SPECIMEN_CONTRAST_SCRIPT)) as IllegibleSpecimen[] | undefined;

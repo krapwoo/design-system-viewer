@@ -343,3 +343,60 @@ test('family page: a Parts entry that resolves to the page itself (an alias of i
   assert.deepEqual(cardNames(container).map((l) => l.split(',')[1].trim()), ['Chip'], 'only Chip: SheetAlias and Sheet both resolve to this page');
   cleanup();
 });
+
+// A page with `pageKind: 'style'` is a style the component applies, never a part: whatever groups
+// count as parts (or with no `partGroups` at all), no card or number is offered for it.
+const withChipAsStyle = SECTIONS.map((section) => (section.id === 'Chip' ? { ...section, pageKind: 'style' as const } : section));
+
+test('a style page is never a Parts card or a numbered part, with or without partGroups', () => {
+  for (const partGroups of [undefined, ['components']]) {
+    const { container, cleanup } = mount('#Frame', withChipAsStyle, SPLIT_GROUPS, partGroups);
+    assert.ok(!cardNames(container).some((name) => name.includes('Chip')), `partGroups ${JSON.stringify(partGroups)}: no Chip card`);
+    assert.ok(cardNames(container).length > 0 || partGroups !== undefined, 'the other entries are still offered');
+    cleanup();
+  }
+});
+
+test('the same page is a Parts card when it is not a style (control)', () => {
+  const { container, cleanup } = mount('#Frame', SECTIONS, SPLIT_GROUPS, ['components']);
+  assert.deepEqual(cardNames(container), ['Part 1, Chip']);
+  cleanup();
+});
+
+test('an explicit composedOf entry naming a style page still links to it and reads as a style', async () => {
+  const { ReferenceDetails } = await import('../ReferenceDetails.tsx');
+  const navigation = {
+    resolve: (name: string) => (name === 'Chip' ? { pageId: 'Chip' } : undefined),
+    open: () => {},
+    page: () => ({ title: 'Chip', pageKind: 'style' as const }),
+  };
+  const def = { ...base('Frame'), composedOf: [c('Chip', 'built-in', 'Rounded look.')] } as unknown as SectionDef<Id>;
+  const { container, cleanup } = renderCatalog(<ReferenceDetails def={def as never} navigation={navigation as never} />);
+  try {
+    assert.ok((container.textContent || '').includes('Chip · style'), container.textContent ?? '');
+    assert.ok(container.querySelector('[role="link"]'), 'the entry still links');
+  } finally { cleanup(); }
+});
+
+test('the update banner the viewer draws at the page top keeps a CATALOG_SPACE step (16px) below it, like a WarningBanner', async () => {
+  const { StyleSheet } = await import('react-native');
+  const { renderCatalog: render } = await import('../../../test/renderCatalog.tsx');
+  const { container, cleanup } = render(
+    <Mount hash="#Frame">
+      <CatalogShell appName="App" title="Catalog" groups={GROUPS} sections={SECTIONS} update={{ current: '0.1.0', latest: '1.0.0', breaking: true, summary: [] }} />
+    </Mount>,
+  );
+  try {
+    const banner = container.querySelector('[role="status"]') as HTMLElement;
+    assert.ok(banner, 'the major-update banner is drawn');
+    const rules = StyleSheet.getSheet().textContent.split('\n');
+    const declared: Record<string, string> = {};
+    for (const cls of (banner.getAttribute('class') ?? '').split(/\s+/).filter(Boolean)) {
+      for (const rule of rules) {
+        const m = rule.match(new RegExp(`^\\.${cls}\\{(.*)\\}$`));
+        if (m) for (const d of m[1].split(';').filter(Boolean)) { const i = d.indexOf(':'); declared[d.slice(0, i)] = d.slice(i + 1); }
+      }
+    }
+    assert.equal(declared['margin-bottom'], '16px');
+  } finally { cleanup(); }
+});

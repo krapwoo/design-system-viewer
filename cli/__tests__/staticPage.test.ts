@@ -443,6 +443,21 @@ test('reads a literal standalone reason as authored, including a blank one', () 
   assert.equal(nonLiteral.checkable, true);
 });
 
+test("reads a literal pageKind: 'style' and nothing else", () => {
+  const read = (value: string) => {
+    const file = writePage(`
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x', pageKind: ${value} });
+    `);
+    const [page] = readStaticPages([file]);
+    rmSync(path.dirname(file), { recursive: true, force: true });
+    return page;
+  };
+  assert.equal(read("'style'").pageKind, 'style');
+  assert.equal(read('KIND').pageKind, undefined);
+  assert.equal(read('KIND').checkable, true);
+});
+
 test('composedOf is undefined with no "not checkable" penalty when the page has none at all', () => {
   const file = writePage(`
     import { defineCatalogPage } from '@krapwoo/ds-viewer';

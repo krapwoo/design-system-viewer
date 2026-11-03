@@ -18,6 +18,11 @@ export interface CatalogPageInput<TId extends string = string> {
   source?: string;
   /** See `SectionDef.osComponent`. */
   osComponent?: 'full' | 'partial';
+  /** See `SectionDef.pageKind`. `'style'` shows a "Style" badge next to the page's title, and on
+   *  its `InventoryTile`, with `styleNote` (or a default sentence) explaining what a style is. */
+  pageKind?: 'style';
+  /** See `SectionDef.styleNote`. */
+  styleNote?: string;
   description: string;
   whenToUse?: string;
   a11y?: string;
@@ -1049,7 +1054,7 @@ export function buildCatalogSections<TId extends string>(
   const canonicalUsedByTarget = (name: string) => canonicalMemberIdByAlias.get(name) ?? name;
 
   // "Also used by" (derived, never authored): the inverse of every `composedOf` entry in the
-  // catalog whose `relationship` is `'built-in'` — the forward direction renders as "Uses X"
+  // catalog whose `relationship` is `'built-in'` or `'arranged'` (both are drawn by the page) — the forward direction renders as "Uses X"
   // (`UsesLine`); this is that same relationship read from the other end, keyed by the entry's own
   // `component` (the used thing) — gathered once, up front, so a family member just looks up its
   // own id below. A page's own `composedOf` attributes to that page's id (its address, e.g. a
@@ -1062,11 +1067,11 @@ export function buildCatalogSections<TId extends string>(
   };
   for (const page of pages) {
     for (const entry of page.composedOf ?? []) {
-      if (entry.relationship === 'built-in') addUsedBy(canonicalUsedByTarget(entry.component), page.id, entry.role);
+      if (entry.relationship === 'built-in' || entry.relationship === 'arranged') addUsedBy(canonicalUsedByTarget(entry.component), page.id, entry.role);
     }
     for (const member of page.members ?? []) {
       for (const entry of member.composedOf ?? []) {
-        if (entry.relationship === 'built-in') addUsedBy(canonicalUsedByTarget(entry.component), member.id, entry.role);
+        if (entry.relationship === 'built-in' || entry.relationship === 'arranged') addUsedBy(canonicalUsedByTarget(entry.component), member.id, entry.role);
       }
     }
   }
@@ -1332,6 +1337,8 @@ export function buildCatalogSections<TId extends string>(
       id: page.id,
       title: derivedTokenDefinition?.title ?? page.title,
       osComponent: page.osComponent,
+      pageKind: page.pageKind,
+      styleNote: page.styleNote,
       description: page.description,
       path: component?.file ?? page.source ?? page.file,
       whenToUse: page.whenToUse,

@@ -42,6 +42,7 @@ import { memberCodeLine, memberTitle } from './familyModel';
 import { MemberTitlesProvider, useMemberTitle } from './memberTitlesContext';
 import { scrollAndFocusMember } from './scrollAndFocusMember';
 import type { AlsoUsedByEntry, CatalogAnatomy, CatalogAnatomyGroup, CatalogMember, CatalogMemberSection, ComposedOfEntry, FamilyDef, PreviewWidths, PropDef, RelatedPage, SectionDef } from './types';
+import { styleTitleRow } from './pageKindHead';
 
 /** `SectionDef`'s parts `presentationBlocks`/`Blocks` actually read, built from one family member
  *  so its own specimens render through the exact same renderers (`VariantGroup`, `ComparisonGrid`,
@@ -88,7 +89,7 @@ export function FamilyPageHead<TId extends string>({
   /** Which page kind this head introduces — adds that kind's one-line explainer under the
    *  description (`PAGE_KIND_EXPLAINER`). */
   kind: 'family' | 'group';
-  def: Pick<SectionDef<TId>, 'id' | 'title' | 'description'>;
+  def: Pick<SectionDef<TId>, 'id' | 'title' | 'description' | 'pageKind' | 'styleNote'>;
   groupLabel?: string;
   breadcrumbRoot?: string;
   banner?: React.ReactNode;
@@ -97,6 +98,11 @@ export function FamilyPageHead<TId extends string>({
   /** See `FamilyDef.notShown`. */
   notShown?: string;
 }) {
+  const headingNode = (
+    <View ref={headingRef} tabIndex={-1} role="heading" {...({ 'aria-level': 1 } as Record<string, unknown>)} style={styles.headingTarget}>
+      <Text style={styles.title}>{def.title ?? def.id}</Text>
+    </View>
+  );
   return (
     <>
       {groupLabel && <Text style={styles.breadcrumb}>{breadcrumbRoot ? `${breadcrumbRoot} / ${groupLabel}` : groupLabel}</Text>}
@@ -104,10 +110,8 @@ export function FamilyPageHead<TId extends string>({
       <View style={styles.pageHead}>
         <View style={styles.titlebar}>
           <View style={styles.titleText}>
-            <View ref={headingRef} tabIndex={-1} role="heading" {...({ 'aria-level': 1 } as Record<string, unknown>)} style={styles.headingTarget}>
-              <Text style={styles.title}>{def.title ?? def.id}</Text>
-            </View>
-            <Text style={styles.desc}>{def.description}</Text>
+            {def.pageKind === 'style' ? styleTitleRow(headingNode, def.styleNote) : headingNode}
+              <Text style={styles.desc}>{def.description}</Text>
             <View style={styles.kindNote}>
               <Text style={styles.kindNoteText}>
                 <Text style={styles.kindNoteLead}>{PAGE_KIND_EXPLAINER[kind].lead} </Text>

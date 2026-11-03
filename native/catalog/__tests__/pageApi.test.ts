@@ -431,6 +431,19 @@ test('buildCatalogSections: alsoUsedBy derives a single outside user with its ro
   assert.deepEqual(silentFamily?.members.find((m) => m.id === 'BotAnimatedFaceView')?.alsoUsedBy, [{ component: 'SilentDock', role: undefined }]);
 });
 
+// An `arranged` component is drawn by the arranging page, so that page is one of its users.
+test('buildCatalogSections: alsoUsedBy counts an arranged entry, but not a related or slot one', () => {
+  const user = (id: string, relationship: 'arranged' | 'related' | 'slot') => defineCatalogPage({
+    id, group: 'Patterns', description: 'd', composedOf: [{ component: 'BotAnimatedFaceView', role: 'Row', relationship }],
+  });
+  const users = (...pages: ReturnType<typeof user>[]) => {
+    const { sections } = buildCatalogSections([familyPage(), ...pages], familyComponents);
+    return sections.find((s) => s.id === 'BotAvatarView')?.family?.members.find((m) => m.id === 'BotAnimatedFaceView')?.alsoUsedBy;
+  };
+  assert.deepEqual(users(user('Transcript', 'arranged')), [{ component: 'Transcript', role: 'Row' }]);
+  assert.deepEqual(users(user('Rel', 'related'), user('Slotted', 'slot')), []);
+});
+
 // Breaks if a second user ever overwrites, rather than accumulates alongside, the first.
 test('buildCatalogSections: alsoUsedBy derives two outside users, one per declaring page', () => {
   const dock = defineCatalogPage({ id: 'Dock', group: 'Components', description: 'd', composedOf: [{ component: 'BotAnimatedFaceView', role: 'Header icon', relationship: 'built-in' as const }] });
@@ -471,7 +484,7 @@ test('buildCatalogSections: alsoUsedBy is never capped in the data — the "+N m
 });
 
 // Breaks if a 'slot' or 'related' entry is ever included alongside (or instead of) 'built-in' —
-// only 'built-in' means "uses it".
+// only 'built-in' (or 'arranged') means "uses it".
 test('buildCatalogSections: alsoUsedBy ignores "slot" and "related" composedOf entries', () => {
   const dock = defineCatalogPage({
     id: 'Dock', group: 'Components', description: 'd',
@@ -743,6 +756,8 @@ test('buildCatalogSections: a page without members gives a byte-identical sectio
     id: 'Button',
     title: undefined,
     osComponent: undefined,
+    pageKind: undefined,
+    styleNote: undefined,
     description: 'Press it.',
     path: 'src/components/Button/index.ts',
     whenToUse: undefined,
@@ -1684,7 +1699,7 @@ test('buildCatalogSections: an ordinary page\'s alsoUsedBy excludes itself', () 
   assert.deepEqual(sections.find((s) => s.id === 'Button')?.alsoUsedBy, []);
 });
 
-// Negative control, same rule family-level alsoUsedBy already follows: only 'built-in' counts.
+// Negative control, same rule family-level alsoUsedBy already follows: only 'built-in' or 'arranged' counts.
 test('buildCatalogSections: an ordinary page\'s alsoUsedBy ignores "slot" and "related" composedOf entries', () => {
   const dock = defineCatalogPage({
     id: 'Dock', group: 'Components', description: 'd',
@@ -2155,4 +2170,16 @@ test('validateSidebarParents reports a parent that is not listed in the sidebar 
   ]);
   assert.deepEqual(issues.map((i) => i.page), ['Under']);
   assert.match(issues[0].message, /sidebarParent "Hidden" is not listed in the sidebar/);
+});
+
+test('buildCatalogSections carries pageKind and styleNote onto the section, and leaves them unset otherwise', () => {
+  const pages = [
+    { ...defineCatalogPage({ id: 'Pill', group: 'Components', description: 'x', pageKind: 'style', styleNote: 'Our own sentence.' }), file: 'pages/Pill.catalog.tsx' },
+    { ...defineCatalogPage({ id: 'Button', group: 'Components', description: 'x' }), file: 'pages/Button.catalog.tsx' },
+  ];
+  const { sections } = buildCatalogSections(pages, [components[0]]);
+  const pill = sections.find((s) => s.id === 'Pill')!;
+  assert.equal(pill.pageKind, 'style');
+  assert.equal(pill.styleNote, 'Our own sentence.');
+  assert.equal(sections.find((s) => s.id === 'Button')!.pageKind, undefined);
 });

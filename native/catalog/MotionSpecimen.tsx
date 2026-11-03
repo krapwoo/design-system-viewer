@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, AccessibilityInfo, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, AccessibilityInfo, Easing, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { motionReplayLabel, motionTranslatesDirectly, motionValueTarget, type MotionValueRange } from './motionValueDomain';
 import { isSwiftUISpring, swiftUISpringPhysics, type SwiftUISpring } from './swiftUISpring';
@@ -234,9 +234,21 @@ export const TRANSITION_HOLD_MS = 500;
 /** Plain note shown when Reduce Motion is on: there is no animation, only the inserted view. */
 export const TRANSITION_REDUCE_MOTION_NOTE = 'Reduce Motion is on, so the transition is not animated. Showing the view as inserted.';
 /** The sample view, which also fills the clipped stage: a view moves away by its own size, so one
- *  the size of its stage leaves it completely. */
+ *  the size of its stage leaves it completely. The stage is `STAGE_WIDTH` wide until it is measured,
+ *  and on its own (in a row, or a cell of its own) stays that wide; in a column that gives it room, as
+ *  a `TokenTile`'s does, it stretches to the column up to `TRANSITION_STAGE_MAX_WIDTH`. */
 const STAGE_WIDTH = 200;
 const STAGE_HEIGHT = 96;
+/** The widest a transition's stage is drawn when its column is wider; a tile beyond it keeps the
+ *  stage left-aligned at this width rather than stretching it into a banner. */
+export const TRANSITION_STAGE_MAX_WIDTH = 480;
+
+/** The stage's width for a measured column of `columnWidth`: the column's, capped at
+ *  `TRANSITION_STAGE_MAX_WIDTH`; `undefined` while nothing is measured yet (width 0). */
+export function transitionStageWidth(columnWidth: number): number | undefined {
+  const rounded = Math.round(columnWidth);
+  return rounded > 0 ? Math.min(rounded, TRANSITION_STAGE_MAX_WIDTH) : undefined;
+}
 
 /** The animation `Animated` runs to take one 0-to-1 value from 0 to 1. A spring gets
  *  `MOTION_SPRING_MAX_MS` to settle before it is cut off and placed at 1; a spring with no damping gets
@@ -286,8 +298,8 @@ function runUnitAnimation(value: Animated.Value, animation: MotionSpecimenTransi
  *  that phase's end state, in its own direction. `present` (1 or 0) is whether the view exists at all:
  *  once a removal ends SwiftUI drops the view, so it is 0 through the hold even for a transition whose
  *  removal does not hide it (`identity`, `offset`, a partial `scale`). */
-function transitionStyle(transition: SwiftUITransition, inserted: Animated.Value, removed: Animated.Value, present: Animated.Value) {
-  const size = { width: STAGE_WIDTH, height: STAGE_HEIGHT };
+function transitionStyle(transition: SwiftUITransition, inserted: Animated.Value, removed: Animated.Value, present: Animated.Value, stageWidth: number) {
+  const size = { width: stageWidth, height: STAGE_HEIGHT };
   const entering: TransitionState = transitionOffState(transition, 'insertion', size);
   const leaving: TransitionState = transitionOffState(transition, 'removal', size);
   const map = (value: Animated.Value, from: number, to: number, clamp = false) =>
@@ -318,6 +330,12 @@ function TransitionSpecimen({ transition, animation, label }: Extract<MotionSpec
   const cancel = useRef<(() => void) | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
+  // The stage is as wide as the column it is given (capped), so a move leaves by the real width.
+  const [stageWidth, setStageWidth] = useState(STAGE_WIDTH);
+  const onWrapLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = transitionStageWidth(event.nativeEvent.layout.width);
+    if (next !== undefined) setStageWidth(next);
+  }, []);
   // Checked while rendering, so a transition SwiftUI has no built-in for (or an out-of-range spring)
   // throws here whatever the reduce-motion setting, not later inside an effect or event handler.
   // Keyed on the serialized props, not their identity: inline object props are new on every parent
@@ -327,10 +345,10 @@ function TransitionSpecimen({ transition, animation, label }: Extract<MotionSpec
   const style = useMemo(() => {
     assertTransition(transition);
     if (animation && 'spring' in animation) springPhysics(animation.spring);
-    return transitionStyle(transition, inserted, removed, present);
+    return transitionStyle(transition, inserted, removed, present, stageWidth);
     // `transitionKey` and `springKey` stand for `transition` and `animation`'s spring.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transitionKey, springKey, inserted, removed, present]);
+  }, [transitionKey, springKey, inserted, removed, present, stageWidth]);
 
   const stopAll = () => {
     cancel.current?.();
@@ -390,16 +408,19 @@ function TransitionSpecimen({ transition, animation, label }: Extract<MotionSpec
   }, []);
 
   const undamped = animation !== undefined && 'spring' in animation && springPhysics(animation.spring).damping === 0;
+  const capped = { maxWidth: stageWidth };
   return (
-    <View style={[styles.wrap, styles.transitionWrap]}>
-      <View style={styles.transitionStage} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" {...({ 'aria-hidden': true } as Record<string, unknown>)}>
-        <Animated.View style={[styles.transitionSample, style]}>
+    <View style={[styles.wrap, styles.transitionWrap]} onLayout={onWrapLayout}>
+      <View style={[styles.transitionStage, { width: stageWidth }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" {...({ 'aria-hidden': true } as Record<string, unknown>)}>
+        <Animated.View style={[styles.transitionSample, { width: stageWidth - 2 }, style]}>
           <Text style={styles.transitionSampleText}>Sample view</Text>
         </Animated.View>
       </View>
-      <Text style={styles.label}>{describeTransitionAnimation(animation)}</Text>
-      <View style={[styles.footer, styles.transitionFooter]}>
-        {label ? <Text style={[styles.label, styles.transitionLabel]}>{label}</Text> : <View style={styles.labelSpacer} />}
+      {/* Text never sets the stage's width: the caption and footer wrap inside it, so a stage on its
+          own stays 200px whatever the caption says, and in a tile it measures the tile. */}
+      <Text style={[styles.label, capped]}>{describeTransitionAnimation(animation)}</Text>
+      <View style={[styles.footer, styles.transitionFooter, capped]}>
+        {label ? <Text style={[styles.label, styles.transitionLabel]}>{label}</Text> : null}
         <Pressable
           onPress={() => play(reduceMotion)}
           accessibilityRole="button"
@@ -409,8 +430,8 @@ function TransitionSpecimen({ transition, animation, label }: Extract<MotionSpec
           <Text style={styles.replayText}>Replay</Text>
         </Pressable>
       </View>
-      {reduceMotion && <Text style={styles.label}>{TRANSITION_REDUCE_MOTION_NOTE}</Text>}
-      {undamped && <Text style={styles.label}>{UNDAMPED_NOTE}</Text>}
+      {reduceMotion && <Text style={[styles.label, capped]}>{TRANSITION_REDUCE_MOTION_NOTE}</Text>}
+      {undamped && <Text style={[styles.label, capped]}>{UNDAMPED_NOTE}</Text>}
     </View>
   );
 }
@@ -431,7 +452,6 @@ const styles = StyleSheet.create({
   },
   // The stage clips the sample, so a view that moves out of its own frame is cut off there.
   transitionStage: {
-    width: STAGE_WIDTH,
     height: STAGE_HEIGHT,
     overflow: 'hidden',
     borderRadius: CATALOG_RADIUS.md,
@@ -440,7 +460,6 @@ const styles = StyleSheet.create({
     backgroundColor: CATALOG_COLOR.specimenStage,
   },
   transitionSample: {
-    width: STAGE_WIDTH - 2,
     height: STAGE_HEIGHT - 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -450,8 +469,10 @@ const styles = StyleSheet.create({
     borderColor: CATALOG_COLOR.accent,
   },
   // A long label or note wraps inside the cell instead of widening the specimen past it.
-  transitionWrap: { maxWidth: '100%' },
-  transitionFooter: { flexWrap: 'wrap', maxWidth: '100%' },
+  // `maxWidth: '100%'` keeps a long label from widening the specimen past its cell; the stage's own
+  // cap (`TRANSITION_STAGE_MAX_WIDTH`) is applied to its measured width, not here.
+  transitionWrap: { alignSelf: 'stretch', maxWidth: '100%' },
+  transitionFooter: { flexWrap: 'wrap' },
   transitionLabel: { flexShrink: 1 },
   transitionSampleText: { ...CATALOG_TEXT.captionStrong, color: CATALOG_COLOR.accent },
   footer: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.md },

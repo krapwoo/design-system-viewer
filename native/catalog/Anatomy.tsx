@@ -3,7 +3,7 @@ import { Platform, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { hashForId } from './catalogNavigation';
 import { referenceLinkProps, type ReferenceNavigation } from './catalogReferences';
-import { ANATOMY_PIN_GUTTER, anatomyColumns, anatomyLayout, anatomyPinFor } from './familyModel';
+import { ANATOMY_PIN_EDGE_GAP, ANATOMY_PIN_GUTTER, ANATOMY_PIN_LANE, ANATOMY_PIN_STACK_GAP, anatomyColumns, anatomyLayout, anatomyPinFor, spreadPins } from './familyModel';
 import { useMemberTitle } from './memberTitlesContext';
 import { usePartNumbers } from './partNumbersContext';
 import { ANATOMY_PINS_WRAPPER_TEST_ID, ANATOMY_PIN_LAYER_TEST_ID, SpecimenContent } from './SpecimenSurface';
@@ -101,6 +101,28 @@ export function pinMembersWithExternal(byId: ReadonlyMap<string, Pick<CatalogMem
 
 type PinRect = { top: number; bottom: number };
 
+/** A leader line `AnatomySpecimen` draws for a pin it moved off its target: from the lane's left
+ *  edge at the target's height to the pin's left edge at the height it was moved to. */
+type PinLeader = { y1: number; y2: number; x2: number };
+
+/** A pin moved less than this many px stays beside its target, and gets no leader line. */
+const PIN_LEADER_MIN_MOVE = 4;
+
+/** Test id of one such line. */
+export const ANATOMY_PIN_LEADER_TEST_ID = 'anatomy-pin-leader';
+
+/** The `testID` an authored bracket in the pin lane carries, so `doctor --render` can keep pins and
+ *  the specimen clear of it. A bracket belongs at the lane's left edge, `ANATOMY_PIN_BRACKET_GAP`
+ *  from the nearest pin. */
+export const ANATOMY_BRACKET_TEST_ID = 'anatomy-bracket';
+
+type SpreadRect = { top: number; bottom: number; left: number; height: number };
+type SpreadNode = {
+  style: { transform: string };
+  getBoundingClientRect: () => SpreadRect;
+  querySelectorAll?: (selector: string) => ArrayLike<SpreadNode>;
+};
+
 /** The anatomy's preview width (`AnatomyBox`'s `previewWidth`), for `AnatomySpecimen`. */
 const AnatomyPreviewWidthContext = createContext<number | undefined>(undefined);
 
@@ -111,16 +133,17 @@ const AnatomyPreviewWidthContext = createContext<number | undefined>(undefined);
  *  except on web with `pins`, where it adds the pin gutter on both sides (so the pins sit inside
  *  the measured picture column, not over the legend beside it). Native keeps the measured picture.
  *
- *  `pins`: the picture's pins, drawn in a `ANATOMY_PIN_GUTTER`-wide column that rides on the
- *  specimen's own right edge — right beside a small specimen, in the frame's right margin for a
+ *  `pins`: the picture's pins, drawn in a lane (`ANATOMY_PIN_LANE` wide, starting
+ *  `ANATOMY_PIN_EDGE_GAP` off the specimen's own right edge, so a bracket or leader never touches it) — right beside a small specimen, in the frame's right margin for a
  *  full-width one. Position each pin inside it as before (`position: 'absolute', right: 0, top: y`,
  *  `top` measured from the specimen's top). The column is left out of the centring measurement,
- *  so pins never move the specimen. A column taller than the specimen (web) makes the specimen's
+ *  so pins never move the specimen. Pins that would overlap are spread along the lane (web). A column taller than the specimen (web) makes the specimen's
  *  block taller to hold it, still centred on the specimen. */
 export function AnatomySpecimen({ fill, align, pins, children }: { fill?: boolean; align?: SpecimenAlign; pins?: React.ReactNode; children: React.ReactNode }) {
   const width = useContext(AnatomyPreviewWidthContext);
   const layerRef = useRef<View>(null);
   const [pinOverhang, setPinOverhang] = useState(0);
+  const [leaders, setLeaders] = useState<PinLeader[]>([]);
   // The pins are absolutely positioned, so they add no height of their own: a column taller than
   // the specimen would be cut off by the picture area. Web only: measure how far the pins reach
   // past the specimen's top or bottom (the layer is exactly the specimen's height) and pad the
@@ -139,8 +162,55 @@ export function AnatomySpecimen({ fill, align, pins, children }: { fill?: boolea
     const next = Math.max(0, Math.ceil(overhang));
     setPinOverhang((previous) => (previous === next ? previous : next));
   }, []);
+  // Web only: pins whose targets are closer than a pin's height are moved apart along the lane
+  // (`spreadPins`) with a translate, and a slanted leader line joins each moved pin back to the
+  // height it points at. Clears the moves first so it always measures where the author put each
+  // pin; pins with room are not moved, and nothing here animates.
+  const spreadLanePins = useCallback(() => {
+    const layer = layerRef.current as unknown as SpreadNode | null;
+    if (!layer?.querySelectorAll) return;
+    const nodes = Array.from(layer.querySelectorAll(`[data-testid="${ANATOMY_PIN_TEST_ID}"]`));
+    for (const node of nodes) node.style.transform = '';
+    const origin = layer.getBoundingClientRect();
+    const rects = nodes.map((node) => node.getBoundingClientRect());
+    // The room a pin takes is its box plus the ↗ badge in its corner, which reaches outside it.
+    const boxes = nodes.map((node, i) => {
+      let top = rects[i].top;
+      let bottom = rects[i].bottom;
+      for (const child of Array.from(node.querySelectorAll?.('*') ?? [])) {
+        const r = child.getBoundingClientRect();
+        if (r.bottom - r.top < 1) continue;
+        top = Math.min(top, r.top);
+        bottom = Math.max(bottom, r.bottom);
+      }
+      return { top: top - origin.top, height: bottom - top };
+    });
+    // Right-to-left text puts the lane on the other side of the specimen: the leaders (drawn from the
+    // lane's left edge) would point the wrong way, so none is drawn there; the pins still spread.
+    const rtl = typeof getComputedStyle === 'function' && getComputedStyle(layer as unknown as Element).direction === 'rtl';
+    const found: PinLeader[] = [];
+    if (nodes.length > 1 && rects.every((r) => r.height > 0)) {
+      const tops = spreadPins(boxes, ANATOMY_PIN_STACK_GAP, origin.height > 0 ? origin.height : undefined);
+      nodes.forEach((node, i) => {
+        const delta = tops[i] - boxes[i].top;
+        if (delta === 0) return;
+        node.style.transform = `translateY(${delta}px)`;
+        const y1 = rects[i].top - origin.top + rects[i].height / 2;
+        if (!rtl && Math.abs(delta) >= PIN_LEADER_MIN_MOVE) found.push({ y1, y2: y1 + delta, x2: Math.max(0, rects[i].left - origin.left) });
+      });
+    }
+    const key = (list: PinLeader[]) => list.map((l) => `${l.y1}/${l.y2}/${l.x2}`).join();
+    setLeaders((previous) => (key(previous) === key(found) ? previous : found));
+  }, []);
+  // Every render, and every layout of the lane: the pins are your own components, so one that
+  // re-renders on its own (context, state) can change size without `AnatomySpecimen` re-rendering.
+  const relayoutPins = useCallback(() => {
+    spreadLanePins();
+    measurePins();
+  }, [spreadLanePins, measurePins]);
   useLayoutEffect(() => {
-    if (pins !== undefined) measurePins();
+    if (pins === undefined) return;
+    relayoutPins();
   });
   return (
     // On web without a preview width the picture keeps its own measured width, and the pin column
@@ -153,7 +223,14 @@ export function AnatomySpecimen({ fill, align, pins, children }: { fill?: boolea
         {pins === undefined ? children : (
           <View style={[styles.specimenWithPins, pinOverhang > 0 && { paddingVertical: pinOverhang }]} testID={ANATOMY_PINS_WRAPPER_TEST_ID}>
             {children}
-            <View ref={layerRef} onLayout={measurePins} style={[styles.specimenPins, pinOverhang > 0 && { top: pinOverhang, bottom: pinOverhang }]} testID={ANATOMY_PIN_LAYER_TEST_ID}>{pins}</View>
+            <View ref={layerRef} onLayout={relayoutPins} style={[styles.specimenPins, pinOverhang > 0 && { top: pinOverhang, bottom: pinOverhang }]} testID={ANATOMY_PIN_LAYER_TEST_ID}>
+              {pins}
+              {leaders.map((leader, i) => {
+                const dx = Math.max(leader.x2, 1);
+                const dy = leader.y2 - leader.y1;
+                return <View key={i} {...ARIA_HIDDEN} pointerEvents="none" testID={ANATOMY_PIN_LEADER_TEST_ID} style={[styles.pinLeader, { top: leader.y1, width: Math.hypot(dx, dy), transform: [{ rotate: `${Math.atan2(dy, dx)}rad` }] }]} />;
+              })}
+            </View>
           </View>
         )}
       </SpecimenContent>
@@ -468,7 +545,10 @@ const styles = StyleSheet.create({
   anatomy: { marginTop: CATALOG_SPACE.xl, marginBottom: CATALOG_LAYOUT.blockGap },
   anatomyCard: { backgroundColor: CATALOG_COLOR.surface, borderWidth: 1, borderColor: CATALOG_COLOR.borderStrong, borderRadius: CATALOG_RADIUS.card, overflow: 'hidden' },
   specimenWithPins: { position: 'relative' },
-  specimenPins: { position: 'absolute', left: '100%', top: 0, bottom: 0, width: ANATOMY_PIN_GUTTER },
+  // The lane starts `ANATOMY_PIN_EDGE_GAP` (CATALOG_SPACE.md) off the specimen's edge, so a bracket or
+  // leader at its left edge never touches the specimen; `right: 0` pins sit against its far side.
+  specimenPins: { position: 'absolute', left: '100%', marginLeft: ANATOMY_PIN_EDGE_GAP, top: 0, bottom: 0, width: ANATOMY_PIN_LANE },
+  pinLeader: { position: 'absolute', left: 0, height: 1, backgroundColor: CATALOG_COLOR.accent, transformOrigin: '0 50%' } as object,
   anatomyHeadText: { ...CATALOG_TEXT.label, color: CATALOG_COLOR.text, marginBottom: CATALOG_LAYOUT.blockLabelGap },
   anatomyBody: { flexDirection: 'row', alignItems: 'flex-start' },
   anatomyStage: { padding: CATALOG_SPACE.xl, alignItems: 'center', justifyContent: 'center' },

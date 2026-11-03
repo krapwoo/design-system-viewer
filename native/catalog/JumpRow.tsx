@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { chipRow } from './sectionFrame';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 
 /** #64 B2 / #63 R1: one "On this page" jump chip, shared by a `tokenDefinition` page's category
@@ -52,23 +53,18 @@ export function JumpChip({ title, qualifier, accessibilityLabel, href, onPress, 
 /** #64 B2: a token page's category jump row, and (#63 R1) a group page's top-level-member jump
  *  row — one chip per item, in authored order. */
 export function JumpRow({ items }: { items: readonly JumpItem[] }) {
-  return (
-    <View style={styles.jumpRow} accessibilityRole="list">
-      {/* `role="list"` must own `listitem` children, so each chip sits in its own item. */}
-      {items.map((item) => (
-        <View key={item.id} role="listitem">
-          <JumpChip title={item.title} qualifier={item.qualifier} accessibilityLabel={item.accessibilityLabel} href={item.href} onPress={item.onPress} />
-        </View>
-      ))}
+  // `role="list"` must own `listitem` children, so each chip sits in its own item.
+  return chipRow({ accessibilityRole: 'list' }, items.map((item) => (
+    <View key={item.id} role="listitem">
+      <JumpChip title={item.title} qualifier={item.qualifier} accessibilityLabel={item.accessibilityLabel} href={item.href} onPress={item.onPress} />
     </View>
-  );
+  )));
 }
 
 const styles = StyleSheet.create({
   // #64 B2: the jump row's own chip/pill look — the catalog's existing chip/pill visual
   // (`CATALOG_COLOR.chip`, the same muted rounded pill `UpdatePanel.tsx`'s own status pills use),
   // never a new visual.
-  jumpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: CATALOG_SPACE.sm, marginBottom: CATALOG_LAYOUT.blockLabelGap },
   jumpChip: {
     flexDirection: 'row',
     alignItems: 'center',

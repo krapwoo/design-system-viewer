@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inventoryMaxColumns, inventoryStageSurface, inventoryTargetId, readableName, INVENTORY_MAX_COLUMNS } from '../inventoryModel.ts';
+import {
+  inventoryChips, inventoryGroupName, inventoryMaxColumns, inventoryShownCount, inventoryStageSurface, inventoryTargetId, inventoryTileShown,
+  readableName, sameInventoryFilter, inventoryStatusVisible, INVENTORY_ALL, INVENTORY_MAX_COLUMNS,
+} from '../inventoryModel.ts';
 
 test('three or five tiles lay out three across; every other count may use all four', () => {
   assert.equal(INVENTORY_MAX_COLUMNS, 4);
@@ -33,4 +36,54 @@ test('readableName splits camel case into sentence case', () => {
 test('every inventory tile sits on the same grey stage: auto means the stage, an explicit surface is kept', () => {
   assert.equal(inventoryStageSurface('auto'), 'neutral');
   for (const surface of ['neutral', 'white', 'dark', 'transparent'] as const) assert.equal(inventoryStageSurface(surface), surface);
+});
+
+const SHAPE = [
+  { title: 'Shared styles', tiles: [{ tags: ['Draws its own shape'] }, { tags: ['Draws its own shape', 'Legacy'] }, {}] },
+  { title: 'Empty', tiles: [] },
+  { title: 'Own styles', tiles: [{ tags: ['Draws its own shape'] }] },
+];
+
+test('chips are All, each non-empty group, then each tag in first-seen order, counted from the same tiles', () => {
+  assert.deepEqual(inventoryChips(SHAPE).map((c) => [c.key, c.label, c.count]), [
+    ['all', 'All', 4], ['group:Shared styles', 'Shared styles', 3], ['group:Own styles', 'Own styles', 1],
+    ['tag:Draws its own shape', 'Draws its own shape', 3], ['tag:Legacy', 'Legacy', 1],
+  ]);
+});
+
+test('a chip\'s count is exactly how many tiles its filter leaves showing', () => {
+  for (const chip of inventoryChips(SHAPE)) assert.equal(inventoryShownCount(chip.filter, SHAPE), chip.count, chip.label);
+});
+
+test('a tag listed twice on one tile counts that tile once; a group and a tag of the same name are different chips', () => {
+  const chips = inventoryChips([{ title: 'Legacy', tiles: [{ tags: ['Legacy', 'Legacy'] }] }]);
+  assert.deepEqual(chips.map((c) => [c.key, c.count]), [['all', 1], ['group:Legacy', 1], ['tag:Legacy', 1]]);
+});
+
+test('groups sharing a title are one chip with their tiles added, and a tag named like a group is labelled as a tag', () => {
+  const chips = inventoryChips([{ title: 'Legacy', tiles: [{ tags: ['Legacy'] }, {}] }, { title: 'Legacy', tiles: [{}] }, { title: 'New', tiles: [{}] }]);
+  assert.deepEqual(chips.map((c) => [c.key, c.label, c.count]), [
+    ['all', 'All', 4], ['group:Legacy', 'Legacy', 3], ['group:New', 'New', 1], ['tag:Legacy', 'Legacy (tag)', 1],
+  ]);
+  assert.equal(new Set(chips.map((c) => c.key)).size, chips.length, 'keys are unique');
+});
+
+test('a tile is shown by All, by its own group, and by a tag it carries, and by nothing else', () => {
+  assert.equal(inventoryTileShown(INVENTORY_ALL, 'A', undefined), true);
+  assert.equal(inventoryTileShown({ kind: 'group', title: 'A' }, 'A', undefined), true);
+  assert.equal(inventoryTileShown({ kind: 'group', title: 'A' }, 'B', ['x']), false);
+  assert.equal(inventoryTileShown({ kind: 'tag', tag: 'x' }, 'B', ['x', 'y']), true);
+  assert.equal(inventoryTileShown({ kind: 'tag', tag: 'x' }, 'B', undefined), false);
+  assert.equal(sameInventoryFilter({ kind: 'tag', tag: 'x' }, { kind: 'tag', tag: 'x' }), true);
+  assert.equal(sameInventoryFilter({ kind: 'tag', tag: 'x' }, { kind: 'group', title: 'x' }), false);
+});
+
+test('a group names itself with its count, or "shown of total" while a filter hides some', () => {
+  assert.equal(inventoryGroupName('Shared styles', 12, 12), 'Shared styles · 12');
+  assert.equal(inventoryGroupName('Shared styles', 3, 12), 'Shared styles · 3 of 12');
+});
+
+test('the "Showing N of M" line is drawn only while a filter narrows the list', () => {
+  assert.equal(inventoryStatusVisible(INVENTORY_ALL), false, 'under All it says nothing worth reading');
+  assert.equal(inventoryStatusVisible({ kind: 'group', title: 'Capsules' } as never), true);
 });

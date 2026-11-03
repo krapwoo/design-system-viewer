@@ -2,7 +2,7 @@ import * as ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ComponentRecord, ResolvedConfig } from './types.ts';
-import type { StaticAnatomyShape, StaticPage } from './staticPage.ts';
+import type { StaticAnatomyShape, StaticComposedOfEntry, StaticMember, StaticPage } from './staticPage.ts';
 import { discoverAllPageFiles, resolvePageId } from './pageIndex.ts';
 import { readHostTsconfigOptions } from './props.ts';
 import { importedNames, readStaticPages } from './staticPage.ts';
@@ -15,6 +15,7 @@ import {
   relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateDocuments, validateFamily, validateGroupIssues, validateSidebarParents,
   type FamilyPageLike, type GroupPageLike, type MemberLocation,
 } from '../native/catalog/pageApi.ts';
+import { singleChildParents, sidebarParents } from '../native/catalog/catalogNavigation.ts';
 import { canonicalTokenTitle, findDuplicateIds, isTokenKind } from '../native/catalog/tokenDefinition.ts';
 import type { StaticTokenDefinition } from './tokenDefinition.ts';
 import type { UsageData } from '../native/catalog/usage.ts';
@@ -593,10 +594,14 @@ function checkComparisonHidesVariants(pages: StaticPage[]): DoctorIssue[] {
  *  the candidate might already be named there; this rule must never risk a false "missing" claim.
  *  Only suggests a name the viewer itself would accept in `composedOf` — a detected component or a
  *  page id (`buildCatalogSections`' own check); anything else (a plain helper such as a starter
- *  kit's `Icon`) would only trade this warning for an "unknown component" one. One issue per
- *  component per page, citing its first call site. */
+ *  kit's `Icon`) would only trade this warning for an "unknown component" one. A page with
+ *  `pageKind: 'style'` is never suggested: a style is applied, not a part (naming one in
+ *  `composedOf` stays the author's call). One issue per component per page, citing its first call
+ *  site. */
 function checkMissingComposition(pages: StaticPage[], components: ComponentRecord[]): DoctorIssue[] {
   const componentsByName = new Map(components.map((c) => [c.name, c]));
+  // A style page's id and the component it documents are both names for the style.
+  const styleNames = new Set<string>(pages.filter((p) => p.pageKind === 'style').flatMap((p) => [p.id, p.component]).filter((name): name is string => Boolean(name)));
   const knownNames = new Set<string>([...componentsByName.keys(), ...pages.map((p) => p.id).filter((id): id is string => Boolean(id))]);
   const issues: DoctorIssue[] = [];
   for (const page of pages) {
@@ -608,7 +613,7 @@ function checkMissingComposition(pages: StaticPage[], components: ComponentRecor
     const authored = new Set((page.composedOf ?? []).map((entry) => entry.component));
     const seen = new Set<string>();
     for (const candidate of candidates) {
-      if (authored.has(candidate.component) || !knownNames.has(candidate.component) || seen.has(candidate.component)) continue;
+      if (authored.has(candidate.component) || !knownNames.has(candidate.component) || styleNames.has(candidate.component) || seen.has(candidate.component)) continue;
       seen.add(candidate.component);
       issues.push(issue({
         id: 'missing-composition-suggestion', severity: 'warning', ...pageRef(page),
@@ -637,10 +642,10 @@ function hasStandaloneReason(page: StaticPage): boolean {
   return page.standalone !== undefined && page.standalone.trim() !== '';
 }
 
-/** #66: the pages `part-own-page` considers — readable, plain (no members, not a token page),
- *  browse-listed, and without a recorded `standalone` reason. */
+/** #66: the pages `part-own-page` considers — readable, plain (no members, not a token page, not a
+ *  style page: a style is applied, never a part), browse-listed, and without a recorded `standalone` reason. */
 function isStructureCandidate(page: StaticPage): boolean {
-  return page.checkable && !hasMembers(page) && !isTokenPage(page) && page.navigation !== 'reference' && !hasStandaloneReason(page);
+  return page.checkable && !hasMembers(page) && !isTokenPage(page) && page.pageKind !== 'style' && page.navigation !== 'reference' && !hasStandaloneReason(page);
 }
 
 /** #66: the default `patternGroups` — the starter kit's own group for example screens. */
@@ -777,6 +782,208 @@ function checkNothingToShow(pages: StaticPage[], patternGroups: readonly string[
     }
   }
   return issues;
+}
+
+/** `page-placement` and `screenGroups`' default: pages there are whole destinations, never moved. */
+export const DEFAULT_SCREEN_GROUPS: readonly string[] = ['Screens'];
+
+const inGroups = (page: StaticPage, names: readonly string[]): boolean => {
+  const group = page.group?.trim().toLowerCase();
+  return group !== undefined && names.some((name) => name.trim().toLowerCase() === group);
+};
+
+/** One thing a page documents that can contain other components: a component page's own
+ *  component, a plain page's own `composedOf` when it has no component, or one component-bound
+ *  member of a family/group page. A member with no component, or
+ *  a `documentation-only` one (an OS-drawn menu: no area of its own), is not a unit, and neither
+ *  is a style or token page, so none of them ever counts as containing something. */
+interface PlacementUnit {
+  label: string;
+  component?: string;
+  composedOf?: StaticComposedOfEntry[];
+  /** Its `composedOf` was authored but could not be read. */
+  composedUnreadable: boolean;
+}
+
+/** What one unit arranges, by catalogued name: its literal `composedOf` entries with relationship
+ *  `arranged` (the first one for each name). `context` is its own JSX (`renders X at file:line`) —
+ *  only ever named in a message, because rendering a component can't tell built-from from
+ *  arranged. `readable` is false when the `composedOf` could not be read in full, so "arranges
+ *  nothing" is never claimed about it. */
+function unitContents(
+  unit: PlacementUnit,
+  records: ReadonlyMap<string, ComponentRecord>,
+  catalogued: (name: string) => boolean,
+  arrangeable: (name: string) => boolean = catalogued,
+): { found: Map<string, string>; context: Map<string, string>; readable: boolean; declaresArranged: boolean } {
+  const found = new Map<string, string>();
+  for (const entry of unit.composedOf ?? []) {
+    if (entry.relationship === 'arranged' && entry.component !== unit.component && arrangeable(entry.component) && !found.has(entry.component)) found.set(entry.component, `composedOf ${entry.component}`);
+  }
+  const context = new Map<string, string>();
+  const record = unit.component !== undefined ? records.get(unit.component) : undefined;
+  for (const candidate of record?.composedOfCandidates ?? []) {
+    if (catalogued(candidate.component) && !context.has(candidate.component)) context.set(candidate.component, `renders ${candidate.component} at ${candidate.file}:${candidate.line}`);
+  }
+  // Whatever it names, an `arranged` entry is the author saying this unit lays out separate components.
+  const declaresArranged = (unit.composedOf ?? []).some((entry) => entry.relationship === 'arranged' && entry.component !== unit.component);
+  return { found, context, readable: !unit.composedUnreadable, declaresArranged };
+}
+
+const evidenceText = (found: ReadonlyMap<string, string>): string => {
+  const shown = [...found.values()];
+  return shown.length > 3 ? `${shown.slice(0, 3).join('; ')}; and ${shown.length - 3} more` : shown.join('; ');
+};
+
+/** `page-placement` (opt-in: `doctor.placement`): a page whose group disagrees with what it
+ *  declares. A component is one unit even when built from others (a Button with its spinner); a
+ *  pattern arranges separate components apart from each other in a region. Code can't tell the two
+ *  apart, so only the declared `composedOf` relationship decides — `arranged`. Needs `partGroups`
+ *  (without it the viewer doesn't know which group means "component").
+ *  - In a part group, a page (or any member) with an `arranged` entry naming a catalogued component
+ *    is a pattern.
+ *  - In a pattern group, a page whose every unit's `composedOf` was read and has no `arranged`
+ *    entry is a component.
+ *  - A group page (members, no shared whole) whose members disagree is reported with which is which.
+ *  Rendered JSX (`composedOfCandidates`) is named as context, never the evidence. Catalogued: a
+ *  component on a page in a part group, or one a page lists in `documents` (an icon on a token page).
+ *  An `arranged` entry may also name one of the page's own members (a section that lays out its own
+ *  rows); a family's other relationships to its members never count. Not counted: a style or token
+ *  page, a reference or documentation-only page or member, and any name not catalogued. The
+ *  component groups are `partGroups` less `patternGroups` and `screenGroups`, so a project that
+ *  lists patterns among its parts keeps that setting. Pages in `screenGroups` are exempt, and so is
+ *  a page that can't be read in full. */
+function checkPagePlacement(
+  pages: StaticPage[],
+  components: ComponentRecord[],
+  groups: { partGroups: readonly string[]; patternGroups: readonly string[]; screenGroups: readonly string[] },
+): DoctorIssue[] {
+  const { partGroups, patternGroups, screenGroups } = groups;
+  // The groups that mean "component": parts that are not patterns or screens.
+  const componentGroups = partGroups.filter((name) => !inGroups({ group: name } as StaticPage, patternGroups) && !inGroups({ group: name } as StaticPage, screenGroups));
+  // Without a component group or a pattern group there is nothing to move a page between.
+  if (componentGroups.length === 0 || patternGroups.length === 0) return [];
+  const records = new Map(components.map((c) => [c.name, c]));
+  const isRealMember = (member: StaticMember): boolean => member.component !== undefined && member.fidelity !== 'documentation-only';
+  // Who answers to each name; a name a style or token page also answers to is never a component.
+  const owners = new Map<string, StaticPage[]>();
+  const excludedNames = new Set<string>();
+  // Components a page lists in `documents` (e.g. icons on a token page) are catalogued wherever that page sits.
+  const documentedNames = new Set<string>(pages.flatMap((page) => (page.documents ?? []).map((d) => d.component)));
+  const own = (name: string | undefined, page: StaticPage): void => {
+    if (name !== undefined) owners.set(name, [...(owners.get(name) ?? []), page]);
+  };
+  for (const page of pages) {
+    const names = [resolvePageId(page, page.file), page.component];
+    const realMembers = (page.members ?? []).filter(isRealMember);
+    if (page.pageKind === 'style' || isTokenPage(page) || page.navigation === 'reference') {
+      for (const name of [...names, ...(page.members ?? []).flatMap((m) => [m.id, m.component])]) if (name !== undefined) excludedNames.add(name);
+      continue;
+    }
+    const documentationOnly = hasMembers(page) && page.component === undefined && realMembers.length === 0;
+    if (!documentationOnly) names.forEach((name) => own(name, page));
+    for (const member of realMembers) for (const name of [member.id, member.component, ...(member.aliases ?? [])]) own(name, page);
+  }
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    if (!page.checkable || isTokenPage(page) || page.pageKind === 'style' || page.navigation === 'reference') continue;
+    if (inGroups(page, screenGroups)) continue;
+    const inPart = inGroups(page, componentGroups);
+    const inPattern = inGroups(page, patternGroups);
+    if (!inPart && !inPattern) continue;
+    const catalogued = (name: string): boolean => {
+      if (excludedNames.has(name)) return false;
+      if (documentedNames.has(name)) return true;
+      const named = owners.get(name) ?? [];
+      return named.length > 0 && !named.includes(page) && named.some((host) => inGroups(host, partGroups));
+    };
+    // An `arranged` entry may name one of this page's own members: a section laying out its own rows.
+    const ownMembers = new Set((page.members ?? []).filter(isRealMember).flatMap((m) => [m.id, m.component, ...(m.aliases ?? [])]).filter((n): n is string => n !== undefined));
+    const arrangeable = (name: string): boolean => catalogued(name) || (!excludedNames.has(name) && ownMembers.has(name));
+    const memberUnits: PlacementUnit[] = (page.members ?? []).filter(isRealMember).map((member) => ({
+      label: member.id, component: member.component, composedOf: member.composedOf, composedUnreadable: member.hasComposedOf === true && member.composedOf === undefined,
+    }));
+    const pageUnit: PlacementUnit | undefined = hasMembers(page)
+      ? (page.composedOf !== undefined || page.hasComposedOf === true
+        ? { label: resolvePageId(page, page.file), composedOf: page.composedOf, composedUnreadable: page.hasComposedOf === true && page.composedOf === undefined }
+        : undefined)
+      : (page.component !== undefined || page.composedOf !== undefined || page.hasComposedOf === true
+        ? { label: page.component ?? resolvePageId(page, page.file), component: page.component, composedOf: page.composedOf, composedUnreadable: page.hasComposedOf === true && page.composedOf === undefined }
+        : undefined);
+    if (hasMembers(page) && page.members === undefined) continue; // members not read: never a partial read.
+    const units = [...(pageUnit ? [pageUnit] : []), ...memberUnits];
+    const contents = units.map((unit) => ({ unit, ...unitContents(unit, records, catalogued, arrangeable) }));
+    const id = resolvePageId(page, page.file);
+    const base = { id: 'page-placement' as const, severity: 'warning' as const, ...pageRef(page) };
+    const partTarget = componentGroups[0];
+    const patternTarget = patternGroups[0];
+    const names = (map: ReadonlyMap<string, string>): string => [...map.keys()].map((n) => `\`${n}\``).join(', ');
+    const contextOf = (list: typeof contents): string => {
+      const seen = new Map<string, string>();
+      for (const c of list) for (const [name, text] of c.context) if (!seen.has(name)) seen.set(name, text);
+      return seen.size > 0 ? ` (Its source: ${evidenceText(seen)}. Rendering a component doesn't show whether it is arranged or built in.)` : '';
+    };
+
+    if (hasMembers(page) && isGroupShape(page) && memberUnits.length >= 2) {
+      const memberContents = contents.filter((c) => memberUnits.includes(c.unit));
+      const arranging = memberContents.filter((c) => c.found.size > 0);
+      const single = memberContents.filter((c) => c.found.size === 0 && c.readable && !c.declaresArranged);
+      if (arranging.length > 0 && single.length > 0) {
+        const describe = (list: typeof arranging) => list.map((c) => `${c.unit.label}${c.found.size > 0 ? ` (${evidenceText(c.found)})` : ''}`).join(', ');
+        const advice = arranging.length > single.length
+          ? `Most members arrange components, so move the page to "${patternTarget}" and put ${single.map((c) => c.unit.label).join(', ')} on a page in "${partTarget}"`
+          : arranging.length < single.length
+            ? `Most members are components, so keep the page in "${partTarget}" and move ${arranging.map((c) => c.unit.label).join(', ')} to a page in "${patternTarget}"`
+            : `Split the page: ${single.map((c) => c.unit.label).join(', ')} stay in "${partTarget}", ${arranging.map((c) => c.unit.label).join(', ')} go to "${patternTarget}"`;
+        issues.push(issue({ ...base,
+          message: `\`${id}\` groups members that disagree: ${describe(arranging)} arrange catalogued components (patterns); ${describe(single)} arrange none (components).`,
+          fix: `${advice}. Use \`group\` on each page.`,
+        }));
+        continue;
+      }
+    }
+
+    const found = new Map<string, string>();
+    for (const c of contents) for (const [name, text] of c.found) if (!found.has(name)) found.set(name, text);
+    if (inPart && found.size > 0 && patternTarget !== undefined) {
+      issues.push(issue({ ...base,
+        message: `\`${id}\` is in the part group "${page.group}" but arranges ${names(found)} (${evidenceText(found)}): a pattern.`,
+        fix: `Move it to "${patternTarget}": set group: '${patternTarget}'.`,
+      }));
+    } else if (inPattern && !inPart && found.size === 0 && contents.length > 0 && contents.every((c) => c.readable && !c.declaresArranged)) {
+      issues.push(issue({ ...base,
+        message: `\`${id}\` is in the pattern group "${page.group}" but ${contents.map((c) => `\`${c.unit.label}\``).join(', ')} ${contents.length === 1 ? 'is' : 'are'} built from parts and arrange${contents.length === 1 ? 's' : ''} nothing (no composedOf entry is \`arranged\`): a component.${contextOf(contents)}`,
+        fix: `Move it to "${partTarget}": set group: '${partTarget}'. If it does lay out separate components, declare them in composedOf with relationship: 'arranged'.`,
+      }));
+    }
+  }
+  return issues;
+}
+
+/** `single-child-parent`: a page that exactly one other page names as its `sidebarParent` (a usable
+ *  declaration — the one `sidebarParents` accepts, so a declaration `sidebar-parent-invalid` already
+ *  reports is not counted). The sidebar lists that child flat beside its parent, so the level adds
+ *  nothing. */
+function checkSingleChildParent(pages: StaticPage[]): DoctorIssue[] {
+  const byId = new Map(pages.map((page) => [resolvePageId(page, page.file), page]));
+  // A page whose group can't be read is left out: the viewer can't place it beside anything.
+  const sections = pages.filter((page) => page.group !== undefined).map((page) => ({ id: resolvePageId(page, page.file), sidebarParent: page.sidebarParent }));
+  const byGroup = new Map<string, string[]>();
+  for (const { id } of sections) {
+    const group = byId.get(id)?.group ?? '';
+    byGroup.set(group, [...(byGroup.get(group) ?? []), id]);
+  }
+  const navGroups = [...byGroup].map(([label, ids]) => ({ label, ids }));
+  const listed = new Set(sections.filter(({ id }) => byId.get(id)?.navigation !== 'reference').map(({ id }) => id));
+  const only = singleChildParents(sidebarParents(sections, navGroups, listed));
+  return [...only].flatMap(([parentId, childId]) => {
+    const parent = byId.get(parentId);
+    return parent ? [issue({
+      id: 'single-child-parent', severity: 'warning', ...pageRef(parent),
+      message: `\`${parentId}\` has exactly one child, \`${childId}\` (its sidebarParent). The sidebar shows \`${childId}\` flat beside \`${parentId}\`, so the nesting adds a level for nothing.`,
+      fix: `Nest more pages under \`${parentId}\` (sidebarParent: '${parentId}'), or drop sidebarParent from \`${childId}\`.`,
+    })] : [];
+  });
 }
 
 /** `usage-unknown-page` (U4/U5): a key in the usage file that names no page id, page component,
@@ -1449,7 +1656,7 @@ function checkHandBuiltTokenPage(pages: StaticPage[], exempt: ReadonlySet<string
 export function collectIssues(
   pages: StaticPage[],
   components: ComponentRecord[],
-  options: { patternGroups?: readonly string[]; usage?: UsageData; handBuiltTokenPages?: readonly string[] } = {},
+  options: { patternGroups?: readonly string[]; partGroups?: readonly string[]; screenGroups?: readonly string[]; usage?: UsageData; handBuiltTokenPages?: readonly string[]; placement?: boolean } = {},
 ): DoctorIssue[] {
   const patternGroups = options.patternGroups ?? DEFAULT_PATTERN_GROUPS;
   return [
@@ -1468,6 +1675,8 @@ export function collectIssues(
     ...checkStandaloneReason(pages),
     ...checkPartOwnPage(pages, patternGroups),
     ...checkNothingToShow(pages, patternGroups),
+    ...(options.placement === true ? checkPagePlacement(pages, components, { partGroups: options.partGroups ?? [], patternGroups, screenGroups: options.screenGroups ?? DEFAULT_SCREEN_GROUPS }) : []),
+    ...checkSingleChildParent(pages),
     ...(options.usage ? checkUsageUnknownPage(pages, components, options.usage) : []),
     ...checkMissingWorkingPreview(pages, components),
     ...checkPreviewOnlyPages(pages),
@@ -1671,7 +1880,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
     : undefined;
 
   let issues = [
-    ...collectIssues(pages, components, { patternGroups: config.patternGroups, usage: syncResult.usage, handBuiltTokenPages: config.doctor?.handBuiltTokenPages }),
+    ...collectIssues(pages, components, { patternGroups: config.patternGroups, partGroups: config.partGroups, screenGroups: config.screenGroups, usage: syncResult.usage, handBuiltTokenPages: config.doctor?.handBuiltTokenPages, placement: config.doctor?.placement }),
     ...checkPageTypeErrors(pages, { fallbackPaths, hostRoot: config.projectRoot }),
     ...checkOverlaysFramed(pages, components, config.projectRoot),
     ...collectGlobalIssues({ syncWarnings: syncResult.warnings, tokenFileCount }),

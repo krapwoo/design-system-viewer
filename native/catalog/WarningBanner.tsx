@@ -6,6 +6,9 @@ import { CATALOG_COLOR, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './to
  *  uses; `'info'` is the same banner in its accent blue, for a note that is not a caution. */
 export type WarningBannerTone = 'warning' | 'info';
 
+/** The space a banner keeps below itself, from the viewer's spacing tokens. */
+export const BANNER_MARGIN = CATALOG_SPACE.lg;
+
 const TONES = {
   warning: { background: CATALOG_COLOR.warningSubtle, border: CATALOG_COLOR.warningBorder, text: CATALOG_COLOR.warning },
   info: { background: CATALOG_COLOR.accentSubtle, border: CATALOG_COLOR.focusRing, text: CATALOG_COLOR.accent },
@@ -44,7 +47,11 @@ export function WarningBanner({ title, children, tone = 'warning' }: { title: st
 }
 
 const styles = StyleSheet.create({
+  // One rule wherever a banner renders: `lg` below, so it never sits against the chips, grid or
+  // paragraph that follows. Margins don't collapse in flex layouts, so the space above is left to the
+  // parent (the page top, a stack's `gap`) instead of adding to it.
   banner: {
+    marginBottom: BANNER_MARGIN,
     borderWidth: 1,
     borderRadius: CATALOG_RADIUS.md,
     padding: CATALOG_SPACE.lg,

@@ -6,7 +6,12 @@ import {
   ANATOMY_STAGE_PADDING,
   anatomyColumns,
   anatomyLayout,
+  ANATOMY_PIN_BRACKET_GAP,
+  ANATOMY_PIN_EDGE_GAP,
   ANATOMY_PIN_GUTTER,
+  ANATOMY_PIN_LANE,
+  ANATOMY_PIN_STACK_GAP,
+  spreadPins,
   anatomyPreviewWidth,
   anatomyPinFor,
   ariaLevelFor,
@@ -471,10 +476,45 @@ test('anatomyLayout with a preview width: more than six items, and an unmeasured
 });
 
 test('anatomyLayout with a preview width: half the card must hold the width, its pin margin and padding', () => {
-  // 402 + 2 * 30 (pin margins) + 2 * 24 (stage padding) = 510, so the card needs 1020.
-  assert.deepEqual(anatomyLayout(4, 1020, 0, 402), { stacked: false, legendColumns: 1 });
-  assert.equal(anatomyLayout(4, 1019, 0, 402).stacked, true);
-  assert.equal(ANATOMY_PIN_GUTTER, 30);
+  // 402 + 2 * 60 (pin margins) + 2 * 24 (stage padding) = 570, so the card needs 1140.
+  assert.deepEqual(anatomyLayout(4, 1140, 0, 402), { stacked: false, legendColumns: 1 });
+  assert.equal(anatomyLayout(4, 1139, 0, 402).stacked, true);
+  assert.equal(ANATOMY_PIN_GUTTER, 60);
+});
+
+test('the pin lane gaps are design tokens, and the gutter holds the edge gap plus the lane', () => {
+  assert.equal(ANATOMY_PIN_EDGE_GAP, CATALOG_SPACE.md, 'specimen edge to bracket/leader start');
+  assert.equal(ANATOMY_PIN_BRACKET_GAP, CATALOG_SPACE.sm, 'bracket to pin');
+  assert.equal(ANATOMY_PIN_STACK_GAP, CATALOG_SPACE.xs, 'pin to pin');
+  assert.equal(ANATOMY_PIN_EDGE_GAP + ANATOMY_PIN_LANE, ANATOMY_PIN_GUTTER);
+});
+
+test('spreadPins leaves pins with room alone and never lets two overlap', () => {
+  const H = 22;
+  assert.deepEqual(spreadPins([{ top: 0, height: H }, { top: 40, height: H }], 4), [0, 40], 'room: untouched');
+  const crowded = spreadPins([{ top: 100, height: H }, { top: 110, height: H }, { top: 120, height: H }, { top: 125, height: H }], 4);
+  for (let i = 1; i < crowded.length; i++) assert.ok(crowded[i] - crowded[i - 1] >= H + 4, `pin ${i} clears pin ${i - 1}: ${crowded}`);
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  assert.ok(Math.abs(mean(crowded) - mean([100, 110, 120, 125])) <= 1, 'the stack stays centred on where its pins wanted to be');
+  assert.deepEqual(spreadPins([{ top: 50, height: H }, { top: 10, height: H }], 4), [50, 10], 'input order is kept, and pins already apart do not move');
+  const reversed = spreadPins([{ top: 120, height: H }, { top: 100, height: H }], 4);
+  assert.ok(reversed[0] - reversed[1] >= H + 4, 'order in the lane follows the targets, whatever the input order');
+});
+
+test('spreadPins keeps a spread stack inside the lane (limit)', () => {
+  const H = 22;
+  const inside = (tops: number[], limit: number) => tops.forEach((t, i) => assert.ok(t >= 0 && t + H <= limit, `pin ${i} at ${t} lies inside 0..${limit}: ${tops}`));
+  for (const targets of [[0, 0, 0], [0, 6, 12], [100, 100, 100], [92, 96, 100]]) {
+    const tops = spreadPins(targets.map((top) => ({ top, height: H })), 4, 100);
+    inside(tops, 100);
+    for (let i = 1; i < tops.length; i++) assert.ok(tops[i] - tops[i - 1] >= H + 4, `still apart: ${tops}`);
+  }
+  assert.deepEqual(spreadPins([0, 0, 0].map((top) => ({ top, height: H })), 4, 100), [0, 26, 52], 'a crowd at the top spreads down only');
+  // Taller than the lane: centred on it, so it overhangs both ends equally.
+  assert.deepEqual(spreadPins([40, 40, 40].map((top) => ({ top, height: H })), 4, 50), [-12, 14, 40]);
+  // The limited start decides merging: the pin below the clamped stack is pushed clear of it.
+  const merged = spreadPins([{ top: 0, height: H }, { top: 0, height: H }, { top: 50, height: H }], 4, 100);
+  assert.deepEqual(merged, [0, 26, 52], 'a stack clamped to 0..52 meets the pin wanted at 50');
 });
 
 

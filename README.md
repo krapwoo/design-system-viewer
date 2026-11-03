@@ -147,7 +147,7 @@ identified.
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
-and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `partGroups`, `usage` (optional — a path to a usage data file, see
+and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `partGroups`, `screenGroups`, `usage` (optional — a path to a usage data file, see
 [Usage data](#usage-data)), `starterKit` (new-project only —
 records the kit's version), `updateCheck`, `doctor` — see `config/index.ts`'s `DsViewerConfig` for
 each field's exact meaning. Write a page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same
@@ -381,8 +381,13 @@ actually apply:
   `'built-in'` for a component that's part of this one's own implementation — always rendered, or
   rendered only for some of its variants/states (e.g. Toast is built from a Banner),
   `'slot'` for an optional caller-supplied child (e.g. a `leadingIcon`
-  prop), or `'related'` for a component commonly used alongside this one without either containing
-  the other. `component` should be a real component or page id: while you browse the catalog in
+  prop), `'arranged'` for a separate component this one lays out alongside others in its region
+  (a transcript of rows, a composer with its controls, a settings section of rows), or `'related'`
+  for a component commonly used alongside this one without either containing the other. A component
+  is one unit even when it is built from other components (a Button with its spinner, a list with
+  its dividers): that is `'built-in'`, not `'arranged'`. A pattern is what arranges separate
+  components apart from each other. `'arranged'` entries are drawn by the page like `'built-in'`
+  ones (Parts, "Uses", "Also used by"), and `doctor`'s opt-in `page-placement` reads them. `component` should be a real component or page id: while you browse the catalog in
   development, an unknown name logs a `[Catalog]` warning in the browser console. `doctor` doesn't
   check it, and it never fails a build — e.g.
   `composedOf: [{ component: 'Icon', role: 'Leading glyph', relationship: 'slot' }]`.
@@ -527,7 +532,9 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   `navigation: 'reference'` page) are `doctor` errors (`sidebar-parent-invalid`), and show
   in the viewer's development console; the page then simply stays at its own place in the list.
   Keep it for real categories: it replaces A–Z browsing for the pages it covers, so the category
-  page should say what the children are and link readers onward.
+  page should say what the children are and link readers onward. A parent with exactly one child
+  adds a level for nothing, so the sidebar lists that child flat, right after its parent, and
+  `doctor` warns (`single-child-parent`): nest more pages under the parent, or drop `sidebarParent`.
 - **Wide components at 3 columns.** Give block-level components (Banner, Card, Toast,
   InputField) `specimenSize: 'regular'`, so Variants and States sit 3 across on a laptop
   (about 316px each). `'wide'` (2 columns, phone width) is only for pages where the full phone
@@ -548,7 +555,7 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   page (`part-own-page`) and about a page that shows nothing (`nothing-to-show`); see the rule list
   under `doctor`. To keep such a page on purpose, set `standalone: '<why>'`, for example
   `standalone: 'Not a part of GitFileCard; it draws its own counts.'`. The reason must be non-blank
-  and is only a note in the source — the viewer ignores it. Token pages and
+  and is only a note in the source — the viewer ignores it. Token pages, style pages and
   `navigation: 'reference'` pages are never checked, and family and group pages are never checked
   for `part-own-page` (`nothing-to-show` does check them, see below). Both checks count `composedOf` written on a
   family or group member as well as on a page.
@@ -556,65 +563,152 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   string-literal unions declared in the component's own folder or a token folder. A union
   declared in another component's folder, such as a shared `IconName`, is that component's
   options, so a Banner page never needs one example per icon.
+- **Mark style pages.** A style is not a view you place: a SwiftUI `ButtonStyle`, `ViewModifier` or
+  `TextRenderer`, or a shared surface or background treatment. It lives with components and in
+  families, not in a category of its own, and a page that documents one sets `pageKind: 'style'`.
+  The page shows a small **Style** badge next to its title. An `InventoryTile` whose page is a style
+  shows the same badge, and its link is named "<title>, style". The word "Style" is the signal, never
+  colour alone. It works on standalone, family and group pages. A long title wraps inside its own
+  column and the badge stays beside its first line, centred on it (not dropped under the title). On a
+  page head the badge is a button, named "Style — what this means", with a 44px hit area around the
+  pill; pressing it opens a small popover anchored to the badge (no line of meaning sits under the
+  title). The popover explains what a style is (a SwiftUI `ButtonStyle`, `ViewModifier`,
+  `TextRenderer`, a shared background), how it differs from a component (you don't place it, you
+  apply it to something, and changing it changes everything that applies it) and how to read the page
+  (the specimens show it applied to sample content). `styleNote: '…'` on the page adds your own
+  paragraph first (how to apply this style, say). It opens below the badge, flips above near the
+  bottom of the window and shifts sideways near an edge so it never overflows (at most 320px wide, and
+  never wider than the window less 12px each side); a second press, Escape, a press outside or
+  scrolling closes it; focus moves into it on open and returns to the badge on close; it is a
+  `role="dialog"` named "About styles", not modal; one popover is open at a time; it fades in with
+  opacity only, and appears at once under reduced motion. The button form is exported as
+  `StyleBadgeButton` (its name is `STYLE_BADGE_LABEL`); it carries no margin of its own, so it sits
+  true wherever you place it. The badge on an inventory tile stays decorative. The page heading's
+  accessible name is the title alone; the badge sits next to it rather than inside it. The badge
+  belongs to a whole page: a style that is a member of a family does not get one (a follow-up).
+  The popover is the exported `Popover` (`anchorRef`, `label`, `onClose`, children, and an optional
+  `placeRef` it is placed against when that is smaller than the anchor's hit area): the panel only,
+  mounted while open, with the control keeping the `open` state and the anchor ref. Tab or Shift+Tab closes it and carries on from the
+  anchor; in a short window it scrolls inside itself. Use it for a
+  sentence or three that explains a control in place; anything longer belongs in a side panel.
+  **A style is never suggested as a part.** A page with `pageKind: 'style'` is left out of every place
+  that offers pages as parts: `doctor`'s `missing-composition-suggestion` never proposes it, and the
+  Parts block, part numbering and `partGroups` never count it, even when its group is listed. Naming
+  one in `composedOf` yourself still works: it appears in the side panel's Composition list as a link,
+  marked "· style" (the style this component applies), whatever `relationship` you gave it.
 
 ### Category overview pages
 
 A category overview page is the page a sidebar category opens (**Buttons**, **Inputs**): it says what
-the category is, counts what is in it and shows each member, flat, with its name linking to its page. It
-is an ordinary page with a `render()`, built from these:
+the category is and shows each member, flat, with its name linking to its page. Its numbers are its
+filters. It is an ordinary page with a `render()`, built from these:
 
 1. **Nest the members** under it with `sidebarParent` (see **Sidebar categories** above): each member
    page names the category's id, and the category page is in the same group.
-2. **`CountStrip`** is a row of 2–6 stats, `items={[{ label, value, sub? }]}`: the label small and
-   uppercase, the value large, the optional `sub` a muted caption. The cells share the row equally
-   and wrap onto the next row on a narrow page (each is at least 150px wide). Fewer than 2 or more
-   than 6 still render, with a development warning.
-3. **`WarningBanner`** is a titled note in the viewer's amber attention colours:
+2. **`WarningBanner`** is a titled note in the viewer's amber attention colours:
    `<WarningBanner title="…">body</WarningBanner>`. `tone="info"` switches it to the accent blue.
    The body is a string (styled for you) or your own elements. It has no dismiss control, and it
    is a `role="note"` named by its title, not an alert, so it does not interrupt a screen reader.
-4. **`InventoryGroup`** and **`InventoryTile`** draw the inventory itself, so the page writes data and
-   not layout. A group is a title with its count in it (`Shared styles · 6`), a plain-English description
-   and its tiles in the same responsive grid as a `TokenGrid` (260px at least, up to four across; three
-   or five tiles sit three across, never four and an orphan). A tile is the member's **real specimen**
-   on a specimen stage and, under it, its **title as a link to its page** — flat, with no card around the
-   tile and none inside it. Its props:
-   - `target`: the page id, or a member's id (a leading `#` is allowed: `'#FilterChip'`). The link text is
-     the page's or member's own `title`, resolved the way every other link in the catalog resolves one,
-     never an id. A member with no title shows a readable name: camel case split into words, in
-     sentence case (`ChatTactileButtonStyle` → "Chat tactile button style"). A `target` that resolves to
-     nothing shows that name as text, not a dead link. `title` overrides the text.
-   - `specimen` and `surface`: the node drawn on the stage, and its stage (`'auto'` by default, as on a
-     page). Leave `specimen` out for a page `target` and the page's own first specimen is drawn, scaled
-     to fit, the same picture its **Overview** card shows. A member has no default specimen: pass one.
-   - Accessibility: the title link is the tile's one tab stop. The specimen is decoration, so it is hidden
-     from assistive technology and inert: nothing in it takes focus or a click.
+   Every banner keeps `CATALOG_SPACE.lg` (16px) **below** itself, wherever it renders (page top,
+   inside a section, a token page's "No … tokens yet" note), so it never sits against the chips, grid
+   or paragraph after it. It has no margin above: flex margins don't collapse, so a top margin would
+   add to the space the parent already gives (a card's padding, a stack's `gap`). Put a banner first in
+   its parent, or in a `gap` stack, and the space above is the parent's. Below, the 16px still adds to
+   a following `gap` (in a 24px-gap stack: 24px above, 40px below). The update banner the viewer
+   draws at the page top uses the same 16px below.
+3. **`Inventory`**, **`InventoryGroup`** and **`InventoryTile`** draw the inventory itself, so the page
+   writes data and not layout.
+   - An `InventoryGroup` is a title with its count in it (`Shared styles · 6`), a plain-English
+     description and its tiles in the same responsive grid as a `TokenGrid` (260px at least, up to four
+     across; three or five tiles sit three across, never four and an orphan).
+   - An `InventoryTile` is the member's **real specimen** on a specimen stage and, under it, its **title
+     as a link to its page** — flat, with no card around the tile and none inside it. Its props:
+     - `target`: the page id, or a member's id (a leading `#` is allowed: `'#FilterChip'`). The link text
+       is the page's or member's own `title`, resolved the way every other link in the catalog resolves
+       one, never an id. A member with no title shows a readable name: camel case split into words, in
+       sentence case (`ChatTactileButtonStyle` → "Chat tactile button style"). A `target` that resolves
+       to nothing shows that name as text, not a dead link. `title` overrides the text.
+     - `specimen` and `surface`: the node drawn on the stage, and its stage (`'auto'` by default, as on a
+       page). Leave `specimen` out for a page `target` and the page's own first specimen is drawn, scaled
+       to fit, the same picture its **Overview** card shows. A member has no default specimen: pass one.
+     - `tags`: named sets the tile belongs to (`tags={['Draws its own shape']}`). A tile may be in
+       several. They draw nothing on the tile; an `Inventory` turns each into a filter.
+     - A tile whose page sets `pageKind: 'style'` shows a **Style** badge (see **Mark style pages**).
+       The badge is hidden from assistive technology, since the link already reads "<title>, style".
+     - Accessibility: the title link is the tile's one tab stop. The specimen is decoration, so it is
+       hidden from assistive technology and inert: nothing in it takes focus or a click.
+   - **Layout: the token-page layout.** A page whose `render` is an `Inventory` and nothing else (directly, or in
+     a fragment under `WarningBanner`s), whatever the page's `previewWidths` (an inventory is never put in phone frames, and has no "Preview" label), is drawn the way a token page is, not inside one box: the
+     banner at page level, then the chips in the same row and place as a token page's jump row, then
+     each `InventoryGroup` as its own section (an uppercase title and description outside, the tiles in
+     the group's own bordered box). They are the same section frame and chip row as a token page's
+     sections, so the spacing is identical: the banner's 16px below it, then the
+     chips, 14px under them the first title, 4px to its description, 14px to the box, 20px between
+     sections, a 24px box padding. A filter that leaves a group with no tiles hides its whole section,
+     title and box. This is the default, so the right result needs no flag: a catalog whose overview
+     `render` is the `Inventory` (only banners above it) gets it without a change, and one that wrapped it (in a
+     `View` of its own, say) keeps its one box and, on a full-width preview, is reported by `doctor --render` as
+     `sections-in-one-box`. An `Inventory` placed inside a section or an example, where a box already
+     surrounds it, is `'inline'` (chips, then every group, in that box). `layout="sections"` or
+     `layout="inline"` on the `Inventory` overrides either way.
+   - **`Inventory`** wraps the groups and is where the numbers become filters. Above them it draws one
+     row of chips: **All N**, one per group (`Shared styles 12`) and one per tag a tile declares
+     (`Draws its own shape 13`), each with the count it will show. Pressing a chip shows exactly those
+     tiles and **hides** the rest (a group's heading then reads `Shared styles · 3 of 12`, and a group
+     with none left draws nothing); pressing it again, or **All**, shows everything. Hiding, not
+     dimming: a dimmed tile stays in the tab order and the page doesn't get shorter. The counts are read
+     from the same tiles the groups draw, so they cannot drift from what is below.
+   - The chips are buttons that report `aria-pressed`, in a group named "Filter the inventory"; Tab
+     reaches them, Enter or Space presses one, and a polite live region beside them says "Showing 3 of
+     12" after every change. It is drawn only while a filter narrows the list; under All it is visually
+     hidden but still announced.
+   - `Inventory` reads its children, so pass `InventoryGroup`s directly, each holding its
+     `InventoryTile`s directly. A group wrapped in a component of your own is drawn in full and is
+     neither counted nor filtered, whichever chip is pressed. A tile wrapped that way inside a group is
+     counted and filtered as a tile with no tags. A tile component of your own (for a tile that needs
+     more than `InventoryTile` holds, such as a Details panel) is counted and filtered like one, as
+     long as it is a direct child of the group and takes its own `tags` prop. A single group with no tags has nothing to choose
+     between, so no chips are drawn. Groups that share a title are one chip (their tiles added), and a
+     tag named like a group is labelled `<tag> (tag)`, so no two chips share a name. `label` sets the
+     accessible name of the chip group (default "Filter the inventory").
+4. **The finding stays a `WarningBanner` above the inventory.** A number that filters nothing does not
+   get a chip: "Shared badge 0" (a count of zero) and any fact about the whole design system (five
+   variants, three sizes) belong in the banner's sentence or a group's description, not in the chip
+   row. Every chip is a number you can press and see exactly that many tiles.
 5. **Membership is a reviewed list.** Which things belong in a category is a judgment, so keep it as an
    explicit list a person reviewed (an array of ids, or a generated file checked in and read in review),
-   never a guess from file names. The counts in `CountStrip` come from the same list, so they cannot
-   drift from the tiles.
+   never a guess from file names. The chip counts come from the same list, so they cannot drift from the
+   tiles.
+6. **`CountStrip`** (a row of 2–6 stats, `items={[{ label, value, sub? }]}`) is no longer part of a
+   category overview: its numbers did not map to anything below. It stays available for a page whose
+   stats are not an inventory (a version summary, say). Its cells share the row equally and wrap on a
+   narrow page (each is at least 150px wide); fewer than 2 or more than 6 still render, with a
+   development warning.
 
 ```tsx
-import { CountStrip, InventoryGroup, InventoryTile, WarningBanner, defineCatalogPage } from '@krapwoo/ds-viewer';
+import { Inventory, InventoryGroup, InventoryTile, WarningBanner, defineCatalogPage } from '@krapwoo/ds-viewer';
 
 export default defineCatalogPage({
   id: 'Buttons', group: 'Components', description: 'Where to start with buttons.', standalone: 'A category page.',
   previewWidths: 'full',
   render: () => (
     <>
-      <WarningBanner title="One primary per surface">A screen has one primary Button.</WarningBanner>
-      <CountStrip items={[{ label: 'Pages', value: 2 }, { label: 'Variants', value: 5, sub: 'primary to ghost' }]} />
-      <InventoryGroup title="Buttons" description="The two button components, as they look by default.">
-        <InventoryTile target="Button" specimen={<Button label="Continue" onPress={() => {}} />} />
-        <InventoryTile target="ButtonGroup" specimen={<ButtonGroup>…</ButtonGroup>} />
-      </InventoryGroup>
+      <WarningBanner title="One primary per surface">A screen has one primary Button. No page here uses a shared badge.</WarningBanner>
+      <Inventory>
+        <InventoryGroup title="One action" description="A single Button, in five variants.">
+          <InventoryTile target="Button" specimen={<Button label="Continue" onPress={() => {}} />} />
+        </InventoryGroup>
+        <InventoryGroup title="Several actions" description="ButtonGroup, for two or three together.">
+          <InventoryTile target="ButtonGroup" tags={['Draws its own shape']} specimen={<ButtonGroup>…</ButtonGroup>} />
+        </InventoryGroup>
+      </Inventory>
     </>
   ),
 });
 ```
 
-The starter kit's [Buttons page](starter-kit/pages/Buttons.catalog.tsx) is the worked example: it uses
-all four and sits above the Button and ButtonGroup pages, which name it as their `sidebarParent`.
+The starter kit's [Buttons page](starter-kit/pages/Buttons.catalog.tsx) is the worked example: it sits
+above the Button and ButtonGroup pages, which name it as their `sidebarParent`.
 
 ### Using the app's own images
 
@@ -732,7 +826,7 @@ focusable or clickable, and on the web mounted only when near the visible part o
 
 A page built from other components shows them on the page itself, as a **Parts** block, while those
 components keep their own pages. The block lists the page's `composedOf` entries whose `relationship`
-is `built-in` or `slot` (`related` entries stay in the side panel's Composition list only), in the
+is `built-in`, `slot` or `arranged` (`related` entries stay in the side panel's Composition list only), in the
 order declared. It sits after the specimens and before **Appears in**. A page with no such entry
 shows no block.
 
@@ -765,6 +859,16 @@ entry that resolves to no page stays a plain row; the side panel's Composition l
 every entry. An anatomy `other` item naming a page outside those groups keeps its pin and legend
 row, unnumbered (the dashed ↗ pin), so nothing authored disappears. `partGroups` must be an array
 of group names, otherwise a warning is printed and it is ignored. Absent, every group counts.
+
+**Checking where a page sits (opt-in).** A component is one unit even when it is built from other
+components (a Button with its spinner, a list with its dividers, a settings row with its label). A
+pattern arranges separate components apart from each other in a region (a transcript of rows, a
+composer with its controls, a settings section of rows). Code can't reliably tell the two apart, so
+`doctor` checks this only when you opt in, and only from what you declared: set
+`doctor: { placement: true }` and `partGroups`, and declare a pattern's separate components in
+`composedOf` with `relationship: 'arranged'`. `partGroups` are components, `patternGroups` (default
+`Patterns`) are example screens built from components, and `screenGroups` (default `['Screens']`,
+case-insensitive) are whole destinations that are never moved. See `page-placement`, below.
 
 ### Family pages
 
@@ -863,18 +967,36 @@ knows its parts are separate components, unlike variants.
   **Width** (web only; native keeps the measured picture). The picture is laid out at the width the
   page's specimens use: the first entry of the page's `previewWidths`, else of the catalog's
   `defaultPreviewWidths` (for a family, the whole member's first; for a group member's own
-  `anatomy`, that member's). The frame adds a 30px margin on each side, so the specimen sits
+  `anatomy`, that member's). The frame adds a 60px margin on each side (the pin lane, below), so the specimen sits
   centred, as in the variant cells. Wrap the specimen in `AnatomySpecimen`: it takes the preview width and the
   variant cells' own centring (pass the same `fill`/`align` the matching variant item uses). Pass
-  the pins as its `pins`: they go in a 30px column on the specimen's own right edge, right beside
+  the pins as its `pins`: they go in a 48px lane on the specimen's own right edge, starting 12px
+  off it (`CATALOG_SPACE.md`, so a bracket or leader line never touches the specimen), right beside
   a small specimen and in the right margin for a full-width one. Inside that column, place each
   pin as before (`position: 'absolute', right: 0, top: y`, with `top` from the specimen's top).
+  **Pins never crowd.** A bracket you draw in the lane belongs at `left: 0` with `testID="anatomy-bracket"`;
+  a pin keeps at least 8px (`CATALOG_SPACE.sm`) from it, which a lane 48px wide leaves room for up to
+  a 36px pin ("10.1"); keep the bracket at most 4px wide, or that figure shrinks. Pins whose targets are closer than a pin's height plus 4px (`CATALOG_SPACE.xs`) are
+  spread along the lane, in the order of their targets and centred on them, and a slanted leader line
+  joins each pin that moved 4px or more back to the height it points at; nothing animates. A spread
+  crowd stays inside the specimen's height (a crowd near the top or bottom edge spreads one way
+  only), and a pin that opens a page counts its ↗ badge in its room. Pins with room stay where you
+  put them. Web only, like the rest of the picture's measuring; in right-to-left text the pins
+  spread but no leader lines are drawn.
+
+  **Prefer the `pins` lane.** It is the one placement the viewer spreads, keeps clear of the
+  specimen and measures for you. A picture may also place `AnatomyPin`s by hand in its own layout
+  (a row of `[content][pin]`, an overlay); the viewer cannot move those, and `doctor --render`
+  (`anatomy-pin-crowded`) measures them all the same. When placing pins by hand keep at least 4px
+  between two pins (their ↗ badges included, which reach 7px past the pin's top-right corner) and
+  at least 8px between a pin and any text, control or bracket of the picture; a pin in a gutter
+  of its own beside the content is fine. Anything under 2px (touching or overlapping) is reported.
   With no preview width (neither the page nor the catalog sets one) the picture keeps its measured
-  width, and on web `AnatomySpecimen` adds that same 30px gutter on both sides of the specimen when
+  width, and on web `AnatomySpecimen` adds that same 60px gutter on both sides of the specimen when
   it has pins, so the pins stay inside the picture column instead of overlapping the legend.
 
   Beside the legend, the picture takes half the box, centred vertically, and the legend the other
-  half. When half the box is narrower than the preview width plus 108px (the two 30px margins and the
+  half. When half the box is narrower than the preview width plus 168px (the two 60px margins and the
   stage's 24px padding on each side), the legend goes below instead, so the picture keeps its real width. In a window narrower than the picture, the picture
   scrolls inside its own box, never the page. Without a preview width (none on the page and no catalog default) the picture
   keeps its measured width and the layout above.
@@ -902,11 +1024,11 @@ knows its parts are separate components, unlike variants.
   page-level field's does.
 - **"Also used by …"** is derived, never authored — there is no field for it anywhere. It's the
   inverse of the "Uses …" line above: if some other page or member's own `composedOf` names this
-  one with `relationship: 'built-in'`, that's already a declaration that the other one uses it;
+  one with `relationship: 'built-in'` or `'arranged'`, that's already a declaration that the other one uses it;
   `buildCatalogSections` inverts every such declaration across the whole catalog and shows the
   result as a short line below the member's specimens (joining the same line as its source path),
   so the same relationship never has to be authored a second time from this end. Only `'built-in'`
-  counts — `'slot'` and `'related'` never produce a line. A user that is this member's own parent,
+  and `'arranged'` count — `'slot'` and `'related'` never produce a line. A user that is this member's own parent,
   the page's own whole, the member itself, or any other member of the same family page is excluded:
   that edge is the family tree already, not a second user. One user shows as `Also used by X
   (role)` (role omitted when empty); two or three as `Also used by X, Y and Z`, with no roles —
@@ -1007,7 +1129,7 @@ token, pick the layout by its shape:
 | Token shape | Layout | Example |
 |---|---|---|
 | Small, self-contained preview (shadow, control height, a single colour) | `TokenGrid` of `TokenTile`s: equal tiles in as many columns as fit | Shadow, ControlHeights |
-| Narrow sample with a long note (icon size) | `TokenRow` with `notePlacement="right"`: one line per token | IconSizes |
+| Narrow sample with a long note (icon size) | `TokenRow` with `notePlacement="right"`: one line per token, its columns together | IconSizes |
 | Several kinds of token on one page | `tokenSections`: one titled card per kind | Colors (semantic vs palette) |
 | A scale with families (type) | `tokenSections` with `tokenColumns: 2` or `3`, one section per family | Typography (label, body, emphasis…) |
 | A duration/easing or spring value | `MotionSpecimen` next to the token's value | Motion (duration, easing, spring) |
@@ -1160,7 +1282,26 @@ token, pick the layout by its shape:
     <View style={{ width: 56, height: 36, borderRadius: 8, backgroundColor: DS_COLOR.accent }} />
   </TokenRow>
   ```
-  `TokenTile` and `TokenRow` both take an `action` slot after their note for it.
+  `TokenTile` and `TokenRow` both take an `action` slot after their note for it. The link takes its text
+  line's height in the layout, so it sits one `CATALOG_SPACE.xs` (4px, the step a tile already puts
+  between its own lines) under the note instead of a control-sized box away; its tap target is still
+  44px tall.
+- **`TokenRow` with `notePlacement="right"`** lays a row out compactly: the sample (sample and name
+  together, in one shared column per `TokenRowGroup`), then the note a normal `CATALOG_SPACE.lg` (16px)
+  after it, then the action right after the note. Details follows the text rather than being
+  right-aligned across the card: right-aligning it stranded it hundreds of pixels from the note it
+  belongs to. The row wraps when the card is narrow (the note drops under the sample), and the notes of
+  a stack still line up, because the sample column is shared. A long note stays beside its sample and
+  wraps its own text, at most 60 characters wide; Details follows it.
+- **A grid of transitions** is a `TokenGrid` of `TokenTile`s with a `MotionSpecimen kind="transition"` as
+  each tile's preview (the starter kit's Motion page does exactly this), with no component of its own.
+  Tiles fill their column and the specimen's stage stretches to the tile, up to 480px wide
+  (`TRANSITION_STAGE_MAX_WIDTH`); standing alone in a row or cell it stays 200px, whatever its caption or notes say (they wrap inside the stage). A `move`, `slide`
+  or `push` leaves by the stage's real width. A `TokenGrid` always fills its row: as many equal tiles
+  as keep `minTileWidth` (and `maxColumns`), added as the container widens. Don't build a grid of
+  fixed-width cells in a wrapping row; `doctor --render` reports `grid-unused-width` for it (it looks
+  for space left empty at the right of the first row, so a `row-reverse`, right-to-left, `space-between`
+  or centred row is not reported).
 
 ### Documenting components on a token page (`documents`)
 
@@ -1469,7 +1610,7 @@ Button
 
 - `--json` prints the same report as stable, versioned data: `{ version: 1, summary: { errors, warnings, hints?, components, withExamples, unboundExamples }, update: null, issues: [{ id, severity, page?, file?, line?, message, fix }] }`. `update` is always `null` in this release (filled in starting 0.4's update check); `file` is always relative to the project root. `line` is populated for a `page-parse-error` found by typechecking a page file (see below), and always `undefined` for every other issue id — threading a real position through every rule is future work.
 - `--ci` exits 1 only when an error was found — a warning or a hint alone never fails CI, and `--ci` never makes a network call.
-- `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code. A `hint` (below) is never promoted. `doctor.handBuiltTokenPages: ['Radius']` lists pages (by id: the file name without `.catalog.tsx`, or the explicit `id`) that draw their own value tiles on purpose, so `token-page-hand-built` leaves them alone.
+- `doctor.strict: true` in `ds-viewer.config.ts` promotes every warning to an error, for both the summary counts and `--ci`'s exit code. A `hint` (below) is never promoted. `doctor.handBuiltTokenPages: ['Radius']` lists pages (by id: the file name without `.catalog.tsx`, or the explicit `id`) that draw their own value tiles on purpose, so `token-page-hand-built` leaves them alone. `doctor.placement: true` turns on `page-placement` (below); it needs `partGroups` and is off by default.
 - A page whose layout data (`specimenSize`, `group`, grid `rows`/`columns`, list items' `key`/`name`/`props`/`group`, `propNotes` keys) isn't a literal — written as something other than a literal value, array, object, or a same-file `const` reference — gets one "page not statically checkable" warning. A page file that fails to parse *or typecheck* is `page-parse-error` instead: every page file is also run through the TypeScript type checker (the same way a component file already is), so a genuine syntax or type error in a page is reported with its line.
 - Three further rules are conservative source-backed *suggestions*, warnings by default
   (the existing `doctor.strict` option still promotes them), never authoritative over what a page authors:
@@ -1506,10 +1647,38 @@ Button
   - `part-own-page` — a standalone page for a component that exactly one other page declares in
     `composedOf` as `relationship: 'built-in'`, and that page doesn't list it as a member. Fold it
     into that page's family, or record why it isn't part of it with `standalone`. A component built
-    into two or more pages is exempt, and `'slot'`/`'related'` entries never count. Pages in a pattern
+    into two or more pages is exempt, and so is a style page (`pageKind: 'style'`); `'slot'`/`'related'`/`'arranged'`
+    entries never count (an arranged component is separate by design). Pages in a pattern
     group (example screens built from components) never count as the whole: by default the group
     named `Patterns`; set `patternGroups` in `ds-viewer.config.ts` to name your own (e.g.
     `patternGroups: ['Screens']`).
+  - `page-placement` — off by default; set `doctor: { placement: true }` (and `partGroups`) to turn
+    it on. A component is one unit even when built from other components; a pattern arranges
+    separate components apart from each other in a region. Code can't reliably tell the two apart,
+    so the check reads only what you declared: a `composedOf` entry with `relationship: 'arranged'`
+    (see `composedOf`), on the page or on any of its members. A page in a part group with an
+    `arranged` entry naming a catalogued component is a pattern: move it to the first
+    `patternGroups` entry. A page in a pattern group whose `composedOf` was read in full and has no
+    `arranged` entry (only `built-in`, `slot`, `related`, or nothing) is a component: move it to the
+    first part group that isn't also a pattern or screen group (so `partGroups` may list patterns
+    and screens for numbering, and this check still knows which group means "component"). An
+    `arranged` entry may name one of the page's own members (a section that lays out its own rows),
+    and a component another page lists in `documents` (an icon on a token page) counts as catalogued.
+    If any unit's `composedOf` isn't literal, nothing is said. Rendering
+    another component in JSX never decides placement; the message may name it as context. A group
+    page (`members`, no shared whole) whose members disagree names which members are which and
+    recommends moving by the majority or splitting. Catalogued: a component on a page in a part
+    group, or one listed in a page's `documents`. Not counted: a style or token page (including any
+    page with `tokenGallery: true`, which is also never checked itself), a `navigation: 'reference'`
+    page, a documentation-only member or one without a component (no area of its own), and any name
+    that isn't catalogued. A page that declares an `arranged` entry is never told it arranges
+    nothing, even when that entry names something the check can't see. Pages in `screenGroups` are
+    exempt. The first part group that is not a pattern or screen group is where "move it to a
+    component group" points, so list your component group first; `ds-viewer` warns when
+    `doctor.placement` is on and no such group exists.
+  - `single-child-parent` — a page that exactly one other page names as its `sidebarParent`. The
+    sidebar shows the child flat beside the parent, so the nesting adds nothing: nest more pages
+    under the parent, or drop `sidebarParent`.
   - `nothing-to-show` — a page with no variants, states, `render` or comparison and no token
     content (`previewWidths` alone doesn't count; it only sizes `render`). A family or group page
     (`members`) is flagged only when the page and every member have none; one member with a
@@ -1638,6 +1807,33 @@ and adds what only a real render shows:
   prop that was never wired up. The fingerprint reads each specimen's whole subtree (including a
   PhoneFrame's child document and a field's value) but not the caption carrying the variant's own
   name, so two examples differing only in colour are not reported.
+- `grid-unused-width` (warning): a wrapping row of equal, fixed-width tiles whose full rows leave
+  at least 20% of the row empty while more tiles wrap onto further rows: `flex-wrap` cells given a
+  `width: 220` of their own, which strand a gap at the end of every row. Fix it by putting the tiles
+  in a `TokenGrid` (they fill each row, and `minTileWidth` sets the narrowest). To keep false
+  positives low it skips single-row content, rows that hold one tile, containers narrower than 480px,
+  cells under 120×40px (chips and pills), cells of different widths, cells that grow (`flex-grow`),
+  and anything inside a scroller. A `TokenGrid` never trips it, whatever its `maxColumns`.
+- `sections-in-one-box` (warning): a token page's parts drawn into one box instead of the token-page
+  layout, where the banner and the pills sit at page level and every section has its own box with its
+  title and description outside. It reports, once per box: an `Inventory`'s filter chips inside a box; a
+  banner inside a box that holds inventory groups; two or more inventory groups in one box; and, on a
+  token gallery (`tokenGallery` with a `render`), two or more titled groups (`VariantGroup`) in the
+  gallery's one box. Fix it by starting the overview page with the `Inventory` (no wrapper), or by giving
+  a gallery `tokenSections: [{ title, desc, render }]`, one entry per group. It reads the viewer's own
+  markers, not styles, so a look-alike box of your own is not reported; a box with a single group, every
+  component page's Examples card and the thumbnails are left alone.
+- `anatomy-pin-crowded` (warning): measures every `AnatomyPin` in an anatomy picture, whether it is in
+  the `pins` lane or placed by hand in the picture's own layout. It reports two pins that overlap or
+  touch (their ↗ badges included, under 2px apart); a hand-placed pin that overlaps or touches the
+  picture's other content (text, measured by its glyphs; a button, input or image, including a
+  react-native `Pressable`'s whole tappable area and an `Image`; a bracket marked
+  `testID="anatomy-bracket"`, or an unmarked hand-drawn one, which is any empty element with a border
+  or a fill); and, in the lane, a pin or bracket closer than 12px to the specimen or a pin on or
+  within 8px of a bracket it shares a height with. A pin in a gutter beside its content is not
+  reported. The viewer spreads close lane pins and keeps the lane 12px off the specimen, so for lane
+  pins this reports what is left; for hand-placed pins it is the only check, so keep them 4px apart
+  and 8px from content. Prefer `AnatomySpecimen`'s `pins` (`right: 0`, brackets at `left: 0`).
 - `specimen-clipped` (warning): an example in a list card painting past the left or right of its
   cell, where it is cut off rather than contained. Content the specimen holds itself is not
   reported — anything inside something that scrolls (`auto`/`scroll`, so the reader can reach it)

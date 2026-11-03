@@ -602,6 +602,20 @@ test('missing-composition-suggestion only suggests a real catalog component or p
   assert.deepEqual(viaPage.map((i) => /renders "(\w+)"/.exec(i.message)?.[1]), ['Icon']);
 });
 
+test('missing-composition-suggestion never suggests a style page (pageKind: \'style\') as a part, by its page id or its component', () => {
+  const widget = component({ composedOfCandidates: [{ component: 'ChipLook', file: 'x/Widget.tsx', line: 12 }, { component: 'Spinner', file: 'x/Widget.tsx', line: 20 }] });
+  const pages = [
+    page({ component: 'Widget' }),
+    page({ id: 'ChipLook', file: '/x/ChipLook.catalog.tsx', pageKind: 'style' }),
+    page({ id: 'SpinnerStyle', component: 'Spinner', file: '/x/Spinner.catalog.tsx', pageKind: 'style' }),
+  ];
+  const found = collectIssues(pages, [widget, component({ name: 'Spinner', file: '/x/Spinner.tsx' })]).filter((i) => i.id === 'missing-composition-suggestion');
+  assert.deepEqual(found, []);
+  // Control: the same page without pageKind is suggested.
+  const control = collectIssues([page({ component: 'Widget' }), page({ id: 'ChipLook', file: '/x/ChipLook.catalog.tsx' })], [widget]).filter((i) => i.id === 'missing-composition-suggestion');
+  assert.equal(control.length, 1);
+});
+
 test('missing-composition-suggestion reports each component once per page, at its first call site', () => {
   const widget = component({ composedOfCandidates: [{ component: 'Button', file: 'x/Widget.tsx', line: 30 }, { component: 'Button', file: 'x/Widget.tsx', line: 31 }] });
   const issues = collectIssues([page({ component: 'Widget' })], [widget, component({ name: 'Button', file: '/x/Button.tsx' })]).filter((i) => i.id === 'missing-composition-suggestion');
@@ -1696,4 +1710,236 @@ test('the spread pattern { ...tokenScale(kind, F), sections } is checkable, and 
     assert.equal(result.issues.some((i) => i.id.startsWith('token-definition')), false, JSON.stringify(result.issues));
     assert.deepEqual(result.summary.runtimeOnlyTokenSections, [{ page: 'tokens-radius', sections: ['tokenScale'] }]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('part-own-page never asks for a style page to become a part, even when one page names it built-in', () => {
+  const run = (widgetSource: string) => {
+    const dir = makeProject(widgetSource);
+    mkdirSync(path.join(dir, 'pages'), { recursive: true });
+    writeFileSync(path.join(dir, 'pages', 'Screen.catalog.tsx'), `
+      import { defineCatalogPage } from '@krapwoo/ds-viewer';
+      export default defineCatalogPage({ id: 'Screen', title: 'Screen', group: 'Screens', description: 'x', render: () => null,
+        composedOf: [{ component: 'Widget', relationship: 'built-in' }] });
+    `);
+    const found = runDoctor(configFor(dir, { pages: ['pages/*.catalog.tsx'] })).issues.filter((i) => i.id === 'part-own-page').length;
+    rmSync(dir, { recursive: true, force: true });
+    return found;
+  };
+  assert.equal(run(FULLY_COVERED_PAGE), 1, 'control: a plain page named built-in by one page is asked to become a part');
+  assert.equal(run(FULLY_COVERED_PAGE.replace("group: 'Components',", "group: 'Components', pageKind: 'style',")), 0, 'a style page is applied, never a part');
+});
+
+// --- page-placement and single-child-parent ---
+
+const PART_GROUPS = ['Components'];
+const placement = (pages: StaticPage[], components: ComponentRecord[], options: { partGroups?: string[]; patternGroups?: string[]; screenGroups?: string[]; placement?: boolean } = {}) =>
+  collectIssues(pages, components, { partGroups: PART_GROUPS, placement: true, ...options }).filter((i) => i.id === 'page-placement');
+const renders = (name: string, ...targets: string[]) => component({ name, composedOfCandidates: targets.map((t, i) => ({ component: t, file: `src/${name}.tsx`, line: 10 + i })) });
+const part = (name: string, extra: Partial<StaticPage> = {}) => page({ file: `/x/${name}.catalog.tsx`, id: name, component: name, group: 'Components', ...extra });
+const arranges = (...targets: string[]) => targets.map((component) => ({ component, relationship: 'arranged' }));
+
+test('page-placement: a part-group page declaring an arranged component is a pattern', () => {
+  const issues = placement([part('Transcript', { composedOf: arranges('Row', 'Divider') }), part('Row'), part('Divider')], []);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].page, 'Transcript');
+  assert.equal(issues[0].severity, 'warning');
+  assert.match(issues[0].message, /arranges `Row`, `Divider` \(composedOf Row; composedOf Divider\): a pattern/);
+  assert.match(issues[0].fix, /Move it to "Patterns"/);
+});
+
+test('page-placement: the first patternGroup is the target', () => {
+  const issues = placement([part('Transcript', { composedOf: arranges('Row') }), part('Row')], [], { patternGroups: ['Recipes', 'Patterns'] });
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].fix, /"Recipes"/);
+});
+
+test('page-placement: built-in, slot and related entries and rendered JSX never make a part-group page a pattern', () => {
+  for (const relationship of ['built-in', 'slot', 'related']) {
+    const button = part('Button', { composedOf: [{ component: 'Loading', relationship }] });
+    assert.equal(placement([button, part('Loading')], [renders('Button', 'Loading')]).length, 0, relationship);
+  }
+  assert.equal(placement([part('Card'), part('Avatar')], [renders('Card', 'Avatar'), component({ name: 'Avatar' })]).length, 0, 'JSX alone');
+});
+
+test('page-placement: a pattern-group page with no arranged entry is a component, and names rendered JSX as context only', () => {
+  const pages = [part('Avatar', { group: 'Patterns', composedOf: [{ component: 'Loading', relationship: 'built-in' }] }), part('Loading')];
+  const issues = placement(pages, [renders('Avatar', 'Loading'), component({ name: 'Loading' })]);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].page, 'Avatar');
+  assert.match(issues[0].message, /built from parts and arranges nothing.*: a component/);
+  assert.match(issues[0].message, /Its source: renders Loading at src\/Avatar\.tsx:10\./);
+  assert.match(issues[0].fix, /Move it to "Components"/);
+  assert.equal(placement([part('Avatar', { group: 'Patterns' })], [component({ name: 'Avatar' })]).length, 1, 'no composedOf at all is read as nothing arranged');
+  assert.equal(placement([part('Avatar', { group: 'Patterns' })], []).length, 1, 'the component source being missing does not matter: composedOf is the evidence');
+});
+
+test('page-placement: a pattern-group page that arranges something stays', () => {
+  const pages = [part('Transcript', { group: 'Patterns', composedOf: arranges('Row') }), part('Row')];
+  assert.equal(placement(pages, []).length, 0);
+});
+
+test('page-placement: runs only with doctor.placement, and needs partGroups', () => {
+  const pages = [part('Transcript', { composedOf: arranges('Row') }), part('Row')];
+  assert.equal(collectIssues(pages, [], { partGroups: PART_GROUPS }).filter((i) => i.id === 'page-placement').length, 0, 'off by default');
+  assert.equal(collectIssues(pages, [], { partGroups: PART_GROUPS, placement: false }).filter((i) => i.id === 'page-placement').length, 0);
+  assert.equal(collectIssues(pages, [], { placement: true }).filter((i) => i.id === 'page-placement').length, 0, 'no partGroups');
+  assert.equal(collectIssues([part('Avatar', { group: 'Patterns' })], [], { placement: true }).filter((i) => i.id === 'page-placement').length, 0, 'without partGroups a pattern page is not called a component');
+  assert.equal(placement(pages, []).length, 1, 'control');
+});
+
+test('page-placement: a screens group is exempt', () => {
+  const records: ComponentRecord[] = [];
+  const inScreens = [part('Transcript', { group: 'screens', composedOf: arranges('Row') }), part('Row')];
+  assert.equal(placement(inScreens, records).length, 0);
+  const customScreens = [part('Transcript', { composedOf: arranges('Row') }), part('Row')];
+  assert.equal(placement(customScreens, records, { screenGroups: ['Components'] }).length, 0, 'a configured screen group wins over a part group');
+  assert.equal(placement([part('Row', { group: 'Screens' })], records, { patternGroups: ['Screens'] }).length, 0);
+});
+
+test('page-placement: style pages, token pages, own members, documentation-only members and uncatalogued names never count', () => {
+  const host = (extra: Partial<StaticPage> = {}) => part('Transcript', { composedOf: arranges('Row'), ...extra });
+  assert.equal(placement([host(), part('Row', { pageKind: 'style' })], []).length, 0, 'a style page');
+  assert.equal(placement([host(), part('Row', { hasTokenDefinition: true })], []).length, 0, 'a token page');
+  assert.equal(placement([host()], []).length, 0, 'not catalogued: no page for Row');
+  assert.equal(placement([host(), part('Row', { group: 'Elsewhere' })], []).length, 0, 'catalogued only in a part group');
+  assert.equal(placement([host(), part('Row', { navigation: 'reference' })], []).length, 0, 'a reference page');
+  // A family built from its own part is not a pattern (an own member declared `arranged` does count: see below).
+  const family = page({ id: 'Card', group: 'Components', hasMembers: true, hasWhole: true, composedOf: [{ component: 'Avatar', relationship: 'built-in' }], members: [
+    { id: 'Card', component: 'Card', hasWhenToUse: false, hasA11y: false, hasExamples: true },
+    { id: 'Avatar', component: 'Avatar', hasWhenToUse: false, hasA11y: false, hasExamples: true },
+  ] });
+  assert.equal(placement([family], []).length, 0, 'own members');
+  // A documentation-only member (an OS-drawn menu) is not a unit and not catalogued.
+  const withMenu = page({ id: 'Avatars', group: 'Components', hasMembers: true, members: [
+    { id: 'Avatar', component: 'Avatar', hasWhenToUse: false, hasA11y: false, hasExamples: true },
+    { id: 'Menu', component: 'Menu', fidelity: 'documentation-only', composedOf: arranges('Button'), hasWhenToUse: false, hasA11y: false, hasExamples: false },
+  ] });
+  assert.equal(placement([withMenu, part('Button')], []).length, 0);
+});
+
+test('page-placement: says nothing when composition cannot be read', () => {
+  const pattern = part('Avatar', { group: 'Patterns', hasComposedOf: true });
+  assert.equal(placement([pattern, part('Card')], []).length, 0, 'composedOf not literal');
+  assert.equal(placement([page({ id: 'Home', group: 'Patterns' })], []).length, 0, 'no component to read');
+  assert.equal(placement([part('Transcript', { composedOf: arranges('Row'), checkable: false }), part('Row')], []).length, 0, 'page not checkable');
+  const unreadableMember = page({ id: 'Avatars', group: 'Patterns', hasMembers: true, members: [
+    { id: 'Avatar', component: 'Avatar', hasWhenToUse: false, hasA11y: false, hasExamples: true },
+    { id: 'Badge', component: 'Badge', hasComposedOf: true, hasWhenToUse: false, hasA11y: false, hasExamples: true },
+  ] });
+  assert.equal(placement([unreadableMember, part('Card')], []).length, 0, 'one member unreadable: never a partial read');
+});
+
+test('page-placement: a group page whose members disagree names each and recommends by majority', () => {
+  const member = (id: string, composedOf?: { component: string; relationship: string }[]) => ({ id, component: id, composedOf, hasWhenToUse: false, hasA11y: false, hasExamples: true });
+  const group = (ids: string[]) => page({ id: 'Avatars', group: 'Components', hasMembers: true, members: ids.map((id) => member(id, id.startsWith('AvatarMenu') ? arranges('Button') : undefined)) });
+  const pages = (ids: string[]) => [group(ids), part('Button')];
+  const majority = placement(pages(['Avatar', 'BotAvatar', 'AvatarMenu']), []);
+  assert.equal(majority.length, 1);
+  assert.match(majority[0].message, /AvatarMenu \(composedOf Button\) arrange catalogued components/);
+  assert.match(majority[0].message, /Avatar, BotAvatar arrange none/);
+  assert.match(majority[0].fix, /keep the page in "Components" and move AvatarMenu to a page in "Patterns"/);
+  const tie = placement(pages(['Avatar', 'AvatarMenu']), []);
+  assert.match(tie[0].fix, /Split the page/);
+  const patternMajority = placement(pages(['Avatar', 'AvatarMenu', 'AvatarMenu2']), []);
+  assert.match(patternMajority[0].fix, /move the page to "Patterns" and put Avatar on a page in "Components"/);
+  assert.equal(placement(pages(['Avatar', 'BotAvatar']), []).length, 0, 'agreeing members are fine');
+});
+
+test('runDoctor reads doctor.placement from the config: opt-in, with partGroups', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ component: 'Widget', group: 'Components', description: 'x', render: () => null,
+      composedOf: [{ component: 'Gadget', role: 'Row', relationship: 'arranged' }] });
+  `);
+  mkdirSync(path.join(dir, 'pages'), { recursive: true });
+  writeFileSync(path.join(dir, 'pages', 'Gadget.catalog.tsx'), `
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ id: 'Gadget', title: 'Gadget', group: 'Components', description: 'x', render: () => null });
+  `);
+  try {
+    const run = (overrides: Partial<ResolvedConfig>) => runDoctor(configFor(dir, { pages: ['pages/*.catalog.tsx'], partGroups: ['Components'], ...overrides })).issues.filter((i) => i.id === 'page-placement');
+    assert.equal(run({}).length, 0, 'off by default');
+    assert.equal(run({ doctor: { strict: false, placement: false } }).length, 0);
+    const on = run({ doctor: { strict: false, placement: true } });
+    assert.equal(on.length, 1, JSON.stringify(on));
+    assert.equal(on[0].page, 'Widget');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('single-child-parent: a parent with one child warns, naming both; two children do not', () => {
+  const pages = (kids: string[]) => [part('Buttons'), ...kids.map((id) => part(id, { sidebarParent: 'Buttons' }))];
+  const one = collectIssues(pages(['PrimaryButton']), []).filter((i) => i.id === 'single-child-parent');
+  assert.equal(one.length, 1);
+  assert.equal(one[0].page, 'Buttons');
+  assert.equal(one[0].severity, 'warning');
+  assert.match(one[0].message, /`Buttons` has exactly one child, `PrimaryButton`/);
+  assert.match(one[0].fix, /Nest more pages under `Buttons`.*drop sidebarParent from `PrimaryButton`/);
+  assert.equal(collectIssues(pages(['PrimaryButton', 'GhostButton']), []).filter((i) => i.id === 'single-child-parent').length, 0);
+  const crossGroup = [part('Buttons'), part('PrimaryButton', { sidebarParent: 'Buttons', group: 'Other' })];
+  assert.equal(collectIssues(crossGroup, []).filter((i) => i.id === 'single-child-parent').length, 0, 'an invalid declaration is sidebar-parent-invalid, not this');
+});
+
+test('page-placement: a project whose partGroups also lists patterns and screens keeps that setting', () => {
+  const groups = { partGroups: ['Components', 'Patterns', 'Screens'] };
+  const transcript = page({ file: '/x/Transcript.catalog.tsx', id: 'Transcript', component: 'Transcript', group: 'Patterns', composedOf: arranges('Row') });
+  assert.deepEqual(placement([transcript, part('Row')], [], groups), [], 'a pattern that arranges is not told to move to Patterns');
+  const card = page({ file: '/x/Card.catalog.tsx', id: 'Card', component: 'Card', group: 'Patterns', composedOf: [{ component: 'Row', relationship: 'built-in' }] });
+  const [issue] = placement([card, part('Row')], [], groups);
+  assert.match(issue.fix, /Move it to "Components"/, 'the component target is the first part group that is not a pattern or screen group');
+});
+
+test('page-placement: a section that arranges its own member rows is a pattern', () => {
+  const section = page({
+    file: '/x/SkillSection.catalog.tsx', id: 'SkillSection', component: 'SkillSection', group: 'Patterns',
+    composedOf: arranges('SkillRow'),
+    members: [{ id: 'SkillRow', component: 'SkillRow', title: 'Skill row' }] as never,
+  });
+  assert.deepEqual(placement([section], []), [], 'its own member, declared arranged, counts');
+  const builtIn = page({
+    file: '/x/Button.catalog.tsx', id: 'Button', component: 'Button', group: 'Patterns',
+    composedOf: [{ component: 'ButtonIcon', relationship: 'built-in' }],
+    members: [{ id: 'ButtonIcon', component: 'ButtonIcon', title: 'Icon' }] as never,
+  });
+  assert.equal(placement([builtIn], []).length, 1, 'a family built from its own members is still a component');
+});
+
+test('page-placement: a component a page lists in documents (an icon on a token page) is catalogued', () => {
+  const icons = page({ file: '/x/Icons.catalog.tsx', id: 'Icons', group: 'Tokens', tokenSections: [] as never, documents: [{ component: 'Logo', title: 'Logo' }] });
+  const header = page({ file: '/x/Header.catalog.tsx', id: 'Header', component: 'Header', group: 'Patterns', composedOf: arranges('Logo') });
+  assert.deepEqual(placement([icons, header], []), []);
+});
+
+test('page-placement: a pattern page that declares arranged is never told it arranges nothing, whatever the entry names', () => {
+  const pattern = (name: string) => page({ file: `/x/${name}.catalog.tsx`, id: name, component: name, group: 'Patterns', composedOf: arranges('Undocumented') });
+  assert.deepEqual(placement([pattern('Screen')], []), [], 'an arranged entry naming something with no page');
+  const off = page({ file: '/x/Off.catalog.tsx', id: 'Off', component: 'Off', group: 'Patterns', composedOf: arranges('Row') });
+  assert.deepEqual(placement([off, part('Row', { group: 'Controls' })], []), [], 'naming a page outside the part groups');
+  const group = page({ id: 'Rows', group: 'Components', hasMembers: true, members: [
+    { id: 'A', component: 'A', composedOf: arranges('Undocumented'), hasWhenToUse: false, hasA11y: false, hasExamples: true },
+    { id: 'B', component: 'B', composedOf: arranges('Row'), hasWhenToUse: false, hasA11y: false, hasExamples: true },
+  ] });
+  const [issue] = placement([group, part('Row')], []);
+  assert.ok(issue === undefined || !/A arrange none|A, |, A/.test(issue.message), 'a member that declares arranged is not listed among those that arrange none');
+});
+
+test('page-placement: a page with no component that arranges catalogued components is checked too', () => {
+  const home = page({ file: '/x/Home.catalog.tsx', id: 'Home', group: 'Components', composedOf: arranges('Row') });
+  const [issue] = placement([home, part('Row')], []);
+  assert.equal(issue?.page, 'Home');
+  assert.match(issue.message, /arranges `Row`/);
+});
+
+test('page-placement: with no pattern group it never tells a page to move to one', () => {
+  assert.deepEqual(placement([part('Transcript', { composedOf: arranges('Row') }), part('Row')], [], { patternGroups: [] }), []);
+  const group = page({ id: 'Rows', group: 'Components', hasMembers: true, members: [
+    { id: 'A', component: 'A', composedOf: arranges('Row'), hasWhenToUse: false, hasA11y: false, hasExamples: true },
+    { id: 'B', component: 'B', hasWhenToUse: false, hasA11y: false, hasExamples: true },
+  ] });
+  assert.deepEqual(placement([group, part('Row')], [], { patternGroups: [] }), [], 'nor a group page split between members');
+});
+
+test('single-child-parent: pages whose group cannot be read are left out', () => {
+  const a = page({ file: '/x/A.catalog.tsx', id: 'A', group: undefined });
+  const b = page({ file: '/x/B.catalog.tsx', id: 'B', group: undefined, sidebarParent: 'A' });
+  assert.equal(collectIssues([a, b], []).filter((i) => i.id === 'single-child-parent').length, 0);
 });

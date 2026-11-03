@@ -22,6 +22,9 @@ import { TokenSections } from './TokenLayouts';
 import { TokenDefinitionBlock } from './StructuredTokenPage';
 import { MATRIX_LAYOUT, PREVIEW_CARD_CHROME, blockMinWidth, choosePlacement, presentationBlocks, type PlacementBlock, type PresentationBlock } from './comparison';
 import type { CatalogMember, PreviewWidths, SectionDef, SpecimenSurfaceKind } from './types';
+import { startsWithInventory } from './Inventory';
+import { inventoryLayoutContext } from './inventoryLayoutContext';
+import { styleTitleRow } from './pageKindHead';
 
 // Matches a quoted-string-literal union type, e.g. "'primary' | 'secondary' | 'tertiary'" — anything
 // else (string, boolean, IconName, () => void, …) has no fixed enum to sweep and is skipped.
@@ -106,6 +109,13 @@ export function PagerButton<TId extends string>({
   );
 }
 
+const SectionsLayout = inventoryLayoutContext.Provider;
+
+/** Marks the box a page's own full-width preview is drawn in (`data-testid`), which `doctor --render` reads;
+ *  a token gallery's own box (`tokenGallery`) has its own marker, as it is where a token page's sections belong. */
+export const PAGE_PREVIEW_BOX_ID = 'page-preview-box';
+export const TOKEN_GALLERY_BOX_ID = 'token-gallery-box';
+
 /** Caption above each frame when a preview shows more than one width. */
 function frameLabel(width: number): string {
   if (width >= 402) return `${width} · Default phone`;
@@ -118,12 +128,25 @@ function frameLabel(width: number): string {
  *  is omitted for token galleries, which keep their current, unstaged presentation. `layout: 'table'`
  *  (only ever set for a numeric-width preview — see `presentationBlocks`) renders `TablePreview`
  *  instead; omitted/`'frames'` keeps this exact, unchanged presentation. */
-function Preview({ render, widths, surface, layout }: { render: () => React.ReactNode; widths: PreviewWidths; surface?: SpecimenSurfaceKind; layout?: 'table' }) {
+function Preview({ render, widths, surface, layout, caption }: { render: () => React.ReactNode; widths: PreviewWidths; surface?: SpecimenSurfaceKind; layout?: 'table'; caption?: string }) {
   // Token galleries pass no surface: their card stays white.
   const kind = surface ?? 'transparent';
-  if (widths === 'full') return <SpecimenSurface surface={kind} style={styles.previewCard}>{render()}</SpecimenSurface>;
-  if (layout === 'table') return <TablePreview render={render} widths={widths} surface={kind} />;
+  // A category overview (its content is an `Inventory`, after any banners) is drawn like a token
+  // page whatever its `previewWidths`: its banner, chips and each group's section at page level,
+  // every group in its own box. An inventory is not a phone specimen, so it never gets phone frames.
+  const content = render();
+  if (startsWithInventory(content)) {
+    // An overview's sections carry their own titles, so the block's caption ("Preview") is not drawn.
+    return <SectionsLayout value="sections"><View>{content}</View></SectionsLayout>;
+  }
+  const label = caption ? <Text style={styles.blockLabel}>{caption}</Text> : null;
+  if (widths === 'full') {
+    return <>{label}<SpecimenSurface surface={kind} testID={surface === undefined ? TOKEN_GALLERY_BOX_ID : PAGE_PREVIEW_BOX_ID} style={styles.previewCard}>{content}</SpecimenSurface></>;
+  }
+  if (layout === 'table') return <>{label}<TablePreview render={render} widths={widths} surface={kind} /></>;
   return (
+    <>
+    {label}
     <SpecimenSurface surface={kind} style={styles.previewCard}>
       <View style={styles.frames}>
         {widths.map((width, i) => (
@@ -139,6 +162,7 @@ function Preview({ render, widths, surface, layout }: { render: () => React.Reac
         ))}
       </View>
     </SpecimenSurface>
+    </>
   );
 }
 
@@ -176,9 +200,11 @@ function TablePreview({ render, widths, surface }: { render: () => React.ReactNo
 }
 
 function BlockContent<TId extends string>({
-  block, def, surface, focusSectionId, focusNonce,
+  block, def, surface, focusSectionId, focusNonce, caption,
 }: {
   block: PresentationBlock;
+  /** The block's caption. `Preview` draws its own, so it can leave it out for an overview. */
+  caption?: string;
   def: SectionDef<TId>;
   surface: SpecimenSurfaceKind;
   /** #64 B5: a tokenDefinition page's own section to scroll into view on arrival (a section-alias
@@ -201,7 +227,7 @@ function BlockContent<TId extends string>({
       // preview from ever reaching the table layout, regardless of `def.previewLayout`.
       return def.render ? (
         <SpecimenAddressProvider address={{ pageId: def.id, slot: 'preview', itemKey: 'preview' }}>
-          <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} layout={def.previewLayout === 'table' ? 'table' : undefined} />
+          <Preview render={def.render} widths={block.widths} surface={def.tokenGallery ? undefined : surface} layout={def.previewLayout === 'table' ? 'table' : undefined} caption={caption} />
         </SpecimenAddressProvider>
       ) : null;
     case 'tokenSections': {
@@ -334,8 +360,16 @@ export function Blocks<TId extends string>({
           {/* A3: `axis` now reaches grid/grouped blocks too (not only list), so any block kind
               carrying one shows its (already informative) title on a family page, which otherwise
               hides every generic block label via `showLabels={false}`. */}
-          {(showLabels && block.title) || ('axis' in block && block.axis) ? <Text style={styles.blockLabel}>{('axis' in block && block.axis) || block.title}</Text> : null}
-          <BlockContent block={block} def={def} surface={surface} focusSectionId={focusSectionId} focusNonce={focusNonce} />
+          {/* A preview's caption is drawn by `Preview` itself, which knows whether the page is an overview. */}
+          {(() => {
+            const caption = (showLabels && block.title) || ('axis' in block && block.axis) || undefined;
+            return (
+              <>
+                {caption && block.kind !== 'preview' ? <Text style={styles.blockLabel}>{caption}</Text> : null}
+                <BlockContent block={block} def={def} surface={surface} focusSectionId={focusSectionId} focusNonce={focusNonce} caption={block.kind === 'preview' ? caption : undefined} />
+              </>
+            );
+          })()}
         </View>
       ))}
     </View>
@@ -418,6 +452,12 @@ export function SectionBlock<TId extends string>({
   useLayoutEffect(() => {
     if (documentsFocused && rootRef.current) scrollAndFocusMember(rootRef.current);
   }, [documentsFocused, focusMemberId, focusMemberNonce]);
+  const headingNode = (
+    // The focus target is the heading itself, so assistive tech announces its role and level.
+    <View ref={headingRef} tabIndex={-1} role="heading" {...headingLevelProps} style={styles.headingTarget}>
+      <Text style={styles.title}>{def.title ?? def.id}</Text>
+    </View>
+  );
   return (
     <PartNumbersContext.Provider value={partNumbers}>
     <DocumentedFocusContext.Provider value={documentedFocus}>
@@ -428,10 +468,9 @@ export function SectionBlock<TId extends string>({
       {banner}
       <View style={styles.titlebar}>
         <View style={styles.titleText}>
-          {/* The focus target is the heading itself, so assistive tech announces its role and level. */}
-          <View ref={headingRef} tabIndex={-1} role="heading" {...headingLevelProps} style={styles.headingTarget}>
-            <Text style={styles.title}>{def.title ?? def.id}</Text>
-          </View>
+          {def.pageKind === 'style' ? (
+            styleTitleRow(headingNode, def.styleNote)
+          ) : headingNode}
           {def.osComponent && (
             <View style={styles.osBadge}>
               <Text style={styles.osBadgeText}>{def.osComponent === 'full' ? 'OS component' : 'Partly OS component'}</Text>

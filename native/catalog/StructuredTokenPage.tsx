@@ -647,19 +647,23 @@ export function StructuredTokenPage({ definition }: { definition: TokenDefinitio
   }, []);
   const jumpItems = tokenJumpItems(definition, scrollToSection);
   return (
-    <View style={styles.pageStack}>
+    <View>
+      {/* Outside the section stack, so the banner's own space below is the whole gap to the jump row,
+          as on a real token page, instead of adding to the stack's. */}
       <NoTokensNote definition={definition} />
       {jumpItems ? <JumpRow items={jumpItems} /> : null}
-      {sections.map((section) => {
-        const key = section.id ?? section.title;
-        return (
-          <View key={key} ref={(node: unknown) => { if (node) nodesRef.current.set(key, node); else nodesRef.current.delete(key); }}>
-            <Text style={styles.pageSectionTitle}>{section.title}</Text>
-            {section.desc ? <Text style={styles.pageSectionDesc}>{section.desc}</Text> : null}
-            <View style={styles.pageSectionBody}>{section.render()}</View>
-          </View>
-        );
-      })}
+      <View style={[styles.pageStack, jumpItems ? styles.afterJumpRow : null]}>
+        {sections.map((section) => {
+          const key = section.id ?? section.title;
+          return (
+            <View key={key} ref={(node: unknown) => { if (node) nodesRef.current.set(key, node); else nodesRef.current.delete(key); }}>
+              <Text style={styles.pageSectionTitle}>{section.title}</Text>
+              {section.desc ? <Text style={styles.pageSectionDesc}>{section.desc}</Text> : null}
+              <View style={styles.pageSectionBody}>{section.render()}</View>
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -728,6 +732,9 @@ const styles = StyleSheet.create({
   issuesText: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.danger },
 
   pageStack: { gap: CATALOG_SPACE.xl },
+  // The stack's gap used to sit between the jump row and the first section as well; the row now lives
+  // outside the stack, so the same step is added back here.
+  afterJumpRow: { marginTop: CATALOG_SPACE.xl },
   pageSectionTitle: { ...CATALOG_TEXT.label, color: CATALOG_COLOR.text },
   pageSectionDesc: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, marginTop: CATALOG_SPACE.xs },
   pageSectionBody: { marginTop: CATALOG_SPACE.md },

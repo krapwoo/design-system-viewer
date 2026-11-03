@@ -98,18 +98,22 @@ export type SpecimenSurfaceKind = 'auto' | 'neutral' | 'white' | 'dark' | 'trans
 /** One real component this page's component is built from or composed with — rendered as a
  *  "Composition" subsection in Quick reference. `relationship` is `'built-in'` for a component
  *  always present (e.g. Toast is built from a Banner internally), `'slot'` for an optional
- *  caller-supplied child (e.g. a `leadingIcon` prop), or `'related'` for a component commonly used
- *  alongside this one without either containing the other. In development, `buildCatalogSections`
+ *  caller-supplied child (e.g. a `leadingIcon` prop), `'arranged'` for a separate component this
+ *  one lays out alongside others in its region (a transcript's rows, a composer's controls — what
+ *  makes a page a pattern rather than a component), or `'related'` for a component commonly used
+ *  alongside this one without either containing the other. A component built from other
+ *  components (a Button with its spinner) is still one component: `'built-in'`, not `'arranged'`.
+ *  In development, `buildCatalogSections`
  *  warns in the browser console when `component` isn't a known component or page id. `doctor`
  *  doesn't check it, and it never fails a build. */
 export interface ComposedOfEntry {
   component: string;
   role: string;
-  relationship: 'built-in' | 'slot' | 'related';
+  relationship: 'built-in' | 'slot' | 'arranged' | 'related';
 }
 
 /** Derived (never authored) — the inverse of every other page's or member's own `composedOf`
- *  entry whose `relationship` is `'built-in'`: if something else's `composedOf` names this member,
+ *  entry whose `relationship` is `'built-in'` or `'arranged'`: if something else's `composedOf` names this member,
  *  that something is "also used by" it. The forward direction (that other `composedOf`) renders as
  *  "Uses X" (`UsesLine`); this is the same relationship read from the other end. Computed once, by
  *  `buildCatalogSections`, from data every author already declared from the other end — there is
@@ -170,6 +174,12 @@ export interface SectionDef<TId extends string = string> {
    *  `'full'` shows an "OS component" badge under the title, `'partial'` "Partly OS component".
    *  Say in `description` which part is native and how it differs on web. */
   osComponent?: 'full' | 'partial';
+  /** `'style'` marks a page that documents a style (a SwiftUI `ButtonStyle`, `ViewModifier` or
+   *  `TextRenderer`, a shared surface or background treatment) rather than a view you place: a small
+   *  "Style" badge sits next to the title with a plain explanation of the difference. */
+  pageKind?: 'style';
+  /** Replaces the default explanation shown with a `pageKind: 'style'` badge. */
+  styleNote?: string;
   description: string;
   path: string;
   /** One sentence disambiguating this component from its closest look-alike(s) — the deciding
@@ -323,7 +333,7 @@ export interface SectionDef<TId extends string = string> {
    *  when that name differs from the page's own id. */
   component?: string;
   /** #60: every other registered page's or member's own `composedOf` entry naming this page,
-   *  tagged `'built-in'` — the same derived "also used by" relationship `FamilyDef.members[]`
+   *  tagged `'built-in'` or `'arranged'` — the same derived "also used by" relationship `FamilyDef.members[]`
    *  already carries, now also surfaced for an ordinary (non-family) page. Always populated by
    *  `buildCatalogSections` (`[]` when nothing else uses this page), the same convention
    *  `AlsoUsedByEntry`'s own doc comment already establishes for a family member. Rendered by

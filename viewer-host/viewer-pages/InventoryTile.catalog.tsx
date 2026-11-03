@@ -12,11 +12,13 @@ export default defineCatalogPage({
   hide: { props: true },
   propNotes: {
     target: "The page id, or a member's id, the tile stands for (a leading `#` is allowed). The link text is that page's or member's own title, never an id; a member with no title shows a readable name, and a target that resolves to nothing shows it as text.",
+    tags: "Named sets the tile belongs to (`['Draws its own shape']`). An enclosing `Inventory` turns each into a filter chip with a count; the tile itself draws nothing for them.",
     specimen: "The node drawn on the specimen stage. Leave it out for a page target and that page's own first specimen is drawn, scaled to fit.",
   },
-  description: "One member of an inventory: its real specimen on a specimen stage, and under it its title as a link to its page. Flat: no card around the tile and none inside it. The title is resolved the way every other link in the catalog resolves one, so renaming a page renames the link.",
+  description: "One member of an inventory: its real specimen on a specimen stage, and under it its title as a link to its page. Flat: no card around the tile and none inside it. The title is resolved the way every other link in the catalog resolves one, so renaming a page renames the link. A tile whose page documents a style (`pageKind: 'style'`) also shows a small \"Style\" badge, and its link is named \"<title>, style\".",
   composedOf: [
     { component: 'SpecimenSurface', role: 'The stage the specimen sits on', relationship: 'built-in' },
+    { component: 'StyleBadge', role: 'The "Style" badge, when the tile\'s page documents a style', relationship: 'built-in' },
     { component: 'OverviewThumbnail', role: "A page's own first specimen, when none is given", relationship: 'built-in' },
   ],
   whenToUse: 'Inside an `InventoryGroup`, for each member of a category. For a single reference to a page inside running text, use a Composition or `relatedPages` entry instead.',

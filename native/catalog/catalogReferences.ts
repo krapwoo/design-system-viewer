@@ -170,7 +170,7 @@ export interface ReferenceNavigation<TId extends string = string> {
   /** What a card for `pageId` shows: the page's title and its first specimen (`source` is absent
    *  when the page has none, e.g. a token page). Optional: without it a Parts card falls back to
    *  the name it was declared with and an empty thumbnail frame. */
-  page?(pageId: TId): { title: string; source?: ThumbnailSource } | undefined;
+  page?(pageId: TId): { title: string; source?: ThumbnailSource; pageKind?: 'style' } | undefined;
 }
 
 /** `name`'s resolved activation — its real target address plus the activation handler — or

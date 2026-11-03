@@ -199,3 +199,31 @@ test('loadConfig reads usage as a path and rejects anything else', () => {
   }
   rmSync(dir, { recursive: true, force: true });
 });
+
+test('loadConfig reads screenGroups and rejects a value that is not a list of names', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-config-'));
+  const configPath = path.join(dir, 'ds-viewer.config.ts');
+  const write = (value: string) => writeFileSync(configPath, `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', components: [], tokens: [], screenGroups: ${value} } as any);\n`);
+  write("['Flows']");
+  assert.deepEqual(loadConfig(configPath).config.screenGroups, ['Flows']);
+  write("'Flows'");
+  const bad = loadConfig(configPath);
+  assert.equal(bad.config.screenGroups, undefined);
+  assert.deepEqual(bad.warnings, ['"screenGroups" must be an array of group names; using the default [\'Screens\'].']);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('loadConfig warns when doctor.placement is on with no component group, or is not a boolean', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-config-'));
+  const configPath = path.join(dir, 'ds-viewer.config.ts');
+  const write = (fields: string) => writeFileSync(configPath, `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', components: [], tokens: [], ${fields} } as any);\n`);
+  write("partGroups: ['Components', 'Patterns'], doctor: { placement: true }");
+  assert.deepEqual(loadConfig(configPath).warnings, [], 'a component group remains');
+  write("doctor: { placement: true }");
+  assert.match(loadConfig(configPath).warnings.join('\n'), /needs "partGroups" to name a component group/, 'no partGroups');
+  write("partGroups: ['Patterns', 'Screens'], doctor: { placement: true }");
+  assert.match(loadConfig(configPath).warnings.join('\n'), /needs "partGroups" to name a component group/, 'only pattern and screen groups');
+  write("partGroups: ['Components'], doctor: { placement: 'yes' }");
+  assert.match(loadConfig(configPath).warnings.join('\n'), /must be true or false/);
+  rmSync(dir, { recursive: true, force: true });
+});
