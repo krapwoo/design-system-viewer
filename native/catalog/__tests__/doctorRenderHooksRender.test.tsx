@@ -148,3 +148,15 @@ test('a numbered Pin is one anatomy-pin; the badge on a pin that opens a page is
     assert.equal(pins[1].querySelectorAll('[data-testid="anatomy-pin"]').length, 0, 'the badge inside is not a pin');
   } finally { cleanup(); }
 });
+
+test('an AnatomyPin placed by hand in a picture\'s own layout, with no AnatomySpecimen at all, is an anatomy-pin in the stage (what anatomy-pin-crowded measures)', () => {
+  const { container, cleanup } = mountAnatomy(
+    <div><span>Conversation transcript</span><AnatomyPin other="Chip" /><AnatomyPin other="Chip" /></div>,
+  );
+  try {
+    const stage = container.querySelector('[data-testid="anatomy-stage"]')!;
+    const pins = stage.querySelectorAll('[data-testid="anatomy-pin"]');
+    assert.equal(pins.length, 2, 'each hand-placed pin carries the marker');
+    for (const pin of pins) assert.equal(pin.closest('[data-testid="anatomy-pin-layer"]'), null, 'and none is in the lane');
+  } finally { cleanup(); }
+});

@@ -74,7 +74,9 @@ function PropsBox<TId extends string>({ def }: { def: SectionDef<TId> }) {
 // `built-in` is composition's assumed default relationship, so spelling it out reads redundantly
 // (e.g. "TrainArrivalRemainingTime · built-in"); `slot`/`related` still need their own suffix to
 // stay distinguishable from a plain built-in entry.
-function compositionSuffix(entry: ComposedOfEntry): string {
+function compositionSuffix(entry: ComposedOfEntry, isStyle = false): string {
+  // A style the component applies reads as one, whatever relationship the author gave it.
+  if (isStyle) return ' · style';
   return entry.relationship === 'built-in' ? '' : ` · ${entry.relationship}`;
 }
 
@@ -95,6 +97,8 @@ function CompositionFact<TId extends string>({
 }) {
   const link = linkProps(navigation, entry.component);
   const titleOf = useMemberTitle(navigation);
+  const target = navigation?.resolve(entry.component);
+  const isStyle = target !== undefined && target.memberId === undefined && navigation?.page?.(target.pageId)?.pageKind === 'style';
   return (
     <View style={[styles.fact, last && styles.factLast]}>
       <Text style={styles.factLabel}>
@@ -103,7 +107,7 @@ function CompositionFact<TId extends string>({
         ) : (
           entry.component
         )}
-        {compositionSuffix(entry)}
+        {compositionSuffix(entry, isStyle)}
       </Text>
       <Text style={styles.factValue}>{entry.role}</Text>
     </View>

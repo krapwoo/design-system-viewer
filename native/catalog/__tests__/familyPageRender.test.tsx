@@ -35,7 +35,7 @@ Object.defineProperty(globalThis, 'Node', { configurable: true, get: () => windo
 
 const { renderCatalog } = await import('../../../test/renderCatalog.tsx');
 const { FamilyPage } = await import('../FamilyPage.tsx');
-const { anatomyColumns } = await import('../familyModel.ts');
+const { anatomyColumns, ANATOMY_PIN_GUTTER } = await import('../familyModel.ts');
 const { buildCatalogSections, defineCatalogPage } = await import('../pageApi.ts');
 const { SectionBlock } = await import('../SectionBlock.tsx');
 
@@ -827,7 +827,7 @@ test('a family page lays its anatomy picture out at the whole member\'s first pr
   try {
     const picture = container.querySelector('[data-testid="anatomy-picture-measure"]') as HTMLElement | null;
     assert.ok(picture, 'expected the anatomy picture wrapper');
-    assert.equal(picture!.style.width, '462px', 'the picture must use the whole member\'s first preview width (plus the pin margin)');
+    assert.equal(picture!.style.width, `${402 + 2 * ANATOMY_PIN_GUTTER}px`, 'the picture must use the whole member\'s first preview width (plus the pin margin)');
   } finally {
     cleanup();
   }

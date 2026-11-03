@@ -171,7 +171,7 @@ export interface StaticPage {
    *  other not-literally-checkable field, rather than risk a false "missing" claim. */
   hasComposedOf?: boolean;
   /** `ComposedOfEntry.component` names, plus `relationship` when it is a string literal (#66: the
-   *  structure rules count only a literal `'built-in'`; a non-literal relationship stays unset and
+   *  structure rules count only a literal `'built-in'` (`part-own-page`) or `'arranged'` (`page-placement`); a non-literal relationship stays unset and
    *  never counts). `role` is never read. Present only when `composedOf` is itself a literal array
    *  of object literals, each with a literal `component`. */
   composedOf?: StaticComposedOfEntry[];
@@ -258,6 +258,9 @@ export interface StaticPage {
    *  blank — doctor's `standalone-reason-empty` reports that); a non-literal value is left unset,
    *  never a "not checkable" penalty. */
   standalone?: string;
+  /** `CatalogPageInput.pageKind`, literal only: `'style'` when the page documents a style. Doctor
+   *  never suggests such a page as a part of another. */
+  pageKind?: 'style';
 }
 
 /** An anatomy read down to what the picture rules need. `memberIds` are the literal `{ member }`
@@ -603,6 +606,12 @@ function readStaticPage(file: string): StaticPage {
     } else {
       page.checkable = false;
     }
+  }
+
+  const pageKindProp = findProp(pageObject, 'pageKind');
+  if (pageKindProp) {
+    const resolved = resolve(pageKindProp.initializer, consts, new Set());
+    if (ts.isStringLiteral(resolved) && resolved.text === 'style') page.pageKind = 'style';
   }
 
   const standaloneProp = findProp(pageObject, 'standalone');

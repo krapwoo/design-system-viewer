@@ -10,6 +10,11 @@ test('built-in and slot entries are parts, related ones are not, in declared ord
   assert.deepEqual(parts.map((p) => p.entry.component), ['B', 'A', 'C']);
 });
 
+test('an arranged entry is a part: the page draws it, so it is numbered and listed', () => {
+  const parts = partEntries([{ composedOf: [e('A', 'arranged'), e('R', 'related'), e('B', 'built-in')] }]);
+  assert.deepEqual(parts.map((p) => p.entry.component), ['A', 'B']);
+});
+
 test('nothing declared, or only related entries, gives no parts', () => {
   assert.deepEqual(partEntries([{ composedOf: undefined }]), []);
   assert.deepEqual(partEntries([{ composedOf: [e('R', 'related')] }, { composedOf: [] }]), []);

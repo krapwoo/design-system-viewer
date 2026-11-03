@@ -18,7 +18,7 @@ const warmup = new JSDOM('<!doctype html><html><body></body></html>', { pretendT
 Object.defineProperty(globalThis, 'navigator', { value: warmup.window.navigator, configurable: true });
 (globalThis as Record<string, unknown>).ShadowRoot = warmup.window.ShadowRoot;
 
-const { InventoryGroup, InventoryTile } = await import('../Inventory.tsx');
+const { Inventory, InventoryGroup, InventoryTile } = await import('../Inventory.tsx');
 const { ReferenceNavigationContext } = await import('../referenceNavigationContext.ts');
 const { MemberTitlesContext } = await import('../memberTitlesContext.ts');
 const { CatalogShell } = await import('../CatalogShell.tsx');
@@ -300,5 +300,199 @@ test('inside the real shell a tile links to the page by its title, and activatin
   assert.ok((container.textContent || '').includes('Not a page'), 'an unknown target is a readable name, as text');
   click(inventory[0]);
   assert.equal((container.querySelector('[role="heading"]')?.textContent || '').trim(), 'Primary button');
+  cleanup();
+});
+
+// Filters: the numbers are the chips. Counts are read from the same tiles the groups draw.
+const tagged = (n: number, tags: string[], offset = 0) =>
+  Array.from({ length: n }, (_, i) => <InventoryTile key={`${tags.join()}-${offset + i}`} target="PrimaryButton" tags={tags} specimen={<Text>specimen {offset + i}</Text>} />);
+const chipsOf = (container: HTMLElement) => [...container.querySelectorAll('[role="group"] [aria-pressed]')] as HTMLElement[];
+const chipNames = (container: HTMLElement) => chipsOf(container).map((c) => c.getAttribute('aria-label'));
+const status = (container: HTMLElement) => (container.querySelector('[role="status"]')?.textContent ?? '').trim();
+
+function sharedAndOwn() {
+  return (
+    <Inventory>
+      <InventoryGroup title="Shared styles" description="One shared look.">
+        {[...tagged(2, ['Draws its own shape']), ...tagged(1, [], 10)]}
+      </InventoryGroup>
+      <InventoryGroup title="Own styles" description="Each draws itself.">
+        {tagged(2, ['Draws its own shape'], 20)}
+      </InventoryGroup>
+    </Inventory>
+  );
+}
+
+test('Inventory draws one chip per group and per declared tag, each with the count it will show, plus All', async () => {
+  const { container, cleanup } = mountWith(inStandIn(sharedAndOwn()));
+  await settle(1200);
+  assert.deepEqual(chipNames(container), ['All, 5', 'Shared styles, 3', 'Own styles, 2', 'Draws its own shape, 4']);
+  assert.equal(chipsOf(container)[0].getAttribute('aria-pressed'), 'true', 'All starts selected');
+  assert.equal(status(container), 'Showing 5 of 5');
+  assert.equal(links(container).length, 5);
+  cleanup();
+});
+
+test('pressing a group chip shows exactly that group\'s tiles; pressing it again, or All, shows everything', async () => {
+  const { container, cleanup } = mountWith(inStandIn(sharedAndOwn()));
+  await settle(1200);
+  click(chipsOf(container)[2]);
+  await settle(1200);
+  assert.equal(links(container).length, 2);
+  assert.ok((container.textContent || '').includes('Own styles · 2'));
+  assert.ok(!(container.textContent || '').includes('Shared styles · '), 'a group with none left draws nothing');
+  assert.equal(chipsOf(container)[2].getAttribute('aria-pressed'), 'true');
+  assert.equal(chipsOf(container)[0].getAttribute('aria-pressed'), 'false');
+  assert.equal(status(container), 'Showing 2 of 5');
+  click(chipsOf(container)[2]);
+  await settle(1200);
+  assert.equal(links(container).length, 5, 'the same chip again clears the filter');
+  click(chipsOf(container)[1]);
+  await settle(1200);
+  assert.equal(links(container).length, 3);
+  click(chipsOf(container)[0]);
+  await settle(1200);
+  assert.equal(links(container).length, 5);
+  assert.equal(status(container), 'Showing 5 of 5');
+  cleanup();
+});
+
+test('a tag chip shows its tiles across groups, and the group counts say how many of theirs remain', async () => {
+  const { container, cleanup } = mountWith(inStandIn(sharedAndOwn()));
+  await settle(1200);
+  click(chipsOf(container)[3]);
+  await settle(1200);
+  assert.equal(links(container).length, 4);
+  const text = container.textContent || '';
+  assert.ok(text.includes('Shared styles · 2 of 3'), text);
+  assert.ok(text.includes('Own styles · 2'));
+  assert.equal(status(container), 'Showing 4 of 5');
+  cleanup();
+});
+
+test('the chips are real buttons in a named group, announced through a polite live region', async () => {
+  const { container, cleanup } = mountWith(inStandIn(sharedAndOwn()));
+  await settle(1200);
+  const group = container.querySelector('[role="group"]') as HTMLElement;
+  assert.equal(group.getAttribute('aria-label'), 'Filter the inventory');
+  for (const chip of chipsOf(container)) {
+    assert.equal(chip.getAttribute('role'), 'button');
+    assert.notEqual(chip.getAttribute('tabindex'), '-1', 'reachable by keyboard');
+  }
+  assert.equal(container.querySelector('[role="status"]')?.getAttribute('aria-live'), 'polite');
+  cleanup();
+});
+
+test('one group and no tags has nothing to choose between: no chips', async () => {
+  const { container, cleanup } = mountWith(inStandIn(<Inventory><InventoryGroup title="Only" description="d">{tagged(3, [])}</InventoryGroup></Inventory>));
+  await settle(1200);
+  assert.equal(chipsOf(container).length, 0);
+  assert.equal(container.querySelector('[role="status"]'), null);
+  assert.equal(links(container).length, 3);
+  cleanup();
+});
+
+test('a tile whose page is a style shows the Style badge and names its link as a style; other tiles show neither', () => {
+  const navigation = {
+    ...fakeNavigation(),
+    resolve: (name: string) => (name === 'PrimaryButton' || name === 'Chips' ? { pageId: name } : undefined),
+    page: (id: string) => ({ title: id === 'Chips' ? 'Chips' : 'Primary button', ...(id === 'Chips' ? { pageKind: 'style' } : {}) }),
+  };
+  const mount = (target: string) => mountWith(
+    <ReferenceNavigationContext.Provider value={navigation as never}><InventoryTile target={target} specimen={<Text>x</Text>} /></ReferenceNavigationContext.Provider>,
+  );
+  const style = mount('Chips');
+  assert.ok((style.container.textContent || '').includes('Style'), 'the badge says Style in words');
+  assert.equal(links(style.container)[0].getAttribute('aria-label'), 'Chips, style');
+  style.cleanup();
+  const plain = mount('PrimaryButton');
+  assert.ok(!(plain.container.textContent || '').includes('Style'));
+  assert.equal(links(plain.container)[0].getAttribute('aria-label'), 'Primary button');
+  plain.cleanup();
+});
+
+test('a group inside a component of your own is neither counted nor filtered: it stays drawn whatever chip is pressed', async () => {
+  const Wrapped = ({ children }: { children: React.ReactNode }) => <>{children}</>;
+  const { container, cleanup } = mountWith(inStandIn(
+    <Inventory>
+      <InventoryGroup title="Shared styles" description="d">{tagged(2, ['Draws its own shape'])}</InventoryGroup>
+      <InventoryGroup title="Own styles" description="d">{tagged(1, [], 10)}</InventoryGroup>
+      <Wrapped><InventoryGroup title="Wrapped" description="d">{tagged(2, [], 20)}</InventoryGroup></Wrapped>
+    </Inventory>,
+  ));
+  await settle(1200);
+  assert.deepEqual(chipNames(container), ['All, 3', 'Shared styles, 2', 'Own styles, 1', 'Draws its own shape, 2']);
+  assert.equal(links(container).length, 5, 'the wrapped group is drawn');
+  click(chipsOf(container)[2]);
+  await settle(1200);
+  assert.ok((container.textContent || '').includes('Wrapped · 2'), 'a group chip does not hide the uncounted group');
+  click(chipsOf(container)[3]);
+  await settle(1200);
+  assert.ok((container.textContent || '').includes('Wrapped · 2'), 'a tag chip does not filter its tiles');
+  assert.equal(status(container), 'Showing 2 of 3');
+  cleanup();
+});
+
+test('two groups with the same title are one chip, and a tag named like a group says it is a tag', async () => {
+  const { container, cleanup } = mountWith(inStandIn(
+    <Inventory>
+      <InventoryGroup title="Legacy" description="d">{tagged(2, ['Legacy'])}</InventoryGroup>
+      <InventoryGroup title="Legacy" description="d">{tagged(1, [], 10)}</InventoryGroup>
+      <InventoryGroup title="Current" description="d">{tagged(1, [], 20)}</InventoryGroup>
+    </Inventory>,
+  ));
+  await settle(1200);
+  assert.deepEqual(chipNames(container), ['All, 4', 'Legacy, 3', 'Current, 1', 'Legacy (tag), 2']);
+  assert.equal(new Set(chipNames(container)).size, 4, 'no two chips share an accessible name');
+  cleanup();
+});
+
+test('the Style badge on a tile is hidden from assistive technology, since the link already says "style"', () => {
+  const navigation = { ...fakeNavigation(), resolve: (name: string) => ({ pageId: name }), page: () => ({ title: 'Chips', pageKind: 'style' as const }) };
+  const { container, cleanup } = mountWith(
+    <ReferenceNavigationContext.Provider value={navigation as never}><InventoryTile target="Chips" specimen={<Text>x</Text>} /></ReferenceNavigationContext.Provider>,
+  );
+  const badge = [...container.querySelectorAll('div')].find((el) => el.textContent === 'Style' && el.children.length === 1) as HTMLElement;
+  assert.ok(badge, 'the badge');
+  assert.equal(badge.getAttribute('aria-hidden'), 'true');
+  cleanup();
+});
+
+test('a tile that links to a member of a style page is a style too', () => {
+  const navigation = {
+    ...fakeNavigation(),
+    resolve: (name: string) => (name === 'TactileStyle' ? { pageId: 'PressStyles', memberId: 'TactileStyle' } : name === 'CopyButton' ? { pageId: 'Copy', memberId: 'CopyButton' } : undefined),
+    page: (id: string) => ({ title: id, ...(id === 'PressStyles' ? { pageKind: 'style' } : {}) }),
+  };
+  const mount = (target: string) => mountWith(
+    <ReferenceNavigationContext.Provider value={navigation as never}><InventoryTile target={target} title={target} specimen={<Text>x</Text>} /></ReferenceNavigationContext.Provider>,
+  );
+  const member = mount('TactileStyle');
+  assert.equal(links(member.container)[0].getAttribute('aria-label'), 'TactileStyle, style');
+  member.cleanup();
+  const plain = mount('CopyButton');
+  assert.ok(!(plain.container.textContent || '').includes('Style'), 'a member of an ordinary page is not');
+  plain.cleanup();
+});
+
+test('a tile component of your own, given to a group directly with its own tags, is counted and filtered', async () => {
+  const OwnTile = ({ name }: { name: string; tags?: string[] }) => <Text>{name}</Text>;
+  const { container, cleanup } = mountWith(inStandIn(
+    <Inventory>
+      <InventoryGroup title="Icons" description="d">
+        <OwnTile name="wraps-a" tags={['Wraps an SF Symbol']} />
+        <OwnTile name="plain-b" />
+      </InventoryGroup>
+      <InventoryGroup title="Marks" description="d"><OwnTile name="plain-c" /></InventoryGroup>
+    </Inventory>,
+  ));
+  await settle(1200);
+  assert.ok(chipNames(container).includes('Wraps an SF Symbol, 1'), 'its tag is a chip with its count');
+  const names = () => (container.textContent || '');
+  assert.ok(names().includes('wraps-a') && names().includes('plain-b') && names().includes('plain-c'), 'all three are drawn under All');
+  click(chipsOf(container)[chipNames(container).indexOf('Wraps an SF Symbol, 1')]);
+  await settle(1200);
+  assert.ok(names().includes('wraps-a'), 'the tagged tile stays');
+  assert.ok(!names().includes('plain-b') && !names().includes('plain-c'), 'the others are hidden by the chip');
   cleanup();
 });

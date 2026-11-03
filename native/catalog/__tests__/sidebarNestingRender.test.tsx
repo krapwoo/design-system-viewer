@@ -258,3 +258,27 @@ test('coming back to a page after visiting one with no sidebar row reveals its r
   assert.equal(scrollNode.scrollTop, 80, 'the row is revealed again');
   cleanup();
 });
+
+test('a parent with exactly one child shows that child flat beside it: no nested list, still selectable and active', () => {
+  const sections: SectionDef<Id>[] = [
+    { id: 'Buttons', title: 'Buttons', description: 'Every button.', path: 'src/Buttons.tsx' },
+    { id: 'Banner', title: 'Banner', description: 'A banner.', path: 'src/Banner.tsx' },
+    { id: 'PrimaryButton', title: 'Primary', description: 'Primary.', path: 'src/PrimaryButton.tsx', sidebarParent: 'Buttons' },
+    { id: 'Card', title: 'Card', description: 'A card.', path: 'src/Card.tsx' },
+  ];
+  const groups: NavGroup<Id>[] = [{ label: 'Components', ids: ['Buttons', 'Banner', 'Card', 'PrimaryButton'] }];
+  const { container, cleanup } = renderCatalog(
+    <Mount>
+      <CatalogShell embedded appName="App" title="Component Catalog" groups={groups} sections={sections} />
+    </Mount>,
+  );
+  assert.deepEqual(sidebarLinkTexts(container), ['Banner', 'Buttons', 'Primary', 'Card']);
+  assert.equal(container.querySelectorAll('[role="navigation"] [role="list"]').length, 0);
+  const link = (text: string) => [...container.querySelectorAll('[role="navigation"] a')].find((a) => (a.textContent || '').trim() === text) as HTMLElement;
+  click(link('Primary'));
+  assert.equal(link('Primary').getAttribute('aria-current'), 'page');
+  assert.equal(link('Buttons').getAttribute('aria-current'), null);
+  const next = () => container.querySelector('[aria-label^="Next:"]') as HTMLElement;
+  assert.match(next().getAttribute('aria-label') || '', /Card/);
+  cleanup();
+});

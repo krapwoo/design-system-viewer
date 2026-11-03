@@ -157,7 +157,7 @@ test('numeric frames Preview stages its entire padded body with one contrast own
   const end = source.indexOf('function TablePreview(');
   assert.ok(start >= 0 && end > start);
   const preview = source.slice(start, end);
-  assert.match(preview, /return \(\s*<SpecimenSurface surface=\{kind\} style=\{styles\.previewCard\}>/);
+  assert.match(preview, /return \(\s*(?:<>\s*\{label\}\s*)?<SpecimenSurface surface=\{kind\} style=\{styles\.previewCard\}>/, 'the frames sit in one SpecimenSurface (the block caption may come before it)');
   assert.match(preview, /widths\.map\(\(width, i\) => \(\s*<View\s+key=\{`\$\{width\}-\$\{i\}`\}/);
   assert.match(preview, /style=\{\[styles\.frame, \{ width \}\]\}/);
   assert.match(preview, /'aria-label': frameLabel\(width\)/);

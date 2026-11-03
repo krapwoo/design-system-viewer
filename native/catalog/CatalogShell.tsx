@@ -198,7 +198,7 @@ const bannerStyles = StyleSheet.create({
     borderRadius: CATALOG_RADIUS.md,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    marginBottom: 18,
+    marginBottom: CATALOG_SPACE.lg,
   },
   text: { flex: 1, ...CATALOG_TEXT.body, color: CATALOG_COLOR.warning },
   bold: { ...CATALOG_TEXT.bodyStrong },
@@ -520,10 +520,12 @@ export function CatalogShell<TId extends string>({
         openReference(pageId, memberId, { pageId: current, memberId: validHint });
       },
       // A component a token page documents is a component, wherever its tile sits.
-      isPart: (pageId, memberId) => (memberId !== undefined && Boolean(sectionsById.get(pageId)?.documents?.some((documented) => documented.component === memberId))) || partPageIds === undefined || partPageIds.has(pageId),
+      // A style is applied, not a part, whatever its group: an explicit `composedOf` entry naming one
+      // stays in the Composition list but is not offered as a Parts card or numbered.
+      isPart: (pageId, memberId) => sectionsById.get(pageId)?.pageKind !== 'style' && ((memberId !== undefined && Boolean(sectionsById.get(pageId)?.documents?.some((documented) => documented.component === memberId))) || partPageIds === undefined || partPageIds.has(pageId)),
       page: (pageId) => {
         const def = sectionsById.get(pageId);
-        return def && { title: def.title ?? def.id, source: thumbnailSource(def, { inTokenGroup: tokenIds.has(def.id), defaultPreviewWidths }) };
+        return def && { title: def.title ?? def.id, pageKind: def.pageKind, source: thumbnailSource(def, { inTokenGroup: tokenIds.has(def.id), defaultPreviewWidths }) };
       },
     }),
     [fullRouteIds, aliasMap, referenceEntries, active, sectionsById, openReference, tokenIds, defaultPreviewWidths, partPageIds],

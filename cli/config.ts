@@ -5,7 +5,7 @@ import { defineConfig, type DsViewerConfig } from '../config/index.ts';
 import type { ResolvedConfig } from './types.ts';
 
 const KNOWN_FIELDS = new Set<keyof DsViewerConfig>([
-  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'patternGroups', 'partGroups', 'usage', 'starterKit', 'updateCheck', 'doctor',
+  'name', 'logo', 'components', 'exclude', 'tokens', 'pages', 'groupOrder', 'patternGroups', 'partGroups', 'screenGroups', 'usage', 'starterKit', 'updateCheck', 'doctor',
 ]);
 
 export interface LoadConfigResult {
@@ -63,10 +63,28 @@ export function loadConfig(configPath: string): LoadConfigResult {
     else warnings.push('"partGroups" must be an array of group names; every group counts as parts.');
   }
 
+  let screenGroups: string[] | undefined;
+  if (raw.screenGroups !== undefined) {
+    if (Array.isArray(raw.screenGroups) && raw.screenGroups.every((name) => typeof name === 'string')) screenGroups = raw.screenGroups;
+    else warnings.push('"screenGroups" must be an array of group names; using the default [\'Screens\'].');
+  }
+
   let usage: string | undefined;
   if (raw.usage !== undefined) {
     if (typeof raw.usage === 'string' && raw.usage.trim() !== '') usage = raw.usage;
     else warnings.push('"usage" must be a path to a JSON file; ignoring it.');
+  }
+
+  // `doctor.placement` needs a group that means "component": a part group that isn't a pattern or screen group.
+  const placement = (raw.doctor as { placement?: unknown } | undefined)?.placement;
+  if (placement !== undefined && typeof placement !== 'boolean') {
+    warnings.push('"doctor.placement" must be true or false; page-placement stays off.');
+  } else if (placement === true) {
+    const lower = (names: readonly string[]) => names.map((name) => name.trim().toLowerCase());
+    const notComponent = new Set([...lower(patternGroups ?? ['Patterns']), ...lower(screenGroups ?? ['Screens'])]);
+    const componentGroups = (partGroups ?? []).filter((name) => !notComponent.has(name.trim().toLowerCase()));
+    if (componentGroups.length === 0) warnings.push('"doctor.placement" needs "partGroups" to name a component group (one that is not a pattern or screen group); page-placement does nothing until it does.');
+    if ((patternGroups ?? ['Patterns']).length === 0) warnings.push('"doctor.placement" with an empty "patternGroups" can never tell a page it is a pattern.');
   }
 
   const config: DsViewerConfig = {
@@ -79,6 +97,7 @@ export function loadConfig(configPath: string): LoadConfigResult {
     groupOrder: raw.groupOrder ?? [],
     patternGroups,
     partGroups,
+    screenGroups,
     usage,
     starterKit: raw.starterKit,
     updateCheck: raw.updateCheck ?? true,

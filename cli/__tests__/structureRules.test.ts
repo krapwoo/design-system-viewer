@@ -45,8 +45,8 @@ test('part-own-page exempts a part built into two pages', () => {
   assert.equal(run(pages, 'part-own-page').length, 0);
 });
 
-test('part-own-page ignores slot, related, and missing relationships', () => {
-  for (const relationship of ['slot', 'related', undefined]) {
+test('part-own-page ignores slot, related, arranged and missing relationships (an arranged component is separate by design)', () => {
+  for (const relationship of ['slot', 'related', 'arranged', undefined]) {
     assert.equal(run(pair(relationship), 'part-own-page').length, 0, String(relationship));
   }
 });

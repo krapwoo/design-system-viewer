@@ -53,7 +53,7 @@ export function TokenDetails({ title, kicker, expression, source, usages, usageS
   useEffect(() => close, [close]);
   return (
     <>
-      <SidePanelTrigger label="Details" accessibilityLabel={`Details for ${title}`} open={open} onPress={() => setOpenKey(key)} />
+      <SidePanelTrigger compact label="Details" accessibilityLabel={`Details for ${title}`} open={open} onPress={() => setOpenKey(key)} />
       {open ? (
         <SidePanel kicker={kicker ?? 'Token details'} title={title} onClose={close}>
           <View style={styles.stack}>

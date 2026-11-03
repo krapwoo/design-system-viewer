@@ -54,7 +54,9 @@ export function sidebarParents<TId extends string>(
 }
 
 /** The nested shape of one sidebar group: its top-level ids in title order, and each parent's
- *  children in title order. An id whose parent is not among `ids` stays top-level. */
+ *  children in title order. An id whose parent is not among `ids` stays top-level. A parent with
+ *  exactly one child adds a level for nothing, so that child is listed flat instead: a top-level row
+ *  right after its parent, not at its own alphabetical place (`singleChildParents` names them). */
 function nestIds<TId extends string>(
   ids: readonly TId[],
   parents: ReadonlyMap<string, string>,
@@ -68,8 +70,28 @@ function nestIds<TId extends string>(
     if (parentId !== undefined && present.has(parentId)) children.set(parentId, [...(children.get(parentId) ?? []), id]);
     else top.push(id);
   }
-  for (const [parentId, kids] of children) children.set(parentId, sortIds(kids, labels));
-  return { top: sortIds(top, labels), children };
+  const flat = new Map<string, TId>();
+  for (const [parentId, kids] of children) {
+    if (kids.length === 1) {
+      flat.set(parentId, kids[0]);
+      children.delete(parentId);
+    } else children.set(parentId, sortIds(kids, labels));
+  }
+  const ordered: TId[] = [];
+  for (const id of sortIds(top, labels)) {
+    ordered.push(id);
+    const only = flat.get(id);
+    if (only !== undefined) ordered.push(only);
+  }
+  return { top: ordered, children };
+}
+
+/** Parent id → its only child, for each declared parent (see `sidebarParents`) with exactly one
+ *  child. The sidebar lists such a child flat beside its parent; `doctor` reports the parent. */
+export function singleChildParents(parents: ReadonlyMap<string, string>): Map<string, string> {
+  const kids = new Map<string, string[]>();
+  for (const [childId, parentId] of parents) kids.set(parentId, [...(kids.get(parentId) ?? []), childId]);
+  return new Map([...kids].filter(([, list]) => list.length === 1).map(([parentId, list]) => [parentId, list[0]]));
 }
 
 /** Every page id in sidebar order: groups in declared order, ids sorted within each group (by
@@ -149,8 +171,10 @@ export interface NestedNavGroup<TId extends string = string> extends NavGroup<TI
 }
 
 /** The sidebar's rows for a filter: `filterGroups`'s matches, with every nested page moved under
- *  its parent (`parents`, from `sidebarParents`). A page that matches shows itself; a matching
- *  child also brings its parent row in above it, and a matching parent shows all of its children.
+ *  its parent (`parents`, from `sidebarParents`) — except a parent's only child, which is a
+ *  top-level row of its own right after the parent. A page that matches shows itself; a matching
+ *  child also brings its parent row in above it, and a matching parent shows all of its nested
+ *  children.
  *  Group order, title order and the empty-group rule are `filterGroups`'s. Its rows, read parent
  *  then children, are the same sequence `orderedIds` gives the ← → pager. */
 export function nestGroups<TId extends string>(

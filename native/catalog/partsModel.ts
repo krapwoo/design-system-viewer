@@ -9,8 +9,8 @@ export interface PartEntry {
   sourceMemberId?: string;
 }
 
-/** The entries a page shows as parts: those with a `built-in` or `slot` relationship (not
- *  `related`), the page's own first and then the whole member's, in declared order. The first
+/** The entries a page shows as parts: those with a `built-in`, `slot` or `arranged` relationship
+ *  (not `related`), the page's own first and then the whole member's, in declared order. The first
  *  entry for a name wins, and a name `exclude` claims (a member of this very page) is left out. */
 export function partEntries(
   sources: ReadonlyArray<{ composedOf: readonly ComposedOfEntry[] | undefined; sourceMemberId?: string }>,
@@ -20,7 +20,7 @@ export function partEntries(
   const parts: PartEntry[] = [];
   for (const { composedOf, sourceMemberId } of sources) {
     for (const entry of composedOf ?? []) {
-      if (entry.relationship !== 'built-in' && entry.relationship !== 'slot') continue;
+      if (entry.relationship !== 'built-in' && entry.relationship !== 'slot' && entry.relationship !== 'arranged') continue;
       if (seen.has(entry.component) || exclude(entry.component)) continue;
       seen.add(entry.component);
       parts.push({ entry, sourceMemberId });

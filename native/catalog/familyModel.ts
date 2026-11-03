@@ -77,7 +77,63 @@ export const ANATOMY_LEGEND_MIN_COLUMN_WIDTH = 280;
 
 /** With `previewWidths`, the picture's frame is the preview width plus this margin on each side:
  *  the specimen is drawn at the full preview width, centred, and its pins sit in the right margin. */
-export const ANATOMY_PIN_GUTTER = 30;
+export const ANATOMY_PIN_GUTTER = 60;
+
+/** Clear space between a specimen's right edge and where the pin lane (its brackets and leader
+ *  lines) starts — `CATALOG_SPACE.md` (asserted in familyModel.test.ts). */
+export const ANATOMY_PIN_EDGE_GAP = 12;
+
+/** Clear space between a bracket (at the lane's left edge) and a pin — `CATALOG_SPACE.sm`. */
+export const ANATOMY_PIN_BRACKET_GAP = 8;
+
+/** Least vertical space between two pins in the lane — `CATALOG_SPACE.xs`. Pins whose targets sit
+ *  closer than a pin's height plus this are spread apart (`spreadPins`). */
+export const ANATOMY_PIN_STACK_GAP = 4;
+
+/** The pin lane's width: the gutter beyond `ANATOMY_PIN_EDGE_GAP`. Holds a bracket, the bracket gap
+ *  and a pin as wide as "10.1". */
+export const ANATOMY_PIN_LANE = ANATOMY_PIN_GUTTER - ANATOMY_PIN_EDGE_GAP;
+
+/** Where pins sit in the lane so none overlaps another. Takes each pin's wanted `top` and `height`
+ *  (any order) and returns the tops to use, in the same order. A pin with room keeps its top; pins
+ *  closer than `gap` form a stack, in their original order, centred on where its members wanted to
+ *  be (least total movement), so a crowd spreads both up and down rather than all down.
+ *
+ *  `limit`: the lane's height (the specimen's). A stack of several pins is kept inside it, from 0 to
+ *  `limit` less its own size — a crowd near the top or bottom edge spreads one way only — and
+ *  centred on the lane only when it is taller than the lane. That limited start is also what decides
+ *  whether two stacks run into each other. Without it, a stack is centred on its targets as is. */
+export function spreadPins(pins: ReadonlyArray<{ top: number; height: number }>, gap: number, limit?: number): number[] {
+  const order = pins.map((_, i) => i).sort((a, b) => pins[a].top - pins[b].top || a - b);
+  type Stack = { items: Array<{ index: number; offset: number }>; sum: number; size: number };
+  const startOf = (stack: Stack) => {
+    const mean = stack.sum / stack.items.length;
+    if (limit === undefined || stack.items.length === 1) return mean;
+    return stack.size > limit ? (limit - stack.size) / 2 : Math.min(Math.max(mean, 0), limit - stack.size);
+  };
+  const stacks: Stack[] = [];
+  for (const index of order) {
+    const { top, height } = pins[index];
+    let current: Stack = { items: [{ index, offset: 0 }], sum: top, size: height };
+    for (let prev = stacks[stacks.length - 1]; prev && startOf(prev) + prev.size + gap > startOf(current); prev = stacks[stacks.length - 1]) {
+      stacks.pop();
+      const shift = prev.size + gap;
+      current = {
+        items: [...prev.items, ...current.items.map((item) => ({ index: item.index, offset: item.offset + shift }))],
+        sum: prev.sum + current.sum - current.items.length * shift,
+        size: shift + current.size,
+      };
+    }
+    stacks.push(current);
+  }
+  const result = pins.map((pin) => pin.top);
+  for (const stack of stacks) {
+    if (stack.items.length === 1) continue;
+    const start = startOf(stack);
+    for (const item of stack.items) result[item.index] = Math.round(start + item.offset);
+  }
+  return result;
+}
 
 /** How many columns a stacked legend uses at a given measured card width, up to 3 — the same
  *  minimum-column-width budget a side-by-side legend's own single column keeps. */

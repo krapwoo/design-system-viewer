@@ -23,6 +23,10 @@ export interface DsViewerConfig {
    *  from something documented in another group (a style, a layout, a behavior) lists it in its
    *  side panel but gives it no Parts card and no part number. Absent: every group counts. */
   partGroups?: string[];
+  /** Sidebar groups whose pages are whole destinations (a login screen, a settings screen). With
+   *  `partGroups` set, `doctor`'s `page-placement` check never moves them: a screen is neither a
+   *  component nor a pattern built from one. @default ['Screens'] */
+  screenGroups?: string[];
   /** Path (relative to the project root) to a JSON file your project generates, saying where each
    *  component is used (usage file format v1 — see the README). Adds an "Appears in" block to
    *  every page with usage. Absent: the catalog is unchanged. */
@@ -36,8 +40,9 @@ export interface DsViewerConfig {
   /** `strict: true` promotes `doctor` warnings to errors. `handBuiltTokenPages` lists page ids (the file
    *  name without `.catalog.tsx`, or the explicit `id`) of radius, spacing, dimensions or opacity pages
    *  that are built by hand on purpose, such as a page documenting real named tokens: `doctor` then
-   *  skips its `token-page-hand-built` hint for them. */
-  doctor?: { strict?: boolean; handBuiltTokenPages?: string[] };
+   *  skips its `token-page-hand-built` hint for them. `placement: true` turns on `page-placement`,
+   *  which compares a page's group with its declared `composedOf` (needs `partGroups`; off by default). */
+  doctor?: { strict?: boolean; handBuiltTokenPages?: string[]; placement?: boolean };
 }
 
 export function defineConfig(config: DsViewerConfig): DsViewerConfig {

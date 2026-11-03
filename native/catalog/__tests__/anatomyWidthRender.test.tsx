@@ -30,6 +30,7 @@ Object.defineProperty(globalThis, 'Node', { configurable: true, get: () => windo
 
 const { AnatomyPin, AnatomySpecimen } = await import('../Anatomy.tsx');
 const { View } = await import('react-native');
+const { ANATOMY_PIN_GUTTER: G } = await import('../familyModel.ts');
 const { SectionBlock } = await import('../SectionBlock.tsx');
 const { FamilyPage } = await import('../FamilyPage.tsx');
 const { GroupPage } = await import('../GroupPage.tsx');
@@ -152,12 +153,12 @@ async function mountPage(def: SectionDef<string>, card: number, picture = 266) {
 }
 
 test('the picture frame is the first previewWidths entry plus the pin margin, whatever its own measured width', async () => {
-  for (const [widths, expected] of [[[402, 320], '462px'], [[320, 402], '380px']] as const) {
+  for (const [widths, expected] of [[[402, 320], `${402 + 2 * G}px`], [[320, 402], `${320 + 2 * G}px`]] as const) {
     const view = await mountPage(page(widths), 1000);
     assert.equal((view.pictureWrapper as HTMLElement).style.width, expected, `previewWidths ${widths}`);
     const frame = view.pictureWrapper as HTMLElement;
-    assert.equal(frame.style.paddingLeft, '30px');
-    assert.equal(frame.style.paddingRight, '30px', 'an equal margin on both sides keeps the content box exactly the preview width');
+    assert.equal(frame.style.paddingLeft, `${G}px`);
+    assert.equal(frame.style.paddingRight, `${G}px`, 'an equal margin on both sides keeps the content box exactly the preview width');
     assert.equal((view.pictureWrapper as HTMLElement).style.alignItems, 'center', 'a picture narrower than the frame (no width of its own) centres too');
     view.cleanup();
   }
@@ -181,10 +182,10 @@ test('an AnatomySpecimen as the picture root fills the frame\'s content box exac
 test('the anatomy width falls back to the catalog\'s defaultPreviewWidths, like the specimens, on a standalone, family and group page', async () => {
   const wrapperOf = (container: HTMLElement) => container.querySelector('[data-testid="anatomy-picture-measure"]') as HTMLElement;
   const standalone = renderWithResizeObserver(React.createElement(SectionBlock as never, { def: page(), defaultPreviewWidths: [402] } as never));
-  assert.equal(wrapperOf(standalone.container).style.width, '462px');
+  assert.equal(wrapperOf(standalone.container).style.width, `${402 + 2 * G}px`);
   standalone.cleanup();
   const own = renderWithResizeObserver(React.createElement(SectionBlock as never, { def: page([320]), defaultPreviewWidths: [402] } as never));
-  assert.equal(wrapperOf(own.container).style.width, '380px', 'the page\'s own previewWidths wins over the default');
+  assert.equal(wrapperOf(own.container).style.width, `${320 + 2 * G}px`, 'the page\'s own previewWidths wins over the default');
   own.cleanup();
 
   const familyDef = { ...page(), anatomy: undefined, family: {
@@ -193,7 +194,7 @@ test('the anatomy width falls back to the catalog\'s defaultPreviewWidths, like 
     anatomy: page().anatomy,
   } } as unknown as SectionDef<string>;
   const family = renderWithResizeObserver(React.createElement(FamilyPage as never, { def: familyDef, defaultPreviewWidths: [360] } as never));
-  assert.equal(wrapperOf(family.container).style.width, '420px');
+  assert.equal(wrapperOf(family.container).style.width, `${360 + 2 * G}px`);
   family.cleanup();
 
   const widgets = defineCatalogPage({
@@ -205,13 +206,13 @@ test('the anatomy width falls back to the catalog\'s defaultPreviewWidths, like 
   });
   const { sections } = buildCatalogSections([{ ...widgets, file: 'fixtures/Widgets.catalog.tsx' }], []);
   const group = renderWithResizeObserver(React.createElement(GroupPage as never, { def: sections[0], defaultPreviewWidths: [320] } as never));
-  assert.equal(wrapperOf(group.container).style.width, '380px');
+  assert.equal(wrapperOf(group.container).style.width, `${320 + 2 * G}px`);
   group.cleanup();
 });
 
 test('beside the legend the picture column is half the box: stage and legend share one 50% width', async () => {
-  const view = await mountPage(page([402]), 1020);
-  assert.equal(view.stacked(), false, 'half of 1020 holds the 402 picture, its two 30px margins and its padding');
+  const view = await mountPage(page([402]), 2 * (402 + 2 * G + 48));
+  assert.equal(view.stacked(), false, 'half of the box holds the 402 picture, its two pin margins and its padding');
   assert.ok(view.q('anatomy-stage')!.className.split(/\s+/).some((c) => c.startsWith('r-alignSelf-')), 'the stage stretches to the row height so the picture centres vertically');
   const stageWidth = widthClass(view.q('anatomy-stage'));
   assert.ok(stageWidth, 'the stage has a width');
@@ -223,14 +224,14 @@ test('beside the legend the picture column is half the box: stage and legend sha
 });
 
 test('the box stacks as soon as half of it cannot hold the preview width', async () => {
-  const view = await mountPage(page([402]), 1019);
+  const view = await mountPage(page([402]), 2 * (402 + 2 * G + 48) - 1);
   assert.equal(view.stacked(), true);
   assert.equal(view.q('anatomy-legend'), null);
   assert.equal(widthClass(view.q('anatomy-stage')), undefined, 'stacked, the stage spans the box rather than taking half');
-  assert.equal((view.pictureWrapper as HTMLElement).style.width, '462px', 'stacked, the picture keeps its real width and pin margins');
+  assert.equal((view.pictureWrapper as HTMLElement).style.width, `${402 + 2 * G}px`, 'stacked, the picture keeps its real width and pin margins');
   // And back to side by side, without remounting the picture.
   const pictureNode = view.pictureWrapper.firstElementChild;
-  await resize(view.cardNode, 1100);
+  await resize(view.cardNode, 2 * (402 + 2 * G + 48) + 80);
   assert.equal(view.stacked(), false);
   assert.equal(view.pictureWrapper.firstElementChild === pictureNode, true);
   view.cleanup();
@@ -239,7 +240,7 @@ test('the box stacks as soon as half of it cannot hold the preview width', async
 test('a 402-wide picture in a 390px viewport stacks and scrolls inside its own stage, never the page', async () => {
   const view = await mountPage(page([402]), 342);
   assert.equal(view.stacked(), true);
-  assert.equal((view.pictureWrapper as HTMLElement).style.width, '462px');
+  assert.equal((view.pictureWrapper as HTMLElement).style.width, `${402 + 2 * G}px`);
   assert.equal(hasClass(view.q('anatomy-stage')!, OVERFLOW_X_AUTO), true, 'the stage is the scroller');
   view.cleanup();
 });
@@ -251,7 +252,7 @@ test('without previewWidths the layout is the old measured one: side by side at 
   assert.equal(hasClass(view.q('anatomy-stage')!, OVERFLOW_X_AUTO), false);
   assert.equal(widthClass(view.q('anatomy-legend')), undefined, 'the legend keeps its flexible share');
   view.cleanup();
-  // The same card with a preview width of 402 stacks (350 < 402 + 60 + 48).
+  // The same card with a preview width of 402 stacks (350 < 402 + 2 * 60 + 48).
   const fixed = await mountPage(page([402]), 700);
   assert.equal(fixed.stacked(), true);
   fixed.cleanup();
@@ -265,7 +266,7 @@ test('a family page lays its anatomy picture out at the page\'s preview width to
   } } as unknown as SectionDef<string>;
   const view = renderWithResizeObserver(React.createElement(FamilyPage as never, { def } as never));
   const wrapper = view.container.querySelector('[data-testid="anatomy-picture-measure"]') as HTMLElement;
-  assert.equal(wrapper.style.width, '420px');
+  assert.equal(wrapper.style.width, `${360 + 2 * G}px`);
   view.cleanup();
 });
 
@@ -288,7 +289,7 @@ test('a group member\'s own anatomy uses that member\'s previewWidths and number
   const navigation = { resolve: (name: string) => (name === 'Chip' ? { pageId: 'Chip' } : undefined), open: () => {}, page: () => ({ title: 'Chip' }) };
   const view = renderWithResizeObserver(React.createElement(GroupPage as never, { def: sections[0], navigation } as never));
   const wrapper = view.container.querySelector('[data-testid="anatomy-picture-measure"]') as HTMLElement;
-  assert.equal(wrapper.style.width, '380px');
+  assert.equal(wrapper.style.width, `${320 + 2 * G}px`);
   assert.ok(view.container.querySelector('[role="img"][aria-label="Part 2, opens Chip"]'), 'its own part is 1, so the other is 2');
   view.cleanup();
 });

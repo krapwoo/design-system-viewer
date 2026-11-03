@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { defineCatalogPage, DividedStack, VariantGroup, Swatch } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, Swatch, type TokenSection } from '@krapwoo/ds-viewer';
 import { DS_PALETTE, DS_SEMANTIC, colorValueLabel, type PaletteName } from '../tokens';
 
 const styles = StyleSheet.create({
@@ -18,38 +18,34 @@ const SEMANTIC_GROUPS: { name: string; desc: string; entries: [string, string][]
   { name: 'Semantic · shade', desc: 'tinted status fills', entries: Object.entries(DS_SEMANTIC.shade) },
 ];
 
-function ColorsGallery() {
-  const paletteHues = Object.keys(DS_PALETTE) as PaletteName[];
-  return (
-    <DividedStack>
-      {SEMANTIC_GROUPS.map((group) => (
-        <VariantGroup key={group.name} name={group.name} desc={group.desc} align="left">
-          <View style={styles.row}>
-            {group.entries.map(([name, value]) => (
-              <Swatch key={name} name={name} value={value} valueLabel={colorValueLabel(value)} width={100} />
-            ))}
-          </View>
-        </VariantGroup>
-      ))}
-      <VariantGroup name="interaction.disabledOpacity" desc="not a color — opacity applied to a whole disabled tappable element" align="left">
-        <Text style={styles.previewValue}>{DS_SEMANTIC.interaction.disabledOpacity}</Text>
-      </VariantGroup>
-      {paletteHues.map((hue) => (
-        <VariantGroup key={hue} name={`Palette · ${hue}`} desc="raw ramp, 0 → 800" align="left">
-          <View style={styles.row}>
-            {Object.entries(DS_PALETTE[hue]).map(([step, value]) => (
-              <Swatch key={step} name={`${hue}.${step}`} value={value} />
-            ))}
-          </View>
-        </VariantGroup>
-      ))}
-    </DividedStack>
-  );
-}
+const swatchRow = (entries: [string, string][], width?: number) => (
+  <View style={styles.row}>
+    {entries.map(([name, value]) => (
+      <Swatch key={name} name={name} value={value} valueLabel={width ? colorValueLabel(value) : undefined} width={width} />
+    ))}
+  </View>
+);
+
+// One section per kind of colour, as a token page draws them: the title and description outside, the
+// swatches in the section's own box.
+const COLOR_SECTIONS: TokenSection[] = [
+  ...SEMANTIC_GROUPS.map((group) => ({ title: group.name, desc: group.desc, render: () => swatchRow(group.entries, 100) })),
+  {
+    title: 'interaction.disabledOpacity',
+    desc: 'not a color — opacity applied to a whole disabled tappable element',
+    render: () => <Text style={styles.previewValue}>{DS_SEMANTIC.interaction.disabledOpacity}</Text>,
+  },
+  ...(Object.keys(DS_PALETTE) as PaletteName[]).map((hue) => ({
+    title: `Palette · ${hue}`,
+    desc: 'raw ramp, 0 → 800',
+    render: () => swatchRow(Object.entries(DS_PALETTE[hue]).map(([step, value]) => [`${hue}.${step}`, value] as [string, string])),
+  })),
+];
 
 export default defineCatalogPage({
   group: 'Tokens',
   description: 'The color tokens the whole system is built from — saturated semantic accents and the raw grey ramp, each shown at its real value.',
   tokenGallery: true,
-  render: () => <ColorsGallery />,
+  tokenColumns: 1,
+  tokenSections: COLOR_SECTIONS,
 });

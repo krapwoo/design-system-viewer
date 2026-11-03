@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { filterGroups, groupLabelFor, hashForId, idFromHash, neighbors, nestGroups, orderedIds, sidebarParents, sortIds } from '../catalogNavigation.ts';
+import { filterGroups, groupLabelFor, hashForId, idFromHash, neighbors, nestGroups, orderedIds, sidebarParents, singleChildParents, sortIds } from '../catalogNavigation.ts';
 import { DS_VIEWER_SECRET_HEADER, footerLabel, resolveActiveFromHash, shouldShowMajorBanner, UPDATE_PAGE_ID } from '../catalogNavigation.ts';
 import { aliasTargets, resolveRoute, searchResults } from '../catalogNavigation.ts';
 import type { SectionDef, UpdateNotice } from '../types.ts';
@@ -476,6 +476,21 @@ test('nestGroups: a matching child brings its parent row in above it; a matching
   assert.deepEqual(nestGroups(nestedGroups, 'zzz', parents, nestedLabels), []);
 });
 
+
+test('a parent with exactly one child lists that child flat, right after the parent, not nested', () => {
+  const sections = [{ id: 'Buttons' }, { id: 'Banner' }, { id: 'Card' }, { id: 'Colors' }, { id: 'ZetaButton', sidebarParent: 'Buttons' }];
+  const groups = [{ label: 'Components', ids: ['Buttons', 'Banner', 'Card', 'ZetaButton'] }, { label: 'Tokens', ids: ['Colors'] }];
+  const parents = sidebarParents(sections, groups);
+  assert.deepEqual([...singleChildParents(parents)], [['Buttons', 'ZetaButton']]);
+  const rows = nestGroups(groups, '', parents);
+  // 'ZetaButton' sorts last by title, yet sits right after its parent as an ordinary top-level row.
+  assert.deepEqual(rows[0].ids, ['Banner', 'Buttons', 'ZetaButton', 'Card']);
+  assert.equal(rows[0].children.size, 0);
+  assert.deepEqual(orderedIds(groups, undefined, undefined, parents), ['Banner', 'Buttons', 'ZetaButton', 'Card', 'Colors']);
+  // A filter finds the flat child on its own, without its parent row.
+  assert.deepEqual(nestGroups(groups, 'zeta', parents).map((group) => group.ids), [['ZetaButton']]);
+  assert.deepEqual([...singleChildParents(sidebarParents(nestedSections, nestedGroups))], [], 'two children are still nested');
+});
 
 test('searchResults labels a titled member by its title and finds it by title, id or alias', () => {
   const entries = [{ pageId: 'Bot', memberId: 'BotAnimatedFaceView', title: 'Animated face', aliases: ['OldFace'], familyTitle: 'Bot avatar' }];

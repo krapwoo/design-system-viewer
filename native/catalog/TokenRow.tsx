@@ -101,10 +101,16 @@ export function TokenRow({
 
 const styles = StyleSheet.create({
   item: { gap: CATALOG_SPACE.xs, paddingVertical: CATALOG_SPACE.md },
-  itemRight: { flexDirection: 'row', alignItems: 'center', gap: CATALOG_SPACE.xl, paddingVertical: CATALOG_SPACE.md },
-  sample: { flexShrink: 0 },
+  // Columns sit one `lg` apart and the row wraps when it runs out of width: the note takes only the
+  // room its text needs (it no longer grows to fill the card), so Details follows it instead of
+  // being pushed to the far edge.
+  itemRight: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: CATALOG_SPACE.lg, rowGap: CATALOG_SPACE.xs, paddingVertical: CATALOG_SPACE.md },
+  sample: { flexShrink: 0, maxWidth: '100%' },
   natural: { alignSelf: 'flex-start' },
-  useRight: { flex: 1 },
+  // A long note stays beside its sample and wraps its own text: in a wrapping row an item is placed
+  // by its one-line width, so without the cap a note wider than the card's free space would drop
+  // under the sample and Details to a third line.
+  useRight: { flexShrink: 1, minWidth: 0, maxWidth: '60ch' } as object,
   itemDivider: {
     borderBottomWidth: 1,
     borderBottomColor: CATALOG_COLOR.border,

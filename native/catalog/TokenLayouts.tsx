@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { CATALOG_COLOR, CATALOG_LAYOUT, CATALOG_RADIUS, CATALOG_SPACE, CATALOG_TEXT } from './tokens';
 import { sectionColumns, tileGeometry, TOKEN_LAYOUT_GAP, TOKEN_SECTION_MIN_WIDTH } from './tokenLayout';
 import { DocumentedAnchor } from './DocumentedAnchor';
+import { tokenSectionFrame } from './sectionFrame';
 import { tokenGridOrderProblems } from './tokenGridOrder';
 import type { TokenSection } from './types';
 
@@ -59,9 +60,7 @@ export function TokenSections({
             ref={onSectionNode ? (node: unknown) => onSectionNode(key, node) : undefined}
             style={{ width: section.wide || perRow === 1 ? width : columnWidth }}
           >
-            <Text style={styles.sectionLabel}>{section.title}</Text>
-            {section.desc ? <Text style={styles.sectionDesc}>{section.desc}</Text> : null}
-            <View style={styles.card}>{section.render()}</View>
+            {tokenSectionFrame({ title: section.title, desc: section.desc, children: section.render() })}
           </View>
         );
       })}
@@ -125,20 +124,6 @@ export function TokenTile({ name, value, note, action, documents, children }: { 
 
 const styles = StyleSheet.create({
   sections: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKEN_LAYOUT_GAP, rowGap: CATALOG_LAYOUT.blockGap, alignItems: 'flex-start' },
-  sectionLabel: {
-    ...CATALOG_TEXT.label,
-    color: CATALOG_COLOR.text,
-  },
-  sectionDesc: { ...CATALOG_TEXT.caption, color: CATALOG_COLOR.textMuted, marginTop: CATALOG_SPACE.xs },
-  card: {
-    marginTop: CATALOG_LAYOUT.blockLabelGap,
-    backgroundColor: CATALOG_COLOR.surface,
-    borderWidth: 1,
-    borderColor: CATALOG_COLOR.borderStrong,
-    borderRadius: CATALOG_RADIUS.card,
-    padding: CATALOG_SPACE.xl,
-    gap: CATALOG_SPACE.md,
-  },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKEN_LAYOUT_GAP },
   tile: { gap: CATALOG_SPACE.xs },
   tilePreview: { minHeight: 56, justifyContent: 'center', marginBottom: CATALOG_SPACE.xs },
