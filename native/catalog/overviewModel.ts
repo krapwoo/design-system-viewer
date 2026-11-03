@@ -31,6 +31,13 @@ export type ThumbnailSource = (
   width?: number;
   /** The stage the specimen sits on; absent: the catalog's default (`'auto'`). */
   surface?: SpecimenSurfaceKind;
+  /** The specimen stretches to the width it's given, as its page draws it (`fill`/`itemsFill`); absent:
+   *  it keeps its own size and is centred. A specimen whose root has no width of its own needs this,
+   *  or it collapses to nothing in the thumbnail's cell. */
+  fill?: boolean;
+  /** A `fill` specimen reaches the whole cell instead of stopping at a phone's content width
+   *  (`FILLED_CONTENT_MAX_WIDTH`): a `specimenSize: 'page'` page draws its examples that way. */
+  uncapped?: boolean;
 };
 
 export interface OverviewPage {
@@ -52,7 +59,7 @@ function hasNode(node: ReactNode): boolean {
   return node !== undefined && node !== null && node !== false;
 }
 
-type Specimenful = Pick<SectionDef, 'variants' | 'states' | 'comparison'> & {
+type Specimenful = Pick<SectionDef, 'variants' | 'states' | 'comparison' | 'specimenSize'> & {
   previewWidths?: PreviewWidths;
   specimenSurface?: SpecimenSurfaceKind;
 };
@@ -68,14 +75,19 @@ function firstPreviewWidth(widths: PreviewWidths | undefined): number | undefine
 }
 
 /** The first specimen a page or member shows: its first variant, else first state, else the first
- *  available comparison cell — with the surface that specimen sits on. */
-function firstSpecimen(source: Specimenful): { node: ReactNode; surface?: SpecimenSurfaceKind } | undefined {
+ *  available comparison cell — with the surface that specimen sits on, and whether its page draws it
+ *  filled: its own `fill`, else the slot's `itemsFill`, else (a `specimenSize: 'page'` page) filled, as
+ *  `slotItems` in `comparison.ts` decides. */
+function firstSpecimen(source: Specimenful): { node: ReactNode; surface?: SpecimenSurfaceKind; fill?: boolean; uncapped?: boolean } | undefined {
+  const page = source.specimenSize === 'page';
+  const fillByDefault = page || undefined;
+  const uncapped = page || undefined;
   const variant = source.variants?.items.find((item) => hasNode(item.node));
-  if (variant) return { node: variant.node, surface: variant.surface ?? source.specimenSurface };
+  if (variant) return { node: variant.node, surface: variant.surface ?? source.specimenSurface, fill: variant.fill ?? source.variants?.itemsFill ?? fillByDefault, uncapped };
   const state = source.states?.items.find((item) => hasNode(item.node));
-  if (state) return { node: state.node, surface: state.surface ?? source.specimenSurface };
+  if (state) return { node: state.node, surface: state.surface ?? source.specimenSurface, fill: state.fill ?? source.states?.itemsFill ?? fillByDefault, uncapped };
   const cell = source.comparison?.cells.find((item) => hasNode(item.node));
-  return cell ? { node: cell.node, surface: cell.surface ?? source.specimenSurface } : undefined;
+  return cell ? { node: cell.node, surface: cell.surface ?? source.specimenSurface, fill: cell.fill, uncapped: (source.comparison?.size ?? source.specimenSize) === 'page' || undefined } : undefined;
 }
 
 /** Only keys that have a value, so a plain page's source stays `{ node }`. */
@@ -83,9 +95,10 @@ function withLook(
   base: { node: ReactNode } | { render: () => ReactNode },
   widths: PreviewWidths | undefined,
   surface: SpecimenSurfaceKind | undefined,
+  look: { fill?: boolean; uncapped?: boolean } = {},
 ): ThumbnailSource {
   const width = firstPreviewWidth(widths);
-  return { ...base, ...(width !== undefined && { width }), ...(surface !== undefined && { surface }) };
+  return { ...base, ...(width !== undefined && { width }), ...(surface !== undefined && { surface }), ...(look.fill && { fill: true }), ...(look.fill && look.uncapped && { uncapped: true }) };
 }
 
 /** Ids of the pages in a "Tokens" group. A `tokenGallery` page there is a token page; the same
@@ -106,12 +119,12 @@ export function thumbnailSource(def: SectionDef, options: { inTokenGroup?: boole
   if (def.family) {
     for (const member of def.family.members) {
       const specimen = firstSpecimen(member);
-      if (specimen) return withLook({ node: specimen.node }, member.previewWidths ?? def.previewWidths ?? options.defaultPreviewWidths, specimen.surface ?? def.specimenSurface);
+      if (specimen) return withLook({ node: specimen.node }, member.previewWidths ?? def.previewWidths ?? options.defaultPreviewWidths, specimen.surface ?? def.specimenSurface, specimen);
     }
     return undefined;
   }
   const specimen = firstSpecimen(def);
-  if (specimen) return withLook({ node: specimen.node }, def.previewWidths ?? options.defaultPreviewWidths, specimen.surface);
+  if (specimen) return withLook({ node: specimen.node }, def.previewWidths ?? options.defaultPreviewWidths, specimen.surface, specimen);
   // A `render()` preview on a token gallery sits on no stage (`SectionBlock` passes none).
   return def.render ? withLook({ render: def.render }, def.previewWidths ?? options.defaultPreviewWidths, def.tokenGallery ? undefined : def.specimenSurface) : undefined;
 }

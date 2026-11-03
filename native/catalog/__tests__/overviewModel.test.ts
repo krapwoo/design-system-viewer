@@ -226,3 +226,24 @@ test('a token page that documents components owns their usage in the Overview', 
   assert.equal(built.home, 'Home');
   assert.deepEqual(built.byArea, [{ area: 'Home', count: 3 }, { area: 'Settings', count: 2 }]);
 });
+
+test('the thumbnail stretches a specimen its page draws filled (itemsFill or the item\'s own fill), and only then', () => {
+  assert.deepEqual(thumbnailSource(page('Slot', { states: { itemsFill: true, items: [item('a')] } })), { node: NODE, fill: true });
+  assert.deepEqual(thumbnailSource(page('Item', { variants: { items: [{ ...item('a'), fill: true }] } })), { node: NODE, fill: true });
+  assert.deepEqual(thumbnailSource(page('Off', { variants: { itemsFill: true, items: [{ ...item('a'), fill: false }] } })), { node: NODE }, 'the item\'s own fill: false wins');
+  assert.deepEqual(thumbnailSource(page('Cell', { comparison: { rows: [], columns: [], cells: [{ row: 'r', column: 'c', node: NODE, fill: true }] } as never })), { node: NODE, fill: true });
+});
+
+test('a specimenSize: \'page\' page draws its first variant/state/member filled and uncapped by default, as the page does; a smaller page does not', () => {
+  const filled = { node: NODE, fill: true, uncapped: true };
+  assert.deepEqual(thumbnailSource(page('V', { specimenSize: 'page', variants: { items: [item('a')] } })), filled);
+  assert.deepEqual(thumbnailSource(page('S', { specimenSize: 'page', states: { items: [item('a')] } })), filled);
+  assert.deepEqual(thumbnailSource(page('Off', { specimenSize: 'page', variants: { items: [{ ...item('a'), fill: false }] } })), { node: NODE }, 'the item\'s own fill: false wins');
+  assert.deepEqual(thumbnailSource(page('Slot', { specimenSize: 'page', variants: { itemsFill: false, items: [item('a')] } })), { node: NODE }, 'itemsFill: false wins');
+  assert.deepEqual(thumbnailSource(page('Cell', { specimenSize: 'page', comparison: { rows: [], columns: [], cells: [{ row: 'r', column: 'c', node: NODE, fill: true }] } as never })), filled);
+  assert.deepEqual(thumbnailSource(page('Reg', { specimenSize: 'regular', variants: { items: [item('a')] } })), { node: NODE });
+  assert.deepEqual(thumbnailSource(page('Wide', { variants: { itemsFill: true, items: [item('a')] } })), { node: NODE, fill: true }, 'a filled slot is capped at a phone\'s content width');
+  const member = (specimenSize?: 'page') => page('F', { family: { members: [{ id: 'm', variants: { items: [item('a')] }, ...(specimenSize && { specimenSize }) }] } as never });
+  assert.deepEqual(thumbnailSource(member('page')), filled, 'a family member\'s own specimenSize');
+  assert.deepEqual(thumbnailSource(member()), { node: NODE });
+});

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { defineCatalogPage, InventoryGroup, InventoryTile, CATALOG_COLOR, CATALOG_TEXT } from '@krapwoo/ds-viewer';
 
 // Each tile stands for a page of this catalog, so its title is that page's own title and its link opens it.
@@ -11,13 +11,22 @@ const group = (count: number) => (
   </InventoryGroup>
 );
 
+// Fixed-size specimens (a dot, a pill) keep their own size, so a group of only those uses narrower tiles.
+const fixedGroup = (
+  <InventoryGroup title="Status dots" description="Small marks that are the same size on every screen.">
+    {[...MEMBERS, 'Inventory', 'InventoryGroup', 'InventoryTile'].map((name, i) => (
+      <InventoryTile key={name} target={name} fixedSize={24 + i * 8} specimen={<View style={{ width: 24 + i * 8, height: 24, borderRadius: 12, backgroundColor: CATALOG_COLOR.accent }} />} />
+    ))}
+  </InventoryGroup>
+);
+
 export default defineCatalogPage({
   component: 'InventoryGroup',
   group: 'Components',
   source: '../native/catalog/Inventory.tsx',
   specimenSize: 'page',
   hide: { props: true },
-  description: "One group of a category overview page's inventory: a title with its count in it (`Building blocks · 5`), a plain-English description, then its `InventoryTile`s as flat tiles in the same responsive grid as a `TokenGrid` (260px at least, up to four across). Three or five tiles sit three across, never four and an orphan. A group with no tiles renders nothing. Inside an `Inventory`, a selected filter hides the tiles it does not match and the count reads `3 of 12`.",
+  description: "One group of a category overview page's inventory: a title with its count in it (`Building blocks · 5`), a plain-English description, then its `InventoryTile`s as flat tiles in the same responsive grid as a `TokenGrid` (260px at least, up to four across). Three or five tiles sit three across, never four and an orphan. A group whose tiles are all `fixedSize` (avatars, badges, dots) uses 160px tiles, or the widest tile plus 8px either side if that is more, up to six across; one tile that is not `fixedSize` keeps the whole group on the default grid. A group with no tiles renders nothing. Inside an `Inventory`, a selected filter hides the tiles it does not match and the count reads `3 of 12`.",
   composedOf: [
     { component: 'VariantGroup', role: 'Title with its count, and the description', relationship: 'built-in' },
     { component: 'TokenGrid', role: 'The responsive grid the tiles sit in', relationship: 'built-in' },
@@ -30,6 +39,7 @@ export default defineCatalogPage({
     items: [
       { key: 'three', name: 'Three tiles: three across', fill: true, node: group(3) },
       { key: 'four', name: 'Four tiles: four across', fill: true, node: group(4) },
+      { key: 'fixed', name: 'Fixed-size specimens: narrower tiles, more across', fill: true, node: fixedGroup },
       { key: 'five', name: 'Five tiles: three across, then two', fill: true, node: group(5) },
     ],
   },

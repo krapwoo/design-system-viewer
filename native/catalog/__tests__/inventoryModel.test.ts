@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inventoryChips, inventoryGroupName, inventoryMaxColumns, inventoryShownCount, inventoryStageSurface, inventoryTargetId, inventoryTileShown,
-  readableName, sameInventoryFilter, inventoryStatusVisible, INVENTORY_ALL, INVENTORY_MAX_COLUMNS,
+  readableName, sameInventoryFilter, inventoryStatusVisible, inventoryGrid, INVENTORY_ALL, INVENTORY_MAX_COLUMNS, INVENTORY_MIN_TILE_WIDTH,
+  INVENTORY_FIXED_MIN_TILE_WIDTH, INVENTORY_FIXED_MAX_COLUMNS,
 } from '../inventoryModel.ts';
 
 test('three or five tiles lay out three across; every other count may use all four', () => {
@@ -86,4 +87,21 @@ test('a group names itself with its count, or "shown of total" while a filter hi
 test('the "Showing N of M" line is drawn only while a filter narrows the list', () => {
   assert.equal(inventoryStatusVisible(INVENTORY_ALL), false, 'under All it says nothing worth reading');
   assert.equal(inventoryStatusVisible({ kind: 'group', title: 'Capsules' } as never), true);
+});
+
+test('a group of only fixed-size tiles gets narrower tiles and more columns; one full-width tile keeps the default grid', () => {
+  const standard = { minTileWidth: INVENTORY_MIN_TILE_WIDTH, maxColumns: INVENTORY_MAX_COLUMNS };
+  assert.deepEqual(inventoryGrid([], 8), standard);
+  assert.deepEqual(inventoryGrid([undefined, undefined], 8), standard);
+  assert.deepEqual(inventoryGrid([true, undefined, true], 8), standard, 'one tile that is not fixed-size');
+  assert.deepEqual(inventoryGrid([true, false], 8), standard);
+  assert.deepEqual(inventoryGrid([true, true], 8), { minTileWidth: INVENTORY_FIXED_MIN_TILE_WIDTH, maxColumns: INVENTORY_FIXED_MAX_COLUMNS });
+});
+
+test('fixed-size tiles that give their size are as wide as the widest plus its inset, between the compact and the default width', () => {
+  assert.equal(inventoryGrid([40, 24], 8).minTileWidth, INVENTORY_FIXED_MIN_TILE_WIDTH, 'small ones use the compact width');
+  assert.equal(inventoryGrid([200, 24, true], 8).minTileWidth, 216, 'the widest decides');
+  assert.equal(inventoryGrid([500], 8).minTileWidth, INVENTORY_MIN_TILE_WIDTH, 'never wider than a default tile');
+  assert.equal(inventoryMaxColumns(5, INVENTORY_FIXED_MAX_COLUMNS), 3, 'the odd-count rule still holds');
+  assert.equal(inventoryMaxColumns(6, INVENTORY_FIXED_MAX_COLUMNS), 6);
 });

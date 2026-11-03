@@ -22,6 +22,32 @@ export function inventoryMaxColumns(count: number, maxColumns: number = INVENTOR
   return count === 3 || count === 5 ? Math.min(3, maxColumns) : maxColumns;
 }
 
+/** Narrowest a tile gets in a group whose specimens are all fixed-size (an avatar, a badge, a dot):
+ *  they do not stretch to a phone's width, so they need no more room than they take themselves. */
+export const INVENTORY_FIXED_MIN_TILE_WIDTH = 160;
+/** Most tiles a group of fixed-size specimens lays out across. */
+export const INVENTORY_FIXED_MAX_COLUMNS = 6;
+
+/** What an `InventoryTile`'s `fixedSize` says: `true` (a specimen whose size does not depend on the
+ *  screen's width), or that specimen's widest side in px, so the group can size its tiles to it. */
+export type InventoryFixedSize = boolean | number;
+
+/** The grid a group lays its tiles in. Every tile `fixedSize` (none stretches across a phone's
+ *  width) lets the group use narrower tiles and more columns: `INVENTORY_FIXED_MIN_TILE_WIDTH`, or,
+ *  when the tiles give their pixel size, the widest of them plus `inset` either side, never wider than a
+ *  default tile. One tile that is not fixed-size keeps the whole group on the default grid, so tiles
+ *  that show the same kind of thing are the same width. */
+export function inventoryGrid(
+  tiles: readonly (InventoryFixedSize | undefined)[],
+  inset: number,
+): { minTileWidth: number; maxColumns: number } {
+  const fixed = tiles.length > 0 && tiles.every((size) => size !== undefined && size !== false);
+  if (!fixed) return { minTileWidth: INVENTORY_MIN_TILE_WIDTH, maxColumns: INVENTORY_MAX_COLUMNS };
+  const widest = Math.max(0, ...tiles.map((size) => (typeof size === 'number' && Number.isFinite(size) ? size : 0)));
+  const minTileWidth = Math.min(INVENTORY_MIN_TILE_WIDTH, Math.max(INVENTORY_FIXED_MIN_TILE_WIDTH, Math.ceil(widest + 2 * inset)));
+  return { minTileWidth, maxColumns: INVENTORY_FIXED_MAX_COLUMNS };
+}
+
 /** The address a tile's `target` names, without a leading `#`: `'#Button'` and `'Button'` are the same. */
 export function inventoryTargetId(target: string): string {
   return target.startsWith('#') ? target.slice(1) : target;

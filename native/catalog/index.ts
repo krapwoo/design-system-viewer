@@ -71,6 +71,7 @@ export { Inventory, InventoryGroup, InventoryTile } from './Inventory';
 export { StyleBadge, StyleBadgeButton, STYLE_BADGE_LABEL } from './PageKindBadge';
 export { Popover } from './Popover';
 export type { InventoryLayout } from './inventoryLayoutContext';
+export type { InventoryFixedSize } from './inventoryModel';
 export { WarningBanner } from './WarningBanner';
 export type { WarningBannerTone } from './WarningBanner';
 export { Swatch } from './Swatch';
