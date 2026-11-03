@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import { inventoryLayoutContext, type InventoryLayout } from './inventoryLayoutContext';
 export type { InventoryLayout } from './inventoryLayoutContext';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -9,8 +9,8 @@ import { useMemberTitle } from './memberTitlesContext';
 import { useReferenceNavigation } from './referenceNavigationContext';
 import {
   inventoryStatusVisible,
-  INVENTORY_ALL, INVENTORY_MIN_TILE_WIDTH, inventoryChips, inventoryGroupName, inventoryMaxColumns, inventoryShownCount, inventoryStageSurface,
-  inventoryTargetId, inventoryTileShown, readableName, sameInventoryFilter, type InventoryFilter, type InventoryShape,
+  INVENTORY_ALL, inventoryChips, inventoryGrid, inventoryGroupName, inventoryMaxColumns, inventoryShownCount, inventoryStageSurface,
+  inventoryTargetId, inventoryTileShown, readableName, sameInventoryFilter, type InventoryFilter, type InventoryFixedSize, type InventoryShape,
 } from './inventoryModel';
 import { JumpChip } from './JumpRow';
 import { chipRow, tokenSectionFrame, tokenSectionStack } from './sectionFrame';
@@ -57,6 +57,11 @@ export function startsWithInventory(content: React.ReactNode): boolean {
   return first === parts.length - 1 && React.isValidElement(parts[first]) && (parts[first] as React.ReactElement).type === Inventory;
 }
 
+/** A tile's own `fixedSize`, read off the element the same way. */
+function fixedSizeOf(child: React.ReactNode): InventoryFixedSize | undefined {
+  return React.isValidElement(child) ? (child.props as { fixedSize?: InventoryFixedSize }).fixedSize : undefined;
+}
+
 /** A tile's own `tags`, read off the element: only a tile given to a group directly is seen. */
 function tagsOf(child: React.ReactNode): readonly string[] | undefined {
   return React.isValidElement(child) ? (child.props as { tags?: readonly string[] }).tags : undefined;
@@ -66,7 +71,8 @@ function tagsOf(child: React.ReactNode): readonly string[] | undefined {
  * One group of an inventory on a category overview page: a title with its count (`Shared styles · 6`),
  * a plain-English description of what the group is, then its `InventoryTile`s as flat tiles in the
  * same responsive grid as a `TokenGrid`, 260px at least, up to four across; three or five tiles sit
- * three across. A group with no tiles renders nothing. Inside an `Inventory`, a selected filter hides
+ * three across. A group whose tiles are all `fixedSize` (avatars, badges, dots, icons) uses 160px
+ * tiles at least, or the widest tile's size plus its inset if that is more, up to six across. A group with no tiles renders nothing. Inside an `Inventory`, a selected filter hides
  * the tiles it does not match, the group's count reads `3 of 12`, and a group left with none draws
  * nothing. In the `'sections'` layout the group is a token-page section: title and description
  * outside, the tiles in the group's own bordered box.
@@ -84,10 +90,11 @@ export function InventoryGroup({ title, description, children }: { title: string
   const tiles = all.filter((tile) => inventoryTileShown(filter, title, tagsOf(tile)));
   if (tiles.length === 0) return null;
   const name = inventoryGroupName(title, tiles.length, all.length);
+  const { minTileWidth, maxColumns } = inventoryGrid(tiles.map(fixedSizeOf), CATALOG_SPACE.sm);
   // A TokenGrid sizes its tiles from its own width, so it must fill the group rather than shrink to fit.
   const grid = (
     <View style={styles.fill}>
-      <TokenGrid minTileWidth={INVENTORY_MIN_TILE_WIDTH} maxColumns={inventoryMaxColumns(tiles.length)}>{tiles}</TokenGrid>
+      <TokenGrid minTileWidth={minTileWidth} maxColumns={inventoryMaxColumns(tiles.length, maxColumns)}>{tiles}</TokenGrid>
     </View>
   );
   if (layout === 'sections') {
@@ -216,6 +223,21 @@ export function Inventory({ children, label = 'Filter the inventory', layout }: 
  *   Overview card shows; a member has no default specimen, so pass one. A page that is already being
  *   drawn this way further up (a tile on its own page, or two pages that target each other) shows
  *   "No specimen" instead of drawing itself again.
+ * - Scale: a `specimen` is drawn the way a page's tile is — laid out at the reference phone width (402px;
+ *   the width its page previews at, when `target` is a member of a page that names one; `width`
+ *   overrides), measured, and shrunk to fit the tile, never enlarged. A specimen that fills a
+ *   screen's width (a row, card, banner, bar) comes out at one scale for every tile of the same width,
+ *   page tile or part tile; one whose size does not depend on the screen (an avatar, badge, dot,
+ *   icon, a button sized to its label) paints at its own size, so it is drawn at real size. That measuring
+ *   needs a DOM: on web only. Elsewhere a tile scales the full cell width (402px by default), so a fixed-size specimen comes
+ *   out smaller than real size.
+ * - `fill`: the specimen stretches to that width, as a `fill`/`itemsFill` specimen does on its page (a root
+ *   with no width of its own, such as a `width: '100%'` panel, needs it; capped at a phone's content width
+ *   and centred, as on the page, in a cell no wider than a phone; a wider `width` fills it). Off unless set: the target page's
+ *   `fill` belongs to its first specimen, not to this part. Page tiles always follow their page.
+ * - `fixedSize` says so for the group: `true`, or that specimen's widest side in px. A group whose tiles
+ *   are all `fixedSize` uses narrower tiles and more columns (see `InventoryGroup`). It changes only
+ *   the grid; how big the specimen is drawn is always measured.
  * - `tags` puts the tile in named sets (`['Draws its own shape']`) that an enclosing `Inventory` turns
  *   into filter chips. A tile draws nothing for them.
  * - A tile whose page is a style (`pageKind: 'style'`), or that links to a member of one, shows a
@@ -225,7 +247,7 @@ export function Inventory({ children, label = 'Filter the inventory', layout }: 
  * - Outside a catalog shell (nothing to resolve against) the link is a plain `#target` anchor; inside
  *   one, a `target` that resolves to nothing shows its title as text, never a dead link.
  */
-export function InventoryTile({ target, specimen, surface = 'auto', title }: { target: string; specimen?: React.ReactNode; surface?: SpecimenSurfaceKind; title?: string; tags?: string[] }) {
+export function InventoryTile({ target, specimen, surface = 'auto', title, width, fill }: { target: string; specimen?: React.ReactNode; surface?: SpecimenSurfaceKind; title?: string; tags?: string[]; fixedSize?: InventoryFixedSize; width?: number; fill?: boolean }) {
   const navigation = useReferenceNavigation();
   const titleOf = useMemberTitle(navigation);
   const id = inventoryTargetId(target);
@@ -241,13 +263,22 @@ export function InventoryTile({ target, specimen, surface = 'auto', title }: { t
   // One stage for the whole grid: 'auto' would leave a tile white unless its specimen blends with white,
   // so tiles side by side would sit on different backgrounds.
   const stage = inventoryStageSurface(surface);
+  // A part is drawn the way its page's own tile is: laid out at the width its page previews at (the
+  // reference phone width unless `width` or that page says otherwise), measured and scaled to fit.
+  const partWidth = width ?? (resolved ? navigation?.page?.(resolved.pageId)?.source?.width : undefined);
+  // It stretches to that width only when asked: the page's own `fill` describes the page's first
+  // specimen, not this part (a badge on a row's page is not filled because the row is).
+  const part = useMemo(
+    () => (specimen === undefined ? undefined : { node: specimen, surface: stage, ...(partWidth !== undefined && { width: partWidth }), ...(fill && { fill: true }) }),
+    [specimen, stage, partWidth, fill],
+  );
   return (
     <View style={styles.tile}>
       {/* A miniature is never the page's layout: an overview drawn in a tile stays inline, whatever group it sits in. */}
       <inventoryLayoutContext.Provider value="inline">
       <View ref={makeInert} {...ARIA_HIDDEN} style={[styles.inert, { pointerEvents: 'none' } as object]}>
-        {specimen !== undefined ? (
-          <SpecimenSurface surface={stage} style={styles.stage}>{specimen}</SpecimenSurface>
+        {part ? (
+          <OverviewThumbnail source={part} height={DEFAULT_SPECIMEN_HEIGHT} />
         ) : thumbnail ? (
           <ThumbnailPagesContext.Provider value={[...drawing, thumbnail.pageId]}>
             <OverviewThumbnail source={thumbnail.source} height={DEFAULT_SPECIMEN_HEIGHT} />

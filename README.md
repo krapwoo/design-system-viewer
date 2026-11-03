@@ -620,7 +620,10 @@ filters. It is an ordinary page with a `render()`, built from these:
    writes data and not layout.
    - An `InventoryGroup` is a title with its count in it (`Shared styles · 6`), a plain-English
      description and its tiles in the same responsive grid as a `TokenGrid` (260px at least, up to four
-     across; three or five tiles sit three across, never four and an orphan).
+     across; three or five tiles sit three across, never four and an orphan). A group whose tiles
+     are **all** `fixedSize` (see below) uses tiles 160px wide at least, or its widest tile's size plus
+     8px either side if that is more, up to six across; one tile that is not `fixedSize` keeps the
+     whole group on the default grid, so tiles that show the same kind of thing stay the same width.
    - An `InventoryTile` is the member's **real specimen** on a specimen stage and, under it, its **title
      as a link to its page** — flat, with no card around the tile and none inside it. Its props:
      - `target`: the page id, or a member's id (a leading `#` is allowed: `'#FilterChip'`). The link text
@@ -631,6 +634,27 @@ filters. It is an ordinary page with a `render()`, built from these:
      - `specimen` and `surface`: the node drawn on the stage, and its stage (`'auto'` by default, as on a
        page). Leave `specimen` out for a page `target` and the page's own first specimen is drawn, scaled
        to fit, the same picture its **Overview** card shows. A member has no default specimen: pass one.
+     - **Scale.** A specimen, given or a page's own, is drawn the same way in every tile: laid out in a
+       cell of the **402px reference** width (the page's first preview width, for a page tile and for a
+       member of a page that names one; `width` overrides it), measured, and shrunk to fit the tile,
+       never enlarged. A specimen that fills a phone screen's width (a row, card, banner, bar) therefore
+       comes out at one scale for every tile of the same width, whether it is a page tile or a part
+       tile. A specimen whose size does not depend on the screen (an avatar, badge, dot, icon, a button
+       sized to its label) keeps its own size in the cell, so it is drawn at **real size**, and is only
+       shrunk if it would not fit the tile. Nothing to author: the viewer measures it, **on web only**:
+       without a DOM (native) there is nothing to measure, so a tile scales the full cell width (402px by default) and a
+       fixed-size specimen comes out smaller than real size.
+     - `fixedSize`: `true`, or the specimen's widest side in px, for a specimen of that second kind.
+       It only sizes the grid (see `InventoryGroup`); the scale a specimen is drawn at is always measured.
+     - `width`: the width the specimen is laid out at before it is scaled, when it should not be the
+       page's first preview width or 402.
+     - `fill`: the specimen stretches to that width, as a `fill`/`itemsFill` specimen does on its
+       page; a root with no width of its own (a `width: '100%'` panel) needs it, or it collapses to
+       nothing. Like a filled example on a page it is capped at a phone's content width (370px, in a cell no wider than a phone; a wider `width` fills it) and
+       centred, and a narrow fixed-width root keeps its own size. Off unless set, since the target
+       page's `fill` belongs to its first specimen, not to this part. Page tiles, and Overview cards, always draw a page's first specimen the
+       way that page does: its `fill`/`itemsFill`, a `specimenSize: 'page'` page's default fill, and a
+       `render()` preview in a stretched column.
      - `tags`: named sets the tile belongs to (`tags={['Draws its own shape']}`). A tile may be in
        several. They draw nothing on the tile; an `Inventory` turns each into a filter.
      - A tile whose page sets `pageKind: 'style'` shows a **Style** badge (see **Mark style pages**).

@@ -437,17 +437,67 @@ test('a thumbnail lays out at its page\'s preview width and sits on its surface'
   const frame = wide.container.firstElementChild as HTMLElement;
   const stage = frame.firstElementChild as HTMLElement;
   assert.equal(cssOf(stage, 'width'), '768px');
-  const surface = stage.querySelector('span')!.parentElement as HTMLElement;
+  const cell = stage.firstElementChild as HTMLElement;
+  const surface = cell.firstElementChild as HTMLElement;
   assert.match(cssOf(surface, 'background-color'), /^rgba\(24,\s*24,\s*24,\s*1/, 'the dark stage behind the specimen');
   // The specimen sits in a cell of that width, not a shrink-to-fit box: a specimen sized against its
   // container (PhoneFrame is `width: 100%`) would otherwise collapse to a couple of pixels.
-  const cell = stage.firstElementChild as HTMLElement;
   assert.equal(cssOf(cell, 'width'), '768px');
   assert.equal(cssOf(surface, 'width'), '100%');
   wide.cleanup();
   const plain = renderCatalog(<OverviewThumbnail source={{ node: <span>plain</span> }} height={100} />);
   assert.equal(cssOf((plain.container.firstElementChild as HTMLElement).firstElementChild!, 'width'), '402px');
   plain.cleanup();
+});
+
+test('a thumbnail stretches a fill specimen to its cell, as its page does, and keeps any other one at its own size', () => {
+  // The specimen's wrapper: a column that stretches its child for `fill`, a centring row otherwise. A
+  // root with no width of its own (a `width: '100%'` panel inside a padded view) collapses to nothing
+  // in a centring box, so a page that draws it filled must be drawn filled here too.
+  const wrapperOf = (fill: boolean | undefined) => {
+    const r = renderCatalog(<OverviewThumbnail source={{ node: <span>panel</span>, ...(fill !== undefined && { fill }) }} height={100} />);
+    const wrapper = r.container.querySelector('span')!.parentElement as HTMLElement;
+    const out = { direction: cssOf(wrapper, 'flex-direction'), align: cssOf(wrapper, 'align-items') };
+    r.cleanup();
+    return out;
+  };
+  assert.equal(wrapperOf(true).align, 'stretch');
+  assert.notEqual(wrapperOf(true).direction, 'row');
+  assert.equal(wrapperOf(undefined).direction, 'row', 'a non-fill specimen keeps its own size, centred');
+});
+
+test('a render() thumbnail is laid out stretched in a column, as Preview draws it, not in a centring row', () => {
+  // In a row a root sized to its content grows to its one-line width and stops wrapping; several roots
+  // (a fragment) would sit side by side.
+  const r = renderCatalog(<OverviewThumbnail source={{ render: () => <span>rendered</span> }} height={100} />);
+  const wrapper = r.container.querySelector('span')!.parentElement as HTMLElement;
+  const got = { direction: cssOf(wrapper, 'flex-direction'), align: cssOf(wrapper, 'align-items') };
+  r.cleanup();
+  assert.notEqual(got.direction, 'row');
+  assert.equal(got.align, 'stretch');
+});
+
+test('a dark or white surface fills the whole thumbnail frame, not only the band behind the specimen', () => {
+  const fillOf = (surface: 'dark' | 'white' | 'neutral') => {
+    const { container, cleanup } = renderCatalog(<OverviewThumbnail source={{ node: <span>x</span>, surface }} height={100} />);
+    const fill = cssOf(container.firstElementChild as HTMLElement, 'background-color');
+    cleanup();
+    return fill;
+  };
+  assert.match(fillOf('dark'), /^rgba?\(24,\s*24,\s*24/);
+  assert.notEqual(fillOf('white'), fillOf('neutral'));
+  assert.notEqual(fillOf('dark'), fillOf('neutral'));
+});
+
+test('a transparent surface leaves the thumbnail frame transparent, not the catalog\'s grey stage', () => {
+  const fillOf = (surface: 'transparent' | 'neutral') => {
+    const { container, cleanup } = renderCatalog(<OverviewThumbnail source={{ node: <span>x</span>, surface }} height={100} />);
+    const fill = cssOf(container.firstElementChild as HTMLElement, 'background-color');
+    cleanup();
+    return fill;
+  };
+  assert.match(fillOf('transparent'), /^(transparent|rgba\(0,\s*0,\s*0,\s*0\))$/);
+  assert.notEqual(fillOf('neutral'), fillOf('transparent'));
 });
 
 test('a real area named "Other" keeps its chip and group; a tokenGallery screen outside Tokens gets a card', () => {
