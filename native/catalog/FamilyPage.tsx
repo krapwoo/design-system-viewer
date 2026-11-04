@@ -720,16 +720,20 @@ interface MeasurableNode {
  *  convention every other canonical link here uses — plain text, never a dead link, when it
  *  doesn't resolve). */
 function ExternalPartRow({
-  memberId, number, groupTitle, resolvesAddress, navigation,
+  memberId, number, groupTitle, standalone, resolvesAddress, navigation,
 }: {
   memberId: string;
   number?: string;
   groupTitle: string;
+  /** The part is a standalone page: its heading already is that page's title, so the link says
+   *  "Details on its page" instead of repeating it. */
+  standalone?: boolean;
   resolvesAddress: (name: string) => boolean;
   navigation?: ReferenceNavigation;
 }) {
   const link = familyLink(navigation, resolvesAddress, memberId);
   const titleOf = useMemberTitle(navigation);
+  const linkText = standalone ? 'Details on its page' : `Details on ${groupTitle}`;
   return (
     <View>
       <View style={styles.partHeadRow}>
@@ -746,10 +750,10 @@ function ExternalPartRow({
         <Text style={styles.belowLine}>
           {link ? (
             <Text role="link" style={styles.relatedLink} {...link}>
-              {`Details on ${groupTitle}`}
+              {linkText}
             </Text>
           ) : (
-            <Text>{`Details on ${groupTitle}`}</Text>
+            <Text>{linkText}</Text>
           )}
         </Text>
       </View>
@@ -812,7 +816,7 @@ export function PartTreeBranch({
   ) : (() => {
     const external = externalParts?.get(node.id);
     return external ? (
-      <ExternalPartRow memberId={node.id} number={outline.get(node.id)?.number} groupTitle={external.title} resolvesAddress={resolvesAddress} navigation={navigation} />
+      <ExternalPartRow memberId={node.id} number={outline.get(node.id)?.number} groupTitle={external.title} standalone={external.standalone} resolvesAddress={resolvesAddress} navigation={navigation} />
     ) : null;
   })();
   if (part === null) return null;
@@ -924,7 +928,7 @@ function FamilySectionGroup({
                 registerNode={registerNode}
               />
             ) : external ? (
-              <ExternalPartRow memberId={id} number={outline.get(id)?.number} groupTitle={external.title} resolvesAddress={resolvesAddress} navigation={navigation} />
+              <ExternalPartRow memberId={id} number={outline.get(id)?.number} groupTitle={external.title} standalone={external.standalone} resolvesAddress={resolvesAddress} navigation={navigation} />
             ) : null}
           </View>
         );

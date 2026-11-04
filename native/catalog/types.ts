@@ -549,9 +549,10 @@ export interface FamilyDef {
   /** #63 A5: every one of this family's own outline ids that is actually an *external part* — a
    *  member defined on a group page rather than this page's own `members` — keyed by that id, with
    *  the owning group page's id/title and the owning member's `fidelity` (so its pin is dashed for a
-   *  documentation-only member, the same as an own part's). Set only on a family's own `FamilyDef`; always `undefined`
+   *  documentation-only member, the same as an own part's). `standalone` marks an id that is a standalone
+   *  page itself, not a member of a group page: its row's heading already is the page's title. Set only on a family's own `FamilyDef`; always `undefined`
    *  for a group's own (a group page is never itself a family with external parts). */
-  externalParts?: ReadonlyMap<string, { pageId: string; title: string; fidelity?: CatalogMember['fidelity'] }>;
+  externalParts?: ReadonlyMap<string, { pageId: string; title: string; fidelity?: CatalogMember['fidelity']; standalone?: boolean }>;
 }
 
 /** One titled card on a token page (`SectionDef.tokenSections`). */

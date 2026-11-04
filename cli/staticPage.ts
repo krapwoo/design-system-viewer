@@ -171,7 +171,7 @@ export interface StaticPage {
    *  other not-literally-checkable field, rather than risk a false "missing" claim. */
   hasComposedOf?: boolean;
   /** `ComposedOfEntry.component` names, plus `relationship` when it is a string literal (#66: the
-   *  structure rules count only a literal `'built-in'` (`part-own-page`) or `'arranged'` (`page-placement`); a non-literal relationship stays unset and
+   *  the runtime Used-by display counts a literal `'built-in'` and `page-placement` counts `'arranged'`; a non-literal relationship stays unset and
    *  never counts). `role` is never read. Present only when `composedOf` is itself a literal array
    *  of object literals, each with a literal `component`. */
   composedOf?: StaticComposedOfEntry[];
@@ -364,6 +364,14 @@ export interface StaticMember {
    *  (`'documentation-only'` marks a part with no area of its own, drawn as a dashed pin). */
   relationship?: string;
   fidelity?: string;
+  /** Whether the member authored `relationship` / `fidelity` / `osComponent` at all. A present field
+   *  whose value isn't a literal reads as `undefined` above; `doctor` then gives the member the
+   *  benefit of the doubt instead of guessing. */
+  hasRelationship?: boolean;
+  hasFidelity?: boolean;
+  hasOsComponent?: boolean;
+  /** The member's literal `osComponent` (`'full'` = drawn entirely by the OS, `'partial'` = contains a native control). */
+  osComponent?: string;
   /** See `StaticPage.anatomyShape`. */
   anatomyShape?: StaticAnatomyShape;
 }
@@ -726,6 +734,10 @@ function readFamilyMembers(
       anatomy: memberIds ? { memberIds } : undefined,
       relationship: propertyStringLiteral(resolvedElement, 'relationship', consts),
       fidelity: propertyStringLiteral(resolvedElement, 'fidelity', consts),
+      hasRelationship: findProp(resolvedElement, 'relationship') !== undefined,
+      hasFidelity: findProp(resolvedElement, 'fidelity') !== undefined,
+      hasOsComponent: findProp(resolvedElement, 'osComponent') !== undefined,
+      osComponent: propertyStringLiteral(resolvedElement, 'osComponent', consts),
       anatomyShape: anatomyProp ? readAnatomyShape(anatomyProp.initializer, consts, sourceFile) : undefined,
     });
   }

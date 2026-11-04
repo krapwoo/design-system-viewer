@@ -775,15 +775,60 @@ test('reads members/whole/sections/aliases literally, flattening every section\'
   // for a member that authors none of them.
   const noLayout = {
     variantsItems: undefined, variantsItemsFill: undefined, variantsMaxColumns: undefined, variantsAxis: undefined, variantsAxisUnreadable: undefined,
-    statesItems: undefined, statesItemsFill: undefined, statesMaxColumns: undefined, statesAxis: undefined, comparison: undefined, previewWidths: undefined, specimenSize: undefined,
+    statesItems: undefined, statesItemsFill: undefined, statesMaxColumns: undefined, statesAxis: undefined, comparison: undefined, previewWidths: undefined, specimenSize: undefined, hasOsComponent: false, osComponent: undefined,
   };
-  assert.deepEqual(page.members, [
+  // (`hasRelationship` / `hasFidelity` are tested on their own below.)
+  assert.deepEqual(page.members?.map(({ hasRelationship: _r, hasFidelity: _f, ...rest }) => rest), [
     { id: 'Toast', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined, anatomyShape: undefined, relationship: 'Whole', fidelity: 'documentation-only', ...noLayout },
     // V2c item 5: `variants: { items: [] }` has no real specimen — `hasExamples` must be false,
     // not just "the variants key is present".
     { id: 'ToastBanner', component: 'Banner', parent: 'Toast', aliases: ['BannerOld'], composedOf: undefined, hasComposedOf: false, hasWhenToUse: true, hasA11y: true, hasExamples: false, anatomy: undefined, anatomyShape: undefined, relationship: 'Part', fidelity: 'replicated', ...noLayout, variantsItems: [] },
     { id: 'ToastStandalone', component: undefined, parent: undefined, aliases: undefined, composedOf: undefined, hasComposedOf: false, hasWhenToUse: false, hasA11y: false, hasExamples: false, anatomy: undefined, anatomyShape: undefined, relationship: 'Related', fidelity: 'documentation-only', ...noLayout },
   ]);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test('a family member that authors osComponent records that osComponent is authored, and its literal value', () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Menu', group: 'Components', description: 'd', whole: 'Menu',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['Sys'] }],
+      members: [
+        { id: 'Menu', source: 'x:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' },
+        { id: 'Sys', component: 'Sys', parent: 'Menu', osComponent: OS, source: 'x:2', fidelity: 'replicated', relationship: 'Part', description: 'd' },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  assert.equal(page.members?.find((m) => m.id === 'Sys')?.hasOsComponent, true);
+  assert.equal(page.members?.find((m) => m.id === 'Menu')?.hasOsComponent, false);
+  rmSync(path.dirname(file), { recursive: true, force: true });
+});
+
+test("a family member's literal osComponent, relationship and fidelity are read with their value; a non-literal one only by presence", () => {
+  const file = writePage(`
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Menu', group: 'Components', description: 'd', whole: 'Menu',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['Full', 'Half', 'Dyn'] }],
+      members: [
+        { id: 'Menu', source: 'x:1', fidelity: 'documentation-only', relationship: 'Whole', description: 'd' },
+        { id: 'Full', component: 'Full', parent: 'Menu', osComponent: 'full', source: 'x:2', fidelity: 'replicated', relationship: 'Part', description: 'd' },
+        { id: 'Half', component: 'Half', parent: 'Menu', osComponent: 'partial', source: 'x:3', fidelity: 'replicated', relationship: 'Part', description: 'd' },
+        { id: 'Dyn', component: 'Dyn', parent: 'Menu', osComponent: OS, source: 'x:4', fidelity: FID, relationship: REL, description: 'd' },
+      ],
+    });
+  `);
+  const [page] = readStaticPages([file]);
+  const member = (id: string) => page.members?.find((m) => m.id === id);
+  assert.equal(member('Full')?.osComponent, 'full');
+  assert.equal(member('Half')?.osComponent, 'partial');
+  assert.equal(member('Dyn')?.osComponent, undefined);
+  assert.deepEqual([member('Dyn')?.hasOsComponent, member('Dyn')?.hasFidelity, member('Dyn')?.hasRelationship], [true, true, true]);
+  assert.deepEqual([member('Dyn')?.fidelity, member('Dyn')?.relationship], [undefined, undefined]);
+  assert.deepEqual([member('Full')?.hasFidelity, member('Full')?.hasRelationship], [true, true]);
+  assert.deepEqual([member('Menu')?.hasOsComponent], [false]);
   rmSync(path.dirname(file), { recursive: true, force: true });
 });
 
