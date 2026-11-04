@@ -285,7 +285,8 @@ function AnatomyMemberRow({ memberId, description, byId, outline, legendFocus, r
   // minimum, cover it) — an explicitly supplied `navigation` that still can't resolve it must stay
   // honest plain text, never a raw `hashForId(memberId)` escape hatch around that refusal.
   const link = familyLink(navigation, resolvesAddress, memberId);
-  const name = useMemberTitle()(memberId);
+  // With `navigation`, a part that is a standalone page shows that page's title, not its id.
+  const name = useMemberTitle(navigation)(memberId);
   return (
     <View style={styles.legendRow}>
       {pin && (

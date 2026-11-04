@@ -592,6 +592,32 @@ test('a standalone-page part row shows its number, the page title as its heading
   } finally { cleanup(); }
 });
 
+test('an anatomy member item naming a standalone page shows that page\'s title, never its raw id', () => {
+  const family = defineCatalogPage({
+    id: 'Composer', group: 'Components', description: 'd', whole: 'Composer',
+    anatomy: { picture: React.createElement('span', null, 'picture'), groups: [{ label: 'In this picture', items: [{ member: 'SheetPage', description: 'The sheet.' }] }] },
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['SheetPage'] }],
+    members: [{ id: 'Composer', source: 'w.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'The whole.' }],
+  });
+  const sheet = defineCatalogPage({ id: 'SheetPage', title: 'Attachment sheet', group: 'Components', description: 'd' });
+  const { sections } = buildCatalogSections([family, sheet].map((p) => ({ ...p, file: `fixtures/${p.id}.catalog.tsx` })), []);
+  const def = sections.find((s) => s.id === 'Composer')!;
+  const navigation = {
+    resolve: (name: string) => ({ pageId: name }),
+    open: () => {},
+    page: (pageId: string) => (pageId === 'SheetPage' ? { title: 'Attachment sheet' } : undefined),
+  };
+  const { container, cleanup } = renderCatalog(
+    React.createElement(FamilyPage as never, { def, navigation, knownAddressIds: new Set(['SheetPage']) } as never),
+  );
+  try {
+    const text = container.textContent || '';
+    assert.ok(text.includes('The sheet.'), 'the anatomy row is drawn');
+    assert.equal(text.includes('SheetPage'), false, 'no raw page id anywhere on the page');
+    assert.equal(text.split('Attachment sheet').length - 1, 2, 'the title shows in the anatomy row and as the part heading');
+  } finally { cleanup(); }
+});
+
 /** The class list of the pin showing `number` — scoped to a root; a dashed pin (documentation-only)
  *  and a solid one carry different atomic classes, so comparing two pins' classes tells them apart. */
 function pinClassFor(root: ParentNode, number: string): string {
