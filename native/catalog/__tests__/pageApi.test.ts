@@ -2183,3 +2183,84 @@ test('buildCatalogSections carries pageKind and styleNote onto the section, and 
   assert.equal(pill.styleNote, 'Our own sentence.');
   assert.equal(sections.find((s) => s.id === 'Button')!.pageKind, undefined);
 });
+
+// A part with its own standalone page: the family's Parts section lists the page's id.
+function familyWithStandalonePart(partId = 'SheetPage') {
+  const family = defineCatalogPage({
+    id: 'Composer', group: 'Components', description: 'd', whole: 'Composer',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['Field', partId] }],
+    members: [
+      { id: 'Composer', source: 'w.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' },
+      { id: 'Field', source: 'f.swift:1', fidelity: 'documentation-only' as const, relationship: 'Part', parent: 'Composer', description: 'd' },
+    ],
+  });
+  const sheet = defineCatalogPage({ id: 'SheetPage', title: 'Attachment sheet', group: 'Components', description: 'd' });
+  return { family, sheet };
+}
+
+test('buildCatalogSections: a Parts section can name a standalone page, numbered, with its title', () => {
+  const { family: familyPage, sheet } = familyWithStandalonePart();
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    const family = buildCatalogSections([familyPage, sheet], []).sections.find((s) => s.id === 'Composer')?.family;
+    assert.equal(family?.outline.get('SheetPage')?.number, '2');
+    assert.equal(family?.externalParts?.get('SheetPage')?.pageId, 'SheetPage');
+    assert.equal(family?.externalParts?.get('SheetPage')?.title, 'Attachment sheet');
+    assert.deepEqual(errors, []);
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});
+
+test('buildCatalogSections: an id that is no member and no page is still not a part', () => {
+  const { family: familyPage, sheet } = familyWithStandalonePart('Nowhere');
+  const family = buildCatalogSections([familyPage, sheet], []).sections.find((s) => s.id === 'Composer')?.family;
+  assert.equal(family?.externalParts?.get('Nowhere'), undefined);
+});
+
+test('buildCatalogSections: a Parts section cannot name a group page, another family page or the family itself as a part', () => {
+  const group = defineCatalogPage({
+    id: 'SheetGroup', group: 'Components', description: 'd',
+    members: [{ id: 'SheetItem', source: 'g.swift:1', fidelity: 'documentation-only' as const, relationship: 'Part', description: 'd' }],
+  });
+  const other = defineCatalogPage({
+    id: 'OtherFamily', group: 'Components', description: 'd', whole: 'OtherFamily',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: [] }],
+    members: [{ id: 'OtherFamily', source: 'o.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'd' }],
+  });
+  for (const id of ['SheetGroup', 'OtherFamily', 'Composer']) {
+    const { family, sheet } = familyWithStandalonePart(id);
+    const built = buildCatalogSections([family, sheet, group, other], []).sections.find((s) => s.id === 'Composer')?.family;
+    assert.equal(built?.externalParts?.get(id), undefined, id);
+    assert.equal(built?.outline.get(id), undefined, id);
+  }
+});
+
+test('buildCatalogSections: a page with members: [] is a standalone page a Parts section may list', () => {
+  const { family, sheet } = familyWithStandalonePart();
+  const emptyMembers = defineCatalogPage({ ...sheet, members: [] } as Parameters<typeof defineCatalogPage>[0]);
+  const built = buildCatalogSections([family, emptyMembers], []).sections.find((s) => s.id === 'Composer')?.family;
+  assert.equal(built?.externalParts?.get('SheetPage')?.pageId, 'SheetPage');
+});
+
+test('buildCatalogSections: an anatomy member item may name a standalone page, an other item is unchanged', () => {
+  const { family, sheet } = familyWithStandalonePart();
+  const withAnatomy = { ...family, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'SheetPage', description: 'The sheet.' }, { other: 'Elsewhere', description: 'x' }] }] } };
+  const errors: string[] = [];
+  const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+  (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+  const originalError = console.error;
+  console.error = (message: string) => errors.push(message);
+  try {
+    buildCatalogSections([withAnatomy, sheet], []);
+    assert.deepEqual(errors, []);
+  } finally {
+    console.error = originalError;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+  }
+});

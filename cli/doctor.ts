@@ -236,6 +236,12 @@ function isGroupShape(p: StaticPage): boolean {
   return !(p.hasWhole ?? p.whole !== undefined) && !(p.hasSections ?? p.sections !== undefined);
 }
 
+/** A page with no `members` (an empty `members: []` counts, as at runtime), unless its `members` was
+ *  authored but could not be read, so it may well have some. */
+function isStandalonePage(p: StaticPage): boolean {
+  return !(p.members && p.members.length > 0) && !(p.hasMembers === true && p.members === undefined);
+}
+
 /** #63 A5/A6: the static-side equivalent of `buildCatalogSections`'s own external-part pre-pass —
  *  built from `StaticPage[]` instead of the runtime catalog, but the same `resolveExternalPart`
  *  rule (imported, never reimplemented). Returns, per family page id, the external part ids it
@@ -250,6 +256,7 @@ function collectExternalParts(pages: StaticPage[]): { externalPartIdsByPage: Map
       memberLocations.set(member.id, [...(memberLocations.get(member.id) ?? []), { pageId: resolvePageId(p, p.file), isGroupPage: pIsGroup, parent: member.parent }]);
     }
   }
+  const standalonePageIds = new Set(pages.filter(isStandalonePage).map((p) => resolvePageId(p, p.file)));
   const externalPartIdsByPage = new Map<string, Set<string>>();
   const issues: DoctorIssue[] = [];
   for (const page of pages) {
@@ -263,7 +270,11 @@ function collectExternalParts(pages: StaticPage[]): { externalPartIdsByPage: Map
       for (const memberId of section.members) {
         if (byIdThisPage.has(memberId) || external.has(memberId)) continue;
         const owners = memberLocations.get(memberId);
-        if (!owners) continue; // genuinely unknown — `family-invalid`'s own "not a member" already covers it.
+        if (!owners) {
+          // A part with its own standalone page is listed by that page's id.
+          if (standalonePageIds.has(memberId)) external.add(memberId); // never the family's own id: a family has members.
+          continue; // otherwise genuinely unknown — `family-invalid`'s own "not a member" already covers it.
+        }
         const resolution = resolveExternalPart(memberId, owners, page.whole);
         if ('issue' in resolution) {
           issues.push(issue({
@@ -637,15 +648,9 @@ function isTokenPage(page: StaticPage): boolean {
     || page.hasExplicitTokenGallery === true || page.hasExplicitTokenSections === true || Boolean(page.tokenSectionTitles?.length);
 }
 
-/** #66: a non-blank `standalone` reason opts a page out of `part-own-page` and `nothing-to-show`. */
+/** #66: a non-blank `standalone` reason opts a page out of `nothing-to-show` (it once also opted out of `part-own-page`, which no longer exists). */
 function hasStandaloneReason(page: StaticPage): boolean {
   return page.standalone !== undefined && page.standalone.trim() !== '';
-}
-
-/** #66: the pages `part-own-page` considers — readable, plain (no members, not a token page, not a
- *  style page: a style is applied, never a part), browse-listed, and without a recorded `standalone` reason. */
-function isStructureCandidate(page: StaticPage): boolean {
-  return page.checkable && !hasMembers(page) && !isTokenPage(page) && page.pageKind !== 'style' && page.navigation !== 'reference' && !hasStandaloneReason(page);
 }
 
 /** #66: the default `patternGroups` — the starter kit's own group for example screens. */
@@ -665,30 +670,22 @@ function checkStandaloneReason(pages: StaticPage[]): DoctorIssue[] {
     .filter((page) => page.standalone !== undefined && page.standalone.trim() === '')
     .map((page) => issue({
       id: 'standalone-reason-empty', severity: 'warning', ...pageRef(page),
-      message: '`standalone` is empty, so it does not opt this page out of the structure checks.',
-      fix: "Write the reason, e.g. standalone: 'Not a part of GitFileCard; it draws its own counts.', or remove the field.",
+      message: '`standalone` is empty, so it does not opt this page out of `nothing-to-show`.',
+      fix: "Write the reason, e.g. standalone: 'A category page.', or remove the field.",
     }));
 }
 
-/** #66: one page's use of another component, from its own page-level `composedOf` or from one of
- *  its family/group members' `composedOf` (families keep composition on their members). */
-interface StructureUse { host: StaticPage; relationship?: string }
-
-/** #66: every page that uses one of `names`, excluding `self`, deduplicated by host page (a page
- *  counts once however many of its entries name the component). A built-in entry anywhere on the
- *  host wins over a non-built-in one. */
-function usesOf(pages: StaticPage[], self: StaticPage, names: ReadonlySet<string>): StructureUse[] {
-  const byHost = new Map<StaticPage, StructureUse>();
-  for (const host of pages) {
-    if (host === self) continue;
+/** #66: every page that uses one of `names`, excluding `self` — through its own page-level `composedOf`
+ *  or a family/group member's (families keep composition on their members) — once per host page however many of its
+ *  entries name the component. A page also uses a component its Parts section (`inWhole`) lists by
+ *  id: a standalone part page is "used" by the family that numbers it. */
+function usesOf(pages: StaticPage[], self: StaticPage, names: ReadonlySet<string>): StaticPage[] {
+  return pages.filter((host) => {
+    if (host === self) return false;
     const entries = [...(host.composedOf ?? []), ...(host.members ?? []).flatMap((member) => member.composedOf ?? [])];
-    for (const entry of entries) {
-      if (!names.has(entry.component)) continue;
-      const known = byHost.get(host);
-      if (!known || (known.relationship !== 'built-in' && entry.relationship === 'built-in')) byHost.set(host, { host, relationship: entry.relationship });
-    }
-  }
-  return [...byHost.values()];
+    if (entries.some((entry) => names.has(entry.component))) return true;
+    return (host.sections ?? []).some((section) => section.inWhole === true && section.members.some((id) => names.has(id)));
+  });
 }
 
 /** #66: the names a page answers to — its id and its component. */
@@ -709,31 +706,52 @@ function hasUnreadableComposition(pages: StaticPage[], self: StaticPage): boolea
 
 const pageList = (pages: StaticPage[]): string => [...new Set(pages.map((p) => `\`${resolvePageId(p, p.file)}\``))].join(', ');
 
-/** #66 `part-own-page`: a candidate page whose component is declared `{ relationship: 'built-in' }`
- *  (at page or member level) by exactly one other non-pattern page, which doesn't already list it
- *  as a member (by member id, component or alias). Two or more users can't give it one owner, so it
- *  is exempt; `slot`/`related`/missing/non-literal relationships never count. Reports; never infers
- *  an owner or a relationship. */
-function checkPartOwnPage(pages: StaticPage[], patternGroups: readonly string[]): DoctorIssue[] {
+/** Relationships a family member can declare that are not a visible view of their own: an invisible
+ *  helper, a style, a modifier, or a native (UIKit/AppKit) bridge. Matched on the declared
+ *  `relationship` only, never on the member's name. */
+const NOT_A_VIEW_RELATIONSHIPS: ReadonlySet<string> = new Set(['style', 'modifier', 'helper', 'native integration']);
+
+/** `part-needs-page` (hint): a member of a family page that names a component (`component`: a view
+ *  of its own) but is documented inside its owner's family. A part with its own view is a component
+ *  and gets a page of its own, referenced from the owner. Never flagged: the whole; a member in a
+ *  Related (`inWhole: false`) section, which `deprecated-related-section` already covers; a
+ *  `documentation-only` member; a member declared a style, modifier, helper or native integration
+ *  (`relationship`); one drawn entirely by the OS (`osComponent: 'full'`; `'partial'` still has a view
+ *  of its own); one whose `relationship`, `fidelity` or `osComponent` is authored but not readable; one whose
+ *  component already has a page (standalone, group-page member or token-page `documents`). Only
+ *  declared facts count. Group pages (related components side by side) are not checked. */
+function checkPartNeedsPage(pages: StaticPage[]): DoctorIssue[] {
+  const paged = new Set<string>();
+  for (const p of pages) {
+    if (!hasMembers(p)) for (const name of [resolvePageId(p, p.file), p.component]) if (name) paged.add(name);
+    if (isGroupShape(p)) for (const m of p.members ?? []) for (const name of [m.id, m.component]) if (name) paged.add(name);
+    for (const entry of p.documents ?? []) paged.add(entry.component);
+  }
   const issues: DoctorIssue[] = [];
   for (const page of pages) {
-    if (!isStructureCandidate(page)) continue;
-    const names = pageNames(page);
-    const owners = usesOf(pages, page, names)
-      .filter((use) => use.relationship === 'built-in' && !isPatternPage(use.host, patternGroups))
-      .map((use) => use.host);
-    if (owners.length !== 1) continue;
-    const owner = owners[0];
-    if (owner.members?.some((member) => names.has(member.id) || (member.component !== undefined && names.has(member.component))
-      || member.aliases?.some((alias) => names.has(alias)))) continue;
-    const ownerId = resolvePageId(owner, owner.file);
-    const id = resolvePageId(page, page.file);
-    const caveat = hasUnreadableComposition(pages, page) ? ' (Some pages\' `composedOf` could not be read, so another user may exist.)' : '';
-    issues.push(issue({
-      id: 'part-own-page', severity: 'warning', ...pageRef(page),
-      message: `\`${id}\` is a built-in part of \`${ownerId}\` only, but has its own page.${caveat}`,
-      fix: `List it as a part in ${ownerId}'s family (\`members\`/\`sections\`), or set \`standalone: '<reason>'\` if it is not really part of ${ownerId}.`,
-    }));
+    if (!page.checkable || !page.members || page.members.length === 0 || isGroupShape(page)) continue;
+    const ownerId = resolvePageId(page, page.file);
+    // Related-section members and everything nested under them.
+    const related = new Set((page.sections ?? []).filter((s) => s.inWhole === false).flatMap((s) => s.members));
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const m of page.members) if (!related.has(m.id) && m.parent !== undefined && related.has(m.parent)) { related.add(m.id); grew = true; }
+    }
+    for (const member of page.members) {
+      if (member.component === undefined || member.id === page.whole || member.id === ownerId) continue;
+      if (related.has(member.id)) continue; // `deprecated-related-section` covers it.
+      if (member.fidelity === 'documentation-only' || member.osComponent === 'full') continue;
+      if (NOT_A_VIEW_RELATIONSHIPS.has(member.relationship?.trim().toLowerCase() ?? '')) continue;
+      // Authored but unreadable: no hint rather than a guess (like an unreadable `osComponent`).
+      if ((member.hasRelationship && member.relationship === undefined) || (member.hasFidelity && member.fidelity === undefined)
+        || (member.hasOsComponent && member.osComponent === undefined)) continue;
+      if (paged.has(member.component) || paged.has(member.id)) continue;
+      issues.push(issue({
+        id: 'part-needs-page', severity: 'hint', ...pageRef(page),
+        message: `Part \`${member.id}\` of \`${ownerId}\` is its own view (\`${member.component}\`) but is documented inside the family.`,
+        fix: `Give it a page of its own and list that page's id in ${ownerId}'s Parts section (\`sections\`). If it is not a view, set its fidelity to 'documentation-only' or its relationship to 'Helper'; a style or modifier belongs on its own page in \`relatedPages\` (see \`style-as-part\`). If the OS draws all of it, set osComponent: 'full'.`,
+      }));
+    }
   }
   return issues;
 }
@@ -758,12 +776,12 @@ function checkNothingToShow(pages: StaticPage[], patternGroups: readonly string[
       || Boolean(page.members?.some((member) => member.hasExamples));
     if (hasSpecimens) continue;
     const id = resolvePageId(page, page.file);
-    const hosts = usesOf(pages, page, pageNames(page)).map((use) => use.host);
+    const hosts = usesOf(pages, page, pageNames(page));
     const users = hosts.filter((host) => !isPatternPage(host, patternGroups));
     const patternUsers = hosts.filter((host) => isPatternPage(host, patternGroups));
     const unreadable = hasUnreadableComposition(pages, page);
     const base = { id: 'nothing-to-show' as const, severity: 'warning' as const, ...pageRef(page) };
-    const fix = 'Add a specimen, list it as a documentation-only part of a page that uses it, or remove the page (record why in your own docs).';
+    const fix = 'Add a specimen, document it as a note on the page that owns it (if it is a helper, modifier, style or a part only the OS draws), or remove the page (record why in your own docs).';
     if (users.length > 0) {
       const alsoPatterns = patternUsers.length > 0 ? ` Pattern pages also use it (${pageList(patternUsers)}).` : '';
       issues.push(issue({ ...base,
@@ -1673,7 +1691,7 @@ export function collectIssues(
     ...checkComponentPages(pages, components),
     ...checkMissingComposition(pages, components),
     ...checkStandaloneReason(pages),
-    ...checkPartOwnPage(pages, patternGroups),
+    ...checkPartNeedsPage(pages),
     ...checkNothingToShow(pages, patternGroups),
     ...(options.placement === true ? checkPagePlacement(pages, components, { partGroups: options.partGroups ?? [], patternGroups, screenGroups: options.screenGroups ?? DEFAULT_SCREEN_GROUPS }) : []),
     ...checkSingleChildParent(pages),

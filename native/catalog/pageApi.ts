@@ -29,8 +29,8 @@ export interface CatalogPageInput<TId extends string = string> {
   /** Page-level notes, shown as a "Notes" entry in the page's Quick reference (the page-level
    *  counterpart of a family member's `notes`). */
   notes?: string[];
-  /** Why this page stands on its own. Opts it out of `doctor`'s `part-own-page` and
-   *  `nothing-to-show` checks and records the decision in source; the viewer does not render it. */
+  /** Why this page stands on its own. Opts it out of `doctor`'s `nothing-to-show`
+   *  check (it once also opted out of the removed `part-own-page`) and records the decision in source; the viewer does not render it. */
   standalone?: string;
   variants?: VariantSlot;
   states?: VariantSlot;
@@ -1107,6 +1107,9 @@ export function buildCatalogSections<TId extends string>(
     }
   }
 
+  // A page with no `members` is a standalone page; a family's Parts section may list its id.
+  const standalonePageIds = new Set<string>(pages.filter((p) => !(p.members && p.members.length > 0)).map((p) => p.id));
+
   // #63 A5: resolved once, per valid family, before the per-page pass below assembles any section
   // — never by mutating an already-built section a second time (per the controller's own decision).
   // `outlineByFamily` is this same pre-pass's own `numberFor` call, including a synthetic stub
@@ -1114,20 +1117,24 @@ export function buildCatalogSections<TId extends string>(
   // (which already walks each `inWhole` section's own `members` list) numbers it exactly like an
   // own part, with no change to `numberFor` itself.
   const externalIssues: string[] = [];
-  const externalPartsByFamily = new Map<TId, Map<string, { pageId: TId; title: string; fidelity?: CatalogMember['fidelity'] }>>();
+  const externalPartsByFamily = new Map<TId, Map<string, { pageId: TId; title: string; fidelity?: CatalogMember['fidelity']; standalone?: boolean }>>();
   const partOfByMemberId = new Map<string, { pageId: TId; title: string; number: string }>();
   const outlineByFamily = new Map<TId, Map<string, { number: string; level: number }>>();
   for (const page of pages) {
     const pHasMembers = page.members !== undefined && page.members.length > 0;
     if (!pHasMembers || page.whole === undefined || page.sections === undefined) continue; // not a valid family.
     const byIdThisPage = new Set(page.members!.map((m) => m.id));
-    const externalResolutions = new Map<string, { pageId: TId }>();
+    const externalResolutions = new Map<string, { pageId: TId; standalone?: boolean }>();
     for (const section of page.sections) {
       if (!section.inWhole) continue;
       for (const id of section.members) {
         if (byIdThisPage.has(id) || externalResolutions.has(id)) continue;
         const owners = memberLocations.get(id);
-        if (!owners) continue; // genuinely unknown — `validateFamily`'s own "not a member" error covers it.
+        if (!owners) {
+          // A part with its own standalone page (no members of its own) is listed by that page's id.
+          if (standalonePageIds.has(id)) externalResolutions.set(id, { pageId: id as TId, standalone: true });
+          continue; // otherwise genuinely unknown — `validateFamily`'s own "not a member" error covers it.
+        }
         const resolution = resolveExternalPart(id, owners, page.whole);
         if ('issue' in resolution) externalIssues.push(`Family "${page.id}": ${resolution.issue}`);
         else externalResolutions.set(id, { pageId: resolution.pageId as TId });
@@ -1138,13 +1145,14 @@ export function buildCatalogSections<TId extends string>(
     outlineByFamily.set(page.id, outline);
     if (externalResolutions.size === 0) continue;
     const familyTitle = String(page.title ?? page.id);
-    const externalMap = new Map<string, { pageId: TId; title: string; fidelity?: CatalogMember['fidelity'] }>();
+    const externalMap = new Map<string, { pageId: TId; title: string; fidelity?: CatalogMember['fidelity']; standalone?: boolean }>();
     for (const [id, resolution] of externalResolutions) {
       const ownerPage = pages.find((p) => p.id === resolution.pageId);
       externalMap.set(id, {
         pageId: resolution.pageId,
         title: String(ownerPage?.title ?? resolution.pageId),
         fidelity: ownerPage?.members?.find((m) => m.id === id)?.fidelity,
+        ...(resolution.standalone ? { standalone: true } : {}),
       });
       const number = outline.get(id)?.number;
       if (number) partOfByMemberId.set(id, { pageId: page.id, title: familyTitle, number });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { collectIssues, type DoctorIssue } from '../doctor.ts';
 import type { StaticMember, StaticPage } from '../staticPage.ts';
 
-// #66: `part-own-page`, `nothing-to-show`, and `standalone-reason-empty` (cli/doctor.ts).
+// #66: `part-needs-page`, `nothing-to-show`, and `standalone-reason-empty` (cli/doctor.ts).
 
 function page(overrides: Partial<StaticPage>): StaticPage {
   return { file: '/x/Widget.catalog.tsx', checkable: true, ...overrides };
@@ -28,73 +28,92 @@ function run(pages: StaticPage[], id: string): DoctorIssue[] {
 
 const memberOf = (id: string): StaticMember => ({ id, hasWhenToUse: true, hasA11y: true, hasExamples: true });
 
-// ---- part-own-page ----
+// ---- part-needs-page ----
 
-test('part-own-page reports a part built into exactly one other page', () => {
-  const found = run(pair('built-in'), 'part-own-page');
+/** A family page `Owner` whose whole is `Owner` plus one part member with the given fields. */
+function family(part: Partial<StaticMember>, extra: Partial<StaticPage> = {}): StaticPage[] {
+  return [page({
+    id: 'Owner', component: 'Owner', file: '/x/Owner.catalog.tsx', hasMembers: true, hasWhole: true, hasSections: true, whole: 'Owner',
+    members: [{ ...memberOf('Owner'), component: 'Owner' }, { ...memberOf('Sheet'), component: 'SheetView', parent: 'Owner', ...part }],
+    sections: [{ label: 'Parts', kind: 'blocks', members: ['Sheet'], inWhole: true }], ...extra,
+  })];
+}
+
+test('part-needs-page hints at a family part that is its own view', () => {
+  const found = run(family({}), 'part-needs-page');
   assert.equal(found.length, 1);
-  assert.equal(found[0].severity, 'warning');
-  assert.equal(found[0].page, 'Part');
-  assert.equal(found[0].message, '`Part` is a built-in part of `Owner` only, but has its own page.');
-  assert.match(found[0].fix, /List it as a part in Owner's family/);
-  assert.match(found[0].fix, /standalone: '<reason>'/);
+  assert.equal(found[0].severity, 'hint');
+  assert.equal(found[0].page, 'Owner');
+  assert.match(found[0].message, /`Sheet` of `Owner` is its own view/);
 });
 
-test('part-own-page exempts a part built into two pages', () => {
-  const pages = [...pair('built-in'), page({ id: 'Other', component: 'Other', file: '/x/Other.catalog.tsx', variantsItems: SPECIMEN, composedOf: [{ component: 'Part', relationship: 'built-in' }] })];
-  assert.equal(run(pages, 'part-own-page').length, 0);
+test('part-needs-page leaves a documentation-only part, an OS-drawn part and a part with no component alone', () => {
+  assert.equal(run(family({ fidelity: 'documentation-only' }), 'part-needs-page').length, 0);
+  assert.equal(run(family({ hasOsComponent: true, osComponent: 'full' }), 'part-needs-page').length, 0);
+  assert.equal(run(family({ component: undefined }), 'part-needs-page').length, 0);
 });
 
-test('part-own-page ignores slot, related, arranged and missing relationships (an arranged component is separate by design)', () => {
-  for (const relationship of ['slot', 'related', 'arranged', undefined]) {
-    assert.equal(run(pair(relationship), 'part-own-page').length, 0, String(relationship));
+test('part-needs-page leaves a declared style, modifier, helper or native integration alone, and never guesses from names', () => {
+  for (const relationship of ['Style', 'modifier', ' Helper ', 'Native integration']) {
+    assert.equal(run(family({ relationship }), 'part-needs-page').length, 0, relationship);
   }
+  assert.equal(run(family({ id: 'SheetStyle', relationship: 'Anatomy' }), 'part-needs-page').length, 1, 'a name ending in Style is not a declaration');
 });
 
-test('part-own-page does not count a non-literal relationship as built-in', () => {
-  // The reader leaves a non-literal relationship off the entry (cli/staticPage.ts).
-  assert.equal(run(pair(undefined), 'part-own-page').length, 0);
+test('part-needs-page skips the whole, group pages and a part whose component already has a page', () => {
+  const asWhole = family({}, { whole: 'Sheet' });
+  assert.equal(run(asWhole, 'part-needs-page').length, 0, 'the whole is not a part');
+  assert.equal(run(family({}, { hasWhole: false, hasSections: false, whole: undefined, sections: undefined }), 'part-needs-page').length, 0, 'a group page shows related components side by side');
+  const paged = [...family({}), page({ id: 'SheetPage', component: 'SheetView', file: '/x/Sheet.catalog.tsx', variantsItems: SPECIMEN })];
+  assert.equal(run(paged, 'part-needs-page').length, 0);
 });
 
-test('part-own-page does not report a part that is already a member of its owner', () => {
-  // A real family member has its own id and names the part's component (a member can't share a page id).
-  const asComponent = pair('built-in', {}, { members: [{ ...memberOf('PartMember'), component: 'Part' }], hasMembers: true, whole: 'Owner' });
-  assert.equal(run(asComponent, 'part-own-page').length, 0, 'member names the component');
-  const asAlias = pair('built-in', {}, { members: [{ ...memberOf('PartMember'), aliases: ['Part'] }], hasMembers: true, whole: 'Owner' });
-  assert.equal(run(asAlias, 'part-own-page').length, 0, 'member alias names the page');
-  const unrelated = pair('built-in', {}, { members: [{ ...memberOf('Other'), component: 'Other' }], hasMembers: true, whole: 'Owner' });
-  assert.equal(run(unrelated, 'part-own-page').length, 1, 'an unrelated member does not exempt it');
+test("part-needs-page still hints at osComponent: 'partial' (it has a view of its own) and says how to fix it without sending the author into style-as-part", () => {
+  const found = run(family({ hasOsComponent: true, osComponent: 'partial' }), 'part-needs-page');
+  assert.equal(found.length, 1);
+  assert.doesNotMatch(found[0].fix, /Helper\/Style\/Modifier/);
+  assert.match(found[0].fix, /relationship to 'Helper'/);
+  assert.match(found[0].fix, /relatedPages/);
+  assert.match(found[0].fix, /osComponent: 'full'/);
 });
 
-test('part-own-page matches a page without a component by its id', () => {
-  const pages = pair('built-in', { component: undefined });
-  assert.equal(run(pages, 'part-own-page').length, 1);
+test('part-needs-page gives an authored but unreadable relationship, fidelity or osComponent the benefit of the doubt', () => {
+  assert.equal(run(family({ hasRelationship: true }), 'part-needs-page').length, 0, 'non-literal relationship');
+  assert.equal(run(family({ hasFidelity: true }), 'part-needs-page').length, 0, 'non-literal fidelity');
+  assert.equal(run(family({ hasOsComponent: true }), 'part-needs-page').length, 0, 'non-literal osComponent');
+  assert.equal(run(family({ hasRelationship: true, relationship: 'Part', hasFidelity: true, fidelity: 'high' }), 'part-needs-page').length, 1, 'readable values still count');
 });
 
-test("part-own-page exempts navigation: 'reference'", () => {
-  assert.equal(run(pair('built-in', { navigation: 'reference' }), 'part-own-page').length, 0);
+test('part-needs-page leaves a Related-section member (and its descendants) to deprecated-related-section', () => {
+  const related = (members: StaticMember[]) => [page({
+    id: 'Owner', component: 'Owner', file: '/x/Owner.catalog.tsx', hasMembers: true, hasWhole: true, hasSections: true, whole: 'Owner',
+    members: [{ ...memberOf('Owner'), component: 'Owner' }, ...members],
+    sections: [{ label: 'Parts', kind: 'blocks', members: [], inWhole: true }, { label: 'Related', kind: 'blocks', members: ['Sheet'], inWhole: false }],
+  })];
+  const pages = related([{ ...memberOf('Sheet'), component: 'SheetView' }, { ...memberOf('Grip'), component: 'GripView', parent: 'Sheet' }]);
+  const ids = collectIssues(pages, []).map((i) => i.id);
+  assert.equal(ids.includes('part-needs-page'), false);
+  assert.equal(ids.filter((id) => id === 'deprecated-related-section').length, 1);
 });
 
-test('part-own-page exempts token pages', () => {
-  assert.equal(run(pair('built-in', { tokenGallery: true }), 'part-own-page').length, 0);
-  assert.equal(run(pair('built-in', { hasTokenDefinition: true }), 'part-own-page').length, 0);
-  assert.equal(run(pair('built-in', { tokenSectionTitles: ['Colors'] }), 'part-own-page').length, 0);
+test('part-needs-page skips a component that already has a page as a group-page member or a token-page documents entry', () => {
+  const group = page({ id: 'SheetGroup', file: '/x/Group.catalog.tsx', hasMembers: true, members: [{ ...memberOf('SheetItem'), component: 'SheetView' }] });
+  assert.equal(run([...family({}), group], 'part-needs-page').length, 0, 'group member');
+  const tokens = page({ id: 'SheetTokens', file: '/x/Tokens.catalog.tsx', hasDocuments: true, documents: [{ component: 'SheetView', title: 'Sheet' }] });
+  assert.equal(run([...family({}), tokens], 'part-needs-page').length, 0, 'documents entry');
 });
 
-test('part-own-page exempts a family page (a page with members)', () => {
-  assert.equal(run(pair('built-in', { members: [memberOf('Inner')], hasMembers: true }), 'part-own-page').length, 0);
+test('part-own-page no longer exists: a built-in part with its own page is fine', () => {
+  const ids = collectIssues(pair('built-in'), []).map((i) => i.id);
+  assert.equal(ids.includes('part-own-page'), false);
 });
 
-test('part-own-page honours a standalone reason', () => {
-  assert.equal(run(pair('built-in', { standalone: 'Draws its own counts.' }), 'part-own-page').length, 0);
-});
-
-test('part-own-page does not treat a blank standalone as an opt-out', () => {
-  assert.equal(run(pair('built-in', { standalone: '   ' }), 'part-own-page').length, 1);
-});
-
-test('part-own-page leaves a page it could not read alone', () => {
-  assert.equal(run(pair('built-in', { checkable: false }), 'part-own-page').length, 0);
+test('a Parts section may name a standalone page id without family-invalid', () => {
+  const pages = [...family({}, { members: [{ ...memberOf('Owner'), component: 'Owner' }], sections: [{ label: 'Parts', kind: 'blocks', members: ['SheetPage'], inWhole: true }] }),
+    page({ id: 'SheetPage', component: 'SheetView', file: '/x/Sheet.catalog.tsx', variantsItems: SPECIMEN })];
+  assert.equal(collectIssues(pages, []).filter((i) => i.id === 'family-invalid' || i.id === 'family-external-part').length, 0);
+  const missing = family({}, { members: [{ ...memberOf('Owner'), component: 'Owner' }], sections: [{ label: 'Parts', kind: 'blocks', members: ['Nowhere'], inWhole: true }] });
+  assert.equal(collectIssues(missing, []).filter((i) => i.id === 'family-invalid').length, 1, 'an unknown id is still reported');
 });
 
 // ---- standalone-reason-empty ----
@@ -122,7 +141,7 @@ test('a blank standalone is reported alongside nothing-to-show, not instead of i
 
 // W1: the contract's exact wording, the same for every variant; it no longer suggests
 // `navigation: 'reference'`.
-const NOTHING_TO_SHOW_FIX = 'Add a specimen, list it as a documentation-only part of a page that uses it, or remove the page (record why in your own docs).';
+const NOTHING_TO_SHOW_FIX = 'Add a specimen, document it as a note on the page that owns it (if it is a helper, modifier, style or a part only the OS draws), or remove the page (record why in your own docs).';
 
 test('nothing-to-show reports an empty page that no other page uses', () => {
   const found = run([page({ id: 'Empty', component: 'Empty' })], 'nothing-to-show');
@@ -216,23 +235,11 @@ test('nothing-to-show honours a standalone reason', () => {
 
 // ---- pattern pages (patternGroups) ----
 
-test('part-own-page never counts a pattern page as the whole', () => {
-  assert.equal(run(pair('built-in', {}, { group: 'Patterns' }), 'part-own-page').length, 0);
-  assert.equal(run(pair('built-in', {}, { group: 'patterns' }), 'part-own-page').length, 0, 'case-insensitive');
-});
-
-test('part-own-page still reports a part whose only non-pattern user is one component page', () => {
-  const pages = [...pair('built-in'), page({ id: 'Screen', component: 'Screen', group: 'Patterns', file: '/x/Screen.catalog.tsx', variantsItems: SPECIMEN, composedOf: [{ component: 'Part', relationship: 'built-in' }] })];
-  const found = run(pages, 'part-own-page');
-  assert.equal(found.length, 1);
-  assert.equal(found[0].message, '`Part` is a built-in part of `Owner` only, but has its own page.');
-});
-
 test('patternGroups replaces the default pattern group', () => {
-  const pages = pair('built-in', {}, { group: 'Screens' });
-  assert.equal(collectIssues(pages, [], { patternGroups: ['Screens'] }).filter((i) => i.id === 'part-own-page').length, 0);
-  assert.equal(collectIssues(pages, []).filter((i) => i.id === 'part-own-page').length, 1, 'Screens is not a pattern group by default');
-  assert.equal(collectIssues(pair('built-in', {}, { group: 'Patterns' }), [], { patternGroups: ['Screens'] }).filter((i) => i.id === 'part-own-page').length, 1, 'the configured list replaces the default');
+  const pages = pair('built-in', { variantsItems: undefined }, { group: 'Screens' });
+  const messages = (groups?: string[]) => collectIssues(pages, [], groups ? { patternGroups: groups } : {}).filter((i) => i.id === 'nothing-to-show').map((i) => i.message);
+  assert.match(messages()[0], /It is used by `Owner`\./, 'Screens is not a pattern group by default');
+  assert.match(messages(['Screens'])[0], /Only pattern pages use it/);
 });
 
 test('nothing-to-show says when only pattern pages use an empty page', () => {
@@ -269,24 +276,6 @@ const familyHost = (memberComposedOf: { component: string; relationship?: string
   members: [memberOf('Host'), { ...memberOf('HostPart'), component: 'HostPart', composedOf: memberComposedOf }], ...extra,
 });
 
-test('part-own-page counts a family member\'s composedOf as the owner', () => {
-  const pages = [page({ id: 'Part', component: 'Part', file: '/x/Part.catalog.tsx', variantsItems: SPECIMEN }), familyHost([{ component: 'Part', relationship: 'built-in' }])];
-  const found = run(pages, 'part-own-page');
-  assert.equal(found.length, 1);
-  assert.equal(found[0].message, '`Part` is a built-in part of `Host` only, but has its own page.');
-});
-
-test('part-own-page exempts a part whose second user is a family member on another page', () => {
-  const pages = [...pair('built-in'), familyHost([{ component: 'Part', relationship: 'built-in' }])];
-  assert.equal(run(pages, 'part-own-page').length, 0);
-});
-
-test('part-own-page counts a host once however many of its entries name the part', () => {
-  const pages = [page({ id: 'Part', component: 'Part', file: '/x/Part.catalog.tsx', variantsItems: SPECIMEN }),
-    familyHost([{ component: 'Part', relationship: 'built-in' }], { composedOf: [{ component: 'Part', relationship: 'built-in' }] })];
-  assert.equal(run(pages, 'part-own-page').length, 1);
-});
-
 test('nothing-to-show names a page that uses the empty page through a member', () => {
   const pages = [page({ id: 'Empty', component: 'Empty', file: '/x/Empty.catalog.tsx' }), familyHost([{ component: 'Empty', relationship: 'slot' }])];
   assert.equal(run(pages, 'nothing-to-show')[0].message, '`Empty` shows no specimens. It is used by `Host`.');
@@ -297,19 +286,53 @@ test('nothing-to-show names pattern users too when a component page also uses th
   assert.equal(run(pages, 'nothing-to-show')[0].message, '`Part` shows no specimens. It is used by `Owner`. Pattern pages also use it (`Screen`).');
 });
 
-test('both rules qualify their claim when another page\'s composedOf could not be read', () => {
+test('nothing-to-show qualifies its claim when another page\'s composedOf could not be read', () => {
   const unreadable = page({ id: 'Opaque', component: 'Opaque', file: '/x/Opaque.catalog.tsx', variantsItems: SPECIMEN, hasComposedOf: true });
-  assert.match(run([...pair('built-in'), unreadable], 'part-own-page')[0].message, /could not be read, so another user may exist/);
   assert.equal(run([page({ id: 'Empty', file: '/x/Empty.catalog.tsx' }), unreadable], 'nothing-to-show')[0].message,
     '`Empty` shows no specimens, and no page whose `composedOf` doctor could read uses it.');
 });
 
-test('both rules qualify their claim when a member-level composedOf or a members list could not be read', () => {
+test('nothing-to-show qualifies its claim when a member-level composedOf or a members list could not be read', () => {
   const opaqueMember = page({ id: 'Host', component: 'Host', file: '/x/Host.catalog.tsx', whole: 'Host', hasMembers: true,
     members: [memberOf('Host'), { ...memberOf('HostPart'), component: 'HostPart', hasComposedOf: true }] });
   const opaqueMembers = page({ id: 'Host2', component: 'Host2', file: '/x/Host2.catalog.tsx', hasMembers: true, checkable: false });
   for (const unreadable of [opaqueMember, opaqueMembers]) {
     assert.match(run([page({ id: 'Empty', file: '/x/Empty.catalog.tsx' }), unreadable], 'nothing-to-show')[0].message, /no page whose `composedOf` doctor could read/, unreadable.id);
-    assert.match(run([...pair('built-in'), unreadable], 'part-own-page')[0].message, /could not be read/, unreadable.id);
   }
+});
+
+// ---- standalone pages in a Parts section (doctor side) ----
+
+const partsFamily = (listed: string[]): StaticPage[] => family({}, { members: [{ ...memberOf('Owner'), component: 'Owner' }], sections: [{ label: 'Parts', kind: 'blocks', members: listed, inWhole: true }] });
+const familyProblems = (pages: StaticPage[]) => collectIssues(pages, []).filter((i) => i.id === 'family-invalid' || i.id === 'family-external-part');
+
+test('a Parts section cannot name a group page, another family page or its own page as a part', () => {
+  const group = page({ id: 'SheetGroup', file: '/x/Group.catalog.tsx', hasMembers: true, members: [memberOf('SheetItem')] });
+  const other = page({ id: 'OtherFamily', file: '/x/Other.catalog.tsx', hasMembers: true, hasWhole: true, hasSections: true, whole: 'OtherFamily',
+    members: [memberOf('OtherFamily')], sections: [{ label: 'Parts', kind: 'blocks', members: [], inWhole: true }] });
+  for (const id of ['SheetGroup', 'OtherFamily', 'Owner']) {
+    assert.equal(familyProblems([...partsFamily([id]), group, other]).filter((i) => i.page === 'Owner').length >= 1, true, id);
+  }
+});
+
+test('a page with members: [] counts as a standalone page, as at runtime, so a Parts section may list it', () => {
+  const pages = [...partsFamily(['SheetPage']), page({ id: 'SheetPage', file: '/x/Sheet.catalog.tsx', hasMembers: true, members: [], variantsItems: SPECIMEN })];
+  assert.deepEqual(familyProblems(pages), []);
+  const unread = [...partsFamily(['SheetPage']), page({ id: 'SheetPage', file: '/x/Sheet.catalog.tsx', hasMembers: true, variantsItems: SPECIMEN })];
+  assert.equal(familyProblems(unread).length, 1, 'members authored but unreadable: not claimed standalone');
+});
+
+test('nothing-to-show counts a Parts-section listing as a use of a standalone part page', () => {
+  const sheet = page({ id: 'SheetPage', component: 'SheetView', file: '/x/Sheet.catalog.tsx' });
+  const found = run([...partsFamily(['SheetPage']), sheet], 'nothing-to-show');
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /It is used by `Owner`\./);
+  const notListed = run([...partsFamily([]), sheet], 'nothing-to-show');
+  assert.match(notListed[0].message, /no other page uses it/);
+});
+
+test('standalone-reason-empty and its fix no longer describe the removed structure rule', () => {
+  const found = run([page({ id: 'Part', variantsItems: SPECIMEN, standalone: '' })], 'standalone-reason-empty');
+  assert.match(found[0].message, /`nothing-to-show`/);
+  assert.doesNotMatch(found[0].fix, /GitFileCard/);
 });

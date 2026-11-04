@@ -551,14 +551,21 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
   title, not the id — so "Control heights" sorts under "C", not under whatever the id starts with.
 - **Point token pages at their token file.** A token page has no component, so its Source would be
   the page file; set `source: 'src/design-system/tokens.ts'` (project-relative) instead.
-- **Parts and empty pages.** `doctor` warns about a page that is only a built-in part of one other
-  page (`part-own-page`) and about a page that shows nothing (`nothing-to-show`); see the rule list
-  under `doctor`. To keep such a page on purpose, set `standalone: '<why>'`, for example
-  `standalone: 'Not a part of GitFileCard; it draws its own counts.'`. The reason must be non-blank
-  and is only a note in the source — the viewer ignores it. Token pages, style pages and
-  `navigation: 'reference'` pages are never checked, and family and group pages are never checked
-  for `part-own-page` (`nothing-to-show` does check them, see below). Both checks count `composedOf` written on a
-  family or group member as well as on a page.
+- **Parts and empty pages.** A part is still a component: if it is visible and the code builds it
+  as its own view, it gets its own page even when only one place uses it. `doctor` hints
+  (`part-needs-page`) at a family member that is its own view but is documented inside its owner,
+  and warns about a page that shows nothing (`nothing-to-show`); see the rule list under `doctor`.
+  Only some things stay notes on their owner's page: invisible helpers and modifiers, styles (a
+  style keeps its own style page), parts only the OS draws (system menus, sheets, UIKit/AppKit
+  bridges) and plain text that is not its own view. Mark those on the member
+  (`fidelity: 'documentation-only'`, `relationship: 'Helper' | 'Native integration'`, or
+  `osComponent: 'full'`) so `doctor` leaves them alone; a style or modifier belongs on its own page
+  in `relatedPages` (`style-as-part`). To keep an empty page on purpose, set
+  `standalone: '<why>'`, for example `standalone: 'A category page.'`. The reason must be non-blank
+  and is only a note in the source — the viewer ignores it; it now opts out of `nothing-to-show`
+  only (it used to cover `part-own-page`, which no longer exists, so existing `standalone` fields
+  still load and still mean "intentional"). Token pages, style pages and `navigation: 'reference'`
+  pages are never checked for `nothing-to-show`.
 - **Coverage only counts the component's own options.** `doctor`'s `option-not-covered` checks
   string-literal unions declared in the component's own folder or a token folder. A union
   declared in another component's folder, such as a shared `IconName`, is that component's
@@ -896,9 +903,12 @@ case-insensitive) are whole destinations that are never moved. See `page-placeme
 
 ### Family pages
 
-A page can document a family of related declarations — a view and its internal parts, or a
-pattern and the pieces it's built from — on one page instead of scattering them across separate
-catalog pages, each member getting its own address and search entry. Give it `members`, `whole`
+A page can document a family of related declarations — a view and its parts, or a pattern and the
+pieces it's built from — on one page, each member getting its own address and search entry. A
+family page is the overview of the whole: a part that is its own view still gets a page of its own
+and is listed in the family's Parts section by that page's id (see "External parts"); a group page
+is for related components shown side by side. Keep inline in the family only what is not a view of
+its own (helpers, styles, modifiers, parts the OS draws). Give it `members`, `whole`
 and `sections` instead of `component`/`whenToUse`/`a11y`/specimens, which live on the members (the
 whole is a member too):
 
@@ -964,7 +974,8 @@ knows its parts are separate components, unlike variants.
 - **`anatomy`** (page-level) is the first box after the page head, labeled “Anatomy” like the
   specimen grids: `{ picture, groups }`, where each group is
   `{ label, items: [{ member, description } | { other, description }] }`. A `member` item names one
-  of this page's own members (not the whole); it shows that member's Part number, or no pin at all
+  of this page's own members (not the whole), or an external part listed in an `inWhole` section (a
+  group-page member or a standalone page's id; see "External parts"); it shows that member's Part number, or no pin at all
   when the member sits outside every `inWhole` section — such a row reserves no gutter for the pin
   it doesn't have, its name starting flush at the row's own left edge; an `other` item names a
   component documented elsewhere, is numbered like a part (below), shows a small ↗ on its pin, and
@@ -1118,13 +1129,17 @@ top-level member's own section in authored order.
   the same rule a family uses under its own whole, just re-anchored per top-level member instead of
   once per page. `doctor`'s `group-anatomy-member` rule reports an embedded anatomy item naming
   anything other than that member's own descendant.
-- **External parts.** A family's own `inWhole` section may list a member id that is defined on a
-  group page instead of its own `members`, as long as that member's own `parent` equals the
-  family's whole — an *external part*. The family's outline numbers it exactly like an own part (the
-  same number shows on both pages); on the family page its row shows that number, its name, and a
-  "Details on `<group title>`" link to the member's own address, with no specimens or duplicated
-  description. On the group page, that member's own section heading shows "Part N of `<Family>`",
-  linking back to the family page. An id that no page defines at all is reported by
+- **External parts.** A family's own `inWhole` section may list a standalone page's id (a page
+  with no `members`), or a member id that is defined on a group page instead of its own `members`,
+  as long as that member's own `parent` equals the family's whole — an *external part*. The
+  family's outline numbers a group-page member exactly like an own part (the same number shows on
+  both pages); on the family page its row shows that number, its name, and a "Details on
+  `<group title>`" link to the member's own address, with no specimens or duplicated description.
+  On the group page, that member's own section heading shows "Part N of `<Family>`", linking back to
+  the family page. For a standalone page instead, the row shows its number, the page's title as the
+  heading and "Details on its page" (a link to the page), and the page itself shows no "Part N of …"
+  back-line. An anatomy `member:` item may name either kind of external part; an anatomy `other:`
+  item keeps working as before. An id that no page defines at all is reported by
   `family-invalid` ("not a member of this page"); an id that is defined but doesn't resolve to
   exactly one group-page member with a matching parent (defined on several pages, on a page that
   isn't a group page, or with a different `parent`) is reported by `doctor`'s
@@ -1668,14 +1683,18 @@ Button
     non-`inWhole` section, naming every one of them so you can act without opening the file. Give
     each its own catalog page and name it in the family's `relatedPages` list instead; the section
     keeps working until you do.
-  - `part-own-page` — a standalone page for a component that exactly one other page declares in
-    `composedOf` as `relationship: 'built-in'`, and that page doesn't list it as a member. Fold it
-    into that page's family, or record why it isn't part of it with `standalone`. A component built
-    into two or more pages is exempt, and so is a style page (`pageKind: 'style'`); `'slot'`/`'related'`/`'arranged'`
-    entries never count (an arranged component is separate by design). Pages in a pattern
-    group (example screens built from components) never count as the whole: by default the group
-    named `Patterns`; set `patternGroups` in `ds-viewer.config.ts` to name your own (e.g.
-    `patternGroups: ['Screens']`).
+  - `part-needs-page` (hint; never fails `--ci` and `doctor.strict` does not promote it) — a member of
+    a family page that names a `component` (it is its own view) but is documented inside its owner.
+    Give it a page of its own and list that page's id in the family's Parts section. Skipped:
+    the whole, `fidelity: 'documentation-only'`, `osComponent: 'full'` (`'partial'` only contains
+    a native control, so it still gets a page), a declared `relationship` of Style, Modifier,
+    Helper or Native integration, a member of a Related (non-`inWhole`) section (that is
+    `deprecated-related-section`'s), a component that already has a page (a standalone page, a
+    group-page member or a token page's `documents`), and group pages (related components shown
+    side by side). A `relationship`, `fidelity` or `osComponent` that is set but not a literal
+    gives no hint. If it is not a view, set `fidelity: 'documentation-only'` or
+    `relationship: 'Helper'`; a style or modifier belongs on its own page in `relatedPages` (see
+    `style-as-part`). Only declared fields are read, never names.
   - `page-placement` — off by default; set `doctor: { placement: true }` (and `partGroups`) to turn
     it on. A component is one unit even when built from other components; a pattern arranges
     separate components apart from each other in a region. Code can't reliably tell the two apart,
@@ -1708,9 +1727,10 @@ Button
     (`members`) is flagged only when the page and every member have none; one member with a
     specimen is enough to clear it. The
     message names the pages that list it in `composedOf` — on the page or on one of its members —
-    or says only pattern pages use it, or that nothing does. Add a specimen, list it as a
-    documentation-only part of a page that uses it, or remove the page (record why in your own
-    docs); `standalone` (above) still opts a page out on purpose. A page
+    or says only pattern pages use it, or that nothing does. A family that lists the page in its
+    Parts section counts as using it. The fix reads: "Add a specimen, document it as a note on the
+    page that owns it (if it is a helper, modifier, style or a part only the OS draws), or remove
+    the page (record why in your own docs)"; `standalone` (above) still opts a page out on purpose. A page
     whose specimens can't be read literally is never reported. A component page with no specimens
     usually also gets `component-no-examples` (unless the component is documented elsewhere, on
     another page or as a family member); the two say different things (no examples vs. no reason to
@@ -1751,6 +1771,8 @@ Button
   (`severity: 'hint'`) and counted on their own (`summary.hints`, present only when there are
   some), and they never fail `--ci` and are never promoted by `doctor.strict`:
 
+  - `part-needs-page` — a family member that is its own view but is documented inside its owner
+    (see the rule list above).
   - `grid-empty-cell` — a list block with an odd item count (3, 5, …) that the default 952px
     content width lays out two across, where `specimenSize: 'regular'` would fit it three across
     with no new empty cell. Measured with the same list maths `explain` reports, not the browser.

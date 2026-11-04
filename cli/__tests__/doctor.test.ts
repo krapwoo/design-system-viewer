@@ -1484,20 +1484,6 @@ test('family-invalid never considers aliases on a plain page without tokenDefini
   assert.deepEqual(collectIssues([plainWithAlias, other], []).filter((i) => i.id === 'family-invalid'), []);
 });
 
-test('runDoctor passes config.patternGroups to the structure checks', () => {
-  const dir = makeProject(FULLY_COVERED_PAGE);
-  mkdirSync(path.join(dir, 'pages'), { recursive: true });
-  writeFileSync(path.join(dir, 'pages', 'Screen.catalog.tsx'), `
-    import { defineCatalogPage } from '@krapwoo/ds-viewer';
-    export default defineCatalogPage({ id: 'Screen', title: 'Screen', group: 'Screens', description: 'x', render: () => null,
-      composedOf: [{ component: 'Widget', relationship: 'built-in' }] });
-  `);
-  const count = (overrides: Partial<ResolvedConfig>) => runDoctor(configFor(dir, { pages: ['pages/*.catalog.tsx'], ...overrides })).issues.filter((i) => i.id === 'part-own-page').length;
-  assert.equal(count({}), 1, 'Screens is not a pattern group by default');
-  assert.equal(count({ patternGroups: ['Screens'] }), 0);
-  rmSync(dir, { recursive: true, force: true });
-});
-
 test('sidebar-parent-invalid reports a parent that is not listed in the sidebar', () => {
   const hidden = page({ id: 'Hidden', group: 'Components', file: '/x/Hidden.catalog.tsx', navigation: 'reference' });
   const child = page({ id: 'Under', group: 'Components', file: '/x/Under.catalog.tsx', sidebarParent: 'Hidden' });
@@ -1712,21 +1698,52 @@ test('the spread pattern { ...tokenScale(kind, F), sections } is checkable, and 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('part-own-page never asks for a style page to become a part, even when one page names it built-in', () => {
-  const run = (widgetSource: string) => {
-    const dir = makeProject(widgetSource);
-    mkdirSync(path.join(dir, 'pages'), { recursive: true });
-    writeFileSync(path.join(dir, 'pages', 'Screen.catalog.tsx'), `
-      import { defineCatalogPage } from '@krapwoo/ds-viewer';
-      export default defineCatalogPage({ id: 'Screen', title: 'Screen', group: 'Screens', description: 'x', render: () => null,
-        composedOf: [{ component: 'Widget', relationship: 'built-in' }] });
-    `);
-    const found = runDoctor(configFor(dir, { pages: ['pages/*.catalog.tsx'] })).issues.filter((i) => i.id === 'part-own-page').length;
-    rmSync(dir, { recursive: true, force: true });
-    return found;
-  };
-  assert.equal(run(FULLY_COVERED_PAGE), 1, 'control: a plain page named built-in by one page is asked to become a part');
-  assert.equal(run(FULLY_COVERED_PAGE.replace("group: 'Components',", "group: 'Components', pageKind: 'style',")), 0, 'a style page is applied, never a part');
+test('runDoctor passes config.patternGroups to nothing-to-show', () => {
+  const dir = makeProject(FULLY_COVERED_PAGE);
+  mkdirSync(path.join(dir, 'pages'), { recursive: true });
+  writeFileSync(path.join(dir, 'pages', 'Empty.catalog.tsx'), `
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ id: 'Empty', title: 'Empty', group: 'Components', description: 'x' });
+  `);
+  writeFileSync(path.join(dir, 'pages', 'Screen.catalog.tsx'), `
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({ id: 'Screen', title: 'Screen', group: 'Screens', description: 'x', render: () => null,
+      composedOf: [{ component: 'Empty' }] });
+  `);
+  const message = (overrides: Partial<ResolvedConfig>) => runDoctor(configFor(dir, { pages: ['pages/*.catalog.tsx'], ...overrides })).issues.find((i) => i.id === 'nothing-to-show' && i.page === 'Empty')?.message;
+  assert.match(message({}) ?? '', /It is used by `Screen`\./, 'Screens is not a pattern group by default');
+  assert.match(message({ patternGroups: ['Screens'] }) ?? '', /Only pattern pages use it/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('part-needs-page stays a hint under doctor.strict: no error, counted as a hint, exit 0', () => {
+  const dir = makeProject(FULLY_COVERED_PAGE);
+  mkdirSync(path.join(dir, 'pages'), { recursive: true });
+  writeFileSync(path.join(dir, 'pages', 'Owner.catalog.tsx'), `
+    import { defineCatalogPage } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      id: 'Owner', title: 'Owner', group: 'Components', description: 'x', whole: 'Owner',
+      sections: [{ label: 'Parts', kind: 'blocks', inWhole: true, members: ['Sheet'] }],
+      members: [
+        { id: 'Owner', component: 'Owner', description: 'x', variants: { items: [{ key: 'a', name: 'A', node: null }] } },
+        { id: 'Sheet', component: 'SheetView', parent: 'Owner', description: 'x', variants: { items: [{ key: 'a', name: 'A', node: null }] } },
+      ],
+    });
+  `);
+  try {
+    for (const strict of [false, true]) {
+      const result = runDoctor(configFor(dir, { pages: ['pages/*.catalog.tsx'], doctor: { strict } }));
+      const hints = result.issues.filter((i) => i.id === 'part-needs-page');
+      assert.equal(hints.length, 1, `strict=${strict}`);
+      assert.equal(hints[0].severity, 'hint');
+      assert.equal(result.summary.hints, 1);
+      assert.equal(result.issues.filter((i) => i.severity === 'error').length, result.summary.errors);
+      assert.equal(result.exitCode, result.summary.errors > 0 ? 1 : 0);
+      assert.equal(result.issues.some((i) => i.id === 'part-needs-page' && i.severity !== 'hint'), false);
+      assert.equal(JSON.parse(JSON.stringify(toDoctorJson(result))).issues.find((i: { id: string }) => i.id === 'part-needs-page').severity, 'hint');
+      assert.match(formatHuman(result), /part-needs-page/);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // --- page-placement and single-child-parent ---

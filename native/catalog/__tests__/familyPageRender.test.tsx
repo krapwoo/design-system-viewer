@@ -565,6 +565,33 @@ test('an external-part row in the family\'s own part list shows its number, no s
   } finally { cleanup(); }
 });
 
+test('a standalone-page part row shows its number, the page title as its heading, and "Details on its page" linking to the page', () => {
+  const family = defineCatalogPage({
+    id: 'Composer', group: 'Components', description: 'd', whole: 'Composer',
+    sections: [{ label: 'Parts', kind: 'blocks' as const, inWhole: true, members: ['SheetPage'] }],
+    members: [{ id: 'Composer', source: 'w.swift:1', fidelity: 'documentation-only' as const, relationship: 'Whole', description: 'The whole.' }],
+  });
+  const sheet = defineCatalogPage({ id: 'SheetPage', title: 'Attachment sheet', group: 'Components', description: 'd' });
+  const { sections } = buildCatalogSections([family, sheet].map((p) => ({ ...p, file: `fixtures/${p.id}.catalog.tsx` })), []);
+  const def = sections.find((s) => s.id === 'Composer')!;
+  const navigation = {
+    resolve: (name: string) => ({ pageId: name }),
+    open: () => {},
+    page: (pageId: string) => (pageId === 'SheetPage' ? { title: 'Attachment sheet' } : undefined),
+  };
+  const { container, cleanup } = renderCatalog(
+    React.createElement(FamilyPage as never, { def, navigation, knownAddressIds: new Set(['SheetPage']) } as never),
+  );
+  try {
+    const text = container.textContent || '';
+    assert.equal(text.split('Attachment sheet').length - 1, 1, 'the title appears once (as the heading), not again in the link');
+    assert.ok(text.includes('Details on its page'));
+    assert.equal(text.includes('Details on Attachment sheet'), false);
+    assert.ok(text.includes('1'), 'the part is numbered');
+    assert.ok([...container.querySelectorAll('a')].map((a) => a.getAttribute('href')).includes('#SheetPage'));
+  } finally { cleanup(); }
+});
+
 /** The class list of the pin showing `number` — scoped to a root; a dashed pin (documentation-only)
  *  and a solid one carry different atomic classes, so comparing two pins' classes tells them apart. */
 function pinClassFor(root: ParentNode, number: string): string {
