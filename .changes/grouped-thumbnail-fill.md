@@ -1,0 +1,1 @@
+A `specimenSize: 'page'` page whose states are grouped under its variants no longer gets a filled thumbnail: grouped rows draw their examples with only their own `fill`/`itemsFill`, and the Overview card and inventory tile now do the same.

@@ -240,6 +240,12 @@ test('a specimenSize: \'page\' page draws its first variant/state/member filled 
   assert.deepEqual(thumbnailSource(page('S', { specimenSize: 'page', states: { items: [item('a')] } })), filled);
   assert.deepEqual(thumbnailSource(page('Off', { specimenSize: 'page', variants: { items: [{ ...item('a'), fill: false }] } })), { node: NODE }, 'the item\'s own fill: false wins');
   assert.deepEqual(thumbnailSource(page('Slot', { specimenSize: 'page', variants: { itemsFill: false, items: [item('a')] } })), { node: NODE }, 'itemsFill: false wins');
+  const grouped = page('Grouped', { specimenSize: 'page', variants: { items: [item('a')] }, states: { items: [{ ...item('s'), group: 'a' }] } });
+  assert.deepEqual(thumbnailSource(grouped), { node: NODE }, 'grouped rows draw examples with only their own fill, so the thumbnail does too');
+  const groupedFilled = page('GroupedFill', { specimenSize: 'page', variants: { itemsFill: true, items: [item('a')] }, states: { items: [{ ...item('s'), group: 'a' }] } });
+  assert.deepEqual(thumbnailSource(groupedFilled), filled, 'a grouped page\'s own itemsFill still fills');
+  const ungrouped = page('Ungrouped', { specimenSize: 'page', variants: { items: [item('a')] }, states: { items: [{ ...item('s'), group: 'nope' }] } });
+  assert.deepEqual(thumbnailSource(ungrouped), filled, 'a group naming no variant is not grouped rows');
   assert.deepEqual(thumbnailSource(page('Cell', { specimenSize: 'page', comparison: { rows: [], columns: [], cells: [{ row: 'r', column: 'c', node: NODE, fill: true }] } as never })), filled);
   assert.deepEqual(thumbnailSource(page('Reg', { specimenSize: 'regular', variants: { items: [item('a')] } })), { node: NODE });
   assert.deepEqual(thumbnailSource(page('Wide', { variants: { itemsFill: true, items: [item('a')] } })), { node: NODE, fill: true }, 'a filled slot is capped at a phone\'s content width');
