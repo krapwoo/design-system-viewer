@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.28.0
+
+- A part that is its own view now gets its own page, even if only one place uses it: `doctor` drops `part-own-page` (and its `standalone` opt-out for it) and adds the hint `part-needs-page` for a family member that is its own view but is documented inside its owner. It is skipped for a style, modifier, helper, native integration, a `documentation-only` part, a part drawn entirely by the OS (`osComponent: 'full'`), a Related-section member, a component that already has a page, and any `relationship`/`fidelity`/`osComponent` it cannot read. A family's Parts section (and an anatomy `member:` item) can now list a standalone page's id, showing its number, its title and a "Details on its page" link, and `nothing-to-show` counts that listing as a use.
+
 ## 0.27.2
 
 - A `specimenSize: 'page'` page whose states are grouped under its variants no longer gets a filled thumbnail: grouped rows draw their examples with only their own `fill`/`itemsFill`, and the Overview card and inventory tile now do the same.
