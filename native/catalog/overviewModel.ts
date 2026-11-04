@@ -78,9 +78,19 @@ function firstPreviewWidth(widths: PreviewWidths | undefined): number | undefine
  *  available comparison cell — with the surface that specimen sits on, and whether its page draws it
  *  filled: its own `fill`, else the slot's `itemsFill`, else (a `specimenSize: 'page'` page) filled, as
  *  `slotItems` in `comparison.ts` decides. */
+/** Whether the page draws its variants as grouped rows, the way `presentationBlocks` decides it. */
+function drawsGroupedRows(source: Specimenful): boolean {
+  const hide = (source as { hide?: { variants?: boolean; states?: boolean } }).hide ?? {};
+  if (source.comparison || hide.variants || hide.states || !source.variants || !source.states) return false;
+  const keys = new Set(source.variants.items.map((variant) => variant.key));
+  return source.states.items.some((state) => state.group !== undefined && keys.has(state.group));
+}
+
 function firstSpecimen(source: Specimenful): { node: ReactNode; surface?: SpecimenSurfaceKind; fill?: boolean; uncapped?: boolean } | undefined {
   const page = source.specimenSize === 'page';
-  const fillByDefault = page || undefined;
+  // A page-width page fills its examples by default, except in grouped rows (states that name a
+  // variant through `group`), which draw them with only their own `fill`/`itemsFill` (`groupStates`).
+  const fillByDefault = (page && !drawsGroupedRows(source)) || undefined;
   const uncapped = page || undefined;
   const variant = source.variants?.items.find((item) => hasNode(item.node));
   if (variant) return { node: variant.node, surface: variant.surface ?? source.specimenSurface, fill: variant.fill ?? source.variants?.itemsFill ?? fillByDefault, uncapped };
