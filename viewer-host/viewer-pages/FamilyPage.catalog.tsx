@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, View, StyleSheet } from 'react-native';
-import { defineCatalogPage, SectionBlock, FamilyPage, AnatomyPin, AnatomySpecimen, CATALOG_COLOR, CATALOG_SPACE, CATALOG_TEXT, type SectionDef, type SectionPager } from '@krapwoo/ds-viewer';
+import { defineCatalogPage, FamilyPage, AnatomyPin, AnatomySpecimen, CATALOG_COLOR, CATALOG_SPACE, CATALOG_TEXT, type SectionDef, type SectionPager } from '@krapwoo/ds-viewer';
 
 const demo = StyleSheet.create({
   frame: { borderWidth: 1, borderColor: CATALOG_COLOR.border, backgroundColor: CATALOG_COLOR.pageBackground, padding: CATALOG_SPACE.xl, alignSelf: 'stretch', width: '100%' },
@@ -80,22 +80,6 @@ const familyDemo = (
   </View>
 );
 
-// Blocks only ever renders inside SectionBlock or FamilyPage's own member blocks — a live
-// SectionBlock with two comparable specimen blocks (Variants + States) is a faithful specimen of
-// its own stacked/side-by-side placement decision.
-const blocksDemoDef: SectionDef<'Example'> = {
-  id: 'Example',
-  path: 'your/components/Example.tsx',
-  description: "Blocks decides stacked vs. side by side from each block's own measured height.",
-  variants: { items: [{ key: 'a', name: 'A', node: <Text style={demo.mockText}>Variant A</Text> }] },
-  states: { items: [{ key: 'default', name: 'Default', node: <Text style={demo.mockText}>A state</Text> }] },
-};
-const blocksDemo = (
-  <View style={demo.frame}>
-    <SectionBlock def={blocksDemoDef} headingLevel={2} />
-  </View>
-);
-
 // Slice D1 item 11: this page's own anatomy picture — a schematic of the page head's pager row,
 // the anatomy box itself, and a member's own specimen card, each pinned with a real `AnatomyPin`.
 //
@@ -170,8 +154,8 @@ export default defineCatalogPage({
       label: 'Rendering pieces', kind: 'blocks', inWhole: true,
       members: ['SectionPagerRow', 'PagerButton', 'AnatomyPin', 'AnatomySpecimen', 'Pin', 'FamilyPageHead', 'MemberPanelHost', 'FamilyPart', 'PartTreeBranch', 'AnatomyBox', 'PartOfLine'],
     },
-    // N6: Blocks has a real specimen (the stacked-blocks demo below) — a `list` section only ever
-    // renders folded rows, which never show specimens, so Blocks belongs in a `blocks` section.
+    // N6: Blocks has real specimens — a `list` section only ever renders folded rows, which never
+    // show specimens, so Blocks belongs in a `blocks` section.
     { label: 'Specimen layout', kind: 'blocks', inWhole: true, members: ['Blocks'] },
     // Deprecated, kept to exercise `doctor`'s own `deprecated-related-section` warning on this
     // very page — `relatedPages` below is the field a real page should use instead.
@@ -200,161 +184,18 @@ export default defineCatalogPage({
       composedOf: [{ component: 'FamilyPageDisclosure', role: 'Member disclosure', relationship: 'built-in' }],
     },
     {
-      id: 'SectionPagerRow',
-      component: 'SectionPagerRow',
-      parent: 'FamilyPage',
-      source: '../native/catalog/SectionBlock.tsx:214',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: "The previous/next row FamilyPage's own page head renders, shared with SectionBlock so a host page never builds its own pair of pager buttons.",
-      whenToUse: "Reuse SectionPagerRow for the previous/next row at the top of any whole-page layout that has a `pager` — pass the same `SectionPager` shape FamilyPage and SectionBlock already take.",
-      a11y: "Adds no wrapping semantics of its own; each button's own accessible name (from PagerButton) already states the direction and the neighboring page's title.",
-      variants: { items: [{ key: 'demo', name: 'In the page head', node: familyDemo }] },
-    },
-    {
-      id: 'PagerButton',
-      component: 'PagerButton',
-      parent: 'SectionPagerRow',
-      source: '../native/catalog/SectionBlock.tsx:56',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: 'The individual previous/next button SectionPagerRow renders one of.',
-      whenToUse: 'Reach for PagerButton directly only when building a different pager layout that still wants the same disabled/hover/focus behavior as SectionPagerRow\'s own pair.',
-      a11y: 'Exposes `accessibilityRole="button"`, a direction- and destination-aware `accessibilityLabel` (e.g. "Previous: Button"), and `accessibilityState={{ disabled }}` when there is no neighboring page; shows the catalog\'s own focus ring on keyboard focus.',
-      variants: { items: [{ key: 'demo', name: 'In the page head', node: familyDemo }] },
-    },
-    {
-      id: 'AnatomyPin',
-      component: 'AnatomyPin',
-      parent: 'FamilyPage',
-      source: '../native/catalog/Anatomy.tsx:137',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: "A numbered (or dashed, or ↗) pin for one member, used inside a family page's own anatomy.picture.",
-      whenToUse: "Reach for AnatomyPin only inside a family page's own `anatomy.picture` — it looks up its member's number and dashed/↗ style through context, so the picture's own markup never hardcodes a number.",
-      a11y: "Decorative and hidden from accessibility (aria-hidden) — the member's own name, not its pin, is what a screen reader announces, the same as every pin in the anatomy legend or a Part's own header.",
-      variants: { items: [{ key: 'demo', name: 'In the anatomy picture above', node: familyDemo }] },
-    },
-    {
-      id: 'AnatomySpecimen',
-      component: 'AnatomySpecimen',
-      parent: 'FamilyPage',
-      source: '../native/catalog/Anatomy.tsx:108',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: "Draws an anatomy picture's specimen like a variant cell does, with its pins in a column on the specimen's right edge.",
-      whenToUse: "Wrap the specimen of an `anatomy.picture` in it: at the page's preview width it centres the specimen the way the variant cells do, and its `pins` sit right beside the specimen. Outside an anatomy it adds no width.",
-      a11y: 'Adds no roles or names of its own; each pin keeps its own accessible name.',
-      variants: {
-        items: [{
-          key: 'beside',
-          name: 'A small specimen with its pin beside it',
-          node: (
-            <AnatomySpecimen pins={<View style={{ position: 'absolute', right: 0, top: 4 }}><AnatomyPin other="ExampleChip" /></View>}>
-              <View style={{ width: 72, height: 30, borderRadius: 15, backgroundColor: CATALOG_COLOR.border }} />
-            </AnatomySpecimen>
-          ),
-        }],
-      },
-    },
-    {
-      id: 'Pin',
-      component: 'Pin',
-      parent: 'FamilyPage',
-      source: '../native/catalog/Anatomy.tsx:42',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: 'The numbered badge itself, shared by anatomy pins, legend rows, Part headers and Parts cards; a component from another page adds a small ↗.',
-      whenToUse: 'Internal to the viewer: AnatomyPin, the anatomy legend, Part headers and Parts cards draw it. Catalog pages use AnatomyPin instead.',
-      a11y: 'Takes an accessible label only where it stands alone ("Part 3, opens X"); the ↗ glyph is hidden from assistive technology.',
-      variants: { items: [{ key: 'demo', name: 'Every pin in the anatomy picture above', node: familyDemo }] },
-    },
-    {
-      id: 'Blocks',
-      component: 'Blocks',
-      parent: 'FamilyPage',
-      source: '../native/catalog/SectionBlock.tsx:226',
-      fidelity: 'replicated',
-      relationship: 'Specimen layout',
-      // N6: now that Blocks renders its own demo (moved out of a list section, which never shows
-      // specimens), its own SectionBlock-in-a-member demo is wide enough to need the page size.
-      specimenSize: 'page',
-      description: "The shared placement logic behind a member's own specimen card: stacked by default, side by side only when two blocks' own measured heights say it saves real height.",
-      whenToUse: "SectionBlock and FamilyPage's own member blocks both render through Blocks so the stacked/side-by-side decision is never duplicated — there's no reason to call it directly outside those two.",
-      a11y: 'Purely a layout container; each block\'s own content (a grid, a list, grouped rows, or a preview) carries its own accessibility semantics.',
-      states: { items: [{ key: 'demo', name: 'Stacked blocks', node: blocksDemo }] },
-    },
-    {
-      id: 'FamilyPageHead',
-      component: 'FamilyPageHead',
-      parent: 'FamilyPage',
-      source: '../native/catalog/FamilyPage.tsx:74',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: 'The page head FamilyPage and GroupPage both render — breadcrumb, banner, title/description and the pager — factored out once rather than duplicated between the two.',
-      whenToUse: "Reach for FamilyPageHead only when building a third page shape that needs this exact same head; FamilyPage and GroupPage already render it for you.",
-      a11y: "Renders the page's own aria-level 1 heading target — the same one every page's title uses.",
-      variants: { items: [{ key: 'demo', name: 'In the page head above', node: familyDemo }] },
-    },
-    {
       id: 'MemberPanelHost',
       component: 'MemberPanelHost',
       parent: 'FamilyPage',
-      source: '../native/catalog/FamilyPage.tsx:524',
+      source: '../native/catalog/FamilyPage.tsx:422',
       fidelity: 'replicated',
-      relationship: 'Rendering piece',
+      // Declared a Helper, so it stays a note here rather than a page of its own: it draws nothing itself
+      // (it is a context provider that holds the one shared SidePanel), so there is no view to show alone.
+      relationship: 'Helper',
       description: "Owns the one shared side panel on a family or group page: every member's \"Notes and API\" link inside it opens that member's notes, guidance and API in a right-hand dialog, and opening another member swaps its content.",
       whenToUse: "Reach for MemberPanelHost only when building a third page shape that renders FamilyPart members; FamilyPage and GroupPage already wrap their content in it. A member rendered outside one still gets a working panel.",
       a11y: "The panel is a modal dialog named by its member, 440px wide (full width at 768px and narrower) over a light scrim, with no animation. Focus moves into it on open, Tab stays inside, and Esc, the Close button or a scrim press close it and return focus to the link that opened it.",
       variants: { items: [{ key: 'demo', name: 'Under each member of the page above', node: familyDemo }] },
-    },
-    {
-      id: 'FamilyPart',
-      component: 'FamilyPart',
-      parent: 'FamilyPage',
-      source: '../native/catalog/FamilyPage.tsx:622',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: "One member's own name row, specimens, below-specimens line and disclosure — numbered (a family Part) or not (a family Related member, or a group's own top-level member).",
-      whenToUse: "Reach for FamilyPart only from FamilyPage's or GroupPage's own tree-building code, never directly from a catalog page.",
-      a11y: "The member's own name sits inside a real heading at the outline's own aria-level; its pin (when numbered) is aria-hidden.",
-      variants: { items: [{ key: 'demo', name: 'Every Part below is a FamilyPart', node: familyDemo }] },
-    },
-    {
-      id: 'PartTreeBranch',
-      component: 'PartTreeBranch',
-      parent: 'FamilyPage',
-      source: '../native/catalog/FamilyPage.tsx:896',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: "One Part in its tree position, wrapped in a tree-line Branch only when it has children — reused by GroupPage to nest a top-level member's own parts underneath it.",
-      whenToUse: "Reach for PartTreeBranch only from FamilyPage's or GroupPage's own Parts tree, never directly.",
-      a11y: "The tree line itself is a decorative, aria-hidden overlay; only the Parts it connects carry real semantics.",
-      variants: { items: [{ key: 'demo', name: 'ExampleSubpart nests under ExamplePart below', node: familyDemo }] },
-    },
-    {
-      id: 'AnatomyBox',
-      component: 'AnatomyBox',
-      parent: 'FamilyPage',
-      source: '../native/catalog/Anatomy.tsx:276',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: "The anatomy box itself — a picture with numbered pins and its legend. GroupPage renders one instance per top-level member that has its own `anatomy`, not only once per page.",
-      whenToUse: "Reach for AnatomyBox only from FamilyPage's or GroupPage's own rendering, never directly from a catalog page — set `anatomy` (page-level) or a member's own `anatomy` instead.",
-      a11y: "The picture's own pins are aria-hidden; the legend's own rows are real, focusable links or text.",
-      variants: { items: [{ key: 'demo', name: 'The anatomy box above', node: familyDemo }] },
-    },
-    {
-      id: 'PartOfLine',
-      component: 'PartOfLine',
-      parent: 'FamilyPage',
-      source: '../native/catalog/FamilyPage.tsx:1461',
-      fidelity: 'replicated',
-      relationship: 'Rendering piece',
-      description: 'A group member\'s own "Part N of <Family>" line, shown when that member is also an external part of some family\'s own outline — links to the family page.',
-      whenToUse: "Reach for PartOfLine only from GroupPage's own rendering of a top-level member that has a `partOf` — never directly from a catalog page.",
-      a11y: 'A plain line of text with one real link inside it, the same convention every other below-specimens link here uses.',
-      variants: { items: [{ key: 'demo', name: 'See GroupPage\'s own FixtureExternalPart member', node: familyDemo }] },
     },
     {
       id: 'FamilyPageDisclosure',

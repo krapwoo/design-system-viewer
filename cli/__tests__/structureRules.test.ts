@@ -103,6 +103,13 @@ test('part-needs-page skips a component that already has a page as a group-page 
   assert.equal(run([...family({}), tokens], 'part-needs-page').length, 0, 'documents entry');
 });
 
+test('part-needs-page treats a page declared with members: [] as the part\'s page, as at runtime', () => {
+  const emptyMembers = page({ id: 'SheetPage', component: 'SheetView', file: '/x/Sheet.catalog.tsx', hasMembers: true, members: [], variantsItems: SPECIMEN });
+  assert.equal(run([...family({}), emptyMembers], 'part-needs-page').length, 0);
+  const unread = page({ id: 'SheetPage', component: 'SheetView', file: '/x/Sheet.catalog.tsx', hasMembers: true, variantsItems: SPECIMEN });
+  assert.equal(run([...family({}), unread], 'part-needs-page').length, 1, 'members authored but unreadable: not claimed to be a page');
+});
+
 test('part-own-page no longer exists: a built-in part with its own page is fine', () => {
   const ids = collectIssues(pair('built-in'), []).map((i) => i.id);
   assert.equal(ids.includes('part-own-page'), false);
@@ -335,4 +342,30 @@ test('standalone-reason-empty and its fix no longer describe the removed structu
   const found = run([page({ id: 'Part', variantsItems: SPECIMEN, standalone: '' })], 'standalone-reason-empty');
   assert.match(found[0].message, /`nothing-to-show`/);
   assert.doesNotMatch(found[0].fix, /GitFileCard/);
+});
+
+test('a style, token or reference page cannot be listed as a numbered part (it is "not a member"), a plain page can', () => {
+  const kinds: Record<string, Partial<StaticPage>> = {
+    style: { pageKind: 'style' },
+    'token definition': { hasTokenDefinition: true },
+    'token gallery': { tokenGallery: true },
+    'token sections': { hasExplicitTokenSections: true, tokenSectionTitles: ['Colors'] },
+    reference: { navigation: 'reference' },
+  };
+  for (const [name, extra] of Object.entries(kinds)) {
+    for (const members of [undefined, []] as const) {
+      const other = page({ id: 'SheetPage', file: '/x/Sheet.catalog.tsx', variantsItems: SPECIMEN, ...(members ? { hasMembers: true, members } : {}), ...extra });
+      const problems = familyProblems([...partsFamily(['SheetPage']), other]);
+      assert.equal(problems.length, 1, name);
+      assert.match(problems[0].message, /not a member/, name);
+    }
+  }
+  assert.deepEqual(familyProblems([...partsFamily(['SheetPage']), page({ id: 'SheetPage', file: '/x/Sheet.catalog.tsx', variantsItems: SPECIMEN })]), []);
+});
+
+test('a style, token or reference page still counts as the page of its own component for part-needs-page', () => {
+  for (const extra of [{ pageKind: 'style' as const }, { tokenGallery: true }, { navigation: 'reference' as const }]) {
+    const other = page({ id: 'SheetPage', component: 'SheetView', file: '/x/Sheet.catalog.tsx', variantsItems: SPECIMEN, ...extra });
+    assert.equal(run([...family({}), other], 'part-needs-page').length, 0, JSON.stringify(extra));
+  }
 });

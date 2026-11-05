@@ -1,0 +1,1 @@
+`part-needs-page` now counts a page declared with `members: []` as the part's page, and a style, token or `navigation: 'reference'` page can no longer be listed as a numbered part in a family's Parts section or an anatomy `member:` item (reported as "not a member", like any unknown id; a style belongs in `relatedPages`).
