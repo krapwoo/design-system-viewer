@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.28.2
+
+- `part-needs-page` now counts a page declared with `members: []` as the part's page, and a style, token or `navigation: 'reference'` page can no longer be listed as a numbered part in a family's Parts section or an anatomy `member:` item (reported as "not a member", like any unknown id; a style belongs in `relatedPages`).
+
 ## 0.28.1
 
 - An anatomy `member:` row naming a standalone page (a Parts-section part that is its own page) now shows that page's title instead of its raw id.
