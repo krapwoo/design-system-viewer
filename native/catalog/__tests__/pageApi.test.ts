@@ -2248,6 +2248,36 @@ test('buildCatalogSections: a page with members: [] is a standalone page a Parts
   assert.equal(built?.externalParts?.get('SheetPage')?.pageId, 'SheetPage');
 });
 
+test('buildCatalogSections: a style, token or reference page cannot be a numbered part or an anatomy member', () => {
+  const kinds: Array<[string, Record<string, unknown>]> = [
+    ['style', { pageKind: 'style' }],
+    ['token gallery', { tokenGallery: true }],
+    ['token sections', { tokenSections: [{ id: 's', title: 'S', render: () => null }] }],
+    ['token definition', { tokenDefinition: { kind: 'colors', sections: [{ id: 'c', title: 'Colors', entries: [{ id: 'a', name: 'a', value: '#fff' }] }] } }],
+    ['reference', { navigation: 'reference' }],
+  ];
+  for (const [name, extra] of kinds) {
+    const { family, sheet } = familyWithStandalonePart();
+    const other = defineCatalogPage({ ...sheet, ...extra } as Parameters<typeof defineCatalogPage>[0]);
+    const built = buildCatalogSections([family, other], []).sections.find((s) => s.id === 'Composer')?.family;
+    assert.equal(built?.externalParts?.get('SheetPage'), undefined, name);
+    assert.equal(built?.outline.get('SheetPage'), undefined, name);
+    const withAnatomy = { ...family, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'SheetPage', description: 'The sheet.' }] }] } };
+    const errors: string[] = [];
+    const previousDev = (globalThis as { __DEV__?: boolean }).__DEV__;
+    (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+    const originalError = console.error;
+    console.error = (message: string) => errors.push(message);
+    try {
+      buildCatalogSections([withAnatomy, other], []);
+    } finally {
+      console.error = originalError;
+      (globalThis as { __DEV__?: boolean }).__DEV__ = previousDev;
+    }
+    assert.equal(errors.some((e) => /anatomy item "SheetPage" is not a member/.test(e)), true, `${name}: ${errors.join(' | ')}`);
+  }
+});
+
 test('buildCatalogSections: an anatomy member item may name a standalone page, an other item is unchanged', () => {
   const { family, sheet } = familyWithStandalonePart();
   const withAnatomy = { ...family, anatomy: { groups: [{ label: 'In this picture', items: [{ member: 'SheetPage', description: 'The sheet.' }, { other: 'Elsewhere', description: 'x' }] }] } };

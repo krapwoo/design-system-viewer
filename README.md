@@ -1130,7 +1130,8 @@ top-level member's own section in authored order.
   once per page. `doctor`'s `group-anatomy-member` rule reports an embedded anatomy item naming
   anything other than that member's own descendant.
 - **External parts.** A family's own `inWhole` section may list a standalone page's id (a page
-  with no `members`), or a member id that is defined on a group page instead of its own `members`,
+  with no `members`, or `members: []`; not a style page (`pageKind: 'style'`), a token page or a
+  `navigation: 'reference'` page, which stay what they are), or a member id that is defined on a group page instead of its own `members`,
   as long as that member's own `parent` equals the family's whole — an *external part*. The
   family's outline numbers a group-page member exactly like an own part (the same number shows on
   both pages); on the family page its row shows that number, its name, and a "Details on
@@ -1690,7 +1691,8 @@ Button
     a native control, so it still gets a page), a declared `relationship` of Style, Modifier,
     Helper or Native integration, a member of a Related (non-`inWhole`) section (that is
     `deprecated-related-section`'s), a component that already has a page (a standalone page, a
-    group-page member or a token page's `documents`), and group pages (related components shown
+    group-page member or a token page's `documents`; a page declared with `members: []` counts as a
+    standalone page, as it does at runtime), and group pages (related components shown
     side by side). A `relationship`, `fidelity` or `osComponent` that is set but not a literal
     gives no hint. If it is not a view, set `fidelity: 'documentation-only'` or
     `relationship: 'Helper'`; a style or modifier belongs on its own page in `relatedPages` (see

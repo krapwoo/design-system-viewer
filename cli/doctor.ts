@@ -12,7 +12,7 @@ import { gridColumnLimit, isGridAxisLabel, listGeometry, MATRIX_LAYOUT, presenta
 import { memberBlocks, toSectionDef } from './explain.ts';
 import type { SpecimenSize } from '../native/catalog/types.ts';
 import {
-  relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateDocuments, validateFamily, validateGroupIssues, validateSidebarParents,
+  isPartPage, relatedPagesUnusedMessage, resolveExternalPart, validateComposedOf, validateDocuments, validateFamily, validateGroupIssues, validateSidebarParents,
   type FamilyPageLike, type GroupPageLike, type MemberLocation,
 } from '../native/catalog/pageApi.ts';
 import { singleChildParents, sidebarParents } from '../native/catalog/catalogNavigation.ts';
@@ -238,8 +238,15 @@ function isGroupShape(p: StaticPage): boolean {
 
 /** A page with no `members` (an empty `members: []` counts, as at runtime), unless its `members` was
  *  authored but could not be read, so it may well have some. */
-function isStandalonePage(p: StaticPage): boolean {
+function hasNoMembers(p: StaticPage): boolean {
   return !(p.members && p.members.length > 0) && !(p.hasMembers === true && p.members === undefined);
+}
+
+/** A page a Parts section (or an anatomy `member:` item) may list as a numbered part: a memberless page
+ *  that `isPartPage` accepts at runtime too — not a style, token or reference page. */
+function isStandalonePage(p: StaticPage): boolean {
+  return hasNoMembers(p)
+    && isPartPage({ members: p.members, pageKind: p.pageKind, navigation: p.navigation, tokenDefinition: isTokenPage(p) ? true : undefined });
 }
 
 /** #63 A5/A6: the static-side equivalent of `buildCatalogSections`'s own external-part pre-pass —
@@ -723,7 +730,7 @@ const NOT_A_VIEW_RELATIONSHIPS: ReadonlySet<string> = new Set(['style', 'modifie
 function checkPartNeedsPage(pages: StaticPage[]): DoctorIssue[] {
   const paged = new Set<string>();
   for (const p of pages) {
-    if (!hasMembers(p)) for (const name of [resolvePageId(p, p.file), p.component]) if (name) paged.add(name);
+    if (hasNoMembers(p)) for (const name of [resolvePageId(p, p.file), p.component]) if (name) paged.add(name); // a page of its own, listable as a part or not.
     if (isGroupShape(p)) for (const m of p.members ?? []) for (const name of [m.id, m.component]) if (name) paged.add(name);
     for (const entry of p.documents ?? []) paged.add(entry.component);
   }

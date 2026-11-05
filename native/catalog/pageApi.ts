@@ -814,6 +814,19 @@ export interface MemberLocation {
   parent?: string;
 }
 
+/** Whether a page with no `members` may be listed as a numbered part of a family: a plain component
+ *  page. A style page (`pageKind: 'style'`), a token page (`tokenDefinition`, `tokenGallery`,
+ *  `tokenSections`) and a `navigation: 'reference'` page stay what they are; naming one in a Parts
+ *  section or an anatomy `member:` item is "not a member", like any unknown id (a style belongs in
+ *  `relatedPages`). Shared by `buildCatalogSections` and `cli/doctor.ts` so the two never disagree. */
+export function isPartPage(page: {
+  members?: readonly unknown[]; pageKind?: string; navigation?: string; tokenDefinition?: unknown; tokenGallery?: boolean; tokenSections?: readonly unknown[];
+}): boolean {
+  if (page.members && page.members.length > 0) return false;
+  if (page.pageKind === 'style' || page.navigation === 'reference') return false;
+  return page.tokenDefinition === undefined && page.tokenGallery !== true && !(page.tokenSections && page.tokenSections.length > 0);
+}
+
 /** #63 A5/A6: resolves one family `inWhole` section id that is not one of that family's own
  *  `members` — a candidate external part — against `owners`, every catalog location that id
  *  resolves to as a real member. Exactly one owner, itself a group page, whose own `parent` equals
@@ -1107,8 +1120,8 @@ export function buildCatalogSections<TId extends string>(
     }
   }
 
-  // A page with no `members` is a standalone page; a family's Parts section may list its id.
-  const standalonePageIds = new Set<string>(pages.filter((p) => !(p.members && p.members.length > 0)).map((p) => p.id));
+  // A plain page with no `members` is a standalone page; a family's Parts section may list its id (not a style, token or reference page).
+  const standalonePageIds = new Set<string>(pages.filter(isPartPage).map((p) => p.id));
 
   // #63 A5: resolved once, per valid family, before the per-page pass below assembles any section
   // — never by mutating an already-built section a second time (per the controller's own decision).
