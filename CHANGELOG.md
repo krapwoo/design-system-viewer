@@ -3,6 +3,12 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.29.0
+
+- The catalog no longer documents whole screens: `screenGroups` is deprecated (a warning at load; the implicit `['Screens']` `page-placement` exemption stays for this release only and goes next), a new `screen-page` doctor rule warns about a page in a `Screens` or `screenGroups` group or one that imports `PhoneScreen` (itself deprecated, still exported), `ds-viewer` warns when `groupOrder`, `partGroups` or `patternGroups` names `Screens`, `Layout` or `Behaviors` (containers are components; modifiers are style pages), the README says patterns are regions that arrange separate components (declared `arranged`), and the starter kit drops its three composed-screen pages (`SavedTrips`, `ReportIssue`, `TripPlannerForm`).
+
+  Projects that `init` created before 0.29 keep their copied kit pages in `src/ds/pages`. `SavedTrips` (and any page in a `Screens` or `screenGroups` group) now draws a `screen-page` warning, so a project with `doctor.strict` fails `doctor --ci` until it deletes those pages or the group.
+
 ## 0.28.2
 
 - `part-needs-page` now counts a page declared with `members: []` as the part's page, and a style, token or `navigation: 'reference'` page can no longer be listed as a numbered part in a family's Parts section or an anatomy `member:` item (reported as "not a member", like any unknown id; a style belongs in `relatedPages`).
