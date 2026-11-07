@@ -77,7 +77,7 @@ export default defineCatalogPage({
   source: '../native/catalog/OverlayDemo.tsx',
   hide: { props: true },
   description: "A phone with a catalog button that opens an overlay: a sheet, a dialog, a toast. Children get `{ open, close }`; keep an app's overlay mounted and drive its own `visible` from `open`, so its animations play. `keepTrigger` makes the button a toggle rather than hiding it, `triggerLabel` can be a function of the open state, and `initiallyOpen` starts the example open.",
-  whenToUse: "A component page whose example opens something over the screen. For a whole screen that's always visible, use PhoneScreen inside PhoneFrame instead.",
+  whenToUse: "A component page whose example opens something over the screen.",
   a11y: 'The trigger is a CatalogButton. It hides while the overlay is open (unless keepTrigger) and gets focus back when the overlay closes, so a keyboard reader never lands on nothing.',
   composedOf: [
     { component: 'PhoneFrame', role: 'The device the demo runs in.', relationship: 'built-in' },

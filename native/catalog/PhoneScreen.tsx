@@ -7,6 +7,9 @@ import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 're
  * device. `floating` is a layer over the top of the screen for toasts; it adds no inset of its
  * own, so the app positions its content. `bodyWrapper` lets the app put its own surface or
  * context provider around the scrolling body; give its root `flex: 1, minHeight: 0`.
+ *
+ * @deprecated The catalog documents components and the patterns that arrange them, not whole
+ * screens, and `doctor`'s `screen-page` rule warns about a page that draws one. Still exported.
  */
 export function PhoneScreen({
   header,

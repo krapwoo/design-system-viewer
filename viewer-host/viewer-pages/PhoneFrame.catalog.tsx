@@ -28,7 +28,7 @@ export default defineCatalogPage({
   source: '../native/catalog/PhoneFrame.tsx',
   hide: { props: true },
   description: 'A real phone screen for a live demo: an iPhone SE viewport (375 × 667 points), scaled down only when its cell is narrower — the content keeps laying out at the device\'s real size, so nothing reflows just because the cell shrank. In the browser viewer it opens its example in its own device-sized document, so overlays that portal to the page (React Native\'s `Modal`) open inside the phone, not over the catalog.',
-  whenToUse: "Any example that is a whole screen or opens an overlay. Inside it, use PhoneScreen for a screen's layout, or OverlayDemo for a trigger plus overlay.",
+  whenToUse: "Any example that opens an overlay or needs a device-sized viewport (a sheet, a dialog, a toast sliding in, a dropdown's picker). Inside it, use OverlayDemo for a trigger plus overlay.",
   a11y: 'The device document has a title naming the page and the device, so the child document is identifiable; the content inside keeps its own semantics unchanged.',
   variants: {
     items: [

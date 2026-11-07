@@ -17,10 +17,10 @@ const demo = StyleSheet.create({
   toastText: { fontSize: CATALOG_TYPE.sm, color: CATALOG_COLOR.surface },
 });
 
-const header = <View style={demo.header}><Text style={demo.headerText}>Saved trips</Text></View>;
-const footer = <View style={demo.footer}><CatalogButton label="Plan a trip" onPress={() => {}} /></View>;
+const header = <View style={demo.header}><Text style={demo.headerText}>Header</Text></View>;
+const footer = <View style={demo.footer}><CatalogButton label="Footer action" onPress={() => {}} /></View>;
 const rows = Array.from({ length: 12 }, (_, i) => (
-  <View key={i} style={demo.row}><Text style={demo.rowText}>{`Trip ${i + 1}`}</Text></View>
+  <View key={i} style={demo.row}><Text style={demo.rowText}>{`Row ${i + 1}`}</Text></View>
 ));
 
 export default defineCatalogPage({
@@ -31,8 +31,8 @@ export default defineCatalogPage({
   specimenSize: 'wide',
   source: '../native/catalog/PhoneScreen.tsx',
   hide: { props: true },
-  description: "A whole app screen inside a PhoneFrame: `header` stays at the top, `footer` at the phone's bottom, and the children scroll between them instead of pushing the footer off the screen. `scroll: false` lays the body out to fit instead, for a screen with nothing to scroll. `floating` is a layer over the top for toasts (position its content yourself); `bodyWrapper` puts the app's own surface around the scrolling body.",
-  whenToUse: 'Pattern pages that show a full screen, such as a list with a bottom action bar. Scroll the body here to see the footer stay put.',
+  description: "A header, scrolling body and footer inside a PhoneFrame: `header` stays at the top, `footer` at the phone's bottom, and the children scroll between them instead of pushing the footer off the screen. `scroll: false` lays the body out to fit instead, for a body with nothing to scroll. `floating` is a layer over the top for toasts (position its content yourself); `bodyWrapper` puts the app's own surface around the scrolling body.",
+  whenToUse: 'Deprecated: the catalog documents components and the patterns that arrange them, not whole screens, and `doctor` warns about a page that draws one. Kept for catalogs that already use it; scroll the body here to see the footer stay put.',
   a11y: 'Adds no semantics of its own: the header, body and footer keep theirs, and the floating layer sits after the body in reading order.',
   composedOf: [{ component: 'PhoneFrame', role: 'Goes inside a PhoneFrame, which gives it the device size.', relationship: 'related' }],
   variants: {

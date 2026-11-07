@@ -67,6 +67,26 @@ export function loadConfig(configPath: string): LoadConfigResult {
   if (raw.screenGroups !== undefined) {
     if (Array.isArray(raw.screenGroups) && raw.screenGroups.every((name) => typeof name === 'string')) screenGroups = raw.screenGroups;
     else warnings.push('"screenGroups" must be an array of group names; using the default [\'Screens\'].');
+    warnings.push('"screenGroups" is deprecated: the catalog documents components and the patterns that arrange them, not whole screens.');
+  }
+
+  // Category names the catalog no longer has: say what to do instead, once per name.
+  const categoryAdvice: Record<string, string> = {
+    screens: 'screens are not documented: document their components and the patterns that arrange them',
+    layout: 'containers and layout wrappers are components, so they belong in a component group',
+    behaviors: 'modifiers are style pages: give each its own page with pageKind: \'style\' (and a styleNote if the default style sentence doesn\'t fit)',
+  };
+  const reported = new Set<string>();
+  for (const field of ['groupOrder', 'partGroups', 'patternGroups'] as const) {
+    const names = raw[field];
+    if (!Array.isArray(names)) continue;
+    for (const name of names) {
+      if (typeof name !== 'string') continue;
+      const key = name.trim().toLowerCase();
+      if (!(key in categoryAdvice) || reported.has(key)) continue;
+      reported.add(key);
+      warnings.push(`"${field}" names a "${name}" group: ${categoryAdvice[key]}.`);
+    }
   }
 
   let usage: string | undefined;
@@ -81,7 +101,7 @@ export function loadConfig(configPath: string): LoadConfigResult {
     warnings.push('"doctor.placement" must be true or false; page-placement stays off.');
   } else if (placement === true) {
     const lower = (names: readonly string[]) => names.map((name) => name.trim().toLowerCase());
-    const notComponent = new Set([...lower(patternGroups ?? ['Patterns']), ...lower(screenGroups ?? ['Screens'])]);
+    const notComponent = new Set([...lower(patternGroups ?? ['Patterns']), ...lower(['Screens', ...(screenGroups ?? [])])]);
     const componentGroups = (partGroups ?? []).filter((name) => !notComponent.has(name.trim().toLowerCase()));
     if (componentGroups.length === 0) warnings.push('"doctor.placement" needs "partGroups" to name a component group (one that is not a pattern or screen group); page-placement does nothing until it does.');
     if ((patternGroups ?? ['Patterns']).length === 0) warnings.push('"doctor.placement" with an empty "patternGroups" can never tell a page it is a pattern.');

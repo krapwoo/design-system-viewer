@@ -5,7 +5,7 @@ const DEMO_UPDATE: UpdateNotice = {
   current: '0.4.9',
   latest: '0.5.0',
   breaking: false,
-  summary: ['PhoneScreen and OverlayDemo for screen and overlay demos', 'doctor --render checks every page in a browser'],
+  summary: ['PhoneFrame and OverlayDemo for device-sized and overlay demos', 'doctor --render checks every page in a browser'],
   releasedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
 };
 const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000).toISOString();

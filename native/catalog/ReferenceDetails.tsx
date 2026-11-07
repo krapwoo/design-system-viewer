@@ -229,7 +229,7 @@ export function ReferenceDetails<TId extends string>({
   const hasAlsoUsedBy = Boolean(def.alsoUsedBy && def.alsoUsedBy.length > 0);
   const hasNotes = Boolean(def.notes && def.notes.length > 0);
   if (def.tokenGallery) {
-    // Full-width pages with no component API (token galleries, and whole screens such as a
+    // Full-width pages with no component API (token galleries, and pattern pages such as a
     // starter kit's Patterns) still disclose what they're built from when they say so.
     // They have no Notes and API panel, so an `api` excerpt is not shown here (it is for plain
     // component pages).

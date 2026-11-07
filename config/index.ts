@@ -16,16 +16,18 @@ export interface DsViewerConfig {
   pages?: string[];
   /** Sidebar group display order; groups not listed here follow alphabetically. */
   groupOrder?: string[];
-  /** Sidebar groups whose pages are patterns: example screens built from components. `doctor`
+  /** Sidebar groups whose pages are patterns: regions that arrange separate components (a list of
+   *  rows, a form section, an empty state with its avatars and button), never whole screens. `doctor`
    *  never treats a pattern page as the whole a component is a part of. @default ['Patterns'] */
   patternGroups?: string[];
   /** Sidebar groups whose pages are components. Only a component counts as a part: a page built
-   *  from something documented in another group (a style, a layout, a behavior) lists it in its
+   *  from something documented in another group (a style or modifier, `pageKind: 'style'`; containers and layout wrappers are components) lists it in its
    *  side panel but gives it no Parts card and no part number. Absent: every group counts. */
   partGroups?: string[];
-  /** Sidebar groups whose pages are whole destinations (a login screen, a settings screen). With
-   *  `partGroups` set, `doctor`'s `page-placement` check never moves them: a screen is neither a
-   *  component nor a pattern built from one. @default ['Screens'] */
+  /** @deprecated The catalog documents components and the patterns that arrange them, not whole
+   *  screens; `doctor`'s `screen-page` rule warns about a page in these groups. Still read so old
+   *  configs load, and (with `partGroups` set) `page-placement` still never moves such a page.
+   *  Removed in a later release. `Screens` is always included; entries here add to it. */
   screenGroups?: string[];
   /** Path (relative to the project root) to a JSON file your project generates, saying where each
    *  component is used (usage file format v1 — see the README). Adds an "Appears in" block to

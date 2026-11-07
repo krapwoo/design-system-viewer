@@ -234,8 +234,8 @@ const KIT_REQUIRED_PACKAGES = ['react-native-svg', 'react-native-safe-area-conte
 
 /** The starter kit's own sidebar order (the same list kit-host/ds-viewer.config.ts declares),
  *  written into a fresh project's config. Follows the README's "Organising the catalog": Tokens,
- *  then every component in one A–Z group, then the non-component kinds of page (Patterns: whole
- *  screens built from the kit; Reference: the generated manifest). */
+ *  then every component in one A–Z group, then the non-component kinds of page (Patterns: regions
+ *  that arrange separate components; Reference: the generated manifest). */
 const KIT_GROUP_ORDER = ['Tokens', 'Components', 'Patterns', 'Reference'];
 
 /** Default `installer` — a real `npx expo install`, run only for whichever of
