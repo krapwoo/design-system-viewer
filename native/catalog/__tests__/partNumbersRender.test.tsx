@@ -268,10 +268,10 @@ test('a card\'s badge is click-through and hidden, and the card keeps one tab st
   cleanup();
 });
 
-// `partGroups`: only components count as parts. Banner and Toggle sit in a "Behaviors" group.
+// `partGroups`: only components count as parts. Banner and Toggle sit in a "Styles" group.
 const SPLIT_GROUPS: NavGroup<Id>[] = [
   { label: 'Components', ids: ['Frame', 'Plain', 'Aliased', 'Sheet', 'Bare', 'Chip', 'Panel'] },
-  { label: 'Behaviors', ids: ['Banner', 'Toggle'] },
+  { label: 'Styles', ids: ['Banner', 'Toggle'] },
 ];
 const cardNames = (container: HTMLElement) => cardLabels(container).map((l) => l.split(',').slice(0, 2).join(','));
 
@@ -292,7 +292,7 @@ test('partGroups absent: a page in any group is numbered exactly as before', () 
 test('partGroups set: a page outside the groups is left out of the Parts block and unnumbered; the rest are numbered', () => {
   // Case-insensitive: 'components' matches the 'Components' group.
   const { container, cleanup } = mount('#Frame', SECTIONS, SPLIT_GROUPS, ['components']);
-  // Banner (anatomy) and Toggle (Parts-only) are behaviors: no number, no card. Chip is 1; the
+  // Banner (anatomy) and Toggle (Parts-only) are styles: no number, no card. Chip is 1; the
   // unresolved Gadget has no page: unnumbered. Gizmo has no page: a plain row.
   assert.deepEqual(cardNames(container), ['Part 1, Chip']);
   assert.deepEqual(badges(container), ['1']);

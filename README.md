@@ -147,7 +147,7 @@ identified.
 
 `ds-viewer.config.ts` fields: `name`, `logo` (optional — a path to an image asset, shown in the
 sidebar beside the name, or in place of it for a wide wordmark; validated at `sync`/`dev` time
-and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `partGroups`, `screenGroups`, `usage` (optional — a path to a usage data file, see
+and bundled into the preview workspace), `components`, `exclude`, `tokens`, `pages`, `groupOrder`, `patternGroups`, `partGroups`, `screenGroups` (deprecated), `usage` (optional — a path to a usage data file, see
 [Usage data](#usage-data)), `starterKit` (new-project only —
 records the kit's version), `updateCheck`, `doctor` — see `config/index.ts`'s `DsViewerConfig` for
 each field's exact meaning. Write a page with `defineCatalogPage()` from `@krapwoo/ds-viewer` (same
@@ -348,7 +348,7 @@ actually apply:
   within what fits a 1280px laptop: 5 compact, 3 regular, or 2 wide columns. `states` items whose
   key matches a row or column key are not repeated below the grid.
 - `specimenSize: 'compact' | 'regular' | 'wide' | 'page'` — the page's specimen width class. `'page'`
-  is for components wider than a phone (a whole screen layout, a catalog page): cells are at least
+  is for components wider than a phone (a wide table, a catalog page): cells are at least
   512px and share the row, with no 402px cap.
 - `specimenSurface: 'auto' | 'neutral' | 'white' | 'dark' | 'transparent'` — the fill of each
   example's cell (list, grouped and grid cells, and a non-token `render()` preview). Defaults to
@@ -420,7 +420,7 @@ actually apply:
 - `previewWidths: [402, 320]` — extra preview widths for a `render()` page (each capped at 402).
   Add a second width only when the component looks different there (labels truncate, a row
   wraps); otherwise it's the same picture twice. Leave it out by default.
-- **`PhoneFrame`** — wrap a demo that is a whole screen or opens an overlay (a sheet, a dialog, a
+- **`PhoneFrame`** — wrap a demo that opens an overlay or needs a device-sized viewport (a sheet, a dialog, a
   toast sliding in, a dropdown's picker) in `<PhoneFrame>`. It is a real device: the demo lays out
   in an iPhone SE viewport (375 × 667 points), scaled down only when its cell is narrower. In the
   browser viewer it opens that example in its own device-sized document, so overlays that portal
@@ -438,13 +438,13 @@ actually apply:
     )}
   </OverlayDemo>
   ```
-- **`PhoneScreen`** — a whole app screen inside a `PhoneFrame`: `header` stays at the top,
+- **`PhoneScreen`** (deprecated: the catalog documents components and the patterns that arrange them, not whole screens; `doctor`'s `screen-page` warns about a page that draws one) — a header, scrolling body and footer inside a `PhoneFrame`: `header` stays at the top,
   `footer` at the phone's bottom, and the children scroll between them instead of pushing the
   footer off the screen. `floating` is a layer over the top for toasts (position its content
   yourself); `bodyWrapper` puts your own surface around the scrolling body.
   ```tsx
   <PhoneFrame>
-    <PhoneScreen header={<TopNav title="Saved trips" />} footer={<Dock>…</Dock>}>…</PhoneScreen>
+    <PhoneScreen header={<Header />} footer={<Footer />}>…</PhoneScreen>
   </PhoneFrame>
   ```
 - Full-width (`itemsFill`) variants and states wrap at most **3** across; set `maxColumns` to
@@ -496,12 +496,15 @@ path. For anything beyond a single list of tokens, use the token-page layouts be
 
 - **`group`/`groupOrder` accept any semantic category you want** — not just `Tokens` and
   `Components`. A page's `group` is a plain string shown as its sidebar section label;
-  `groupOrder` (e.g. `['Tokens', 'Components', 'Patterns', 'Recipes', 'Experiences']`) only
+  `groupOrder` (e.g. `['Tokens', 'Components', 'Patterns', 'Recipes']`) only
   controls which order those sections appear in, top to bottom — any group not listed sorts
   alphabetically after the ones that are. The starter kit uses `Tokens`, then every
-  component under `Components`, then `Patterns` (whole screens built from the kit, such as
-  SavedTrips) and `Reference` (the generated manifest). A larger catalog might add `Recipes` or
-  `Experiences` (full flows) alongside them. Pages sort A–Z by their displayed title (falling back
+  component under `Components`, then `Patterns` (regions that arrange separate components) and `Reference` (the generated
+  manifest). A larger catalog might add `Recipes` alongside them. There is no `Screens`, `Layout`
+  or `Behaviors` group: the catalog documents components and the patterns that arrange them, never
+  whole destinations (screens, sheets, full-screen viewers, OS surfaces); a container or layout
+  wrapper (a scroller, a stack, a slot) is a component; a modifier (a larger tap target) is a style
+  page. `ds-viewer` warns when a group list names one of those three. Pages sort A–Z by their displayed title (falling back
   to their id when they have none; an exact tie breaks on id) inside each group, regardless of how
   many groups you have. Avoid splitting `Components` into finer categories such as "Actions" or
   "Status" purely to browse by — that makes readers guess where a component lives; search and A–Z
@@ -882,8 +885,9 @@ the page. Because the page already has a **Parts** section for its members, the 
 **Uses these components** there (a family with no Parts section keeps **Parts**). The block is a
 labelled region with a heading, each card has one tab stop, and nothing animates.
 
-**Only components are parts.** A style, layout or behavior a page applies (say a hit-target
-modifier) is not a part of it. Set `partGroups` in `ds-viewer.config.ts` to the sidebar groups whose
+**Only components are parts.** A style or modifier a page applies (say a hit-target modifier,
+documented on a page of its own with `pageKind: 'style'` and a `styleNote` when the default style
+sentence doesn't fit) is not a part of it. Containers and layout wrappers are components. Set `partGroups` in `ds-viewer.config.ts` to the sidebar groups whose
 pages are components (e.g. `partGroups: ['Components']`, compared case-insensitively). An entry that
 resolves to a page in any other group is then left out of the Parts block and gets no number; an
 entry that resolves to no page stays a plain row; the side panel's Composition list still lists
@@ -898,8 +902,20 @@ composer with its controls, a settings section of rows). Code can't reliably tel
 `doctor` checks this only when you opt in, and only from what you declared: set
 `doctor: { placement: true }` and `partGroups`, and declare a pattern's separate components in
 `composedOf` with `relationship: 'arranged'`. `partGroups` are components, `patternGroups` (default
-`Patterns`) are example screens built from components, and `screenGroups` (default `['Screens']`,
-case-insensitive) are whole destinations that are never moved. See `page-placement`, below.
+`Patterns`) are regions, never whole screens. An empty-state or welcome block that lays out several
+separate catalogued components (faces or avatars) with text and a button is a pattern: declare
+each of those components in `composedOf` with `relationship: 'arranged'`:
+
+```ts
+composedOf: [
+  { component: 'Avatar', relationship: 'arranged' },
+  { component: 'Button', relationship: 'arranged' },
+],
+```
+
+`screenGroups` is
+deprecated (still read; this release only, a page in `Screens` is still never moved). See
+`page-placement`, below.
 
 ### Family pages
 
@@ -1706,7 +1722,7 @@ Button
     `patternGroups` entry. A page in a pattern group whose `composedOf` was read in full and has no
     `arranged` entry (only `built-in`, `slot`, `related`, or nothing) is a component: move it to the
     first part group that isn't also a pattern or screen group (so `partGroups` may list patterns
-    and screens for numbering, and this check still knows which group means "component"). An
+    for numbering, and this check still knows which group means "component"). An
     `arranged` entry may name one of the page's own members (a section that lays out its own rows),
     and a component another page lists in `documents` (an icon on a token page) counts as catalogued.
     If any unit's `composedOf` isn't literal, nothing is said. Rendering
@@ -1717,8 +1733,8 @@ Button
     page with `tokenGallery: true`, which is also never checked itself), a `navigation: 'reference'`
     page, a documentation-only member or one without a component (no area of its own), and any name
     that isn't catalogued. A page that declares an `arranged` entry is never told it arranges
-    nothing, even when that entry names something the check can't see. Pages in `screenGroups` are
-    exempt. The first part group that is not a pattern or screen group is where "move it to a
+    nothing, even when that entry names something the check can't see. Pages in `screenGroups` (or a group named `Screens`) are
+    exempt for this release only. The first part group that is not a pattern or screen group is where "move it to a
     component group" points, so list your component group first; `ds-viewer` warns when
     `doctor.placement` is on and no such group exists.
   - `single-child-parent` — a page that exactly one other page names as its `sidebarParent`. The
@@ -1748,6 +1764,13 @@ Button
     member with no `component` or with `fidelity: 'documentation-only'` (a real component such as
     `QuantityModifier` is a part). A style has no area of its own: give it a page of its own and
     name it in `relatedPages` **on a family page** (the only page that renders the Related list).
+  - `screen-page` (warning) — a page in a `screenGroups` entry or a group named `Screens`
+    (case-insensitive), or one that imports the viewer's `PhoneScreen`. The catalog documents
+    components and the patterns that arrange them, not whole screens. It is read only from those
+    declared facts, never from a name, `PhoneFrame`, `OverlayDemo`, `specimenSize: 'page'` or
+    navigation code. Exempt: a page that declares `component: 'PhoneScreen'` (the viewer's own page
+    for the deprecated primitive), which imports it without drawing a screen. When the page's group
+    is also a pattern group, the fix is to rename the group.
   - `related-pages-unused` (warning) — `relatedPages` is non-empty on a page without `members`.
     Only a family page renders the Related list, so nothing would show. Give the page `members`, or
     name the related page in `composedOf`. A group page reports the same mistake as an error.
@@ -1821,6 +1844,7 @@ Each of these is caught by `doctor`. The worked example for the anatomy ones is
 | Guard | What it catches | The fix |
 | --- | --- | --- |
 | `style-as-part` | A style or modifier listed as a numbered part of a family or group. | Give it its own page and name it in `relatedPages` on a family page (the TripCard page does this for `Shadow` and `Radius`). |
+| `screen-page` | A page in a `screenGroups` entry or a group named `Screens` (case-insensitive), or one that imports the viewer's `PhoneScreen`. Never inferred from a name, `PhoneFrame`, `OverlayDemo`, `specimenSize: 'page'` or navigation code. | Document the screen's components and the region patterns that arrange them, and remove the page. If it is really a region, move it to a pattern group and declare `relationship: 'arranged'`; if its group is already a pattern group, rename the group. The viewer's own `PhoneScreen` page (`component: 'PhoneScreen'`) is exempt. |
 | `related-pages-unused` | `relatedPages` on a page with no `members`, which renders nothing. | Make it a family page, or name the page in `composedOf`. |
 | `anatomy-no-picture` | An anatomy that lists parts to look at but has no `picture`. | Draw the whole with `AnatomySpecimen` and pin the parts with `AnatomyPin`; `picture: null` says there is deliberately none. |
 | `anatomy-picture-not-specimen` | A `picture` that isn't drawn by `AnatomySpecimen`, so it ignores the page's width and centring. | Make `AnatomySpecimen` the picture's root (a plain wrapper around it is fine). |

@@ -812,6 +812,33 @@ function checkNothingToShow(pages: StaticPage[], patternGroups: readonly string[
 /** `page-placement` and `screenGroups`' default: pages there are whole destinations, never moved. */
 export const DEFAULT_SCREEN_GROUPS: readonly string[] = ['Screens'];
 
+/** `screen-page`: a page that documents a whole destination. Declared facts only: its group is a
+ *  configured `screenGroups` entry or `Screens`, or it imports the viewer's `PhoneScreen`. Never a
+ *  guess from a name, `PhoneFrame`, `OverlayDemo`, `specimenSize: 'page'` or navigation code. The
+ *  one exemption: a page that declares `component: 'PhoneScreen'` (the viewer's own page for the
+ *  deprecated primitive) imports it without drawing a screen. When the group is also a pattern
+ *  group, the fix says to rename the group, since the page is already where a region belongs. */
+function checkScreenPages(pages: StaticPage[], screenGroups: readonly string[], patternGroups: readonly string[]): DoctorIssue[] {
+  const issues: DoctorIssue[] = [];
+  for (const page of pages) {
+    const byGroup = inGroups(page, screenGroups);
+    // The page that documents the `PhoneScreen` primitive itself imports it without drawing a screen.
+    const byImport = page.viewerImports?.includes('PhoneScreen') === true && page.component !== 'PhoneScreen';
+    if (!byGroup && !byImport) continue;
+    const id = resolvePageId(page, page.file);
+    issues.push(issue({
+      id: 'screen-page', severity: 'warning', ...pageRef(page),
+      message: byGroup
+        ? `"${page.title ?? id}" is in the "${page.group}" group: the catalog documents components and the patterns that arrange them, not whole screens.`
+        : `"${page.title ?? id}" draws a whole screen with PhoneScreen: the catalog documents components and the patterns that arrange them, not whole screens.`,
+      fix: byGroup && inGroups(page, patternGroups)
+        ? `Document the screen's components and the region patterns that arrange them, and remove this page. If it is really a region (a list of rows, a form section), rename the "${page.group}" group (it is already a pattern group) and declare relationship: 'arranged' on its composedOf entries.`
+        : "Document the screen's components and the region patterns that arrange them, and remove this page. If it is really a region (a list of rows, a form section), move it to a pattern group and declare relationship: 'arranged' on its composedOf entries.",
+    }));
+  }
+  return issues;
+}
+
 const inGroups = (page: StaticPage, names: readonly string[]): boolean => {
   const group = page.group?.trim().toLowerCase();
   return group !== undefined && names.some((name) => name.trim().toLowerCase() === group);
@@ -1684,6 +1711,8 @@ export function collectIssues(
   options: { patternGroups?: readonly string[]; partGroups?: readonly string[]; screenGroups?: readonly string[]; usage?: UsageData; handBuiltTokenPages?: readonly string[]; placement?: boolean } = {},
 ): DoctorIssue[] {
   const patternGroups = options.patternGroups ?? DEFAULT_PATTERN_GROUPS;
+  // `Screens` is always a screen group, the same union `screen-page` and `page-placement` use.
+  const screenGroups = [...DEFAULT_SCREEN_GROUPS, ...(options.screenGroups ?? [])];
   return [
     ...checkParseErrors(pages),
     ...checkNotCheckable(pages),
@@ -1700,7 +1729,8 @@ export function collectIssues(
     ...checkStandaloneReason(pages),
     ...checkPartNeedsPage(pages),
     ...checkNothingToShow(pages, patternGroups),
-    ...(options.placement === true ? checkPagePlacement(pages, components, { partGroups: options.partGroups ?? [], patternGroups, screenGroups: options.screenGroups ?? DEFAULT_SCREEN_GROUPS }) : []),
+    ...(options.placement === true ? checkPagePlacement(pages, components, { partGroups: options.partGroups ?? [], patternGroups, screenGroups }) : []),
+    ...checkScreenPages(pages, screenGroups, patternGroups),
     ...checkSingleChildParent(pages),
     ...(options.usage ? checkUsageUnknownPage(pages, components, options.usage) : []),
     ...checkMissingWorkingPreview(pages, components),

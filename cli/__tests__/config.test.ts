@@ -205,11 +205,30 @@ test('loadConfig reads screenGroups and rejects a value that is not a list of na
   const configPath = path.join(dir, 'ds-viewer.config.ts');
   const write = (value: string) => writeFileSync(configPath, `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', components: [], tokens: [], screenGroups: ${value} } as any);\n`);
   write("['Flows']");
-  assert.deepEqual(loadConfig(configPath).config.screenGroups, ['Flows']);
+  const good = loadConfig(configPath);
+  assert.deepEqual(good.config.screenGroups, ['Flows']);
+  assert.deepEqual(good.warnings, ['"screenGroups" is deprecated: the catalog documents components and the patterns that arrange them, not whole screens.']);
   write("'Flows'");
   const bad = loadConfig(configPath);
   assert.equal(bad.config.screenGroups, undefined);
-  assert.deepEqual(bad.warnings, ['"screenGroups" must be an array of group names; using the default [\'Screens\'].']);
+  assert.equal(bad.warnings[0], '"screenGroups" must be an array of group names; using the default [\'Screens\'].');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('loadConfig warns once when a group list names Screens, Layout or Behaviors, and not for other names', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'ds-viewer-config-'));
+  const configPath = path.join(dir, 'ds-viewer.config.ts');
+  const write = (fields: string) => writeFileSync(configPath, `import { defineConfig } from '@krapwoo/ds-viewer/config';\nexport default defineConfig({ name: 'X', components: [], tokens: [], ${fields} } as any);\n`);
+  write("groupOrder: ['Components', 'layout', 'BEHAVIORS'], partGroups: ['Layout', 'Screens'], patternGroups: ['Patterns']");
+  const warnings = loadConfig(configPath).warnings;
+  assert.equal(warnings.length, 3, warnings.join('\n'));
+  assert.match(warnings[0], /"groupOrder" names a "layout" group: containers and layout wrappers are components/);
+  assert.match(warnings[1], /"groupOrder" names a "BEHAVIORS" group: modifiers are style pages: give each its own page with pageKind: 'style' \(and a styleNote/);
+  assert.match(warnings[2], /"partGroups" names a "Screens" group: screens are not documented/);
+  write("groupOrder: ['Components'], patternGroups: ['Screens']");
+  assert.match(loadConfig(configPath).warnings.join('\n'), /^"patternGroups" names a "Screens" group: screens are not documented/, 'patternGroups alone triggers it');
+  write("groupOrder: ['Components', 'Patterns', 'Tokens'], partGroups: ['Components']");
+  assert.deepEqual(loadConfig(configPath).warnings, []);
   rmSync(dir, { recursive: true, force: true });
 });
 

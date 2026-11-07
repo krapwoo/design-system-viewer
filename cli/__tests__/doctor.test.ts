@@ -1660,6 +1660,9 @@ test('the starter kit\'s own pages draw no token-page-hand-built hint', () => {
   const kitPages = path.join(import.meta.dirname, '..', '..', 'starter-kit', 'pages');
   const files = readdirSync(kitPages).filter((name) => name.endsWith('.catalog.tsx')).map((name) => path.join(kitPages, name));
   assert.ok(files.length > 0);
+  for (const screen of ['SavedTrips', 'ReportIssue', 'TripPlannerForm']) {
+    assert.ok(!files.some((f) => path.basename(f) === `${screen}.catalog.tsx`), `the kit documents no whole screens (${screen})`);
+  }
   const pages = readStaticPages(files);
   assert.deepEqual(collectIssues(pages, []).filter((i) => i.id === 'token-page-hand-built'), []);
   const radius = pages.find((p) => p.file.endsWith('Radius.catalog.tsx'));
@@ -1813,6 +1816,16 @@ test('page-placement: a screens group is exempt', () => {
   assert.equal(placement([part('Row', { group: 'Screens' })], records, { patternGroups: ['Screens'] }).length, 0);
 });
 
+test('page-placement: a Screens page stays exempt when screenGroups names other groups, the same union screen-page uses', () => {
+  const pages = [part('Transcript', { group: 'Screens', composedOf: arranges('Row') }), part('Row')];
+  // Screens is also listed as a part group (for numbering), so only the exemption keeps the page where it is.
+  const partGroups = ['Components', 'Screens'];
+  assert.equal(placement(pages, [], { screenGroups: ['Flows'], partGroups }).length, 0, 'not moved');
+  const issues = collectIssues(pages, [], { screenGroups: ['Flows'], partGroups, placement: true });
+  assert.equal(issues.filter((i) => i.id === 'screen-page').length, 1, 'but still warned as a screen');
+  assert.equal(issues.filter((i) => i.id === 'page-placement').length, 0);
+});
+
 test('page-placement: style pages, token pages, own members, documentation-only members and uncatalogued names never count', () => {
   const host = (extra: Partial<StaticPage> = {}) => part('Transcript', { composedOf: arranges('Row'), ...extra });
   assert.equal(placement([host(), part('Row', { pageKind: 'style' })], []).length, 0, 'a style page');
@@ -1959,4 +1972,47 @@ test('single-child-parent: pages whose group cannot be read are left out', () =>
   const a = page({ file: '/x/A.catalog.tsx', id: 'A', group: undefined });
   const b = page({ file: '/x/B.catalog.tsx', id: 'B', group: undefined, sidebarParent: 'A' });
   assert.equal(collectIssues([a, b], []).filter((i) => i.id === 'single-child-parent').length, 0);
+});
+
+test('screen-page: warns for a Screens group, a configured screenGroups entry, or a PhoneScreen import', () => {
+  const screens = (options?: { screenGroups?: string[] }) => collectIssues([
+    page({ file: 'Login.catalog.tsx', id: 'Login', title: 'Login', group: 'screens' }),
+    page({ file: 'Flow.catalog.tsx', id: 'Flow', title: 'Flow', group: 'Flows' }),
+    page({ file: 'Drawn.catalog.tsx', id: 'Drawn', title: 'Drawn', group: 'Components', viewerImports: ['defineCatalogPage', 'PhoneScreen'] }),
+  ], [], options).filter((i) => i.id === 'screen-page');
+  assert.deepEqual(screens().map((i) => i.page).sort(), ['Drawn', 'Login'], 'Screens (any case) and PhoneScreen; Flows only once configured');
+  assert.deepEqual(screens({ screenGroups: ['Flows'] }).map((i) => i.page).sort(), ['Drawn', 'Flow', 'Login']);
+  const issue = screens()[0];
+  assert.equal(issue.severity, 'warning');
+  assert.match(issue.message, /not whole screens/);
+  assert.match(issue.fix, /relationship: 'arranged'/);
+});
+
+test('screen-page: a group that is also a pattern group is told to be renamed, not moved to a pattern group', () => {
+  const issues = collectIssues([page({ file: 'Login.catalog.tsx', id: 'Login', group: 'Screens' })], [], { patternGroups: ['Screens'] }).filter((i) => i.id === 'screen-page');
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].fix, /rename the "Screens" group \(it is already a pattern group\)/);
+  assert.doesNotMatch(issues[0].fix, /move it to a pattern group/);
+});
+
+test('the starter kit\'s pages (pages and components) raise no screen-page warning', () => {
+  const kit = path.join(import.meta.dirname, '..', '..', 'starter-kit');
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? walk(path.join(dir, entry.name)) : entry.name.endsWith('.catalog.tsx') ? [path.join(dir, entry.name)] : []);
+  const files = [...walk(path.join(kit, 'pages')), ...walk(path.join(kit, 'components'))];
+  assert.ok(files.length > 0);
+  assert.deepEqual(collectIssues(readStaticPages(files), []).filter((i) => i.id === 'screen-page'), []);
+});
+
+test('screen-page leaves the page that documents the PhoneScreen primitive itself alone', () => {
+  const issues = collectIssues([
+    page({ file: 'PhoneScreen.catalog.tsx', id: 'PhoneScreen', component: 'PhoneScreen', group: 'Components', viewerImports: ['defineCatalogPage', 'PhoneFrame', 'PhoneScreen'] }),
+  ], []).filter((i) => i.id === 'screen-page');
+  assert.deepEqual(issues, []);
+});
+
+test('screen-page never infers from names, PhoneFrame, OverlayDemo, specimenSize page or navigation', () => {
+  const issues = collectIssues([
+    page({ file: 'SettingsScreen.catalog.tsx', id: 'SettingsScreen', title: 'Settings Screen', group: 'Components', viewerImports: ['defineCatalogPage', 'PhoneFrame', 'OverlayDemo'], specimenSize: 'page' }),
+  ], []).filter((i) => i.id === 'screen-page');
+  assert.deepEqual(issues, []);
 });
