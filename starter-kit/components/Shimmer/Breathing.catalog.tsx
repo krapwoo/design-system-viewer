@@ -11,11 +11,18 @@ const styles = StyleSheet.create({
 export default defineCatalogPage({
   component: 'Breathing',
   group: 'Components',
-  whenToUse: 'The raw pulsing block behind Shimmer, exported so a composite skeleton can pulse in lockstep with plain Shimmers off the one shared clock. For an ordinary loading placeholder, use Shimmer.',
+  whenToUse:
+    "Only when Shimmer's three shapes (text line, circle, container) cannot describe the skeleton — a pill-shaped chip, a custom radius, or a pulse in a different colour. Otherwise use Shimmer, which sizes and rounds itself and announces \"Loading\" by default; Breathing is silent unless you give it a role and label. Because every Breathing shares Shimmer's clock, the two can sit side by side and pulse in step.",
   specimenSize: 'regular',
   description:
-    "The shared animated primitive behind Shimmer — a solid block that breathes between a low and high colour on one shared, module-level clock, so every Breathing/Shimmer instance on screen stays phase-locked instead of drifting out of sync. Exported so a custom composite skeleton can reuse the same pulse directly instead of going through Shimmer's fixed text/circle/container shapes.",
-  a11y: 'Renders a plain Animated.View with no role by default — pass accessibilityRole="progressbar" and accessibilityLabel yourself, the same way Shimmer does internally for its own standalone (non-grouped) blocks.',
+    'The pulsing block that Shimmer is built from: a View whose background colour breathes between a low and a high value on one clock shared by every instance. It draws no shape of its own — the size, radius and layout all come from `style`.',
+  a11y:
+    'A bare Animated.View: no role, label or state unless you pass them. `accessibilityRole` accepts only "progressbar" and `accessibilityLabel` any string; both are passed straight to the View. So by default it is invisible to a screen reader — unlike a standalone Shimmer, which adds a "Loading" progressbar — and a skeleton built from Breathing needs its own announcement, most simply by wrapping it in a SkeletonGroup. It follows the OS "reduce motion" setting: while it is on, Breathing renders a static View at the `high` colour instead of an Animated.View, and `phase` and `low` have no effect. The setting is read asynchronously and starts as off, so a Breathing mounted before the read resolves renders animated first and switches to static once it does.',
+  notes: [
+    'All instances read one module-level clock, started by the first animated (not reduce-motion static) Breathing to mount and never stopped, so any that are on screen together pulse in lockstep. `phase` (0 to 1, the fraction of a cycle) shifts one instance against that clock.',
+    'The default pulse is translucent black — 2% to 5% — so it reads as a wash over whatever surface it sits on. `low` and `high` replace it with any two colours.',
+    "The colour is animated in JavaScript (`useNativeDriver` is false, since colour interpolation can't run natively).",
+  ],
   variants: {
     itemsFill: true,
     items: [

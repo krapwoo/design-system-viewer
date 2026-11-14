@@ -92,7 +92,9 @@ export function Pill({
   ];
 
   // A selected pill is the current state — tapping it is a no-op, so it renders as a plain View
-  // (no pressed feedback) even when an onPress is wired up.
+  // (no pressed feedback) even when an onPress is wired up. It still carries the same accessible
+  // name and state as the pressable form, so a screen reader announces "selected" — the one state
+  // that most needs announcing — and the button role when it belongs to a tappable set.
   if (onPress && !isSelected) {
     return (
       <Pressable
@@ -117,7 +119,17 @@ export function Pill({
     );
   }
 
-  return <View style={containerStyle}>{content}</View>;
+  return (
+    <View
+      style={containerStyle}
+      accessible
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: isDisabled, busy: loading, selected: isSelected }}
+    >
+      {content}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

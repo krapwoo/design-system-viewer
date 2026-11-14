@@ -47,9 +47,18 @@ export default defineCatalogPage({
   ],
   specimenSize: 'compact',
   comparison: PILL_COMPARISON,
-  description: 'A compact selectable chip — selected/unselected states with an optional leading icon.',
-  whenToUse: "A selection toggle, not an action — tapping it flips a persistent selected state. If tapping it should instead make something happen, use Button.",
-  a11y: 'Pressable with accessibilityLabel; an icon-only pill (showText={false}) needs an explicit accessibilityLabel so it is announced.',
+  description:
+    'A single-line selection chip. `selected` is a solid dark fill with inverse content; `not_selected` sits on white with a resting shadow. The leading slot holds a named `iconName`, a custom `icon` node, or — when neither is given — a default menu icon; the label can be hidden for an icon-only pill.',
+  whenToUse:
+    "A tappable chip whose state is a persistent selection: the caller flips `variant` between selected and not selected. For a read-only status on a row — not tappable, no selected state — use Badge, which Pill resembles but does not replace. For an action that makes something happen on tap, use Button; for several chips in one scrolling row, PillRow.",
+  a11y:
+    'Only an unselected pill with an `onPress` is interactive: it renders a Pressable with accessibilityRole="button", named by `accessibilityLabel` and falling back to `label` (default "Text"), with accessibilityState disabled, busy and selected. A selected pill, or any pill without `onPress`, renders an `accessible` View with the same `accessibilityLabel` and accessibilityState, so a screen reader announces "selected" rather than leaving it to colour alone. The role is conditional: the View is `button` only when `onPress` is set, so a pill without `onPress` has no role, deliberately, to avoid announcing a control that does not exist. A selected pill with `onPress` is announced as a selected button even though activating it does nothing. The Pressable\'s own `selected` flag is always false, because a selected pill never renders the Pressable — the View carries `selected: true` instead. An icon-only pill (`showText={false}`) with no `accessibilityLabel` is announced by the placeholder `label` default — the type does not enforce one and, unlike Badge, there is no development warning. hitSlop extends the 40pt-tall pill to the 44pt minimum touch target (2px top and bottom, and left and right too when icon-only). Keyboard focus draws a 2px focus-colour border (not shown while disabled); there is no other keyboard handling beyond Pressable\'s defaults. `loading` counts as disabled and sets the busy state; the spinner itself is not announced.',
+  notes: [
+    'A selected pill renders a View, not a Pressable, even when `onPress` is set — tapping the current selection does nothing, and the caller changes `variant` from the other pills\' handlers.',
+    'There is no text-only pill: the leading slot always renders, falling back to the `menu` icon when neither `iconName` nor `icon` is given.',
+    '`variant` defaults to `selected` and `label` to "Text".',
+    '`disabled` dims the whole pill (label and icon included) with the shared disabled opacity.',
+  ],
   variants: {
     items: [
       { key: 'selected', name: 'Selected', props: { variant: 'selected' }, node: <Pill label="Home" variant="selected" iconName="home" onPress={() => {}} /> },

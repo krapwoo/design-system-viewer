@@ -53,6 +53,19 @@ const VARIANT_STYLES: Record<ButtonVariant, VariantStyles> = {
   },
 };
 
+const BUTTON_BORDER_WIDTH = 2;
+
+/**
+ * Vertical `hitSlop` that lifts a padded (non-ghost, non-icon-only) button to the touch-target
+ * minimum without growing its visual size. `contentHeight` is the tallest of the icon/label line.
+ * Returns `undefined` when the button is already tall enough (medium and large).
+ */
+export function getStandardHitSlop(paddingVertical: number, contentHeight: number) {
+  const visualHeight = paddingVertical * 2 + contentHeight + BUTTON_BORDER_WIDTH * 2;
+  const slop = Math.max(0, Math.ceil((DS_A11Y_MIN_TOUCH_TARGET - visualHeight) / 2));
+  return slop > 0 ? { top: slop, bottom: slop } : undefined;
+}
+
 function ButtonImpl({
   label = 'Button',
   variant = 'primary',
@@ -91,6 +104,12 @@ function ButtonImpl({
   // not just the icon-only case the other variants need it for.
   const ghostHitSlop = Math.max(0, Math.ceil((DS_A11Y_MIN_TOUCH_TARGET - sizeTokens.lineHeight) / 2));
 
+  // A label (or icon+label) button is `small`-sized ~36pt tall — the same hitSlop approach, vertical only.
+  const standardHitSlop = getStandardHitSlop(
+    sizeTokens.paddingVertical,
+    Math.max(showIcon ? renderedIconSize : 0, showLabel ? sizeTokens.lineHeight : 0),
+  );
+
   const [focused, setFocused] = useState(false);
   const accessibilityState = useMemo(() => ({ disabled: isDisabled, busy: loading }), [isDisabled, loading]);
 
@@ -120,7 +139,7 @@ function ButtonImpl({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={accessibilityState}
-      hitSlop={isGhost ? ghostHitSlop : isIconOnly ? iconOnlyHitSlop : undefined}
+      hitSlop={isGhost ? ghostHitSlop : isIconOnly ? iconOnlyHitSlop : standardHitSlop}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       style={({ pressed }) => [
@@ -151,7 +170,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: DS_RADIUS.round,
-    borderWidth: 2,
+    borderWidth: BUTTON_BORDER_WIDTH,
     borderColor: 'transparent',
   },
   baseGhost: {
