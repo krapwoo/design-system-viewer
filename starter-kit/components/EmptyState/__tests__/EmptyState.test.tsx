@@ -16,12 +16,15 @@ describe('EmptyState accessibility', () => {
     });
   });
 
-  // QQ: 'the icon avatar sits inside a wrapper hidden from assistive tech on iOS and Android'. The
-  // wrapper carries `accessibilityElementsHidden` and `importantForAccessibility`, which are iOS/Android
-  // props that react-native-web does not translate — the DOM has no wrapper to find. Skipped; what the
-  // web does with that avatar is the todo test below.
+  it('the icon avatar sits inside a wrapper hidden from assistive tech with aria-hidden (iOS, Android and web)', () => {
+    withKit(empty, ({ container }) => {
+      const hidden = container.querySelectorAll('[aria-hidden="true"]');
+      assert.equal(hidden.length, 1);
+      assert.equal(hidden[0].querySelectorAll('[role="img"]').length, 1);
+    });
+  });
 
-  it('no unnamed image is exposed to assistive tech', { todo: 'on web the icon avatar is a role="img" with no name and no aria-hidden: the iOS/Android hiding props do not reach the DOM' }, () => {
+  it('no unnamed image is exposed to assistive tech', () => {
     withKit(empty, ({ container }) => {
       const exposedUnnamed = Array.from(container.querySelectorAll('[role="img"]')).filter(
         (img) => !img.hasAttribute('aria-label') && !img.closest('[aria-hidden="true"]'),

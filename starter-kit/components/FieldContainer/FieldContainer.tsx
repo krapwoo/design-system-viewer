@@ -21,7 +21,8 @@ export function FieldContainer({
   onPress,
   pressed = false,
   accessibilityLabel,
-  accessibilityState,
+  'aria-disabled': ariaDisabled,
+  'aria-expanded': ariaExpanded,
   style,
   children,
 }: FieldContainerProps) {
@@ -44,7 +45,8 @@ export function FieldContainer({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        accessibilityState={accessibilityState}
+        aria-disabled={ariaDisabled}
+        aria-expanded={ariaExpanded}
         style={({ pressed: p }) => stylesFor(p || pressed)}
       >
         {children}
@@ -56,14 +58,15 @@ export function FieldContainer({
   // pressed treatment. When the caller gave this container a name/state, keep it an accessible
   // button element — a disabled picker must announce as "…, button, disabled", not vanish from
   // the accessibility tree just because it lost its Pressable.
-  const stillAccessible = accessibilityLabel != null || accessibilityState != null;
+  const stillAccessible = accessibilityLabel != null || ariaDisabled != null || ariaExpanded != null;
   return (
     <View
       style={stylesFor(pressed)}
       accessible={stillAccessible || undefined}
       accessibilityRole={stillAccessible ? 'button' : undefined}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={accessibilityState}
+      aria-disabled={ariaDisabled}
+      aria-expanded={ariaExpanded}
     >
       {children}
     </View>

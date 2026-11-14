@@ -18,7 +18,7 @@ export default defineCatalogPage({
   specimenSize: 'regular',
   description: 'A boolean on/off toggle. The thumb slides and the track crossfades colour, sharing SegmentedToggle/UnderlineTabs\' own slide-animation hook for a consistent motion feel.',
   whenToUse: 'A setting that takes effect immediately, no separate save step. For recording a fact a future action (like a form submit) will act on, use Checkbox; for one-of-many exclusive selection, use Radio.',
-  a11y: 'Renders a Pressable with accessibilityRole="switch" and accessibilityState.checked — pass accessibilityLabel to say what it controls.',
+  a11y: 'Renders a Pressable with accessibilityRole="switch", `aria-checked` and `aria-disabled` (the `aria-*` props reach iOS, Android and the web DOM; react-native-web ignores the older `accessibilityState` object) — pass accessibilityLabel to say what it controls.',
   variants: {
     items: [{ key: 'default', name: 'Default (tap to toggle)', node: <SwitchDemo /> }],
   },

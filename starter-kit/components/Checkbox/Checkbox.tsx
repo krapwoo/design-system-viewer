@@ -50,7 +50,8 @@ export function Checkbox({ checked, onChange, label, disabled = false, style }: 
       onBlur={() => setFocused(false)}
       disabled={disabled}
       accessibilityRole="checkbox"
-      accessibilityState={{ checked, disabled }}
+      aria-checked={checked}
+      aria-disabled={disabled}
       accessibilityLabel={label}
       hitSlop={HIT_SLOP}
       style={[styles.row, disabled && styles.disabled, style]}

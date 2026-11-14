@@ -49,7 +49,7 @@ export function EmptyState({ iconName = 'users', backgroundColor, title, descrip
     <View style={[styles.container, style]}>
       {/* Decorative — the title directly below carries the meaning, and the icon name is not a useful
           description. Hidden from assistive tech rather than given a label that would just repeat it. */}
-      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View aria-hidden>
         <Avatar iconName={iconName} size={AVATAR_SIZE} backgroundColor={backgroundColor} />
       </View>
       <Text style={styles.title} accessibilityRole="header">

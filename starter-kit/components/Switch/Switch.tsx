@@ -70,7 +70,8 @@ export function Switch({ value, onValueChange, label, disabled = false, accessib
       onBlur={() => setFocused(false)}
       disabled={disabled}
       accessibilityRole="switch"
-      accessibilityState={{ checked: value, disabled }}
+      aria-checked={value}
+      aria-disabled={disabled}
       accessibilityLabel={accessibilityLabel ?? label}
       hitSlop={HIT_SLOP}
       style={[styles.row, disabled && styles.disabled, style]}

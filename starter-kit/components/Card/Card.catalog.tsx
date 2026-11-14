@@ -15,7 +15,7 @@ export default defineCatalogPage({
   specimenSize: 'regular',
   description: 'The primary content surface — a rounded white card with a soft resting shadow. Pass children, or onPress to make the whole card a button.',
   whenToUse: 'A standalone, self-contained unit with its own shadow. For a row in a homogeneous stack of peers (with dividers between them), use ListItem inside a List instead.',
-  a11y: 'When onPress is set, renders a Pressable with accessibilityRole="button" and a visible focus ring; a plain card is a non-interactive View.',
+  a11y: 'When onPress is set, renders a Pressable with accessibilityRole="button" and a visible focus ring; a plain card is a non-interactive View. `aria-busy`, `aria-checked`, `aria-expanded` and `aria-selected` are forwarded to either form (the old `accessibilityState` prop is gone); a pressable card also reports `aria-disabled` from `disabled`.',
   variants: {
     itemsFill: true,
     items: [

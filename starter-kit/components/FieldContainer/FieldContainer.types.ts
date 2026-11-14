@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { AccessibilityState, StyleProp, ViewStyle } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 export interface FieldContainerProps {
   /** Focused → border darkens to border.dark. */
@@ -16,10 +16,11 @@ export interface FieldContainerProps {
   /** Only used when onPress is set. */
   accessibilityLabel?: string;
   /** Forwarded to the container (Pressable or plain View) — lets a picker-style consumer announce
-   *  `{ disabled, expanded }`. When set (or when `accessibilityLabel` is), even the non-Pressable
-   *  branch stays an accessible `button` element, so e.g. a disabled Dropdown still announces as
-   *  "…, button, disabled" instead of disappearing from the accessibility tree. */
-  accessibilityState?: AccessibilityState;
+   *  disabled and expanded. When either is set (or when `accessibilityLabel` is), even the
+   *  non-Pressable branch stays an accessible `button` element, so e.g. a disabled Dropdown still
+   *  announces as "…, button, disabled" instead of disappearing from the accessibility tree. */
+  'aria-disabled'?: boolean;
+  'aria-expanded'?: boolean;
   /** Layout the consumer adds on top of the shared chrome (height, padding, flex direction…). */
   style?: StyleProp<ViewStyle>;
   /** The field's own layout, height, padding, and content. */

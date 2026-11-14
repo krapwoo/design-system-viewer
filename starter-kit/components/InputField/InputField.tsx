@@ -286,7 +286,7 @@ export function InputField({
       disabled={disabled || (!isEditable && !onPress)}
       accessibilityRole={announceAsButton ? 'button' : undefined}
       accessibilityLabel={announceAsButton ? [labelBase, hasValue ? value : undefined].filter(Boolean).join(', ') : undefined}
-      accessibilityState={announceAsButton ? { disabled } : undefined}
+      aria-disabled={announceAsButton ? disabled : undefined}
       style={[styles.wrap, style]}
     >
       {fieldBody}

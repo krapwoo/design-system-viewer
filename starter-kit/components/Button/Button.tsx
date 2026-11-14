@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, Text, View, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
 import { DS_SEMANTIC, DS_RADIUS, DS_SPACING, DS_TYPOGRAPHY, DS_FONT_WEIGHT, DS_A11Y_MIN_TOUCH_TARGET } from '../../tokens';
 import { Icon } from '../../icons/Icon.native';
@@ -111,7 +111,6 @@ function ButtonImpl({
   );
 
   const [focused, setFocused] = useState(false);
-  const accessibilityState = useMemo(() => ({ disabled: isDisabled, busy: loading }), [isDisabled, loading]);
 
   const renderInner = () => (
     <View style={[styles.content, isGhost && styles.contentGhost, disabled && styles.contentDisabled]}>
@@ -138,7 +137,8 @@ function ButtonImpl({
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={accessibilityState}
+      aria-disabled={isDisabled}
+      aria-busy={loading}
       hitSlop={isGhost ? ghostHitSlop : isIconOnly ? iconOnlyHitSlop : standardHitSlop}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}

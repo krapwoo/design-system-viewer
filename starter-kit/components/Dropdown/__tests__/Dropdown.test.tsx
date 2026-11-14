@@ -34,3 +34,38 @@ describe('Dropdown picker', () => {
     });
   });
 });
+
+describe('Dropdown state attributes', () => {
+  const trigger = (container: HTMLElement) => container.querySelector<HTMLElement>('[aria-label^="Pick"]')!;
+
+  it('the trigger reports aria-expanded false while closed', async () => {
+    await withKitAsync(picker, async ({ container }) => {
+      await settle();
+      assert.equal(trigger(container).getAttribute('aria-expanded'), 'false');
+    });
+  });
+
+  it('the trigger reports aria-expanded true while open', async () => {
+    await withKitAsync(picker, async ({ container }) => {
+      await settle();
+      await act(async () => { trigger(container).click(); });
+      assert.equal(trigger(container).getAttribute('aria-expanded'), 'true');
+    });
+  });
+
+  it('a disabled trigger reports aria-disabled', async () => {
+    await withKitAsync(<Dropdown label="Pick" options={OPTIONS} onChange={() => {}} disabled />, async ({ container }) => {
+      await settle();
+      assert.equal(trigger(container).getAttribute('aria-disabled'), 'true');
+    });
+  });
+
+  it('open radio options report aria-checked for the chosen one only', async () => {
+    await withKitAsync(<Dropdown label="Pick" value="a" options={OPTIONS} onChange={() => {}} />, async ({ container, body }) => {
+      await settle();
+      await act(async () => { trigger(container).click(); });
+      const radios = Array.from(body.querySelectorAll('[role="radio"]'));
+      assert.deepEqual(radios.map((r) => r.getAttribute('aria-checked')), ['true', 'false']);
+    });
+  });
+});

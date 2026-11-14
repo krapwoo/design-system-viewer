@@ -56,7 +56,8 @@ export function Dropdown({ label, value, placeholder, options, onChange, disable
         // Label + state stay on even when disabled — FieldContainer keeps its View branch accessible,
         // so a disabled dropdown still announces as "…, button, disabled" instead of vanishing.
         accessibilityLabel={triggerAccessibilityLabel}
-        accessibilityState={{ disabled, expanded: open }}
+        aria-disabled={disabled}
+        aria-expanded={open}
         style={[styles.trigger, style]}
       >
         <View style={styles.inner}>
@@ -97,7 +98,7 @@ export function Dropdown({ label, value, placeholder, options, onChange, disable
                 key={option.value}
                 onPress={() => handleSelect(option.value)}
                 accessibilityRole="radio"
-                accessibilityState={{ checked: isSelected }}
+                aria-checked={isSelected}
                 style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
               >
                 <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>{option.label}</Text>

@@ -83,7 +83,7 @@ export function ListItem({
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={[title, subtitle].filter(Boolean).join(', ')}
-        accessibilityState={{ disabled }}
+        aria-disabled={disabled}
         // Keyboard focus shows the same highlight as a press — a full-width row has no border to
         // recolor, so focus mirrors the pressed treatment (same policy as SegmentedToggle/UnderlineTabs).
         style={({ pressed }) => [styles.row, (pressed || focused) && !disabled && styles.pressed, style]}
