@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, Modal, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { FieldContainer } from '../FieldContainer';
 import { BottomSheet, useInsideBottomSheetWarning } from '../BottomSheet';
 import { TopNav } from '../TopNav';
 import { Button } from '../Button';
 import { Icon } from '../../icons/Icon.native';
-import { DS_SEMANTIC, DS_SPACING, DS_TYPOGRAPHY, DS_ICON_SIZE, DS_MOTION_DURATION, DS_A11Y_MIN_TOUCH_TARGET } from '../../tokens';
+import { DS_SEMANTIC, DS_SPACING, DS_TYPOGRAPHY, DS_ICON_SIZE, DS_A11Y_MIN_TOUCH_TARGET } from '../../tokens';
 
 export interface DropdownOption {
   value: string;
@@ -38,21 +38,6 @@ export interface DropdownProps {
 export function Dropdown({ label, value, placeholder, options, onChange, disabled = false, style }: DropdownProps) {
   useInsideBottomSheetWarning('Dropdown');
   const [open, setOpen] = useState(false);
-  // The picker is portaled through a Modal (see the render below) specifically so it covers the
-  // whole screen even when Dropdown itself sits deep inside an arbitrary layout (a form row, a
-  // card, …) — BottomSheet's own absolutely-positioned overlay only fills whichever immediate
-  // parent View hosts it, which is wrong the moment that parent isn't already the full screen.
-  // `sheetMounted` keeps the Modal (and thus BottomSheet) around for BottomSheet's own exit
-  // animation instead of yanking it out of the DOM the instant `open` goes false.
-  const [sheetMounted, setSheetMounted] = useState(false);
-  useEffect(() => {
-    if (open) {
-      setSheetMounted(true);
-      return undefined;
-    }
-    const timer = setTimeout(() => setSheetMounted(false), DS_MOTION_DURATION.fast);
-    return () => clearTimeout(timer);
-  }, [open]);
   const selected = options.find((o) => o.value === value);
   const hasValue = !!selected;
 
@@ -92,40 +77,36 @@ export function Dropdown({ label, value, placeholder, options, onChange, disable
           <Icon name="chevron-down" size={DS_ICON_SIZE.sm} color={disabled ? DS_SEMANTIC.text.disabled : DS_SEMANTIC.text.regular} />
         </View>
       </FieldContainer>
-      {sheetMounted && (
-        <Modal transparent animationType="none" onRequestClose={() => setOpen(false)}>
-          <BottomSheet
-            visible={open}
-            onDismiss={() => setOpen(false)}
-            header={
-              <TopNav
-                title={label ?? 'Select an option'}
-                trailing={
-                  <Button variant="secondary" size="small" showIcon showLabel={false} iconName="clear" accessibilityLabel="Close" onPress={() => setOpen(false)} />
-                }
-              />
+      <BottomSheet
+        visible={open}
+        onDismiss={() => setOpen(false)}
+        header={
+          <TopNav
+            title={label ?? 'Select an option'}
+            trailing={
+              <Button variant="secondary" size="small" showIcon showLabel={false} iconName="clear" accessibilityLabel="Close" onPress={() => setOpen(false)} />
             }
-          >
-            <View style={styles.options} accessibilityRole="radiogroup">
-              {options.map((option) => {
-                const isSelected = option.value === value;
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => handleSelect(option.value)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: isSelected }}
-                    style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
-                  >
-                    <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>{option.label}</Text>
-                    {isSelected && <Icon name="check" size={DS_ICON_SIZE.sm} color={DS_SEMANTIC.emphasis.info} />}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </BottomSheet>
-        </Modal>
-      )}
+          />
+        }
+      >
+        <View style={styles.options} accessibilityRole="radiogroup">
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => handleSelect(option.value)}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: isSelected }}
+                style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+              >
+                <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>{option.label}</Text>
+                {isSelected && <Icon name="check" size={DS_ICON_SIZE.sm} color={DS_SEMANTIC.emphasis.info} />}
+              </Pressable>
+            );
+          })}
+        </View>
+      </BottomSheet>
     </>
   );
 }

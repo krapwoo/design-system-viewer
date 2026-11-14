@@ -17,8 +17,9 @@ export interface DialogProps {
 /**
  * A card centred on screen over a dismissible backdrop — fades and scales in, distinct from
  * {@link BottomSheet}'s bottom-anchored slide. Named `Dialog` (not `Modal`) to avoid shadowing React
- * Native's own built-in `Modal`. Like BottomSheet, not portaled through RN's `Modal` — a plain
- * absolutely-positioned overlay that fills whichever parent View hosts it.
+ * Native's own built-in `Modal`. Unlike BottomSheet, which renders its own RN `Modal`, Dialog is not
+ * portaled — a plain absolutely-positioned overlay that fills whichever parent View hosts it, so it
+ * does not cover navigation (a tab bar, say) outside that View.
  */
 export function Dialog({ visible, onDismiss, children, style }: DialogProps) {
   const progress = useRef(new Animated.Value(0)).current;

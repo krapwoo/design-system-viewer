@@ -1,10 +1,30 @@
 import React, { createContext, type ReactNode, isValidElement, cloneElement, useContext, useEffect, useRef, useState } from 'react';
-import { View, Pressable, ScrollView, Animated, Easing, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Pressable, ScrollView, Modal, Animated, Easing, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { DS_SEMANTIC, DS_RADIUS, DS_SHADOW, DS_SPACING, DS_MOTION_DURATION, DS_MOTION_EASING } from '../../tokens';
 import { Dock, type DockProps } from '../Dock';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const MAX_HEIGHT_PERCENT = '90%';
+
+/** Runs the sheet's slide/fade towards `visible` and calls `onExited` once a CLOSE has played to the
+ *  end — the only moment its Modal may unmount. An interrupted close (the sheet reopened mid-exit)
+ *  reports `finished: false` and so never calls it. Returns a cleanup that stops the animation. */
+export function animateSheet(progress: Animated.Value, visible: boolean, onExited: () => void): () => void {
+  // Backdrop opacity still fades (a scrim has no position to slide from); the sheet itself only
+  // ever moves via translateY — no opacity animation on the sheet, just the slide.
+  const anim = Animated.timing(progress, {
+    toValue: visible ? 1 : 0,
+    duration: visible ? DS_MOTION_DURATION.base : DS_MOTION_DURATION.fast,
+    // `decelerate` — a sheet entering the screen, per DS_MOTION_EASING_USE (previously left on
+    // RN's default in-out ease, the one enter/exit overlay without an explicit curve).
+    easing: Easing.bezier(...DS_MOTION_EASING.decelerate),
+    useNativeDriver: false,
+  });
+  anim.start(({ finished }) => {
+    if (finished && !visible) onExited();
+  });
+  return () => anim.stop();
+}
 
 /** True while rendering inside an already-open BottomSheet's tree (header/children/footer alike).
  *  Any component that opens its OWN BottomSheet (e.g. Dropdown) reads this via
@@ -27,9 +47,12 @@ export function useInsideBottomSheetWarning(componentName: string): void {
 }
 
 export interface BottomSheetProps {
-  /** Whether the sheet (and its backdrop) are mounted and shown. */
+  /** Whether the sheet (and its backdrop) are shown. Going false plays the slide-out first; the
+   *  sheet's Modal stays mounted until that finishes. */
   visible: boolean;
-  /** Called when the backdrop is tapped — the sheet doesn't close itself; the caller decides. */
+  /** Called when the backdrop is tapped, the Android hardware back button is pressed, or (web) Escape
+   *  is pressed (the last two arrive as the Modal's `onRequestClose`) — the sheet doesn't close
+   *  itself; the caller decides. */
   onDismiss: () => void;
   /** Top area — typically a TopNav with a close/back action. */
   header?: ReactNode;
@@ -44,10 +67,10 @@ export interface BottomSheetProps {
 
 /**
  * A sheet that slides up from the bottom over a dismissible backdrop. Height is driven by its
- * content (not a fixed set of snap points) up to a cap, past which the content area scrolls. Not
- * portaled through RN's `Modal` — it's a plain absolutely-positioned overlay, so it fills whichever
- * parent View hosts it (RN Views are positioning contexts by default), which also lets the catalog
- * contain a live demo inside a bounded preview frame instead of covering the whole page.
+ * content (not a fixed set of snap points) up to a cap, past which the content area scrolls. It
+ * renders inside its own RN `Modal`, so it covers the whole screen — navigation included — wherever
+ * the caller places it. The Modal (`animationType="none"`) only supplies presentation; the slide and
+ * fade stay BottomSheet's own, and the Modal is kept mounted until the exit animation has finished.
  */
 export function BottomSheet({ visible, onDismiss, header, children, footer, style }: BottomSheetProps) {
   const progress = useRef(new Animated.Value(0)).current;
@@ -66,20 +89,7 @@ export function BottomSheet({ visible, onDismiss, header, children, footer, styl
 
   useEffect(() => {
     if (visible) setMounted(true);
-    // Backdrop opacity still fades (a scrim has no position to slide from); the sheet itself only
-    // ever moves via translateY below — no opacity animation on the sheet, just the slide.
-    const anim = Animated.timing(progress, {
-      toValue: visible ? 1 : 0,
-      duration: visible ? DS_MOTION_DURATION.base : DS_MOTION_DURATION.fast,
-      // `decelerate` — a sheet entering the screen, per DS_MOTION_EASING_USE (previously left on
-      // RN's default in-out ease, the one enter/exit overlay without an explicit curve).
-      easing: Easing.bezier(...DS_MOTION_EASING.decelerate),
-      useNativeDriver: false,
-    });
-    anim.start(({ finished }) => {
-      if (finished && !visible) setMounted(false);
-    });
-    return () => anim.stop();
+    return animateSheet(progress, visible, () => setMounted(false));
   }, [visible, progress]);
 
   if (!mounted) return null;
@@ -92,36 +102,42 @@ export function BottomSheet({ visible, onDismiss, header, children, footer, styl
       : footer;
 
   return (
-    <View style={styles.overlay} pointerEvents={visible ? 'auto' : 'none'}>
-      <AnimatedPressable
-        style={[styles.backdrop, { opacity: progress }]}
-        onPress={onDismiss}
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss"
-      />
-      <Animated.View
-        onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
-        style={[styles.sheet, style, { transform: [{ translateY }] }]}
-        // Contain assistive-tech focus while open (iOS) — without this, content behind the scrim
-        // stays reachable by screen readers even though it's visually blocked.
-        accessibilityViewIsModal
-      >
-        <View style={styles.handle} />
-        <BottomSheetContext.Provider value>
-          {header}
-          <ScrollView
-            style={styles.content}
-            contentContainerStyle={styles.contentContainer}
-            bounces={false}
-            onLayout={(e) => setScrollLayoutHeight(e.nativeEvent.layout.height)}
-            onContentSizeChange={(_width, height) => setScrollContentHeight(height)}
-          >
-            {children}
-          </ScrollView>
-          {resolvedFooter}
-        </BottomSheetContext.Provider>
-      </Animated.View>
-    </View>
+    // `onRequestClose` is Android's hardware back and, via react-native-web, Escape. The translucent
+    // flags (Android only, ignored elsewhere) let the sheet reach the screen edges so Dock's
+    // `useSafeAreaInsets` padding is measured against the same full-screen window it renders in;
+    // the navigation-bar flag is only valid alongside the status-bar one.
+    <Modal transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={onDismiss}>
+      <View style={styles.overlay} pointerEvents={visible ? 'auto' : 'none'}>
+        <AnimatedPressable
+          style={[styles.backdrop, { opacity: progress }]}
+          onPress={onDismiss}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss"
+        />
+        <Animated.View
+          onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}
+          style={[styles.sheet, style, { transform: [{ translateY }] }]}
+          // Contain assistive-tech focus while open (iOS) — without this, content behind the scrim
+          // stays reachable by screen readers even though it's visually blocked.
+          accessibilityViewIsModal
+        >
+          <View style={styles.handle} />
+          <BottomSheetContext.Provider value>
+            {header}
+            <ScrollView
+              style={styles.content}
+              contentContainerStyle={styles.contentContainer}
+              bounces={false}
+              onLayout={(e) => setScrollLayoutHeight(e.nativeEvent.layout.height)}
+              onContentSizeChange={(_width, height) => setScrollContentHeight(height)}
+            >
+              {children}
+            </ScrollView>
+            {resolvedFooter}
+          </BottomSheetContext.Provider>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
