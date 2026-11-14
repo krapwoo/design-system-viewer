@@ -38,6 +38,6 @@ test('every note button is at most two words, and no copy uses an em dash', () =
 });
 
 test("the success detail keeps only doctor's counts, never its em-dash tail", () => {
-  const note = resultNote({ phase: 'success', doctorSummary: '0 errors, 15 warnings — 37 components (37 with examples), 130 unbound examples.', files: ['package.json'], latest: '0.4.9' }, '0.4.8');
+  const note = resultNote({ phase: 'success', doctorSummary: '0 errors, 15 warnings — 37 components (37 with examples).', files: ['package.json'], latest: '0.4.9' }, '0.4.8');
   assert.equal(note.detail, 'Changed: package.json · Doctor: 0 errors, 15 warnings');
 });
