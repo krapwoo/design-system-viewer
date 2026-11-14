@@ -14,7 +14,8 @@
 // against, rather than installing a rival copy at the root.
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import { transform } from 'esbuild';
 
@@ -31,6 +32,14 @@ const HOST_SPECIFIERS = {
   'react-native': 'react-native-web',
 };
 
+// Modules the starter kit imports that only exist inside a real host app (native packages, the synced
+// inventory), swapped for small stand-ins — see each file for what it does and does not stand for.
+const SHIMS = {
+  'react-native-svg': new URL('./shims/reactNativeSvg.tsx', import.meta.url),
+  'react-native-safe-area-context': new URL('./shims/reactNativeSafeAreaContext.tsx', import.meta.url),
+  '@krapwoo/ds-viewer/generated': new URL('./shims/generated.ts', import.meta.url),
+};
+
 function resolveFromHost(specifier) {
   const hostSpecifier = HOST_SPECIFIERS[specifier];
   try {
@@ -43,6 +52,9 @@ function resolveFromHost(specifier) {
 }
 
 export async function resolve(specifier, context, nextResolve) {
+  if (Object.hasOwn(SHIMS, specifier)) {
+    return { url: SHIMS[specifier].href, format: 'module', shortCircuit: true };
+  }
   if (Object.hasOwn(HOST_SPECIFIERS, specifier)) {
     return { url: pathToFileURL(resolveFromHost(specifier)).href, shortCircuit: true };
   }
@@ -50,11 +62,14 @@ export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith('.') && context.parentURL) {
     const base = new URL(specifier, context.parentURL);
     const basePath = fileURLToPath(base);
-    if (!existsSync(basePath)) {
-      for (const ext of EXTENSIONS) {
-        if (existsSync(basePath + ext)) {
-          return { url: pathToFileURL(basePath + ext).href, format: 'module', shortCircuit: true };
-        }
+    // A file with no extension (`./tokens` -> `tokens.ts`), or a folder with an index
+    // (`../../tokens` -> `tokens/index.ts`) — the starter kit's own import style.
+    const candidates = existsSync(basePath) && statSync(basePath).isDirectory()
+      ? EXTENSIONS.map((ext) => path.join(basePath, `index${ext}`))
+      : existsSync(basePath) ? [] : EXTENSIONS.map((ext) => basePath + ext);
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return { url: pathToFileURL(candidate).href, format: 'module', shortCircuit: true };
       }
     }
   }
