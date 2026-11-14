@@ -16,7 +16,7 @@ describe('Pill accessibility', () => {
       const pill = container(root);
       assert.equal(pill.getAttribute('role'), 'button');
       assert.equal(pill.getAttribute('aria-label'), 'Hiking');
-      // `accessibilityState.selected` — see the todo test below.
+      assert.equal(pill.getAttribute('aria-selected'), 'true');
     });
   });
 
@@ -34,10 +34,16 @@ describe('Pill accessibility', () => {
     });
   });
 
-  // QQ: 'a selected disabled or loading pill reports disabled/busy'. A selected pill is a plain View,
-  // and react-native-web 0.21 does not translate `accessibilityState` ({ disabled, busy, selected })
-  // to `aria-disabled`/`aria-busy`/`aria-selected` — so the DOM carries none of it. Skipped; the
-  // gap itself is the todo below.
+  it('a selected disabled or loading pill reports disabled/busy', () => {
+    withKit(<Pill variant="selected" onPress={() => {}} disabled />, ({ container: root }) => {
+      assert.equal(container(root).getAttribute('aria-disabled'), 'true');
+      assert.equal(container(root).getAttribute('aria-busy'), 'false');
+    });
+    withKit(<Pill variant="selected" onPress={() => {}} loading />, ({ container: root }) => {
+      assert.equal(container(root).getAttribute('aria-disabled'), 'true');
+      assert.equal(container(root).getAttribute('aria-busy'), 'true');
+    });
+  });
 
   it('an unselected pill with onPress is still an unselected, focusable button', () => {
     withKit(<Pill label="Hiking" variant="not_selected" onPress={() => {}} />, ({ container: root }) => {
@@ -45,7 +51,7 @@ describe('Pill accessibility', () => {
       assert.equal(pill.tagName, 'BUTTON');
       assert.equal(pill.getAttribute('role'), 'button');
       assert.equal(pill.getAttribute('tabindex'), '0');
-      // `accessibilityState.selected: false` — see the todo test below.
+      assert.equal(pill.getAttribute('aria-selected'), 'false');
     });
   });
 
@@ -66,7 +72,7 @@ describe('Pill accessibility', () => {
     assert.equal(selectedPresses, 0);
   });
 
-  it('a selected pill exposes aria-selected to the web', { todo: 'react-native-web 0.21 drops accessibilityState, so the selected state reaches no web screen reader' }, () => {
+  it('a selected pill exposes aria-selected to the web', () => {
     withKit(<Pill label="Hiking" variant="selected" onPress={() => {}} />, ({ container: root }) => {
       assert.equal(container(root).getAttribute('aria-selected'), 'true');
     });

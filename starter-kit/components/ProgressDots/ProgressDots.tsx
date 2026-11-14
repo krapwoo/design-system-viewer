@@ -20,7 +20,11 @@ export function ProgressDots({ active, total = 6, style }: ProgressDotsProps) {
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel={`Step ${active + 1} of ${total}`}
-      accessibilityValue={{ min: 1, max: total, now: active + 1 }}
+      // `aria-value*` rather than `accessibilityValue`: react-native-web 0.21 drops the latter, while
+      // React Native maps these on iOS and Android as well.
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-valuenow={active + 1}
     >
       {Array.from({ length: total }).map((_, i) => (
         <View key={i} style={[styles.dot, i === active && styles.dotActive]} />

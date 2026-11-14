@@ -27,19 +27,52 @@ const PULSE_CYCLE_MS = DS_MOTION_LOOP_DURATION.pulse;
 // in lockstep. `useNativeDriver:false` is required because we interpolate `backgroundColor` (colour
 // interpolation is JS-driven).
 const sharedProgress = new Animated.Value(0);
-let sharedProgressStarted = false;
-function ensureSharedProgressStarted(): void {
-  if (sharedProgressStarted) return;
-  sharedProgressStarted = true;
-  Animated.loop(
-    Animated.timing(sharedProgress, {
-      toValue: 1,
-      duration: PULSE_CYCLE_MS,
-      easing: Easing.linear,
-      useNativeDriver: false,
-    }),
-  ).start();
+
+/**
+ * Reference-counts the users of a shared loop: `start` runs when the count goes 0 → 1, `stop` when it
+ * goes 1 → 0, so a later first user starts it again. `acquire()` returns that user's release function,
+ * which is safe to call more than once. Pure (no timers, no React) so it can be unit-tested directly.
+ */
+export function createRefCountedLoop(start: () => void, stop: () => void) {
+  let count = 0;
+  return {
+    acquire(): () => void {
+      let released = false;
+      count += 1;
+      if (count === 1) start();
+      return () => {
+        if (released) return;
+        released = true;
+        count -= 1;
+        if (count === 0) stop();
+      };
+    },
+    get count() {
+      return count;
+    },
+  };
 }
+
+let sharedLoop: Animated.CompositeAnimation | null = null;
+/** The one clock behind every Shimmer. Runs only while at least one Shimmer is mounted. */
+export const sharedPulseClock = createRefCountedLoop(
+  () => {
+    sharedProgress.setValue(0);
+    sharedLoop = Animated.loop(
+      Animated.timing(sharedProgress, {
+        toValue: 1,
+        duration: PULSE_CYCLE_MS,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }),
+    );
+    sharedLoop.start();
+  },
+  () => {
+    sharedLoop?.stop();
+    sharedLoop = null;
+  },
+);
 
 // ─── Shared animated primitive ────────────────────────────────────────────────
 // A solid block that breathes between `low` and `high` on the shared progress value. Exported so any
@@ -52,7 +85,7 @@ type BreathingProps = {
   style?: StyleProp<ViewStyle>;
   accessibilityRole?: 'progressbar';
   accessibilityLabel?: string;
-  accessibilityState?: { busy?: boolean };
+  'aria-busy'?: boolean;
 };
 
 /** With the OS reduce-motion setting on, the pulse is replaced by a static block at the `high` colour
@@ -62,13 +95,13 @@ export function Breathing(props: BreathingProps) {
   return reduceMotion ? <StaticBreathing {...props} /> : <AnimatedBreathing {...props} />;
 }
 
-function StaticBreathing({ high = PULSE_HIGH, style, accessibilityRole, accessibilityLabel, accessibilityState }: BreathingProps) {
+function StaticBreathing({ high = PULSE_HIGH, style, accessibilityRole, accessibilityLabel, 'aria-busy': ariaBusy }: BreathingProps) {
   return (
     <View
       style={[style, { backgroundColor: high }]}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={accessibilityState}
+      aria-busy={ariaBusy}
     />
   );
 }
@@ -80,11 +113,10 @@ function AnimatedBreathing({
   style,
   accessibilityRole,
   accessibilityLabel,
-  accessibilityState,
+  'aria-busy': ariaBusy,
 }: BreathingProps) {
-  useEffect(() => {
-    ensureSharedProgressStarted();
-  }, []);
+  // Hold the shared clock while mounted; the last Shimmer to unmount stops it, the next one restarts it.
+  useEffect(() => sharedPulseClock.acquire(), []);
 
   // (progress + phase) % 1, then a triangle wave: high at 0, low at 0.5, high at 1 — equivalent to the
   // cosine breathe, driven off the one shared linear clock so all instances stay phase-locked.
@@ -102,7 +134,7 @@ function AnimatedBreathing({
       style={[style, { backgroundColor }]}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={accessibilityState}
+      aria-busy={ariaBusy}
     />
   );
 }
@@ -141,7 +173,7 @@ export function Shimmer({ variant = 'text', width, height, size = 40, style, acc
       style={[dimensionsForVariant(variant, width, height, size), style]}
       accessibilityRole={insideGroup ? undefined : 'progressbar'}
       accessibilityLabel={insideGroup ? undefined : accessibilityLabel}
-      accessibilityState={insideGroup ? undefined : { busy: true }}
+      aria-busy={insideGroup ? undefined : true}
     />
   );
 }
@@ -174,7 +206,7 @@ export function SkeletonGroup({
         style={style}
         accessibilityRole="progressbar"
         accessibilityLabel={label}
-        accessibilityState={{ busy: true }}
+        aria-busy
       >
         {children}
       </View>

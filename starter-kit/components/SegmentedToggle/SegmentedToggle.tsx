@@ -89,7 +89,7 @@ export function SegmentedToggle({ options, value, onChange, style }: SegmentedTo
             onBlur={() => setFocusedValue(prev => (prev === opt.value ? null : prev))}
             accessibilityRole="tab"
             accessibilityLabel={opt.badge != null && opt.badge > 0 ? `${opt.label}, ${opt.badge}` : opt.label}
-            accessibilityState={{ selected }}
+            aria-selected={selected}
             // Keyboard focus shows the same highlight as a press — a flat in-track target has no
             // border to recolor, so focus mirrors the pressed treatment (same policy as ListItem).
             style={({ pressed }) => [styles.segment, (pressed || focusedValue === opt.value) && styles.segmentPressed]}

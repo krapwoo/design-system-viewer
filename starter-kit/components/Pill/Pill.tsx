@@ -105,7 +105,9 @@ export function Pill({
         hitSlop={showText ? { top: 2, bottom: 2 } : { top: 2, bottom: 2, left: 2, right: 2 }}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
-        accessibilityState={{ disabled: isDisabled, busy: loading, selected: isSelected }}
+        aria-disabled={isDisabled}
+        aria-busy={loading}
+        aria-selected={isSelected}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         style={({ pressed }) => [
@@ -125,7 +127,9 @@ export function Pill({
       accessible
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{ disabled: isDisabled, busy: loading, selected: isSelected }}
+      aria-disabled={isDisabled}
+      aria-busy={loading}
+      aria-selected={isSelected}
     >
       {content}
     </View>

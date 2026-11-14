@@ -77,7 +77,7 @@ export function UnderlineTabs({ options, value, onChange, style }: UnderlineTabs
             onBlur={() => setFocusedValue(prev => (prev === opt.value ? null : prev))}
             accessibilityRole="tab"
             accessibilityLabel={opt.badge != null && opt.badge > 0 ? `${opt.label}, ${opt.badge}` : opt.label}
-            accessibilityState={{ selected }}
+            aria-selected={selected}
             // Keyboard focus shows the same highlight as a press (same policy as SegmentedToggle/ListItem).
             style={({ pressed }) => [styles.tab, (pressed || focusedValue === opt.value) && styles.tabPressed]}
           >

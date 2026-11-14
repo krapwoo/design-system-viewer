@@ -80,7 +80,7 @@ export function Banner({
         style={[styles.calloutContainer, { backgroundColor: bg }, style]}
         onPress={toggle}
         accessibilityRole="button"
-        accessibilityState={{ expanded }}
+        aria-expanded={expanded}
       >
         {({ pressed }) => (
           <>

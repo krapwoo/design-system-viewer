@@ -5,7 +5,7 @@ import {
   StyleSheet,
   type StyleProp,
   type ViewStyle,
-  type AccessibilityState,
+  type AccessibilityProps,
 } from 'react-native';
 import { DS_SEMANTIC, DS_RADIUS, DS_SPACING, DS_SHADOW } from '../../tokens';
 
@@ -23,7 +23,10 @@ interface CardBaseProps {
   showSlot4?: boolean;
   showSlot5?: boolean;
   accessibilityLabel?: string;
-  accessibilityState?: AccessibilityState;
+  'aria-busy'?: AccessibilityProps['aria-busy'];
+  'aria-checked'?: AccessibilityProps['aria-checked'];
+  'aria-expanded'?: AccessibilityProps['aria-expanded'];
+  'aria-selected'?: AccessibilityProps['aria-selected'];
   style?: StyleProp<ViewStyle>;
 }
 
@@ -52,7 +55,10 @@ export function Card({
   onPress,
   disabled = false,
   accessibilityLabel,
-  accessibilityState,
+  'aria-busy': ariaBusy,
+  'aria-checked': ariaChecked,
+  'aria-expanded': ariaExpanded,
+  'aria-selected': ariaSelected,
   style,
 }: CardProps) {
   const [focused, setFocused] = React.useState(false);
@@ -73,7 +79,11 @@ export function Card({
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        accessibilityState={{ ...accessibilityState, disabled }}
+        aria-busy={ariaBusy}
+        aria-checked={ariaChecked}
+        aria-expanded={ariaExpanded}
+        aria-selected={ariaSelected}
+        aria-disabled={disabled}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         style={cardStyle}
@@ -88,7 +98,10 @@ export function Card({
       style={[styles.card, style]}
       accessible={!!accessibilityLabel}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={accessibilityState}
+      aria-busy={ariaBusy}
+      aria-checked={ariaChecked}
+      aria-expanded={ariaExpanded}
+      aria-selected={ariaSelected}
     >
       {inner}
     </View>

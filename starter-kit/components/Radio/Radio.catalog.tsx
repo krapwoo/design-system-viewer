@@ -24,7 +24,7 @@ export default defineCatalogPage({
   specimenSize: 'regular',
   description: 'A single circular selection control — a filled dot appears in the ring when selected. A group of mutually-exclusive Radios is just multiple instances sharing one selected value in the consumer.',
   whenToUse: 'One selection from a mutually-exclusive set — checking one should un-check another. For an independent on/off fact, use Checkbox; for a setting that takes effect immediately, use Switch.',
-  a11y: 'Renders a Pressable with accessibilityRole="radio" and accessibilityState.selected; the optional label doubles as its accessibilityLabel.',
+  a11y: 'Renders a Pressable with accessibilityRole="radio", `aria-checked` for the selected state (the attribute a radio\'s role calls for, matching Dropdown\'s own radio options) and `aria-disabled`; the optional label doubles as its accessibilityLabel.',
   variants: {
     items: [{ key: 'default', name: 'Default (tap to select)', node: <RadioGroupDemo /> }],
   },
