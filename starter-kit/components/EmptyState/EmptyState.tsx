@@ -47,8 +47,14 @@ export interface EmptyStateProps {
 export function EmptyState({ iconName = 'users', backgroundColor, title, description, action, secondaryAction, style }: EmptyStateProps) {
   return (
     <View style={[styles.container, style]}>
-      <Avatar iconName={iconName} size={AVATAR_SIZE} backgroundColor={backgroundColor} />
-      <Text style={styles.title}>{title}</Text>
+      {/* Decorative — the title directly below carries the meaning, and the icon name is not a useful
+          description. Hidden from assistive tech rather than given a label that would just repeat it. */}
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <Avatar iconName={iconName} size={AVATAR_SIZE} backgroundColor={backgroundColor} />
+      </View>
+      <Text style={styles.title} accessibilityRole="header">
+        {title}
+      </Text>
       {!!description && <Text style={styles.description}>{description}</Text>}
       {action && (
         <ButtonGroup variant="vertical" style={styles.actionWrap}>

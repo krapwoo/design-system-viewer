@@ -13,8 +13,14 @@ export default defineCatalogPage({
     { component: 'Button', role: "The action button, plus a tertiary secondaryAction button when set.", relationship: 'built-in' },
   ],
   description: 'A centred placeholder for a screen or section with nothing to show yet — no results, no saved items, a first-run state.',
-  whenToUse: "Fills the entire content area because there's nothing else to show. For a note that sits alongside other real content, use Banner instead.",
-  a11y: 'A plain View with text; the action(s) render as real Buttons inside a ButtonGroup, which carry their own accessibility.',
+  whenToUse:
+    "Fills the entire content area because there's nothing else to show. For a note that sits alongside other real content, use Banner instead. It carries at most two actions; for an illustration or a richer layout, compose your own.",
+  a11y:
+    'No explicit handling beyond React Native defaults. The title has accessibilityRole="header", so it is a heading; the description is plain Text. The icon is decorative: the Avatar is wrapped in a View with accessibilityElementsHidden and importantForAccessibility="no-hide-descendants", so assistive tech skips it rather than announcing an unlabelled image. The actions are real Buttons (accessibilityRole="button", named by their label), always rendered `small`; a label-only small Button is 36pt tall but gets 4pt of vertical hitSlop, which reaches the 44pt minimum touch target (vertical only, so its width is not extended).',
+  notes: [
+    '`secondaryAction` is only rendered when `action` is also set.',
+    '`backgroundColor` passes through to Avatar, which switches its icon to light (inverse) colour whenever a custom fill is given — pair it with a saturated or dark fill.',
+  ],
   // No `variant` prop exists on EmptyState — its "Variants" column shows the minimal default
   // (iconName omitted, so it falls back to the real default) — the description/action
   // configurations live under "States".

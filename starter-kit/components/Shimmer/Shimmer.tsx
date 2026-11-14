@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { View, Animated, Easing, type StyleProp, type ViewStyle } from 'react-native';
 import { DS_RADIUS, DS_SPACING, DS_MOTION_LOOP_DURATION } from '../../tokens';
+import { useReduceMotion } from '../useReduceMotion';
 import type { ShimmerProps, ShimmerVariant } from './Shimmer.types';
 
 // True for any Shimmer rendered inside a <SkeletonGroup>. When set, individual blocks drop their own
@@ -43,14 +44,7 @@ function ensureSharedProgressStarted(): void {
 // ─── Shared animated primitive ────────────────────────────────────────────────
 // A solid block that breathes between `low` and `high` on the shared progress value. Exported so any
 // composite skeleton can reuse the same pulse (and stay in lockstep with plain Shimmers).
-export function Breathing({
-  phase = 0,
-  low = PULSE_LOW,
-  high = PULSE_HIGH,
-  style,
-  accessibilityRole,
-  accessibilityLabel,
-}: {
+type BreathingProps = {
   phase?: number;
   /** Override the pulse's low/high colours. Defaults to the shared translucent pulse. */
   low?: string;
@@ -58,7 +52,36 @@ export function Breathing({
   style?: StyleProp<ViewStyle>;
   accessibilityRole?: 'progressbar';
   accessibilityLabel?: string;
-}) {
+  accessibilityState?: { busy?: boolean };
+};
+
+/** With the OS reduce-motion setting on, the pulse is replaced by a static block at the `high` colour
+ *  (the more visible end of the pulse, so the placeholder still reads as a placeholder). */
+export function Breathing(props: BreathingProps) {
+  const reduceMotion = useReduceMotion();
+  return reduceMotion ? <StaticBreathing {...props} /> : <AnimatedBreathing {...props} />;
+}
+
+function StaticBreathing({ high = PULSE_HIGH, style, accessibilityRole, accessibilityLabel, accessibilityState }: BreathingProps) {
+  return (
+    <View
+      style={[style, { backgroundColor: high }]}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={accessibilityState}
+    />
+  );
+}
+
+function AnimatedBreathing({
+  phase = 0,
+  low = PULSE_LOW,
+  high = PULSE_HIGH,
+  style,
+  accessibilityRole,
+  accessibilityLabel,
+  accessibilityState,
+}: BreathingProps) {
   useEffect(() => {
     ensureSharedProgressStarted();
   }, []);
@@ -79,6 +102,7 @@ export function Breathing({
       style={[style, { backgroundColor }]}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={accessibilityState}
     />
   );
 }
@@ -107,7 +131,7 @@ function dimensionsForVariant(
  * multiple Shimmers of the right variant/count/dimensions, not by inventing one shape to cover
  * everything — see the "Circle + text" example in the catalog for exactly this composition.
  */
-export function Shimmer({ variant = 'text', width, height, size = 40, style }: ShimmerProps) {
+export function Shimmer({ variant = 'text', width, height, size = 40, style, accessibilityLabel = 'Loading' }: ShimmerProps) {
   // Inside a <SkeletonGroup>, the group owns the single "Loading" announcement — each block stays
   // silent so a composite skeleton (avatar + two text lines = 3 blocks) doesn't make a screen
   // reader read "Loading, Loading, Loading". A standalone Shimmer still announces on its own.
@@ -116,7 +140,8 @@ export function Shimmer({ variant = 'text', width, height, size = 40, style }: S
     <Breathing
       style={[dimensionsForVariant(variant, width, height, size), style]}
       accessibilityRole={insideGroup ? undefined : 'progressbar'}
-      accessibilityLabel={insideGroup ? undefined : 'Loading'}
+      accessibilityLabel={insideGroup ? undefined : accessibilityLabel}
+      accessibilityState={insideGroup ? undefined : { busy: true }}
     />
   );
 }

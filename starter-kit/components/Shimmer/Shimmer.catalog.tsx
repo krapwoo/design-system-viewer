@@ -13,9 +13,17 @@ export default defineCatalogPage({
   component: 'Shimmer',
   group: 'Components',
   specimenSize: 'regular',
-  description: 'Loading placeholders that breathe while content loads. `text` stands in for one line of text (an element with 3 lines gets 3 stacked `text` Shimmers, not one tall one), `circle` is always for a circular element, and `container` covers everything else (Card, Banner, image, …) — sized to match the real element it replaces, not an arbitrary block. When several stand in for one element, wrap them in `SkeletonGroup`.',
-  whenToUse: 'A composite skeleton (several Shimmers standing in for one element) → wrap them in SkeletonGroup so it announces "Loading" once, not once per block. A single lone Shimmer needs no wrapper — it announces on its own.',
-  a11y: 'A standalone Shimmer is exposed as accessibilityRole="progressbar" + accessibilityLabel="Loading". Inside a SkeletonGroup, each block goes silent and the group carries one busy "Loading" announcement for the whole skeleton — so a screen reader says "Loading" once, not once per block.',
+  description:
+    'Loading placeholders that breathe while content loads. `text` stands in for one line of text (an element with 3 lines gets 3 stacked `text` Shimmers, not one tall one), `circle` is always for a circular element, and `container` covers everything else (Card, Banner, image, …) — sized to match the real element it replaces, not an arbitrary block. When several stand in for one element, wrap them in `SkeletonGroup`.',
+  whenToUse:
+    'Content whose shape is known and is still loading — the skeleton mirrors the layout that will replace it. For an indeterminate wait with no known layout (a button mid-request, a full-screen wait), use Loading. A composite skeleton (several Shimmers standing in for one element) goes inside a SkeletonGroup so it announces "Loading" once, not once per block; a single lone Shimmer needs no wrapper.',
+  a11y:
+    'A standalone Shimmer is exposed as accessibilityRole="progressbar" with accessibilityState busy: true and an accessibilityLabel that defaults to "Loading"; pass `accessibilityLabel` to name it for what is loading (the default is English text and is not localised). Inside a SkeletonGroup each Shimmer drops its role, label and busy state (so `accessibilityLabel` is ignored there), and the group carries a single progressbar role, accessibilityState busy: true, and a `label` (default "Loading") for the whole skeleton. With the OS "reduce motion" setting on, the pulse is replaced by a static block at the pulse\'s `high` colour, so the placeholder still reads as one; the setting is followed live if it changes. It is read asynchronously and starts as off, so a Shimmer mounted before the read resolves renders animated first and switches to static once it does. The pulse is also a low-contrast wash (2–5% black), so it is not a visible loading cue on its own.',
+  notes: [
+    'Every Shimmer reads one shared module-level clock, so shimmers on screen together always pulse in lockstep, whatever time each mounted.',
+    '`SkeletonGroup` and `Breathing` (the pulsing block Shimmer is built from) are exported alongside Shimmer.',
+    'Text lines default to 16px tall (SHIMMER_TEXT_HEIGHT) and full width; containers to 80px tall at the medium radius, the same radius Card uses.',
+  ],
   // One standalone example per `variant` enum value (`text` is the default, so it comes first),
   // plus the composed "Circle + text" usage — shown here too, not just under States, so Variants
   // reads as complete on its own.

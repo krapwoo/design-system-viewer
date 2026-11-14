@@ -63,8 +63,15 @@ export default defineCatalogPage({
   comparison: BUTTON_COMPARISON,
   description:
     'The primary tap target. Five visual weights, three sizes, optional leading/trailing icon, plus loading and icon-only modes.',
-  whenToUse: 'An action — something happens on tap. For a tappable chip that just flips a persistent selected state, use Pill instead.',
-  a11y: 'Renders a Pressable with accessibilityRole="button"; pass accessibilityLabel for icon-only buttons where the label is hidden.',
+  whenToUse:
+    'An action — something happens on tap. For a tappable chip that just flips a persistent selected state, use Pill instead. A Button is always its own box.',
+  a11y:
+    'Renders a Pressable with accessibilityRole="button". The accessible name is `accessibilityLabel`, falling back to `label` — and `label` still names the button when `showLabel` is false, so an icon-only button is named by its `label`; if neither is passed, `label` defaults to "Button" and that is what is announced. accessibilityState carries `disabled` (set by `disabled`, by `loading`, and also whenever `onPress` is missing) and `busy` (set by `loading`). Every `small` button reaches the 44pt minimum touch target through hitSlop without growing visually: ghost and icon-only buttons get it, and so do label-only and icon+label buttons (the 36pt-tall `small` one gets 4pt top and bottom); `medium` and `large` are already tall enough and get none. The slop is vertical only, so width is not extended — a `small` button has 36pt of padding and border before its label, and a one-narrow-glyph label stays under 44pt wide. Horizontal slop is left out on purpose: it could overlap neighbouring buttons in a `ButtonGroup`. Keyboard focus draws a 2px focus-colour border (not shown while disabled); there is no other keyboard handling beyond Pressable\'s defaults. There is no accessibilityHint, and the swap to the spinner is not announced as text — only the `busy` state changes.',
+  notes: [
+    'A Button with no `onPress` is rendered disabled, whatever `disabled` says.',
+    'While `loading`, the button keeps its normal (enabled) background but ignores presses.',
+    'Exported wrapped in React.memo, so it skips re-rendering when its own props are unchanged.',
+  ],
   variants: {
     items: [
       { key: 'primary', name: 'Primary', props: { variant: 'primary', size: 'large' }, node: <Button label="Primary" variant="primary" onPress={() => {}} /> },

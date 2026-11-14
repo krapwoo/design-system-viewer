@@ -13,7 +13,8 @@ deciding question: **what happens when the user taps in?**
 
 - **InputField** — a labeled field with a *floating label* (the label shrinks to a caption once
   active/filled). Use for a named piece of data with a fixed identity across the interaction — "To",
-  "From", "Arrive by", a person's name. Supports a live `editable` TextInput mode *or* a tappable
+  "From", "Arrive by", a person's name; the `label` is free text, so pass whatever the field is
+  called (or a `labelIcon` instead of a word). Supports a live `editable` TextInput mode *or* a tappable
   picker mode (`active` forced from outside, e.g. by a Dropdown/BottomSheet you're driving).
 - **SearchField** — a single-purpose live text input with a permanent leading search icon and no
   floating label (there's nothing to float to — "search" *is* the label, implied by the icon). Use

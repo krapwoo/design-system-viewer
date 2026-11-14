@@ -17,29 +17,28 @@ import { DS_SEMANTIC, DS_SPACING, DS_RADIUS, DS_TYPOGRAPHY, DS_FONT_WEIGHT } fro
 import { Icon } from '../../icons/Icon.native';
 import type { IconName } from '../../icons';
 
-/**
- * The label shown at the head of the field. Text variants render as a word; `'icon'` renders a
- * leading icon instead (supply `labelIcon`).
- */
-export type InputFieldLabelVariant = 'To' | 'From' | 'Walk time' | 'Arrive by' | 'Name' | 'icon';
-
-const LABEL_TEXT: Record<Exclude<InputFieldLabelVariant, 'icon'>, string> = {
-  To: 'To',
-  From: 'From',
-  'Walk time': 'Walk time',
-  'Arrive by': 'Arrive by',
-  Name: 'Name',
-};
-
 // Float / border cross-fade duration. JS-driven (useNativeDriver:false) so the label size cross-fade
 // and the border-colour fade both render in the web preview too — native-driver opacity doesn't.
 const ANIM_MS = 170;
 
-export interface InputFieldProps {
-  /** Leading label slot. */
-  label?: InputFieldLabelVariant;
-  /** Icon for the `label="icon"` variant. */
-  labelIcon?: IconName;
+/**
+ * The label at the head of the field is one of two modes, and the type makes you pick exactly one:
+ *  - text: `label`, any string, shown as the floating label;
+ *  - icon: `labelIcon`, a leading icon in place of a word (no `label`).
+ */
+type InputFieldLabelProps =
+  | {
+      /** The field's name, free text — whatever the product calls it. Required unless `labelIcon` is used. */
+      label: string;
+      labelIcon?: never;
+    }
+  | {
+      label?: never;
+      /** Icon-label mode: a leading icon stands in for the label word. */
+      labelIcon: IconName;
+    };
+
+interface InputFieldBaseProps {
   /** Current value. */
   value?: string;
   /** Trailing icon rendered after the value text. Also tints the value text with the accent colour,
@@ -67,6 +66,8 @@ export interface InputFieldProps {
   inputProps?: Omit<TextInputProps, 'value' | 'onChangeText' | 'placeholder' | 'editable'>;
 }
 
+export type InputFieldProps = InputFieldBaseProps & InputFieldLabelProps;
+
 /**
  * Floating-label field. Three states:
  *  - Resting: only the muted label, body-sized and vertically centred (no border).
@@ -76,7 +77,7 @@ export interface InputFieldProps {
  *  - Filled: same two-row layout with the entered value on row 2, and the border removed.
  */
 export function InputField({
-  label = 'To',
+  label,
   labelIcon,
   value,
   valueIcon,
@@ -164,12 +165,13 @@ export function InputField({
   // The label is muted in both states, so — unlike the icon variant below — a text label needs no
   // per-state node at all; it's one continuously-morphing element (see `fieldBody`). The "(Optional)"
   // marker fades out on its own as the field floats, since it only makes sense at rest.
-  const labelBase = label === 'icon' ? '' : LABEL_TEXT[label];
+  const isIconLabel = label == null;
+  const labelBase = label ?? '';
   // Disabled dims the label along with the value (see `styles.disabledText`) so the whole field
   // reads as one washed-out unit, not just its value text.
   const labelIconColor = disabled ? DS_SEMANTIC.text.disabled : DS_SEMANTIC.text.muted;
-  const restIconNode = label === 'icon' ? <Icon name={labelIcon ?? 'flag'} color={labelIconColor} /> : null;
-  const floatIconNode = label === 'icon' ? <Icon name={labelIcon ?? 'flag'} size={12} color={labelIconColor} /> : null;
+  const restIconNode = labelIcon ? <Icon name={labelIcon} color={labelIconColor} /> : null;
+  const floatIconNode = labelIcon ? <Icon name={labelIcon} size={12} color={labelIconColor} /> : null;
 
   // Row 2 content: the text input (editable) or the value / placeholder-hint (picker & display).
   let valueRow: React.ReactNode;
@@ -221,7 +223,7 @@ export function InputField({
 
   const fieldBody = (
     <Animated.View style={[styles.field, { backgroundColor: onWhite ? DS_SEMANTIC.surface.recessed : DS_SEMANTIC.surface.white }, { borderColor }]}>
-      {label === 'icon' ? (
+      {isIconLabel ? (
         <>
           {/* Icon label has no in-between size to morph through — it still cross-fades between its
               two fixed sizes, same as before. */}

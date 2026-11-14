@@ -1,0 +1,1 @@
+**Breaking for starter-kit consumers:** an icon-only `Badge` (no `label`) now requires `accessibilityLabel` or it will not type-check, and a labelled `Badge` now announces its variant ("Delayed, warning") using the new exported `BADGE_VARIANT_ANNOUNCEMENT` map.

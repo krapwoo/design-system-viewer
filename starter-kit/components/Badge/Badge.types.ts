@@ -3,16 +3,28 @@ import type { IconName } from '../../icons';
 
 export type BadgeVariant = 'neutral' | 'info' | 'positive' | 'warning' | 'negative';
 
-export interface BadgeProps {
+interface BadgeBaseProps {
   /** Semantic color scheme. */
   variant?: BadgeVariant;
-  /** Label text. Omit (with a single icon) for an icon-only chip. */
-  label?: string;
   /** Icon before the label. */
   leadingIcon?: IconName;
   /** Icon after the label. */
   trailingIcon?: IconName;
-  /** Accessible name — required for an icon-only badge (no `label`) so it can be announced. */
-  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }
+
+/** A badge with text. `accessibilityLabel` is optional; when set it replaces the announced name
+ *  outright (the variant word is then not added — see BADGE_VARIANT_ANNOUNCEMENT). */
+export interface LabelledBadgeProps extends BadgeBaseProps {
+  /** Label text. */
+  label: string;
+  accessibilityLabel?: string;
+}
+
+/** An icon-only badge (no `label`). It has no text to read, so `accessibilityLabel` is required. */
+export interface IconOnlyBadgeProps extends BadgeBaseProps {
+  label?: undefined;
+  accessibilityLabel: string;
+}
+
+export type BadgeProps = LabelledBadgeProps | IconOnlyBadgeProps;

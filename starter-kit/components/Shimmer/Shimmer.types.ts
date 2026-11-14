@@ -23,5 +23,8 @@ export interface ShimmerProps {
   height?: number;
   /** Diameter for `circle` variant. Default 40. */
   size?: number;
+  /** Accessible name announced for a standalone Shimmer. Ignored inside a `SkeletonGroup`, which owns
+   *  the single announcement for the whole skeleton. @default 'Loading' */
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }

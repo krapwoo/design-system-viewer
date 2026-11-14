@@ -1,0 +1,1 @@
+The starter kit's `Dialog` now renders its own React Native `Modal`, so it covers the whole screen (navigation included) and Android back or web Escape calls `onDismiss` — remove any `Modal` you put around a `Dialog`.

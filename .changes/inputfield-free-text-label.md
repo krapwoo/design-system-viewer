@@ -1,0 +1,1 @@
+**Breaking for starter-kit consumers:** `InputField`'s `label` is now any string with no default (the `'To'` default, the closed label union and the `InputFieldLabelVariant` export are gone), and a field must pass either `label` or `labelIcon` (not both, not neither) — `label="icon"` becomes `labelIcon="<icon name>"`.
