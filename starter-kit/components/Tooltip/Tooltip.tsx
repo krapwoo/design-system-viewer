@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { View, Text, StyleSheet, useWindowDimensions, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { OverlayPortal, useOverlayHost } from '../OverlayHost';
 import { DS_SEMANTIC, DS_SPACING, DS_RADIUS, DS_SHADOW, DS_TYPOGRAPHY } from '../../tokens';
 
 export interface TooltipProps {
@@ -40,6 +41,48 @@ const EDGE_OVERHANG = DS_SPACING[400];
 // surface.inverse, not text.regular — it's a dark PANEL fill, not ink (same reasoning as Toast).
 const BUBBLE_COLOR = DS_SEMANTIC.surface.inverse;
 
+export interface TooltipPositionInput {
+  /** The trigger's rect in window coordinates (`measureInWindow`). */
+  trigger: { x: number; y: number; width: number; height: number };
+  /** The bubble's own rendered size. */
+  bubble: { width: number; height: number };
+  windowWidth: number;
+  placement: 'top' | 'bottom';
+  align: 'left' | 'center' | 'right';
+  /** The coordinate space's top-left corner in window coordinates: the OverlayHost's origin, or
+   *  `{ x: 0, y: 0 }` for window coordinates. */
+  origin: { x: number; y: number };
+}
+
+/**
+ * Where the bubble goes, in the host's coordinate space (window coordinates minus `origin`).
+ * `left`/`top` are the bubble's top-left corner; `arrowLeft` is the arrow's centre, measured from the
+ * bubble's own left edge. Pure, so every positioning rule is testable without rendering.
+ */
+export function computeTooltipPosition({ trigger, bubble, windowWidth, placement, align, origin }: TooltipPositionInput) {
+  const triggerCenterAbs = trigger.x + trigger.width / 2;
+  const idealLeftAbs =
+    align === 'left'
+      ? trigger.x - EDGE_OVERHANG
+      : align === 'right'
+        ? trigger.x + trigger.width + EDGE_OVERHANG - bubble.width
+        : triggerCenterAbs - bubble.width / 2;
+  const minLeftAbs = EDGE_MARGIN;
+  const maxLeftAbs = windowWidth - bubble.width - EDGE_MARGIN;
+  // maxLeftAbs can be < minLeftAbs for a bubble wider than the screen minus margins — clamp the
+  // clamp range itself so a too-wide bubble still lands at minLeftAbs instead of NaN/garbage.
+  const clampedLeftAbs = Math.min(Math.max(idealLeftAbs, minLeftAbs), Math.max(maxLeftAbs, minLeftAbs));
+  // Always derived from the trigger's real position — never clamped/overridden — so the arrow is
+  // guaranteed accurate regardless of how far the bubble above just shifted for `align` or screen
+  // clamping. EDGE_OVERHANG (baked into idealLeftAbs) is what gives it breathing room from the
+  // bubble's corner; this line doesn't need its own inset logic on top of that.
+  const arrowLeft = Math.min(Math.max(triggerCenterAbs - clampedLeftAbs, 0), bubble.width);
+  const topAbs = placement === 'top' ? trigger.y - GAP - bubble.height : trigger.y + trigger.height + GAP;
+  return { left: clampedLeftAbs - origin.x, top: topAbs - origin.y, arrowLeft };
+}
+
+let warnedNoHost = false;
+
 /**
  * A small floating label anchored above or below its wrapped trigger, with a small triangular arrow
  * pointing back at it. Measures the trigger's real position (`measureInWindow`, since a plain
@@ -53,74 +96,99 @@ const BUBBLE_COLOR = DS_SEMANTIC.surface.inverse;
  * it tracks rotation/resize) is what keeps a long label from ever running edge-to-edge. The arrow is
  * the classic CSS border-triangle trick (a zero-size box with one transparent-adjacent border side
  * coloured in) — RN's View supports per-side border colours, so this needs no SVG.
+ *
+ * Where there is an `OverlayHost` above it, the bubble is rendered into the host's overlay layer at
+ * the trigger's window position (minus the host's own origin), so no ancestor's `overflow: hidden`
+ * can clip it. Without one it is drawn in place beside the trigger as before, and warns once in
+ * development. It is re-measured when it becomes visible or the window resizes, not while a visible
+ * tooltip's trigger scrolls.
  */
 export function Tooltip({ visible, label, placement = 'top', align = 'center', children, style }: TooltipProps) {
   const { width: windowWidth } = useWindowDimensions();
   const maxWidth = Math.round(windowWidth * MAX_WIDTH_RATIO);
+  const host = useOverlayHost();
+  const hostOrigin = host?.origin;
 
   const wrapRef = useRef<View>(null);
-  const [trigger, setTrigger] = useState<{ x: number; width: number } | null>(null);
-  const [bubbleWidth, setBubbleWidth] = useState(0);
+  const [trigger, setTrigger] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [bubbleSize, setBubbleSize] = useState({ width: 0, height: 0 });
 
   // Re-measures whenever the bubble becomes visible or the window is resized — the trigger's own
   // on-screen position can only be read once it (and any layout change causing it) has settled.
   useEffect(() => {
-    if (!visible) return undefined;
+    if (!visible) {
+      // Through a host the bubble is placed absolutely, so a position left over from the last show
+      // would flash in the wrong place; in place, the old fallback behaviour is kept as it was.
+      if (host) setTrigger(null);
+      return undefined;
+    }
     const raf = requestAnimationFrame(() => {
-      wrapRef.current?.measureInWindow((x, _y, width) => setTrigger({ x, width }));
+      wrapRef.current?.measureInWindow((x, y, width, height) => setTrigger({ x, y, width, height }));
     });
     return () => cancelAnimationFrame(raf);
-  }, [visible, windowWidth]);
+  }, [visible, windowWidth, !!host]);
 
-  // Falls back to plain flex-centering (the old behavior) for the one frame before the trigger/
-  // bubble have been measured, so there's no flash of an unpositioned bubble at 0,0.
-  let bubbleOffsetStyle: ViewStyle = styles.bubbleWrapCentered;
-  let arrowLeft: number | null = null;
+  useEffect(() => {
+    if (visible && !host && typeof __DEV__ !== 'undefined' && __DEV__ && !warnedNoHost) {
+      warnedNoHost = true;
+      console.warn('Tooltip: no OverlayHost found, so the bubble is drawn in place and an ancestor with overflow: hidden (a ScrollView, a rounded Card) can clip it. Mount an <OverlayHost> near the app root.');
+    }
+  }, [visible, !!host]);
 
-  if (trigger && bubbleWidth > 0) {
-    const triggerCenterAbs = trigger.x + trigger.width / 2;
-    const idealLeftAbs =
-      align === 'left'
-        ? trigger.x - EDGE_OVERHANG
-        : align === 'right'
-          ? trigger.x + trigger.width + EDGE_OVERHANG - bubbleWidth
-          : triggerCenterAbs - bubbleWidth / 2;
-    const minLeftAbs = EDGE_MARGIN;
-    const maxLeftAbs = windowWidth - bubbleWidth - EDGE_MARGIN;
-    // maxLeftAbs can be < minLeftAbs for a bubble wider than the screen minus margins — clamp the
-    // clamp range itself so a too-wide bubble still lands at minLeftAbs instead of NaN/garbage.
-    const clampedLeftAbs = Math.min(Math.max(idealLeftAbs, minLeftAbs), Math.max(maxLeftAbs, minLeftAbs));
-    bubbleOffsetStyle = { alignSelf: 'flex-start', marginLeft: clampedLeftAbs - trigger.x };
-    // Always derived from the trigger's real position — never clamped/overridden — so the arrow is
-    // guaranteed accurate regardless of how far the bubble above just shifted for `align` or screen
-    // clamping. EDGE_OVERHANG (baked into idealLeftAbs) is what gives it breathing room from the
-    // bubble's corner; this line doesn't need its own inset logic on top of that.
-    arrowLeft = Math.min(Math.max(triggerCenterAbs - clampedLeftAbs, 0), bubbleWidth);
+  const measured = trigger != null && bubbleSize.width > 0;
+  const position = measured ? computeTooltipPosition({ trigger, bubble: bubbleSize, windowWidth, placement, align, origin: hostOrigin ?? { x: 0, y: 0 } }) : null;
+
+  const bubbleNode = (
+    <>
+      <View
+        style={[styles.bubble, { maxWidth }, style]}
+        onLayout={(e: LayoutChangeEvent) => {
+          const { width, height } = e.nativeEvent.layout;
+          setBubbleSize((s) => (s.width === width && s.height === height ? s : { width, height }));
+        }}
+        // Announce the hint when it appears — without this, a screen-reader user gets no
+        // signal the tooltip exists unless they stumble onto it by swiping.
+        accessibilityLiveRegion="polite"
+      >
+        <Text style={styles.label}>{label}</Text>
+      </View>
+      <View
+        style={[
+          styles.arrow,
+          placement === 'top' ? styles.arrowTop : styles.arrowBottom,
+          position ? { left: position.arrowLeft, marginLeft: -ARROW_SIZE } : styles.arrowCenter,
+        ]}
+      />
+    </>
+  );
+
+  if (host) {
+    // Drawn in the host's layer, at the trigger's window position minus the host's own origin. The
+    // slot is a fixed `maxWidth` wide so the bubble inside it never gets squeezed by the room left
+    // to the right of `left` (which would change its measured width and move it again); until both
+    // are measured it is invisible rather than drawn at 0,0.
+    return (
+      <View style={styles.wrap} ref={wrapRef}>
+        {children}
+        <OverlayPortal>
+          {visible && (
+            <View pointerEvents="none" style={[styles.slot, { width: maxWidth }, position ? { left: position.left, top: position.top } : styles.slotHidden]}>
+              <View style={styles.bubbleWrapHosted}>{bubbleNode}</View>
+            </View>
+          )}
+        </OverlayPortal>
+      </View>
+    );
   }
+
+  const bubbleOffsetStyle: ViewStyle = position ? { alignSelf: 'flex-start', marginLeft: position.left - trigger!.x } : styles.bubbleWrapCentered;
 
   return (
     <View style={styles.wrap} ref={wrapRef}>
       {children}
       {visible && (
         <View pointerEvents="none" style={[styles.overlay, placement === 'top' ? styles.overlayTop : styles.overlayBottom]}>
-          <View style={[styles.bubbleWrap, bubbleOffsetStyle]}>
-            <View
-              style={[styles.bubble, { maxWidth }, style]}
-              onLayout={(e: LayoutChangeEvent) => setBubbleWidth(e.nativeEvent.layout.width)}
-              // Announce the hint when it appears — without this, a screen-reader user gets no
-              // signal the tooltip exists unless they stumble onto it by swiping.
-              accessibilityLiveRegion="polite"
-            >
-              <Text style={styles.label}>{label}</Text>
-            </View>
-            <View
-              style={[
-                styles.arrow,
-                placement === 'top' ? styles.arrowTop : styles.arrowBottom,
-                arrowLeft != null ? { left: arrowLeft, marginLeft: -ARROW_SIZE } : styles.arrowCenter,
-              ]}
-            />
-          </View>
+          <View style={[styles.bubbleWrap, bubbleOffsetStyle]}>{bubbleNode}</View>
         </View>
       )}
     </View>
@@ -132,6 +200,10 @@ const styles = StyleSheet.create({
   // without this, a Tooltip inside a wider flex row would stretch and mis-centre the bubble.
   wrap: { alignSelf: 'flex-start' },
   overlay: { position: 'absolute', left: 0, right: 0, zIndex: 10 },
+  // Hosted: positioned in the OverlayHost's layer by `computeTooltipPosition`'s left/top.
+  slot: { position: 'absolute' },
+  slotHidden: { left: 0, top: 0, opacity: 0 },
+  bubbleWrapHosted: { alignSelf: 'flex-start' },
   overlayTop: { bottom: '100%', marginBottom: GAP },
   overlayBottom: { top: '100%', marginTop: GAP },
   // Shrink-wraps to `bubble`'s own real width (the only in-flow child; `arrow` is absolutely

@@ -19,6 +19,7 @@ export * from './InputField';
 export * from './List';
 export * from './ListItem';
 export * from './Loading';
+export * from './OverlayHost';
 export * from './Pill';
 export * from './PillRow';
 export * from './ProgressDots';
