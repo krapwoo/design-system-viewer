@@ -1,1 +1,0 @@
-The starter kit's `BottomSheet` now renders its own React Native `Modal`, so it covers the whole screen (navigation included) and Android back or web Escape calls `onDismiss`, and `Dropdown` no longer wraps it in a `Modal` of its own — remove any `Modal` you put around a `BottomSheet`.

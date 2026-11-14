@@ -1,1 +1,0 @@
-The starter kit adds `OverlayHost`, and `Tooltip` now needs one mounted near the app root so its bubble can escape clipping ancestors (a `ScrollView`, a rounded `overflow: 'hidden'` Card) — without one it draws in place as before and warns once in development.
