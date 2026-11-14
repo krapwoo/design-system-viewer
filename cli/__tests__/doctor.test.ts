@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { applyComponentDefaults, withExtraIssues, checkOverlaysFramed, checkPageTypeErrors, collectGlobalIssues, collectIssues, formatHuman, runDoctor, toDoctorJson } from '../doctor.ts';
+import { applyComponentDefaults, countUnboundExamples, withExtraIssues, checkOverlaysFramed, checkPageTypeErrors, collectGlobalIssues, collectIssues, formatHuman, lastSummaryLine, runDoctor, toDoctorJson } from '../doctor.ts';
 import { readStaticPages } from '../staticPage.ts';
 import type { ComponentRecord, ResolvedConfig } from '../types.ts';
 import type { StaticPage } from '../staticPage.ts';
@@ -543,7 +543,62 @@ test('formatHuman appends an issue\'s file (and line, when present) so a syntax 
   assert.match(text, /Failed to typecheck: x \(components\/Widget\/Widget\.catalog\.tsx:12\)/);
 });
 
-test('the summary counts an unbound grid axis item and an untagged list item as unbound examples', () => {
+// `unboundExamples` is a to-do count: an example or axis that could have been bound to an
+// enumerable prop and wasn't, one per authoring decision. It must never rise just because more
+// examples were written, so everything that cannot be bound is left out.
+const BINDABLE = component({
+  props: [
+    { name: 'variant', type: "'primary' | 'secondary'", required: false, options: ['primary', 'secondary'] },
+    { name: 'size', type: "'sm' | 'lg'", required: false, options: ['sm', 'lg'] },
+    { name: 'disabled', type: 'boolean', required: false },
+    { name: 'count', type: 'number', required: false },
+    { name: 'icon', type: 'ReactNode', required: false },
+  ],
+});
+const axis = (keys: string[], prop?: string) => ({ prop, items: keys.map((key) => ({ key, label: key })) });
+const gridOf = (rows: ReturnType<typeof axis>, columns: ReturnType<typeof axis>) => ({ rows, columns });
+const unbound = (overrides: Partial<StaticPage>) => countUnboundExamples([page({ component: 'Widget', ...overrides })], [BINDABLE]);
+
+test('unbound examples: an axis bound to an enumerable prop is not counted', () => {
+  assert.equal(unbound({ comparison: gridOf(axis(['primary', 'secondary'], 'variant'), axis(['sm', 'lg'], 'size')) }), 0);
+});
+
+test('unbound examples: an unbound axis whose items are options of an enumerable prop counts once, not once per item', () => {
+  assert.equal(unbound({ comparison: gridOf(axis(['primary', 'secondary']), axis(['x'], 'size')) }), 1);
+});
+
+test('unbound examples: an axis varying a boolean, a number or a node is not counted', () => {
+  assert.equal(unbound({ comparison: gridOf(axis(['true', 'false']), axis(['1', '2', '3'])) }), 0);
+  assert.equal(unbound({ comparison: gridOf(axis(['icon', 'noIcon']), axis(['disabled', 'enabled'])) }), 0);
+});
+
+test('unbound examples: a grid with both axes unbound counts two, not rows plus columns', () => {
+  assert.equal(unbound({ comparison: gridOf(axis(['primary', 'secondary']), axis(['sm', 'lg'])) }), 2);
+});
+
+test('unbound examples: a variants/states item with no props that could not be bound is not counted', () => {
+  assert.equal(unbound({
+    variantsItems: [{ key: 'withIcon', name: 'With icon' }, { key: 'loadingAndDisabled', name: 'Several props at once' }],
+    statesItems: [{ key: 'disabled', name: 'Disabled' }, { key: 'count', name: 'Count' }],
+  }), 0);
+});
+
+test('unbound examples: a variants/states item that could have been bound counts, and a tagged one does not', () => {
+  assert.equal(unbound({
+    variantsItems: [{ key: 'primary', name: 'Primary' }, { key: 'secondary', name: 'Secondary', props: { variant: 'secondary' } }],
+    statesItems: [{ key: 'lg', name: 'Large' }],
+  }), 2);
+});
+
+test('unbound examples: an internalProps prop, an unresolved component and a family page are never counted', () => {
+  const items = { variantsItems: [{ key: 'primary', name: 'Primary' }] };
+  assert.equal(unbound({ ...items, internalProps: ['variant'] }), 0);
+  assert.equal(unbound({ ...items, component: 'Gone' }), 0);
+  assert.equal(unbound({ ...items, members: ['A', 'B'] }), 0);
+  assert.equal(unbound({ ...items, checkable: false }), 0);
+});
+
+test('the summary reports unbound examples through runDoctor, one per open decision', () => {
   const dir = makeProject(`
     import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
     export default defineCatalogPage({
@@ -552,8 +607,27 @@ test('the summary counts an unbound grid axis item and an untagged list item as 
       states: { items: [{ key: 'untagged', name: 'Untagged', node: null }] },
     });
   `);
-  // 1 unbound row + 1 unbound column + 1 untagged state item.
-  assert.equal(runDoctor(configFor(dir)).summary.unboundExamples, 3);
+  // The fixture's Widget has one enumerable prop, `variant`: the "primary" row could have been bound
+  // to it (1). The "default" column and the "untagged" state match no option, so nothing is bound-able.
+  assert.equal(runDoctor(configFor(dir)).summary.unboundExamples, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('the human summary line leaves unbound examples out while --json still carries the count', () => {
+  const dir = makeProject(`
+    import { defineCatalogPage, grid } from '@krapwoo/ds-viewer';
+    export default defineCatalogPage({
+      component: 'Widget', group: 'Components', description: 'x',
+      comparison: grid('Variant', 'State', [{ key: 'primary', label: 'Primary' }], [{ key: 'default', label: 'Default' }], (row, column) => null),
+      states: { items: [{ key: 'untagged', name: 'Untagged', node: null }] },
+    });
+  `);
+  const result = runDoctor(configFor(dir));
+  // Same fixture as above: one open decision, so the JSON count is non-zero and the omission is real.
+  assert.equal(toDoctorJson(result).summary.unboundExamples, 1);
+  const text = formatHuman(toDoctorJson(result));
+  assert.doesNotMatch(text, /unbound/i);
+  assert.match(lastSummaryLine(text), /^\d+ errors?, \d+ warnings? — \d+ components \(\d+ with examples\)\.$/);
   rmSync(dir, { recursive: true, force: true });
 });
 

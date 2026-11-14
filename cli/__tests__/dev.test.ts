@@ -239,7 +239,7 @@ test('performUpdate: a full success runs install, migrate, doctor, then restart 
   const calls: string[] = [];
   // The real `doctor` command's own multi-line human report (Minor finding, raised to Important by
   // the controller): only its last, non-empty summary line belongs in the success state.
-  const DOCTOR_REPORT = 'Button\n  [warning] option-not-covered: "size" option "lg" has no bound or tagged example. (Button.catalog.tsx)\n    Fix: Bind a grid axis to "size", or add a tagged example.\n\n0 errors, 1 warning — 12 components (12 with examples), 3 unbound examples.';
+  const DOCTOR_REPORT = 'Button\n  [warning] option-not-covered: "size" option "lg" has no bound or tagged example. (Button.catalog.tsx)\n    Fix: Bind a grid axis to "size", or add a tagged example.\n\n0 errors, 1 warning — 12 components (12 with examples).';
   const execImpl = async (command: string, args: string[]) => {
     const key = command === 'node' ? `node ${args[1]}` : `${command} ${args[0]}`;
     calls.push(key);
@@ -254,7 +254,7 @@ test('performUpdate: a full success runs install, migrate, doctor, then restart 
   assert.deepEqual(calls, ['npm install', 'node migrate', 'node doctor']);
   // Errata 1b: `restart`'s result includes `latest: plan.latest`. `doctorSummary` is only the
   // report's own last summary line, not the whole multi-line report.
-  assert.deepEqual(deps.restartCalls, [{ doctorSummary: '0 errors, 1 warning — 12 components (12 with examples), 3 unbound examples.', files: ['package.json'], latest: '0.5.0' }]);
+  assert.deepEqual(deps.restartCalls, [{ doctorSummary: '0 errors, 1 warning — 12 components (12 with examples).', files: ['package.json'], latest: '0.5.0' }]);
   // Errata 4: the *last* recorded status is 'restarting' (not the second-to-last).
   assert.equal(deps.statuses[deps.statuses.length - 1].phase, 'restarting');
   rmSync(dir, { recursive: true, force: true });

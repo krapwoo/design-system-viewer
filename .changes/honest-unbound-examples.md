@@ -1,0 +1,1 @@
+`doctor`'s "unbound examples" count now counts only an example that could have been bound to a prop with a fixed set of string options and was not — once per grid axis or list item rather than once per item — so the figure drops for every project, typically to 0, and it is now reported only in `--json` as `summary.unboundExamples` rather than on the human summary line.

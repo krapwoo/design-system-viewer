@@ -5,8 +5,8 @@ import { DS_SEMANTIC } from '../../tokens';
 
 // Avatar: content Kind × Size (Avatar's `size` is continuous; 24 / 40 default / 64 is the sweep).
 // Neither axis names a real prop — "Kind" is which of 3 optional props is set, not one enum, and
-// `size` has no fixed option set — so both stay unbound. An unbound axis is fully valid; `doctor`
-// only ever reports how many examples are unbound as information, never as an error or a warning.
+// `size` has no fixed option set — so both stay unbound. An unbound axis is fully valid, and
+// `doctor` never flags one: an axis it could not have bound is not counted at all.
 const AVATAR_COMPARISON = grid(
   'Kind',
   'Size',

@@ -1192,6 +1192,28 @@ function checkMissingWorkingPreview(pages: StaticPage[], components: ComponentRe
   return issues;
 }
 
+/** The component a page documents, when its examples can be checked against that component's props:
+ *  a checkable, non-family page whose `component` is a real export. The one gate every rule that
+ *  reads a page's props through its component shares (`checkComponentPages`, `countUnboundExamples`). */
+function documentedComponent(page: StaticPage, componentsByName: Map<string, ComponentRecord>): ComponentRecord | undefined {
+  if (!page.component) return undefined;
+  if (page.members && page.members.length > 0) return undefined; // a family page's props live on its members
+  if (!page.checkable) return undefined; // never a partial read
+  return componentsByName.get(page.component);
+}
+
+/** The props a reader can pick between — those with a fixed set of string options — keyed by name,
+ *  minus any the page declares as plumbing (`internalProps`). Only such a prop can be bound to a
+ *  grid axis or tagged on a list item, so this is both what `option-not-covered` asks coverage of
+ *  and what `countUnboundExamples` asks whether an example could have been bound to. */
+function enumerableProps(component: ComponentRecord, internalProps: ReadonlySet<string>): Map<string, readonly string[]> {
+  const result = new Map<string, readonly string[]>();
+  for (const prop of component.props) {
+    if (prop.options && !internalProps.has(prop.name)) result.set(prop.name, prop.options);
+  }
+  return result;
+}
+
 /** Everything that needs a page's own matching `ComponentRecord` to check: `propNotes`, bound
  *  axes, tagged list items, coverage, grouped-state matching, and guidance/a11y presence. One
  *  function because every one of these checks shares the same per-page `component`/`propsByName`
@@ -1201,16 +1223,15 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
   const issues: DoctorIssue[] = [];
 
   for (const page of pages) {
-    if (!page.component) continue;
     // Plan V3: a family page's own guidance always lives on its members, never on the page
     // itself — even if `applyComponentDefaults` (or, in principle, the author) ends up giving it
     // a page-level `component` matching a real export, this page-level advisory must still defer
     // entirely to `checkFamilyMembers`'s own per-member one. V2c item 6: `members.length > 0`,
-    // the same predicate the runtime uses — an empty array is not a family page.
-    if (page.members && page.members.length > 0) continue;
-    if (!page.checkable) continue; // never a partial read — see checkGridAxisKeys's own note.
-    const component = componentsByName.get(page.component);
-    if (!component) continue; // already reported by checkComponentExportRemoved
+    // the same predicate the runtime uses — an empty array is not a family page. A page that is
+    // not checkable is never partially read — see checkGridAxisKeys's own note. A missing
+    // component is already reported by checkComponentExportRemoved.
+    const component = documentedComponent(page, componentsByName);
+    if (!component) continue;
     const ref = pageRef(page);
     const propsByName = new Map(component.props.map((p) => [p.name, p]));
 
@@ -1306,23 +1327,22 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
         }));
       }
     }
-    for (const prop of component.props) {
-      if (!prop.options || internalProps.has(prop.name)) continue;
+    for (const [propName, options] of enumerableProps(component, internalProps)) {
       const covered = new Set<string>();
       if (page.comparison) {
         for (const axis of [page.comparison.rows, page.comparison.columns]) {
-          if (axis.prop === prop.name) for (const item of axis.items) covered.add(item.key);
+          if (axis.prop === propName) for (const item of axis.items) covered.add(item.key);
         }
       }
       for (const item of listItems) {
-        const value = item.props?.[prop.name];
+        const value = item.props?.[propName];
         if (typeof value === 'string') covered.add(value);
       }
-      for (const option of prop.options.filter((o) => !covered.has(o))) {
+      for (const option of options.filter((o) => !covered.has(o))) {
         issues.push(issue({
           id: 'option-not-covered', severity: 'warning', ...ref,
-          message: `"${prop.name}" option "${option}" has no bound or tagged example.`,
-          fix: `Bind a grid axis to "${prop.name}", or add { props: { ${prop.name}: '${option}' } } to a variants/states item.`,
+          message: `"${propName}" option "${option}" has no bound or tagged example.`,
+          fix: `Bind a grid axis to "${propName}", or add { props: { ${propName}: '${option}' } } to a variants/states item.`,
         }));
       }
     }
@@ -1377,8 +1397,8 @@ function checkComponentPages(pages: StaticPage[], components: ComponentRecord[])
 /** Opted-in token pages whose sections take their entries from runtime imports — the intended
  *  authoring path, since values come from the app's own token modules. Doctor never executes them,
  *  so those sections are listed as not statically validated. Informational only, like the
- *  "unbound examples" count: it never becomes an issue, never changes the exit code, and is not
- *  promoted by `doctor.strict`. `undefined` when there are none, so legacy output is unchanged. */
+ *  `summary.unboundExamples` count (JSON-only): it never becomes an issue, never changes the exit
+ *  code, and is not promoted by `doctor.strict`. `undefined` when there are none, so legacy output is unchanged. */
 function runtimeOnlyTokenSections(pages: StaticPage[]): { page: string; sections: string[] }[] | undefined {
   // #64 B1: a section counts as runtime-only when its own entries are opaque, OR its own `groups`
   // couldn't be read, OR any one group's own entries are opaque — groups are read the same
@@ -1835,6 +1855,9 @@ export interface DoctorSummary {
   hints?: number;
   components: number;
   withExamples: number;
+  /** Open authoring decisions: axes and items that could have been bound to an enumerable prop and
+   *  weren't (see `countUnboundExamples`). Informational; never an issue. Carried in `--json` only:
+   *  the human summary line leaves it out, since it reads 0 for a fully authored project. */
   unboundExamples: number;
   /** Token sections whose entries are runtime imports and so were not statically validated.
    *  Informational; absent when there are none. */
@@ -1883,15 +1906,35 @@ function countWithExamples(pages: StaticPage[], components: ComponentRecord[]): 
   return components.filter((c) => (byComponent.get(c.name) ?? []).some((p) => p.checkable && pageHasExamples(p))).length;
 }
 
-function countUnboundExamples(pages: StaticPage[]): number {
+/** Counts authoring decisions left open: an example that *could* have been bound to a prop and was
+ *  not. It is a to-do count, so it must fall as pages are completed, never rise with them.
+ *
+ *  - A grid axis with no `prop` counts **once** (not once per item) when its items are options of one
+ *    enumerable prop of the component — i.e. it varies something `prop` could name.
+ *  - A variants/states item with no `props` counts once when its key is an option of an enumerable
+ *    prop — i.e. a `props` tag could have said which.
+ *
+ *  Never counted: an axis or item that varies a boolean, number, node, several props or a
+ *  composition (no single enumerable prop to bind), anything bound or tagged already, a prop the page
+ *  lists in `internalProps`, and any page whose component can't be resolved (family pages, pages that
+ *  aren't checkable, a removed export). Options come from `enumerableProps`, the resolution
+ *  `option-not-covered` uses. */
+export function countUnboundExamples(pages: StaticPage[], components: ComponentRecord[]): number {
+  const componentsByName = new Map(components.map((c) => [c.name, c]));
   let count = 0;
   for (const page of pages) {
+    const component = documentedComponent(page, componentsByName);
+    if (!component) continue;
+    const enumerable = [...enumerableProps(component, new Set(page.internalProps ?? [])).values()];
+    const isOption = (key: string) => enumerable.some((options) => options.includes(key));
     if (page.comparison) {
-      if (page.comparison.rows.prop === undefined) count += page.comparison.rows.items.length;
-      if (page.comparison.columns.prop === undefined) count += page.comparison.columns.items.length;
+      for (const axis of [page.comparison.rows, page.comparison.columns]) {
+        if (axis.prop !== undefined || axis.items.length === 0) continue;
+        if (enumerable.some((options) => axis.items.every((item) => options.includes(item.key)))) count += 1;
+      }
     }
     for (const item of [...(page.variantsItems ?? []), ...(page.statesItems ?? [])]) {
-      if (!item.props || Object.keys(item.props).length === 0) count += 1;
+      if (Object.keys(item.props ?? {}).length === 0 && isOption(item.key)) count += 1;
     }
   }
   return count;
@@ -1953,7 +1996,7 @@ export function runDoctor(config: ResolvedConfig): DoctorRunResult {
     ...(issues.some((i) => i.severity === 'hint') ? { hints: issues.filter((i) => i.severity === 'hint').length } : {}),
     components: components.length,
     withExamples: countWithExamples(pages, components),
-    unboundExamples: countUnboundExamples(pages),
+    unboundExamples: countUnboundExamples(pages, components),
   };
   const runtimeOnly = runtimeOnlyTokenSections(pages);
   if (runtimeOnly) summary.runtimeOnlyTokenSections = runtimeOnly;
@@ -1968,7 +2011,8 @@ export function toDoctorJson(result: Omit<DoctorRunResult, 'pageFiles'>): Doctor
 
 /** Human report (design §4 "Output"): grouped by page, each issue with its one-line fix; issues
  *  with no `page` (`props-unreadable`, `no-token-modules`) are listed under "General". Ends with
- *  the same counts `--json`'s `summary` carries. */
+ *  a summary line carrying the error, warning, component and with-examples counts —
+ *  `summary.unboundExamples` is deliberately not among them and is `--json`-only. */
 export function formatHuman(result: DoctorJsonResult): string {
   const byPage = new Map<string, DoctorIssue[]>();
   const general: DoctorIssue[] = [];
@@ -1992,7 +2036,7 @@ export function formatHuman(result: DoctorJsonResult): string {
     for (const issue of general) renderIssue(issue);
     lines.push('');
   }
-  const { errors, warnings, hints, components, withExamples, unboundExamples, runtimeOnlyTokenSections: runtimeOnly } = result.summary;
+  const { errors, warnings, hints, components, withExamples, runtimeOnlyTokenSections: runtimeOnly } = result.summary;
   if (runtimeOnly && runtimeOnly.length > 0) {
     const count = runtimeOnly.reduce((sum, entry) => sum + entry.sections.length, 0);
     const where = runtimeOnly.map((entry) => `${entry.page} (${entry.sections.join(', ')})`).join('; ');
@@ -2000,13 +2044,14 @@ export function formatHuman(result: DoctorJsonResult): string {
   }
   lines.push(
     `${errors} error${errors === 1 ? '' : 's'}, ${warnings} warning${warnings === 1 ? '' : 's'}${hints ? `, ${hints} hint${hints === 1 ? '' : 's'}` : ''} — ` +
-      `${components} components (${withExamples} with examples), ${unboundExamples} unbound examples.`,
+      `${components} components (${withExamples} with examples).`,
   );
   return lines.join('\n');
 }
 
-/** `formatHuman`'s own output always ends with its one summary line (design §4's own example: "0
- *  errors, 15 warnings — 37 components (37 with examples), 130 unbound examples.") — every issue
+/** `formatHuman`'s own output always ends with its one summary line ("0 errors, 15 warnings — 37
+ *  components (37 with examples)." — design §4's own example predates the unbound-examples clause
+ *  being dropped from this line, so it is quoted here in its current form) — every issue
  *  and its fix come before it. Used by `dev.ts`/`update.ts` to shrink the `doctor` step's captured
  *  stdout down to that one line for the update panel's success state (Minor finding, raised to
  *  Important by the controller: the mockup's own success page shows one line, not the whole
