@@ -8,5 +8,6 @@
       "react-native-svg": ["./node_modules/react-native-svg"]
     }
   },
-  "include": ["../starter-kit/**/*.ts", "../starter-kit/**/*.tsx", "viewer-pages/**/*"]
+  "include": ["../starter-kit/**/*.ts", "../starter-kit/**/*.tsx", "viewer-pages/**/*"],
+  "exclude": ["../starter-kit/**/__tests__/**"]
 }
