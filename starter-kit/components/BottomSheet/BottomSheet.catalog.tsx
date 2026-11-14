@@ -19,8 +19,12 @@ const EXTRA_PARAGRAPHS = [
   'Elevators are available at 168 St, 137 St, and 125 St — check the map for accessible entrances before you travel.',
 ];
 
-/** Every example is a real sheet inside a phone: the trigger opens it, the backdrop dismisses it.
- *  `OverlayDemo` supplies the phone, so the sheet's absolute overlay stays in its own cell. */
+/** Every example is a real sheet inside a phone. The sheet renders in React Native's `Modal`, which on
+ *  the web would otherwise cover the whole catalog page; `OverlayDemo` renders through `PhoneFrame`,
+ *  which opens each example in its own device-sized iframe document, so the Modal lands inside the
+ *  phone. The trigger reopens the sheet and the backdrop dismisses it. The sheet starts open — closed, every example would be the same empty
+ *  phone behind the same trigger, and what each one is named for (header, footer, scrolling) would
+ *  be invisible. */
 function Sheet({
   header,
   footer,
@@ -74,9 +78,17 @@ export default defineCatalogPage({
     { component: 'TopNav', role: "The header slot, typically a TopNav with a close or back action.", relationship: 'slot' },
     { component: 'Dock', role: "The footer slot, typically a Dock with the sheet's primary actions; a Dock footer gets its shadow once the content scrolls.", relationship: 'slot' },
   ],
-  description: 'A sheet that slides up over a dismissible backdrop. Height is driven by its content (not fixed snap points) up to 90% of the available height, then the content area scrolls. Compose header with TopNav and footer with Dock.',
+  description:
+    'A sheet that slides up over a dismissible backdrop, in its own Modal so it covers the whole screen, navigation included. Height is driven by its content (not fixed snap points) up to 90% of the available height, then the content area scrolls. Compose header with TopNav and footer with Dock.',
   whenToUse: 'For longer, browsable content, or anything that benefits from a TopNav/Dock header-footer structure. For a short, focused decision that interrupts the flow, use Dialog.',
-  a11y: 'The backdrop is a Pressable with accessibilityRole="button" and accessibilityLabel="Dismiss"; header/content/footer carry their own accessibility (e.g. TopNav\'s title as accessibilityRole="header").',
+  a11y:
+    'The backdrop is a Pressable with accessibilityRole="button" and accessibilityLabel="Dismiss"; tapping it calls `onDismiss`. The sheet renders inside React Native\'s Modal and passes `onDismiss` as its `onRequestClose`, so the Android hardware back button (handled, so it closes the sheet instead of navigating away behind it) and, on web, Escape call `onDismiss` too. On web this is verified in react-native-web\'s source: ModalContent listens for Escape on the document and calls `onRequestClose` while the Modal is active, marks the Modal aria-modal with role="dialog", and ModalFocusTrap keeps Tab inside the Modal (it wraps the content in focus brackets and moves focus back in when it leaves) and returns focus to the previously focused element, such as the trigger, when the Modal unmounts. On web the trap also moves focus to the first focusable element on opening. Escape does not work on iOS or Android: React Native\'s View has no key handler, so a hardware keyboard cannot dismiss the sheet there. Because the Modal is above the app, the sheet covers a tab bar or other navigation, which cannot be tapped while the sheet is open. The sheet container sets accessibilityViewIsModal, which on iOS keeps VoiceOver inside the sheet; the prop has no effect on Android or on web. NOT VERIFIED ON A DEVICE: that VoiceOver and TalkBack focus order starts in the sheet, and that Android hides the content behind it from TalkBack — both are expected from the platform\'s native modal presentation, but nothing here has been run on iOS or Android. The drag handle is purely visual — no drag-to-dismiss gesture is wired up, and the handle has no accessibility role or label. Header and footer content carry their own accessibility (TopNav\'s title is accessibilityRole="header").',
+  notes: [
+    'Renders its own React Native Modal (`transparent`, `animationType="none"`): the sheet covers the whole screen wherever it is placed, so callers no longer wrap it in a Modal. The slide and fade are still BottomSheet\'s own, and the Modal stays mounted until the exit animation has finished.',
+    'Open only one sheet at a time. Stacked Modals are fragile on iOS, and a second sheet traps the user between two backdrops. `useInsideBottomSheetWarning` is exported for components that open their own sheet (Dropdown); it console.warns in development when called inside an already-open sheet.',
+    'Sets `statusBarTranslucent` and `navigationBarTranslucent` (Android only; ignored on iOS and web) so the sheet reaches the screen edges and Dock\'s `useSafeAreaInsets` padding applies to the same full-screen window. Not verified on an Android device: the inset values a Dock reads inside the Modal, and the sheet\'s edges under a 3-button or gesture navigation bar, have not been checked.',
+    'A Dock passed as `footer` has its `elevated` prop driven automatically from whether the content area overflows.',
+  ],
   variants: {
     items: [
       // Both slots empty: the sheet is only as tall as its content, above its own drag handle.
