@@ -2011,7 +2011,8 @@ export function toDoctorJson(result: Omit<DoctorRunResult, 'pageFiles'>): Doctor
 
 /** Human report (design §4 "Output"): grouped by page, each issue with its one-line fix; issues
  *  with no `page` (`props-unreadable`, `no-token-modules`) are listed under "General". Ends with
- *  the same counts `--json`'s `summary` carries. */
+ *  a summary line carrying the error, warning, component and with-examples counts —
+ *  `summary.unboundExamples` is deliberately not among them and is `--json`-only. */
 export function formatHuman(result: DoctorJsonResult): string {
   const byPage = new Map<string, DoctorIssue[]>();
   const general: DoctorIssue[] = [];
@@ -2048,8 +2049,9 @@ export function formatHuman(result: DoctorJsonResult): string {
   return lines.join('\n');
 }
 
-/** `formatHuman`'s own output always ends with its one summary line (design §4's own example: "0
- *  errors, 15 warnings — 37 components (37 with examples).") — every issue
+/** `formatHuman`'s own output always ends with its one summary line ("0 errors, 15 warnings — 37
+ *  components (37 with examples)." — design §4's own example predates the unbound-examples clause
+ *  being dropped from this line, so it is quoted here in its current form) — every issue
  *  and its fix come before it. Used by `dev.ts`/`update.ts` to shrink the `doctor` step's captured
  *  stdout down to that one line for the update panel's success state (Minor finding, raised to
  *  Important by the controller: the mockup's own success page shows one line, not the whole
