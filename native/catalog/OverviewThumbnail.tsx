@@ -55,7 +55,7 @@ function paintedContent(cell: Element | null, scale: number, cellHeight: number,
   let right = -Infinity;
   let top = Infinity;
   let bottom = -Infinity;
-  for (const el of surface.querySelectorAll('*')) {
+  for (const el of Array.from(surface.querySelectorAll('*'))) {
     const rect = el.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) continue;
     left = Math.min(left, rect.left);
