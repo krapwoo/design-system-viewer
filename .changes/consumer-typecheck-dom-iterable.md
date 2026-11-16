@@ -1,0 +1,1 @@
+`native/catalog` no longer iterates a DOM collection directly, so an app whose `lib` has no `DOM.Iterable` — the default under Expo's `tsconfig.base` — type-checks again instead of failing with `TS2488` inside `OverviewThumbnail.tsx`, a file it cannot edit.
