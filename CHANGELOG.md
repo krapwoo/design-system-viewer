@@ -3,6 +3,10 @@
 All notable changes to `@krapwoo/ds-viewer` are documented here. Entries are assembled
 automatically by `npm run release` from the files under `.changes/`.
 
+## 0.30.1
+
+- `native/catalog` no longer iterates a DOM collection directly, so an app whose `lib` has no `DOM.Iterable` — the default under Expo's `tsconfig.base` — type-checks again instead of failing with `TS2488` inside `OverviewThumbnail.tsx`, a file it cannot edit.
+
 ## 0.30.0
 
 - In `doctor`, the "unbound examples" count now counts only an example that could have been bound to a prop with a fixed set of string options and was not — once per grid axis or list item rather than once per item — so the figure drops for every project, typically to 0. It is now reported only in `--json`, as `summary.unboundExamples`, not on the human summary line.
